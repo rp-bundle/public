@@ -1,0 +1,6 @@
+{
+  "type": "rejected",
+  "req_id": "00000005-0000-4000-8000-000000000005",
+  "code": "forbidden",
+  "reason": "This guild has no such server."
+}

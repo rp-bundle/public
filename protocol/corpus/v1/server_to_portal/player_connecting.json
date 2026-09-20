@@ -1,0 +1,9 @@
+{
+  "type": "player_connecting",
+  "req_id": "00000005-0000-4000-8000-000000000005",
+  "identifiers": [
+    "steam:110000100000001",
+    "license:0123456789abcdef"
+  ],
+  "name": "Sam"
+}

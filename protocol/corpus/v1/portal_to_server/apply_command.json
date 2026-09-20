@@ -1,0 +1,10 @@
+{
+  "type": "apply_command",
+  "req_id": "00000005-0000-4000-8000-000000000005",
+  "command": {
+    "command": "adjust_balance",
+    "account_id": "00000004-0000-4000-8000-000000000004",
+    "amount": -250,
+    "description": "Admin correction."
+  }
+}

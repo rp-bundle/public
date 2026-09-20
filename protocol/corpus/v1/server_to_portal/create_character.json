@@ -1,0 +1,11 @@
+{
+  "type": "create_character",
+  "req_id": "00000005-0000-4000-8000-000000000005",
+  "owner": {
+    "kind": "player",
+    "id": "00000002-0000-4000-8000-000000000002"
+  },
+  "first_name": "Jane",
+  "last_name": "Doe",
+  "gender": "female"
+}
