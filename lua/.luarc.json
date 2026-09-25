@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting/schema.json",
+  "runtime.version": "LuaJIT",
+  "runtime.builtin": {
+    "ffi": "disable",
+    "jit": "disable",
+    "bit": "disable",
+    "string.buffer": "disable",
+    "table.clear": "disable",
+    "table.new": "disable"
+  },
+  "workspace.library": [
+    "${3rd}/busted/library",
+    "${3rd}/luassert/library",
+    "${3rd}/lfs/library"
+  ],
+  "workspace.checkThirdParty": false,
+  "diagnostics.globals": [],
+  "diagnostics.neededFileStatus": {
+    "missing-global-doc": "Any!",
+    "missing-local-export-doc": "Any!",
+    "incomplete-signature-doc": "Any!",
+    "undefined-doc-param": "Any!",
+    "undefined-global": "Any!"
+  },
+  "diagnostics.severity": {
+    "missing-global-doc": "Error!",
+    "missing-local-export-doc": "Error!",
+    "incomplete-signature-doc": "Error!",
+    "undefined-doc-param": "Error!",
+    "undefined-global": "Error!"
+  }
+}

@@ -1,0 +1,99 @@
+---@meta
+
+-- The game server's platform interface. Each engine's adapter (and the mock)
+-- supplies one table of this shape, annotated `---@type rpf.ServerPlatform`,
+-- so the language server checks it against this file. This file is a
+-- definition for the language server and is never loaded; `platform.lua`
+-- holds the same list for the check that runs at start.
+
+---An engine's player, exactly as the engine hands it over: a number on one
+---engine, an entity on another. The core only passes it back to the platform.
+---@alias rpf.PlayerHandle any
+
+---Callbacks for one websocket connection.
+---@class rpf.platform.SocketHandlers
+---@field open fun() The connection is established and `send` will work.
+---@field message fun(text: string) One text frame arrived.
+---@field close fun(reason: string) The connection ended, or never opened. Called once per `connect`, and never after it.
+
+---The websocket to the portal. One connection at a time.
+---@class rpf.platform.Transport
+local Transport = {}
+
+---Opens the connection. Calls `handlers.open` once it is up, or
+---`handlers.close` if it fails, and never both for a failed attempt.
+---@param url string The portal's websocket url.
+---@param handlers rpf.platform.SocketHandlers Where events go.
+function Transport.connect(url, handlers) end
+
+---Sends one text frame on the open connection.
+---@param text string The frame, already encoded.
+---@return boolean sent False when there is no open connection. The core keeps the frame in its outbox either way.
+function Transport.send(text) end
+
+---The best randomness the engine offers, for ids and backoff jitter.
+---@class rpf.platform.Random
+local Random = {}
+
+---Random lowercase hex digits. A platform with a cryptographic source uses
+---it, because envelope and instance ids are minted from this.
+---@param n integer How many hex digits.
+---@return string hex Exactly `n` characters from `0-9a-f`.
+function Random.random_hex(n) end
+
+---The players connected to this game server.
+---@class rpf.platform.Players
+local Players = {}
+
+---Every identifier the engine knows for a player, verbatim. Reference data
+---for staff: never used to decide who someone is.
+---@param player rpf.PlayerHandle The player.
+---@return string[] identifiers For example `steam:…` or `license:…`.
+function Players.identifiers(player) end
+
+---The player's current in-game name.
+---@param player rpf.PlayerHandle The player.
+---@return string name As the engine reports it.
+function Players.name(player) end
+
+---Disconnects a player.
+---@param player rpf.PlayerHandle The player.
+---@param reason string Shown to the player.
+function Players.kick(player, reason) end
+
+---Shows a player a message in game.
+---@param player rpf.PlayerHandle The player.
+---@param message string The text.
+function Players.notify(player, message) end
+
+---Messages between this server and its players' clients. Payloads are
+---strings, so every engine carries the same bytes and the core owns the
+---encoding, exactly as it does for JSON.
+---@class rpf.platform.ToClients
+local ToClients = {}
+
+---Sends a message to one player's client.
+---@param player rpf.PlayerHandle The recipient.
+---@param name string The message name, namespaced `rpf:`.
+---@param payload string The message, already encoded.
+function ToClients.to_client(player, name, payload) end
+
+---Registers the handler for one message name from clients. The platform
+---supplies the sender; a client never names itself.
+---@param name string The message name, namespaced `rpf:`.
+---@param handler fun(player: rpf.PlayerHandle, payload: string) Called for each message. The payload is hostile input.
+function ToClients.on_client(name, handler) end
+
+---How the public API reaches other scripts.
+---@class rpf.platform.Api
+local Api = {}
+
+---Publishes the public API table: through an export table on an engine where
+---each resource has its own Lua state, through the `rpf` global where every
+---addon shares one. Only this table is published, never the rest of `rpf`.
+---@param api table The public API.
+function Api.expose(api) end
+
+---Everything the game-server half of the core needs from its engine.
+---`rpf.start_server` refuses a table missing any of it.
+---@class rpf.ServerPlatform: rpf.platform.Engine, rpf.platform.Transport, rpf.platform.Http, rpf.platform.Clock, rpf.platform.Storage, rpf.platform.Random, rpf.platform.Players, rpf.platform.ToClients, rpf.platform.Log, rpf.platform.Api

@@ -1,0 +1,683 @@
+---The wire protocol, as the game server speaks it.
+---
+---This mirrors `src/protocol/mod.rs`, and the two are held together by the
+---same corpus: `protocol/corpus/v1/` is decoded here and by the Rust tests,
+---so neither side is tested against the other's reimplementation. Every
+---frame is one flat JSON object, the envelope's `id` and `sent_at` beside the
+---message's `type` and its own fields, and a decoded frame keeps that shape:
+---`frame.type`, `frame.id`, `frame.re`, `frame.player_id`.
+---
+---Decoding follows the portal's rules exactly. Unknown fields are ignored, at
+---every depth, and do not appear in the decoded frame. An unknown `type`, a
+---missing field, or a field of the wrong type is refused. A field that may be
+---null must still be present, sent as null.
+---@class rpf.protocol
+---@field VERSION integer The protocol version this core speaks, sent in `Hello`. Mirrors `protocol::VERSION`.
+---@field MAX_AMOUNT number 2^53 − 1, the widest money amount either side accepts. Mirrors `protocol::MAX_AMOUNT`.
+---@field SERVER_TO_PORTAL "server_to_portal" The direction of frames this core sends. Also the corpus directory.
+---@field PORTAL_TO_SERVER "portal_to_server" The direction of frames this core receives. Also the corpus directory.
+---@field messages table<string, table<string, rpf.protocol.MessageSpec>> Every message type, by direction then `type` tag.
+local protocol = {}
+
+local json = rpf.json
+
+protocol.VERSION = 1
+protocol.MAX_AMOUNT = json.MAX_SAFE_INTEGER
+protocol.SERVER_TO_PORTAL = "server_to_portal"
+protocol.PORTAL_TO_SERVER = "portal_to_server"
+
+---A frame, decoded or about to be encoded: the envelope fields plus the
+---message's own, in one table, as on the wire.
+---@class rpf.Frame
+---@field id string The envelope id, a uuid. Reused only when resending this same frame.
+---@field sent_at string When the sender sent it, RFC 3339 in UTC.
+---@field type string The message type tag.
+---@field re string? The id of the frame this one answers, on replies.
+---@field [string] any The message's own fields.
+
+---How one field's value is checked and converted. Decode and encode are
+---separate because the two sides differ only in how null and arrays are
+---represented: `json.null` and marked tables on the wire, `nil` and plain
+---tables in Lua.
+---@class rpf.protocol.Type
+---@field decode fun(value: any, path: string): any Checks a decoded JSON value and returns it as Lua holds it. Throws the path and the problem.
+---@field encode fun(value: any, path: string): any Checks a Lua value and returns it ready for `json.encode`. Throws the path and the problem.
+---@field nullable boolean? True if the field may be null. It must still be present.
+---@field secret boolean? True if the value is a credential, which `redact` replaces.
+
+---One message type in one direction.
+---@class rpf.protocol.MessageSpec
+---@field fields rpf.protocol.Field[] The message's own fields, beside the envelope's.
+---@field answered_by "reply"|"ack"|"nothing" What answers it, mirroring `Message::answered_by`: a request is answered by its reply or a `Rejected`, notices and replies by an `Ack`, and an `Ack` by nothing.
+---@field reissuable boolean Whether it may be re-sent under a fresh id once the retry window is closing, mirroring `Message::reissuable`. False is the safe answer.
+
+---One named field of a message or nested object.
+---@class rpf.protocol.Field
+---@field [1] string The field's name.
+---@field [2] rpf.protocol.Type Its type.
+
+-- Types -------------------------------------------------------------------
+
+---Stops a decode or encode, naming the field.
+---@param path string Where in the frame, like `character.owner.kind`.
+---@param message string What was wrong.
+local function fail(path, message)
+  error(path .. ": " .. message, 0)
+end
+
+---Wraps a check that is the same in both directions as a type.
+---@param check fun(value: any, path: string): any The check, returning the value.
+---@param extra table? Flags to add, like `secret`.
+---@return rpf.protocol.Type type The type.
+local function same_both_ways(check, extra)
+  local t = { decode = check, encode = check }
+  for key, value in pairs(extra or {}) do
+    t[key] = value
+  end
+  return t
+end
+
+---Checks a value is a string.
+---@param value any The value.
+---@param path string Where it is.
+---@return string value The string.
+local function check_string(value, path)
+  if type(value) ~= "string" then
+    fail(path, "expected a string, got " .. type(value))
+  end
+  return value
+end
+
+local STRING = same_both_ways(check_string)
+local SECRET = same_both_ways(check_string, { secret = true })
+
+local UUID_PATTERN = "^"
+  .. string.rep("%x", 8)
+  .. "%-"
+  .. string.rep("%x", 4)
+  .. "%-"
+  .. string.rep("%x", 4)
+  .. "%-"
+  .. string.rep("%x", 4)
+  .. "%-"
+  .. string.rep("%x", 12)
+  .. "$"
+
+local UUID = same_both_ways(function(value, path)
+  check_string(value, path)
+  if not value:find(UUID_PATTERN) then
+    fail(path, "expected a hyphenated uuid")
+  end
+  return value
+end)
+
+local TIMESTAMP = same_both_ways(function(value, path)
+  check_string(value, path)
+  local _, stop = value:find("^%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d")
+  if not stop then
+    fail(path, "expected an RFC 3339 timestamp")
+  end
+  ---@cast stop integer
+  local rest = value:sub(stop + 1)
+  local _, frac_end = rest:find("^%.%d+")
+  if frac_end then
+    rest = rest:sub(frac_end + 1)
+  end
+  if rest ~= "Z" and not rest:find("^[-+]%d%d:%d%d$") then
+    fail(path, "expected an RFC 3339 timestamp with a zone")
+  end
+  return value
+end)
+
+local BOOLEAN = same_both_ways(function(value, path)
+  if type(value) ~= "boolean" then
+    fail(path, "expected a boolean, got " .. type(value))
+  end
+  return value
+end)
+
+---An integer within bounds. The JSON codec already refuses anything a double
+---cannot hold, so these bounds are the protocol's own.
+---@param min number The smallest allowed.
+---@param max number The largest allowed.
+---@return rpf.protocol.Type type The type.
+local function integer(min, max)
+  return same_both_ways(function(value, path)
+    if type(value) ~= "number" or value ~= math.floor(value) then
+      fail(path, "expected an integer")
+    end
+    if value < min or value > max then
+      fail(path, "out of range")
+    end
+    return value
+  end)
+end
+
+local U16 = integer(0, 65535)
+local U64 = integer(0, json.MAX_SAFE_INTEGER)
+local AMOUNT = integer(-protocol.MAX_AMOUNT, protocol.MAX_AMOUNT)
+
+---A string from a fixed set, as a Rust unit enum serialises.
+---@param values string[] The allowed strings.
+---@return rpf.protocol.Type type The type.
+local function enum(values)
+  local allowed = {}
+  for _, v in ipairs(values) do
+    allowed[v] = true
+  end
+  return same_both_ways(function(value, path)
+    check_string(value, path)
+    if not allowed[value] then
+      fail(path, "unknown value " .. value)
+    end
+    return value
+  end)
+end
+
+---A value that may be null. Null is `json.null` on the wire and `nil` in Lua,
+---and the field must be present either way.
+---@param inner rpf.protocol.Type The type when not null.
+---@return rpf.protocol.Type type The type.
+local function nullable(inner)
+  return {
+    nullable = true,
+    secret = inner.secret,
+    decode = function(value, path)
+      if value == json.null then
+        return nil
+      end
+      return inner.decode(value, path)
+    end,
+    encode = function(value, path)
+      if value == nil or value == json.null then
+        return json.null
+      end
+      return inner.encode(value, path)
+    end,
+  }
+end
+
+---An array of one type.
+---@param inner rpf.protocol.Type The element type.
+---@return rpf.protocol.Type type The type.
+local function array_of(inner)
+  return {
+    decode = function(value, path)
+      if not json.is_array(value) then
+        fail(path, "expected an array")
+      end
+      local out = {}
+      for i, item in ipairs(value) do
+        out[i] = inner.decode(item, path .. "[" .. i .. "]")
+      end
+      return out
+    end,
+    encode = function(value, path)
+      if type(value) ~= "table" then
+        fail(path, "expected an array")
+      end
+      local out = json.array()
+      local count = 0
+      for _ in pairs(value) do
+        count = count + 1
+      end
+      if count ~= #value then
+        fail(path, "expected an array with no holes")
+      end
+      for i, item in ipairs(value) do
+        out[i] = inner.encode(item, path .. "[" .. i .. "]")
+      end
+      return out
+    end,
+  }
+end
+
+---Decodes the named fields of an object into `out`, ignoring any others.
+---@param fields rpf.protocol.Field[] The fields.
+---@param value table The decoded JSON object.
+---@param path string Where the object is, or "" at the top.
+---@param out table Where the decoded fields go.
+local function decode_fields(fields, value, path, out)
+  for _, field in ipairs(fields) do
+    local name, t = field[1], field[2]
+    local at = path == "" and name or path .. "." .. name
+    local raw = value[name]
+    if raw == nil then
+      fail(at, "missing")
+    end
+    out[name] = t.decode(raw, at)
+  end
+end
+
+---Encodes the named fields of a Lua table into `out`. Anything else in the
+---table is not sent.
+---@param fields rpf.protocol.Field[] The fields.
+---@param value table The Lua table.
+---@param path string Where the object is, or "" at the top.
+---@param out table Where the encoded fields go.
+local function encode_fields(fields, value, path, out)
+  for _, field in ipairs(fields) do
+    local name, t = field[1], field[2]
+    local at = path == "" and name or path .. "." .. name
+    local raw = value[name]
+    if raw == nil and not t.nullable then
+      fail(at, "missing")
+    end
+    out[name] = t.encode(raw, at)
+  end
+end
+
+---An object with known fields, like a Rust struct. Unknown fields are
+---ignored on decode, so a newer portal can add one.
+---@param fields rpf.protocol.Field[] The fields.
+---@return rpf.protocol.Type type The type.
+local function object(fields)
+  return {
+    decode = function(value, path)
+      if not json.is_object(value) then
+        fail(path, "expected an object")
+      end
+      local out = {}
+      decode_fields(fields, value, path, out)
+      return out
+    end,
+    encode = function(value, path)
+      if type(value) ~= "table" then
+        fail(path, "expected an object")
+      end
+      local out = json.object()
+      encode_fields(fields, value, path, out)
+      return out
+    end,
+  }
+end
+
+---An internally tagged enum, like `#[serde(tag = "…")]`: an object whose
+---`tag` field names the variant, beside that variant's fields.
+---@param tag string The tag field's name.
+---@param variants table<string, rpf.protocol.Field[]> Each variant's fields.
+---@return rpf.protocol.Type type The type.
+local function tagged(tag, variants)
+  ---Finds the variant a value names.
+  ---@param value table The object.
+  ---@param path string Where it is.
+  ---@return string name The variant's tag.
+  ---@return rpf.protocol.Field[] fields Its fields.
+  local function variant(value, path)
+    local name = value[tag]
+    local at = path .. "." .. tag
+    check_string(name, at)
+    local fields = variants[name]
+    if not fields then
+      fail(at, "unknown variant " .. name)
+    end
+    return name, fields
+  end
+  return {
+    decode = function(value, path)
+      if not json.is_object(value) then
+        fail(path, "expected an object")
+      end
+      local name, fields = variant(value, path)
+      local out = { [tag] = name }
+      decode_fields(fields, value, path, out)
+      return out
+    end,
+    encode = function(value, path)
+      if type(value) ~= "table" then
+        fail(path, "expected an object")
+      end
+      local name, fields = variant(value, path)
+      local out = json.object({ [tag] = name })
+      encode_fields(fields, value, path, out)
+      return out
+    end,
+  }
+end
+
+---`Gender`: `"male"`, `"female"`, or `{ "server_specific": "…" }`, the
+---externally tagged form serde gives a newtype variant. That object is held
+---to exactly one key, as serde holds it.
+local GENDER = same_both_ways(function(value, path)
+  if value == "male" or value == "female" then
+    return value
+  end
+  if type(value) == "table" then
+    local count = 0
+    for _ in pairs(value) do
+      count = count + 1
+    end
+    if count == 1 and type(value.server_specific) == "string" then
+      return json.object({ server_specific = value.server_specific })
+    end
+  end
+  fail(path, "expected male, female or { server_specific = string }")
+end)
+
+local OWNER_REF = object({
+  { "kind", enum({ "server", "player", "character", "employer" }) },
+  { "id", UUID },
+})
+
+local CHARACTER = object({
+  { "id", UUID },
+  { "server_id", UUID },
+  { "owner", OWNER_REF },
+  { "first_name", STRING },
+  { "last_name", STRING },
+  { "gender", GENDER },
+})
+
+local COMMAND = tagged("command", {
+  adjust_balance = {
+    { "client_id", UUID },
+    { "account_id", UUID },
+    { "amount", AMOUNT },
+    { "description", STRING },
+  },
+})
+
+local OUTCOME = tagged("outcome", {
+  applied = {},
+  failed = { { "reason", STRING } },
+})
+
+---Every `RejectCode`, as its wire string.
+local REJECT_CODES = {
+  "unauthorised",
+  "forbidden",
+  "malformed",
+  "not_found",
+  "retry",
+  "duplicate_instance",
+  "expired",
+  "rate_limited",
+}
+
+-- Messages ----------------------------------------------------------------
+
+---Builds a message spec.
+---@param answered_by "reply"|"ack"|"nothing" What answers it.
+---@param reissuable boolean Whether it may be reissued under a fresh id.
+---@param fields rpf.protocol.Field[] Its fields.
+---@return rpf.protocol.MessageSpec spec The spec.
+local function message(answered_by, reissuable, fields)
+  return { answered_by = answered_by, reissuable = reissuable, fields = fields }
+end
+
+protocol.messages = {
+  server_to_portal = {
+    hello = message("reply", false, {
+      { "protocol", U16 },
+      { "api_key", SECRET },
+      { "instance_id", UUID },
+      { "engine", STRING },
+      { "core_version", STRING },
+      { "config_version", nullable(U64) },
+      { "config_hash", nullable(STRING) },
+    }),
+    begin_join = message("reply", false, {
+      { "identifiers", array_of(STRING) },
+      { "name", STRING },
+    }),
+    redeem_ticket = message("reply", false, {
+      { "ticket", SECRET },
+    }),
+    player_dropped = message("ack", true, {
+      { "player_id", UUID },
+      { "reason", STRING },
+    }),
+    create_character = message("reply", false, {
+      { "owner", OWNER_REF },
+      { "first_name", STRING },
+      { "last_name", STRING },
+      { "gender", GENDER },
+    }),
+    command_applied = message("ack", true, {
+      { "re", UUID },
+      { "outcome", OUTCOME },
+    }),
+    ack = message("nothing", false, {
+      { "re", UUID },
+    }),
+  },
+  portal_to_server = {
+    welcome = message("ack", false, {
+      { "re", UUID },
+      { "protocol", U16 },
+      { "server_id", UUID },
+    }),
+    rejected = message("ack", false, {
+      { "re", UUID },
+      { "code", enum(REJECT_CODES) },
+      { "reason", STRING },
+    }),
+    join_challenge = message("ack", false, {
+      { "re", UUID },
+      { "nonce", SECRET },
+      { "expires_at", TIMESTAMP },
+    }),
+    player_authenticated = message("ack", false, {
+      { "re", UUID },
+      { "player_id", UUID },
+      { "username", STRING },
+      { "created", BOOLEAN },
+    }),
+    character_created = message("ack", false, {
+      { "re", UUID },
+      { "character", CHARACTER },
+    }),
+    apply_command = message("reply", false, {
+      { "command", COMMAND },
+    }),
+    ack = message("nothing", false, {
+      { "re", UUID },
+    }),
+  },
+}
+
+---The envelope's own fields, decoded and encoded before the message's.
+---@type rpf.protocol.Field[]
+local ENVELOPE = {
+  { "id", UUID },
+  { "sent_at", TIMESTAMP },
+}
+
+---Looks up a message spec, refusing an unknown direction or type.
+---@param direction string `server_to_portal` or `portal_to_server`.
+---@param tag any The frame's `type`.
+---@return rpf.protocol.MessageSpec spec The spec.
+local function spec_for(direction, tag)
+  local specs = protocol.messages[direction]
+  if not specs then
+    fail("direction", "unknown direction " .. tostring(direction))
+  end
+  check_string(tag, "type")
+  local spec = specs[tag]
+  if not spec then
+    fail("type", "unknown message type " .. tag)
+  end
+  return spec
+end
+
+---Decodes one frame. The frame is hostile input, so every failure is a
+---return value naming the offending field, never a thrown error.
+---@param direction string Which direction it travelled, which decides what types are known.
+---@param text string The raw frame.
+---@return rpf.Frame? frame The frame with only known fields, or nil if refused.
+---@return string? err Why it was refused.
+function protocol.decode(direction, text)
+  local value, json_err = json.decode(text)
+  if json_err then
+    return nil, json_err
+  end
+  local ok, result = pcall(function()
+    if not json.is_object(value) then
+      fail("frame", "expected an object")
+    end
+    local spec = spec_for(direction, value.type)
+    local frame = { type = value.type }
+    decode_fields(ENVELOPE, value, "", frame)
+    decode_fields(spec.fields, value, "", frame)
+    return frame
+  end)
+  if ok then
+    return result, nil
+  end
+  return nil, tostring(result)
+end
+
+---Encodes one frame, checking it as strictly as the portal will, so a bug
+---here fails loudly on this side rather than as a `Malformed` from the portal.
+---@param direction string Which direction it will travel.
+---@param frame rpf.Frame The frame: envelope fields and message fields in one table.
+---@return string? text The JSON frame, or nil if the frame is not valid.
+---@return string? err Why it is not.
+function protocol.encode(direction, frame)
+  local ok, result = pcall(function()
+    if type(frame) ~= "table" then
+      fail("frame", "expected a table")
+    end
+    local spec = spec_for(direction, frame.type)
+    local out = json.object({ type = frame.type })
+    encode_fields(ENVELOPE, frame, "", out)
+    encode_fields(spec.fields, frame, "", out)
+    local text, err = json.encode(out)
+    if not text then
+      fail("frame", err or "cannot encode")
+    end
+    return text
+  end)
+  if ok then
+    return result, nil
+  end
+  return nil, tostring(result)
+end
+
+---What answers a frame of this type, which is what tells the outbox when it
+---may let go. Unknown types are answered by nothing, so they never sit in it.
+---@param direction string The frame's direction.
+---@param tag string The frame's `type`.
+---@return "reply"|"ack"|"nothing" answered_by Mirrors `Message::answered_by`.
+function protocol.answered_by(direction, tag)
+  local spec = protocol.messages[direction] and protocol.messages[direction][tag]
+  return spec and spec.answered_by or "nothing"
+end
+
+---Whether a frame of this type may be re-sent under a fresh id as the retry
+---window closes. Unknown types are not, which is the safe answer.
+---@param direction string The frame's direction.
+---@param tag string The frame's `type`.
+---@return boolean reissuable Mirrors `Message::reissuable`.
+function protocol.reissuable(direction, tag)
+  local spec = protocol.messages[direction] and protocol.messages[direction][tag]
+  return spec ~= nil and spec.reissuable
+end
+
+---Whether a refused frame may be sent again under the same id, mirroring
+---`RejectCode::may_retry`. Retrying anything else is an infinite loop.
+---@param code string A `RejectCode`, as its wire string.
+---@return boolean retry True for `retry`, and for `rate_limited` after a backoff.
+function protocol.may_retry(code)
+  return code == "retry" or code == "rate_limited"
+end
+
+---A copy of a frame with every credential replaced, for logging. Only the top
+---level is walked, because that is the only place the protocol carries one.
+---@param direction string The frame's direction.
+---@param frame rpf.Frame The frame.
+---@return rpf.Frame redacted A shallow copy, safe to log.
+function protocol.redact(direction, frame)
+  local copy = {}
+  for key, value in pairs(frame) do
+    copy[key] = value
+  end
+  local spec = protocol.messages[direction] and protocol.messages[direction][frame.type]
+  if spec then
+    for _, field in ipairs(spec.fields) do
+      if field[2].secret and copy[field[1]] ~= nil then
+        copy[field[1]] = "<redacted>"
+      end
+    end
+  end
+  return copy
+end
+
+---Mints a random (version 4) uuid from the platform's randomness. Envelope
+---ids and the instance id come from here.
+---@param source rpf.platform.Random The platform.
+---@return string id A lowercase hyphenated uuid.
+function protocol.new_id(source)
+  local hex = source.random_hex(32)
+  if type(hex) ~= "string" or #hex ~= 32 or hex:find("[^0-9a-f]") then
+    error("rpf: random_hex(32) must return 32 lowercase hex digits", 2)
+  end
+  -- The version nibble is 4, and the variant's top two bits are 10.
+  local nibble = tonumber(hex:sub(17, 17), 16) % 4 + 1
+  local variant = ("89ab"):sub(nibble, nibble)
+  return hex:sub(1, 8)
+    .. "-"
+    .. hex:sub(9, 12)
+    .. "-4"
+    .. hex:sub(14, 16)
+    .. "-"
+    .. variant
+    .. hex:sub(18, 20)
+    .. "-"
+    .. hex:sub(21, 32)
+end
+
+---Formats a time as RFC 3339 in UTC, the way the portal writes timestamps:
+---whole seconds, with milliseconds only when there are any. Computed rather
+---than delegated to the standard library, so the output does not depend on
+---the host's time zone or on which library an engine left in.
+---@param ms number Milliseconds since the Unix epoch.
+---@return string timestamp Like `2026-01-01T00:00:00Z`.
+function protocol.timestamp(ms)
+  ms = math.floor(ms)
+  local seconds = math.floor(ms / 1000)
+  local millis = ms - seconds * 1000
+  local days = math.floor(seconds / 86400)
+  local rem = seconds - days * 86400
+  local hour = math.floor(rem / 3600)
+  local minute = math.floor((rem - hour * 3600) / 60)
+  local second = rem - hour * 3600 - minute * 60
+
+  -- Days to a civil date, after Howard Hinnant's `civil_from_days`.
+  local z = days + 719468
+  local era = math.floor(z / 146097)
+  local doe = z - era * 146097
+  local yoe = math.floor((doe - math.floor(doe / 1460) + math.floor(doe / 36524) - math.floor(doe / 146096)) / 365)
+  local doy = doe - (365 * yoe + math.floor(yoe / 4) - math.floor(yoe / 100))
+  local mp = math.floor((5 * doy + 2) / 153)
+  local day = doy - math.floor((153 * mp + 2) / 5) + 1
+  local month = mp < 10 and mp + 3 or mp - 9
+  local year = yoe + era * 400 + (month <= 2 and 1 or 0)
+
+  local text = string.format("%04d-%02d-%02dT%02d:%02d:%02d", year, month, day, hour, minute, second)
+  if millis > 0 then
+    text = text .. string.format(".%03d", millis)
+  end
+  return text .. "Z"
+end
+
+---A new frame: a fresh id, `sent_at` now, and the message's fields. Resending
+---a frame reuses its old envelope instead; only a reissue calls this for old
+---content.
+---@param source rpf.ServerPlatform The platform, for its randomness and its clock.
+---@param tag string The message type.
+---@param fields table? The message's own fields.
+---@return rpf.Frame frame The frame, not yet encoded.
+function protocol.envelope(source, tag, fields)
+  local frame = {}
+  for key, value in pairs(fields or {}) do
+    frame[key] = value
+  end
+  frame.type = tag
+  frame.id = protocol.new_id(source)
+  frame.sent_at = protocol.timestamp(source.now())
+  return frame
+end
+
+rpf.protocol = protocol
+return protocol

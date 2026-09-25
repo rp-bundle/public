@@ -1,0 +1,10 @@
+-- Run `busted` from lua/: it finds this file, the specs, and spec.support.
+return {
+  _all = {
+    lpath = "./?.lua;./?/init.lua",
+  },
+  default = {
+    ROOT = { "spec" },
+    pattern = "_spec",
+  },
+}

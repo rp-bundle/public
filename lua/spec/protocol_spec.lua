@@ -1,0 +1,310 @@
+-- luassert's bundled annotations allow one argument to each assertion, but
+-- every assertion takes a message as its last. The message is what makes a
+-- failure in a loop say which case failed, so it stays.
+---@diagnostic disable: redundant-parameter
+
+-- The Lua half of the conformance corpus. These read the same files under
+-- protocol/corpus/v1/ that tests/protocol.rs does, so the Lua decoder and the
+-- Rust types are each held to the corpus, never to each other.
+--
+-- The Lua side's ratchet: when a variant is added in Rust and its sample
+-- committed, `every corpus file has a decoder` fails until protocol.lua
+-- learns the type, and `every decoder has a corpus file` fails if a type is
+-- added here that the portal does not know.
+
+local lfs = require("lfs")
+local support = require("spec.support")
+
+local DIRECTIONS = { "server_to_portal", "portal_to_server" }
+
+---The corpus files for a direction, by type tag.
+---@param direction string The direction, which is also the directory.
+---@return table<string, string> files Raw file contents by tag.
+local function corpus(direction)
+  local dir = support.path("protocol/corpus/v1/" .. direction)
+  local files = {}
+  for name in lfs.dir(dir) do
+    local tag = name:match("^(.+)%.json$")
+    if tag then
+      files[tag] = support.read("protocol/corpus/v1/" .. direction .. "/" .. name)
+    end
+  end
+  return files
+end
+
+---Sorted keys of a table.
+---@param t table The table.
+---@return string[] keys The keys.
+local function keys(t)
+  local out = {}
+  for key in pairs(t) do
+    out[#out + 1] = key
+  end
+  table.sort(out)
+  return out
+end
+
+---Adds a field to every object at every depth, as tests/protocol.rs does.
+---@param value any A decoded JSON value.
+---@param json rpf.json The codec, for telling objects from arrays.
+local function add_field_everywhere(value, json)
+  if json.is_object(value) then
+    for _, child in pairs(value) do
+      add_field_everywhere(child, json)
+    end
+    value.added_later = "from a later version"
+  elseif json.is_array(value) then
+    for _, item in ipairs(value) do
+      add_field_everywhere(item, json)
+    end
+  end
+end
+
+describe("rpf.protocol against protocol/corpus/v1", function()
+  local rpf_, protocol, json
+
+  before_each(function()
+    rpf_ = support.load_core()
+    protocol, json = rpf_.protocol, rpf_.json
+  end)
+
+  for _, direction in ipairs(DIRECTIONS) do
+    describe(direction, function()
+      it("has a decoder for every corpus file", function()
+        local files = corpus(direction)
+        assert.is_true(#keys(files) > 0, "no corpus files found")
+        for _, tag in ipairs(keys(files)) do
+          assert.is_not_nil(
+            protocol.messages[direction][tag],
+            direction .. "/" .. tag .. ".json has no decoder in lua/core/protocol.lua"
+          )
+        end
+      end)
+
+      it("has a corpus file for every decoder", function()
+        local files = corpus(direction)
+        for _, tag in ipairs(keys(protocol.messages[direction])) do
+          assert.is_not_nil(files[tag], tag .. " is decoded here but has no corpus file")
+        end
+      end)
+
+      it("decodes every corpus file, and re-encodes it to the same JSON", function()
+        for tag, raw in pairs(corpus(direction)) do
+          local frame, err = protocol.decode(direction, raw)
+          assert.is_nil(err, tag)
+          assert.are.equal(tag, frame.type)
+
+          local text, encode_err = protocol.encode(direction, frame)
+          assert.is_nil(encode_err, tag)
+          -- Structural, because the file is pretty-printed and the codec is
+          -- compact: the same JSON, field for field and number for number.
+          assert.are.same(json.decode(raw), json.decode(text), tag)
+          assert.are.equal(json.encode(json.decode(raw)), text, tag)
+        end
+      end)
+
+      it("ignores unknown fields at every depth", function()
+        for tag, raw in pairs(corpus(direction)) do
+          local extended = json.decode(raw)
+          add_field_everywhere(extended, json)
+          local original = protocol.decode(direction, raw)
+          local parsed, err = protocol.decode(direction, assert(json.encode(extended)))
+          assert.is_nil(err, tag)
+          assert.are.same(original, parsed, tag)
+        end
+      end)
+
+      it("rejects an unknown message type", function()
+        local unknown = '{"id":"00000005-0000-4000-8000-000000000005",'
+          .. '"sent_at":"2026-01-01T00:00:00Z","type":"teleport_everyone"}'
+        local frame, err = protocol.decode(direction, unknown)
+        assert.is_nil(frame)
+        assert.truthy(err:find("unknown message type", 1, true))
+        assert.is_nil(protocol.encode(direction, { id = "x", sent_at = "x", type = "teleport_everyone" }))
+      end)
+
+      it("rejects a frame missing any of its fields", function()
+        for tag, raw in pairs(corpus(direction)) do
+          for _, field in ipairs(keys(json.decode(raw))) do
+            local frame = json.decode(raw)
+            frame[field] = nil
+            local decoded, err = protocol.decode(direction, assert(json.encode(frame)))
+            assert.is_nil(decoded, tag .. " without " .. field .. " was accepted")
+            assert.is_string(err)
+          end
+        end
+      end)
+    end)
+  end
+
+  it("holds Hello's config fields to being sent as null, not left out", function()
+    local raw = corpus("server_to_portal").hello
+    local frame = json.decode(raw)
+    frame.config_version = json.null
+    frame.config_hash = json.null
+    local decoded = assert(protocol.decode("server_to_portal", assert(json.encode(frame))))
+    assert.is_nil(decoded.config_version)
+    local text = assert(protocol.encode("server_to_portal", decoded))
+    assert.are.equal(json.null, json.decode(text).config_version)
+    assert.are.equal(json.null, json.decode(text).config_hash)
+  end)
+
+  it("refuses a field of the wrong type", function()
+    local raw = corpus("portal_to_server").apply_command
+    local cases = {
+      function(f)
+        f.command.amount = "250"
+      end,
+      function(f)
+        f.command.amount = 1.5
+      end,
+      function(f)
+        f.command.command = "delete_everything"
+      end,
+      function(f)
+        f.id = "not-a-uuid"
+      end,
+      function(f)
+        f.sent_at = "yesterday"
+      end,
+    }
+    for i, mutate in ipairs(cases) do
+      local frame = json.decode(raw)
+      mutate(frame)
+      assert.is_nil(protocol.decode("portal_to_server", assert(json.encode(frame))), "case " .. i)
+    end
+  end)
+
+  it("bounds money to ±MAX_AMOUNT, the widest amount a double holds exactly", function()
+    local raw = corpus("portal_to_server").apply_command
+    for _, amount in ipairs({ protocol.MAX_AMOUNT, -protocol.MAX_AMOUNT }) do
+      local frame = json.decode(raw)
+      frame.command.amount = amount
+      assert.is_not_nil(protocol.decode("portal_to_server", assert(json.encode(frame))))
+    end
+    local beyond = raw:gsub("%-250", "-9007199254740992")
+    assert.is_nil(protocol.decode("portal_to_server", beyond))
+  end)
+
+  it("decodes every gender the portal can send", function()
+    local raw = corpus("portal_to_server").character_created
+    for _, gender in ipairs({ '"male"', '"female"', '{"server_specific":"Nonbinary"}' }) do
+      local text = raw:gsub('"female"', gender)
+      local frame = assert(protocol.decode("portal_to_server", text))
+      assert.is_not_nil(frame.character.gender)
+    end
+    local bad = raw:gsub('"female"', '"other"')
+    assert.is_nil(protocol.decode("portal_to_server", bad))
+  end)
+
+  describe("classification, mirroring Message::answered_by and Message::reissuable", function()
+    -- These are the values src/protocol/mod.rs gives. Nothing but review
+    -- keeps the two in step, so they are pinned here, where a change has to
+    -- be made deliberately.
+    local ANSWERED_BY = {
+      server_to_portal = {
+        hello = "reply",
+        begin_join = "reply",
+        redeem_ticket = "reply",
+        create_character = "reply",
+        player_dropped = "ack",
+        command_applied = "ack",
+        ack = "nothing",
+      },
+      portal_to_server = {
+        apply_command = "reply",
+        welcome = "ack",
+        rejected = "ack",
+        join_challenge = "ack",
+        player_authenticated = "ack",
+        character_created = "ack",
+        ack = "nothing",
+      },
+    }
+
+    for _, direction in ipairs(DIRECTIONS) do
+      it(direction .. " answers match the Rust classification", function()
+        for tag, spec in pairs(protocol.messages[direction]) do
+          assert.are.equal(ANSWERED_BY[direction][tag], spec.answered_by, tag)
+        end
+      end)
+
+      -- The same rules as answers_are_coherent in tests/protocol.rs.
+      it(direction .. " is coherent: a request has no re, and only an ack goes unanswered", function()
+        for tag, spec in pairs(protocol.messages[direction]) do
+          local has_re = false
+          for _, field in ipairs(spec.fields) do
+            has_re = has_re or field[1] == "re"
+          end
+          if spec.answered_by == "reply" then
+            assert.is_false(has_re, tag .. ": a request carries no re")
+          end
+          assert.are.equal(tag == "ack", spec.answered_by == "nothing", tag)
+          if tag == "ack" then
+            assert.is_true(has_re, "ack: must name what it acknowledges")
+            assert.is_false(spec.reissuable, "ack: never sits in an outbox")
+          end
+        end
+      end)
+    end
+
+    it("reissues only state reports and presence", function()
+      local reissuable = {}
+      for _, direction in ipairs(DIRECTIONS) do
+        for tag, spec in pairs(protocol.messages[direction]) do
+          if spec.reissuable then
+            reissuable[#reissuable + 1] = direction .. "/" .. tag
+          end
+        end
+      end
+      table.sort(reissuable)
+      assert.are.same({ "server_to_portal/command_applied", "server_to_portal/player_dropped" }, reissuable)
+    end)
+
+    it("retries only retry and rate_limited", function()
+      local codes = {
+        "unauthorised",
+        "forbidden",
+        "malformed",
+        "not_found",
+        "retry",
+        "duplicate_instance",
+        "expired",
+        "rate_limited",
+      }
+      local retryable = {}
+      for _, code in ipairs(codes) do
+        if protocol.may_retry(code) then
+          retryable[#retryable + 1] = code
+        end
+      end
+      assert.are.same({ "retry", "rate_limited" }, retryable)
+    end)
+  end)
+
+  describe("envelopes", function()
+    it("mints version 4 uuids", function()
+      local p = support.fake_platform()
+      for _ = 1, 50 do
+        local id = protocol.new_id(p)
+        assert.truthy(id:find("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-4%x%x%x%-[89ab]%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$"), id)
+      end
+    end)
+
+    it("formats sent_at as the portal does", function()
+      assert.are.equal("2026-01-01T00:00:00Z", protocol.timestamp(support.EPOCH_MS))
+      assert.are.equal("2026-01-01T00:02:00Z", protocol.timestamp(support.EPOCH_MS + 120000))
+      assert.are.equal("1970-01-01T00:00:00Z", protocol.timestamp(0))
+      assert.are.equal("2024-02-29T23:59:59.999Z", protocol.timestamp(1709251199999))
+      assert.are.equal("2000-03-01T00:00:00Z", protocol.timestamp(951868800000))
+    end)
+
+    it("redacts credentials for logging, and nothing else", function()
+      local hello = assert(protocol.decode("server_to_portal", corpus("server_to_portal").hello))
+      local redacted = protocol.redact("server_to_portal", hello)
+      assert.are.equal("<redacted>", redacted.api_key)
+      assert.are.equal(hello.instance_id, redacted.instance_id)
+      assert.are.equal("rpf_sample_0000000000000000", hello.api_key)
+    end)
+  end)
+end)
