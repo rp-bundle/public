@@ -1,6 +1,12 @@
 {
+  "id": "00000005-0000-4000-8000-000000000005",
+  "sent_at": "2026-01-01T00:00:00Z",
   "type": "hello",
   "protocol": 1,
-  "server_id": "00000001-0000-4000-8000-000000000001",
-  "token": "server-token"
+  "api_key": "rpf_sample_0000000000000000",
+  "instance_id": "00000007-0000-4000-8000-000000000007",
+  "engine": "mock",
+  "core_version": "0.1.0",
+  "config_version": 7,
+  "config_hash": "sha256:sample"
 }
