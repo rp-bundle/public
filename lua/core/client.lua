@@ -302,7 +302,7 @@ end
 ---```
 ---@param entry rpf.OutboxEntry The entry.
 ---@return string stored What `kv_set` is given.
-local function serialise(entry)
+local function serialize(entry)
   local text = entry.text or ""
   return table.concat({
     client.ENTRY_HEADER,
@@ -316,13 +316,13 @@ local function serialise(entry)
   }, "\n")
 end
 
----Reads one persisted entry. Anything that is not exactly what `serialise`
+---Reads one persisted entry. Anything that is not exactly what `serialize`
 ---writes is refused: it could only have come from corruption, and sending
 ---bytes the core did not produce would be worse than losing them.
 ---@param raw string The stored value.
 ---@param slot integer The slot it was read from.
 ---@return rpf.OutboxEntry? entry The entry, or nil if it is unreadable.
-local function deserialise(raw, slot)
+local function deserialize(raw, slot)
   local header = "^" .. client.ENTRY_HEADER:gsub("%.", "%%.") .. "\n"
   local _, stop, seq, tag, id, request, sent_ms, length =
     raw:find(header .. "(%d+)\n([%w_]+)\n([^\n]+)\n([^\n]+)\n(%d+)\n(%d+)\n")
@@ -355,7 +355,7 @@ end
 ---turning into its reply a single step a crash cannot split.
 ---@param entry rpf.OutboxEntry The entry, with its slot.
 function Client:write(entry)
-  local stored = serialise(entry)
+  local stored = serialize(entry)
   local charge = #stored + reissue_growth(entry.text)
   if not entry.request then
     self.origin_bytes = self.origin_bytes - (entry.bytes or 0) + charge
@@ -479,7 +479,7 @@ function Client:load_outbox()
   for slot = 1, high do
     local raw = self.platform.kv_get(client.OUTBOX_PREFIX .. slot)
     if raw ~= nil then
-      local entry = deserialise(raw, slot)
+      local entry = deserialize(raw, slot)
       if entry then
         highest = slot
         self.slots[slot] = entry
@@ -768,7 +768,7 @@ function Client:send(tag, fields, callback)
     sent_ms = self.platform.now(),
     bytes = 0,
   }
-  local size = #serialise(entry) + reissue_growth(text)
+  local size = #serialize(entry) + reissue_growth(text)
   if not self:has_room(tag, size) then
     if not self.full_logged then
       self.full_logged = true

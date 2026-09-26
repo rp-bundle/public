@@ -157,7 +157,7 @@ local U16 = integer(0, 65535)
 local U64 = integer(0, json.MAX_SAFE_INTEGER)
 local AMOUNT = integer(-protocol.MAX_AMOUNT, protocol.MAX_AMOUNT)
 
----A string from a fixed set, as a Rust unit enum serialises.
+---A string from a fixed set, as a Rust unit enum serializes.
 ---@param values string[] The allowed strings.
 ---@return rpf.protocol.Type type The type.
 local function enum(values)

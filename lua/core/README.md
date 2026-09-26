@@ -98,7 +98,7 @@ A player is an `rpf.PlayerHandle`: whatever the engine uses (a number on
 FiveM, an entity on Gmod). The core only hands it back to the platform.
 
 Messages between server and client carry strings, not tables, for the same
-reason JSON is bundled: the engines serialise tables differently, and the
+reason JSON is bundled: the engines serialize tables differently, and the
 core should decide the bytes.
 
 ## The client platform interface
