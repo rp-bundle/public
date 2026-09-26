@@ -73,3 +73,16 @@ local Log = {}
 ---@param level "debug"|"info"|"warn"|"error" How much it matters.
 ---@param message string The line, without a trailing newline.
 function Log.log(level, message) end
+
+---How the public API reaches other scripts, on both sides.
+---@class rpf.platform.Api
+local Api = {}
+
+---Publishes the public API table: through the resource's export table on an
+---engine where each resource has its own Lua state (FiveM), and as the `rpf`
+---global where every addon shares one (Gmod). Only this table is published,
+---never the rest of `rpf`. Replacing the global is safe, because every core
+---file keeps the internal table in a local of its own, and the adapter keeps
+---its own reference for the engine hooks it wires.
+---@param api rpf.Api The public API, read-only.
+function Api.expose(api) end

@@ -57,6 +57,7 @@ platform.CLIENT = members({
   "to_server",
   "on_server",
   "log",
+  "expose",
 })
 
 ---Lists what a platform table lacks for one side. `engine` must also be a

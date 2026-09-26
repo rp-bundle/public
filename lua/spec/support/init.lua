@@ -7,6 +7,7 @@
 ---instantly and in a fixed order.
 ---@class spec.support
 ---@field root string The repository root, with a trailing slash.
+---@field core rpf The core table `load_core` last loaded. The helpers use it rather than the global, which a test may replace with the public API as the Gmod adapter does.
 local support = {}
 
 local here = debug.getinfo(1, "S").source:sub(2)
@@ -40,6 +41,7 @@ function support.load_core(side)
   for _, file in ipairs(rpf.files[side or "server"]) do
     dofile(support.path("lua/core/" .. file))
   end
+  support.core = rpf
   return rpf
 end
 
@@ -64,6 +66,10 @@ function support.fake_platform(opts)
   ---@field sent string[] Every text frame sent on an open socket, in order.
   ---@field logs { level: string, message: string }[] Every log line.
   ---@field exposed table? What `expose` was given.
+  ---@field player_identifiers table<any, string[]> What `identifiers` reports per player.
+  ---@field kicks { player: any, reason: string }[] Every kick, in order.
+  ---@field to_clients { player: any, name: string, payload: string }[] Every message sent to a client, in order.
+  ---@field client_handlers table<string, fun(player: any, payload: string)> Handlers registered with `on_client`, by name.
   local p = {
     engine = "mock",
     time = opts.time or support.EPOCH_MS,
@@ -74,6 +80,10 @@ function support.fake_platform(opts)
     connects = {},
     sent = {},
     logs = {},
+    player_identifiers = {},
+    kicks = {},
+    to_clients = {},
+    client_handlers = {},
   }
 
   function p.now()
@@ -122,21 +132,27 @@ function support.fake_platform(opts)
     end)
   end
 
-  function p.identifiers()
-    return {}
+  function p.identifiers(player)
+    return p.player_identifiers[player] or {}
   end
 
-  function p.name()
-    return "player"
+  function p.name(player)
+    return "player " .. tostring(player)
   end
 
-  function p.kick() end
+  function p.kick(player, reason)
+    p.kicks[#p.kicks + 1] = { player = player, reason = reason }
+  end
 
   function p.notify() end
 
-  function p.to_client() end
+  function p.to_client(player, name, payload)
+    p.to_clients[#p.to_clients + 1] = { player = player, name = name, payload = payload }
+  end
 
-  function p.on_client() end
+  function p.on_client(name, handler)
+    p.client_handlers[name] = handler
+  end
 
   function p.log(level, message)
     p.logs[#p.logs + 1] = { level = level, message = message }
@@ -194,7 +210,7 @@ function support.fake_platform(opts)
   function p.deliver(frame)
     local text
     if type(frame) == "table" then
-      text = assert(rpf.protocol.encode(rpf.protocol.PORTAL_TO_SERVER, frame))
+      text = assert(support.core.protocol.encode(support.core.protocol.PORTAL_TO_SERVER, frame))
     else
       text = frame
     end
@@ -206,7 +222,7 @@ function support.fake_platform(opts)
   function p.frames()
     local out = {}
     for i, text in ipairs(p.sent) do
-      out[i] = assert(rpf.protocol.decode(rpf.protocol.SERVER_TO_PORTAL, text))
+      out[i] = assert(support.core.protocol.decode(support.core.protocol.SERVER_TO_PORTAL, text))
     end
     return out
   end
@@ -216,6 +232,32 @@ function support.fake_platform(opts)
   function p.last()
     local frames = p.frames()
     return frames[#frames]
+  end
+
+  ---Delivers a message from a player's client, as the engine would: the
+  ---platform names the sender, and the payload is whatever the client sent.
+  ---@param player any The sender's handle.
+  ---@param name string The message name.
+  ---@param payload any The payload, raw.
+  function p.from_client(player, name, payload)
+    local handler = p.client_handlers[name]
+    if handler then
+      handler(player, payload)
+    end
+  end
+
+  ---The decoded payloads of every message of one name sent to a player.
+  ---@param player any The recipient.
+  ---@param name string The message name.
+  ---@return table[] payloads The payloads, decoded, in order.
+  function p.messages_to(player, name)
+    local out = {}
+    for _, message in ipairs(p.to_clients) do
+      if message.player == player and message.name == name then
+        out[#out + 1] = assert(support.core.json.decode(message.payload))
+      end
+    end
+    return out
   end
 
   ---Log lines at a level that contain some text.
@@ -235,29 +277,151 @@ function support.fake_platform(opts)
   return p
 end
 
----A fake client platform, with only what the client interface asks for.
----@return rpf.ClientPlatform platform The platform.
-function support.fake_client_platform()
-  local store = {}
-  return {
+---Builds a fake client platform. The test plays both the game server (the
+---handoff messages) and the portal (the HTTP answers).
+---@param opts { store: table<string, string>?, time: number? }? A shared store (for a rejoin), a start time.
+---@return spec.FakeClient platform The platform.
+function support.fake_client_platform(opts)
+  opts = opts or {}
+  ---A fake client platform. Every request and message is recorded, and
+  ---nothing is answered until the test answers it.
+  ---@class spec.FakeClient: rpf.ClientPlatform
+  ---@field time number The fake clock, in milliseconds.
+  ---@field timers { at: number, seq: integer, fn: fun() }[] Pending `after` callbacks.
+  ---@field seq integer Orders timers due at the same moment.
+  ---@field store table<string, string> The fake key-value store.
+  ---@field requests { method: string, url: string, headers: table, body: string?, callback: fun(status: integer, body: string, headers: table), answered: boolean }[] Every HTTP request, in order.
+  ---@field to_servers { name: string, payload: string }[] Every message sent to the server, in order.
+  ---@field server_handlers table<string, fun(payload: string)> Handlers registered with `on_server`, by name.
+  ---@field logs { level: string, message: string }[] Every log line.
+  ---@field exposed table? What `expose` was given.
+  local c = {
     engine = "mock",
-    http_request = function(_, _, _, _, callback)
-      callback(0, "", {})
-    end,
-    kv_get = function(key)
-      return store[key]
-    end,
-    kv_set = function(key, value)
-      store[key] = value
-    end,
-    now = function()
-      return support.EPOCH_MS
-    end,
-    after = function() end,
-    to_server = function() end,
-    on_server = function() end,
-    log = function() end,
+    time = opts.time or support.EPOCH_MS,
+    timers = {},
+    seq = 0,
+    store = opts.store or {},
+    requests = {},
+    to_servers = {},
+    server_handlers = {},
+    logs = {},
   }
+
+  function c.now()
+    return c.time
+  end
+
+  function c.after(delay_ms, fn)
+    c.seq = c.seq + 1
+    c.timers[#c.timers + 1] = { at = c.time + delay_ms, seq = c.seq, fn = fn }
+  end
+
+  function c.kv_get(key)
+    return c.store[key]
+  end
+
+  function c.kv_set(key, value)
+    c.store[key] = value
+  end
+
+  function c.http_request(method, url, headers, body, callback)
+    c.requests[#c.requests + 1] =
+      { method = method, url = url, headers = headers, body = body, callback = callback, answered = false }
+  end
+
+  function c.to_server(name, payload)
+    c.to_servers[#c.to_servers + 1] = { name = name, payload = payload }
+  end
+
+  function c.on_server(name, handler)
+    c.server_handlers[name] = handler
+  end
+
+  function c.log(level, message)
+    c.logs[#c.logs + 1] = { level = level, message = message }
+  end
+
+  function c.expose(api)
+    c.exposed = api
+  end
+
+  ---Moves the clock forward, running every timer that falls due, in order.
+  ---@param ms number How far.
+  function c.advance(ms)
+    local target = c.time + ms
+    while true do
+      local best
+      for i, timer in ipairs(c.timers) do
+        if timer.at <= target then
+          local b = best and c.timers[best]
+          if not b or timer.at < b.at or (timer.at == b.at and timer.seq < b.seq) then
+            best = i
+          end
+        end
+      end
+      if not best then
+        break
+      end
+      local timer = table.remove(c.timers, best)
+      c.time = timer.at
+      timer.fn()
+    end
+    c.time = target
+  end
+
+  ---Delivers a message from the game server.
+  ---@param name string The message name.
+  ---@param fields table|string The payload: a table, encoded here, or raw text.
+  function c.from_server(name, fields)
+    local payload = type(fields) == "table" and assert(support.core.json.encode(support.core.json.object(fields))) or fields
+    ---@cast payload string
+    local handler = assert(c.server_handlers[name], "nothing handles " .. name)
+    handler(payload)
+  end
+
+  ---The oldest unanswered HTTP request, with its body decoded.
+  ---@return { method: string, url: string, path: string, body: table, index: integer }? request The request, or nil if none is waiting.
+  function c.pending()
+    for i, request in ipairs(c.requests) do
+      if not request.answered then
+        return {
+          method = request.method,
+          url = request.url,
+          path = request.url:match("/api/v1/player/(.*)$") or request.url,
+          body = request.body and assert(support.core.json.decode(request.body)) or {},
+          index = i,
+        }
+      end
+    end
+    return nil
+  end
+
+  ---Answers the oldest unanswered HTTP request.
+  ---@param status integer The status, 0 for no response.
+  ---@param body table|string? The body: a table, encoded here, or raw text.
+  function c.respond(status, body)
+    local waiting = assert(c.pending(), "no request is waiting")
+    local request = c.requests[waiting.index]
+    request.answered = true
+    local text = body or ""
+    if type(body) == "table" then
+      text = assert(support.core.json.encode(support.core.json.object(body)))
+    end
+    ---@cast text string
+    request.callback(status, text, {})
+  end
+
+  ---The names of every message sent to the server, in order.
+  ---@return string[] names The names.
+  function c.sent_names()
+    local out = {}
+    for i, message in ipairs(c.to_servers) do
+      out[i] = message.name
+    end
+    return out
+  end
+
+  return c
 end
 
 ---A portal frame, with a fresh id from a fixed source.
@@ -266,7 +430,7 @@ end
 ---@return rpf.Frame frame The frame, not yet encoded.
 function support.portal_frame(tag, fields)
   support.portal_rng = support.portal_rng or support.fake_platform({ seed = 777 })
-  return rpf.protocol.envelope(support.portal_rng, tag, fields)
+  return support.core.protocol.envelope(support.portal_rng, tag, fields)
 end
 
 ---Starts a connection on a fake platform and completes the handshake.

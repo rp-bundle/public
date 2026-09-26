@@ -36,6 +36,7 @@
 ---@field DEFAULTS rpf.ClientOptions The production timings and bounds, used for anything the caller leaves out.
 local client = {}
 
+local rpf = rpf
 local json = rpf.json
 local protocol = rpf.protocol
 local config = rpf.config

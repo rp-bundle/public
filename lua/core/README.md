@@ -45,8 +45,9 @@ game definitions loaded, so a game global is an error too.
 files each side loads after it and in what order:
 
 ```lua
-rpf.files.server -- json.lua, platform.lua, protocol.lua, config.lua, client.lua
-rpf.files.client -- json.lua, platform.lua
+rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, config.lua,
+                 -- client.lua, players.lua, handoff.lua, join.lua, api.lua
+rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua, api.lua
 ```
 
 Every later file registers itself on `rpf` (`rpf.json = json`) *and* returns
@@ -54,17 +55,31 @@ its table. An adapter can therefore load them with anything that runs a file:
 Gmod's `include` and plain `dofile` keep the return value, and a resource
 manifest that lists the files in this order discards it, which is fine,
 because the file has already registered itself. No file calls `require`, whose
-search path differs on every engine.
+search path differs on every engine. A file may read an earlier file's table
+while it loads, never a later one, and `api.lua` is last because it fronts
+whichever modules its side loaded. `spec/purity_spec.lua` fails on a core file
+that no side declares.
 
-The client never loads `protocol.lua` or `client.lua`, because the player's
-client must never hold the server's API key.
+Every file also keeps the core table in a local (`local rpf = rpf`), so the
+core keeps working after the Gmod adapter replaces the global with the public
+API (see The public API).
+
+The client never loads `protocol.lua`, `client.lua`, `players.lua` or
+`join.lua`, because the player's client must never hold the server's API key
+and has no players to manage.
 
 Then the adapter starts one side:
 
 ```lua
-rpf.start_server(platform, { url = "wss://…/ws", api_key = "rpf_…" })
-rpf.start_client(platform)
+local core = rpf -- the adapter keeps this, for the engine hooks below
+core.start_server(platform, { url = "wss://…/ws", api_key = "rpf_…" })
+core.start_client(platform)
 ```
+
+On the server it wires two engine events, two lines each:
+`core.players.connected(handle)` when the engine hands a player over, and
+`core.players.dropped(handle, reason)` when one leaves. Everything else the
+core does for a player follows from those and from the client's messages.
 
 ## The server platform interface
 
@@ -106,8 +121,10 @@ core should decide the bytes.
 `meta/platform_client.lua`. The client has different capabilities and
 different trust from the server, so it gets its own interface: `engine`,
 `http_request`, `kv_get` / `kv_set` (for the remember token), `now` / `after`,
-`to_server(name, payload)` / `on_server(name, handler)`, and `log`. It has no
-websocket, no `random_hex` and no player management.
+`to_server(name, payload)` / `on_server(name, handler)`, `log`, and `expose`
+(the client's scripts get the public API too, with `auth` in place of
+`players` and `config`). It has no websocket, no `random_hex` and no player
+management.
 
 ## Refusal
 
@@ -311,9 +328,173 @@ journalled command in a higher slot after those limits were lowered.
 
 ### `rpf.config`
 
-`config.load(platform)` and `config.save(platform, version, hash)` persist the
-config version and hash (E2) under `rpf.config.version`. `Hello` reports them,
-or `null` for both on a cold start. D4 adds typed lookups over the snapshot.
+The config the server last applied. `config.apply(platform, version, hash,
+snapshot)` checks a snapshot, persists it with its version and hash in one
+`kv_set` under `rpf.config.applied`, makes it current, and emits
+`config.changed` with `{ version, sections }`: the top-level sections that
+differ from the snapshot before, compared by canonical encoding, so key order
+never counts as a change. A refused snapshot changes nothing. `config.load`
+reads back the version and hash for `Hello` (or `null` for both on a cold
+start), and `rpf.start_server` restores the snapshot before connecting, so
+lookups answer from the last applied config while the portal is still being
+reached.
+
+Typed lookups return copies: `config.item(slug)`, `config.job(slug)`,
+`config.employer(slug)`, `config.setting(key)` and `config.version()`. A
+setting sent as `null` is `json.null`, apart from one never sent.
+
+Nothing calls `apply` yet: E2 defines `ConfigSnapshot` and wires it. Until
+then the snapshot's shape is an assumption held in one place,
+`config.SECTIONS` (`settings` an object by key; `items`, `employers` and
+`jobs` arrays of objects keyed by `slug`). A section not listed there is kept
+and reported in `config.changed`, just not indexed, so E3–E5 adding sections
+is never a refusal.
+
+### `rpf.events`
+
+The bus every module talks through. Modules never call each other to say
+something happened: a module changes its own state through its own functions
+and announces the change here, and anything that cares listens. That keeps
+the load order a list rather than a graph, and means a server owner's script
+hears exactly what the core's own modules hear.
+
+- `on(name, handler)`, `once(name, handler)`, `off(name, handler)` and
+  `emit(name, ...)`. Handlers run in registration order, synchronously. The
+  list is taken when an emit starts, so a handler added during it waits for
+  the next, and one removed during it is skipped.
+- **A handler that throws is logged and skipped**, and the handlers after it
+  still run, so one broken script cannot stop a player's join. Emits nested
+  `MAX_DEPTH` (32) deep are refused and logged, so a cycle is a log line, not
+  a stack overflow.
+- **Core event names are reserved.** The public `emit` refuses anything under
+  `players.`, `config.`, `auth.` or `rpf.`, so a script cannot forge a
+  lifecycle event other scripts would believe.
+
+### `rpf.players`
+
+The players on this server and one state machine per connection:
+
+```
+connecting → authenticating → registered → character_select ⇄ active
+     └────────────┴───────────────┴────────────────┴─────────────┴──→ dropping
+```
+
+Every accepted move emits `players.state_changed(player, from)` and then
+`players.<state>(player, from)`, each with its own copy. Any other move is
+refused and changes nothing. Two kinds of caller move players, through
+separate functions that share one transition check:
+
+- **The login gate** (`connecting → authenticating → registered`) is RPF's
+  own, on every server whatever framework runs the characters (#75). Only
+  `rpf.join` drives it, through `players.authenticating` and
+  `players.register`. One account is one player: registering an account that
+  is already playing here is refused.
+- **`character_select ⇄ active`** is driven through `players.advance(handle,
+  to)` by whichever module owns characters on the server: D5 on a native
+  server, a framework bridge (K2) on a companion one. `advance` refuses the
+  gate's states and `dropping`, so a character owner can neither let a player
+  past login nor forget one the engine still has.
+
+Nothing but the login flow is available while `authenticating`. A module that
+listens to clients registers through `players.on_client(name, handler)`,
+which drops every message from a player who has not logged in, so it cannot
+forget the check.
+
+`players.online()` is the shape F2's `OnlinePlayers` resync is built from:
+registered players only, `{ player_id, username, name, state, connected_at }`,
+sorted by player id, nothing engine-specific. F2 defines and sends the message.
+
+### The login (`rpf.join`, `rpf.handoff`, `rpf.auth`)
+
+The in-game leg of P1 and C6. The client logs in to the portal directly, so
+no server-side code handles a password. That is a mitigation, not a
+guarantee: the community running the server ships the client code. Every UI
+where a player chooses a password shows `auth.PASSWORD_REUSE_WARNING`, which a
+spec holds to the portal's `PASSWORD_REUSE_WARNING` word for word.
+
+1. The client's core starts and sends `rpf:client_ready` (again every 15 s
+   until it hears back). The server moves the player to `authenticating` and
+   sends `BeginJoin` with the engine's identifiers (never `ip:`) and name.
+2. On `JoinChallenge` the server sends the client `rpf:join_nonce`: the nonce,
+   its lifetime (`expires_at − sent_at`, both the portal's clocks), the
+   portal's HTTP address and the server's id.
+3. The client resumes silently from the remember token saved for that server
+   id, or emits `auth.required` for the form. `login`, `register` and
+   `change_password` post to `/api/v1/player/*` with the nonce.
+4. The client sends the grant's ticket in `rpf:join_ticket`. The server sends
+   `RedeemTicket`, registers the player on `PlayerAuthenticated`, and answers
+   `rpf:join_result`. The client emits `auth.succeeded`.
+
+`rpf.handoff` holds the three messages' schemas, loaded by both sides. They
+are not a portal contract, so they have no corpus, but the server decodes
+them as hostile input: size-capped, schema-checked, unknown fields dropped,
+each accepted only in the state it belongs to, one portal request per player
+in flight, and nonces fetched at most once per 10 s per player.
+
+**Joins fail closed.** A player who has not logged in within
+`auth_timeout_ms` (15 minutes by default, because a new player may be reading
+the form and choosing a password) is kicked. The reason says whose fault it
+was: if the portal connection is down, a login request went unanswered, or
+the outbox refused it, the player is told the login service is unreachable
+and that it is not a problem with their account. A `BeginJoin` unanswered for
+`challenge_timeout_ms` (2 minutes) fails the join early, for the same reason.
+
+On the client, each token is kept by its own rule:
+
+- **Remember token**: `kv_set` under `rpf.auth.remember.<server id>`, saved
+  before the ticket is handed over, rotated on every resume. Forgotten only
+  when the portal says `invalid_token`; an outage or a stale nonce says nothing
+  about it.
+- **Session token**: memory only, never `kv`, and never reachable from the
+  public API. It refreshes the P2 API token through `/token`, which never
+  rotates the remember token.
+- **API token**: memory only, refreshed before `api_token_expires_at` (clamped
+  to 10 minutes, because the client's clock may be wrong). Null until P2.
+
+`auth.logout()` forgets the saved login at once, then asks the server for a
+fresh nonce for this connection and posts `{ nonce, remember_token }` (#70),
+so a token read out of shared client storage cannot log its owner out. A
+nonce the portal calls `invalid_nonce` is replaced once with a fresh one.
+
+Events: `auth.required`, `auth.succeeded`, `auth.failed` (with `code`,
+`message`, `during`, and `retry_after` when rate limited) and
+`auth.password_change_required`. The form that calls this is the adapter's
+(Milestone 2).
+
+### The public API
+
+`rpf.api` (`api.lua`) is the documented, supported surface, and the only
+table `platform.expose` publishes: through the resource's export table on
+FiveM, and as the `rpf` global on Gmod. Everything else under `rpf` is
+internal.
+
+| Member | Side | What |
+|---|---|---|
+| `VERSION`, `engine` | both | The core's version, and the engine (`"fivem"`, `"gmod"` or `"mock"`) for owners' scripts. The core never branches on it |
+| `events` | both | `on`, `once`, `off`, `emit` (core names refused) |
+| `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
+| `config` | server | `item`, `job`, `employer`, `setting`, `version` |
+| `auth` | client | `login`, `register`, `change_password`, `logout`, `state`, `account`, `api_token`, `PASSWORD_REUSE_WARNING` |
+| `bridge` | — | Reserved for K2 (Milestone 2), nil now |
+
+Every member is a closure over its module or a plain value, never a module
+table, the connection or the platform, so nothing internal is reachable, and
+every table in it refuses writes, so one script cannot replace `events.on`
+for the others or claim `bridge` first. That stops accidents, not attackers:
+`rawset` and the debug library reach past it.
+
+`meta/api.lua` is the `---@meta` definition of this surface for server
+owners' language servers: add `lua/core/meta/` to `workspace.library` and
+annotate the table your script holds `---@type rpf.Api`. It also reserves, for
+Milestone 2, `rpf.bridge` and the facade's `domain_external` refusal
+(`rpf.api.Refusal`), so nothing assumes RPF always owns characters, money,
+inventory and jobs (#75). Nothing in it names a framework or treats an engine
+handle as a portable id. `spec/api_spec.lua` holds it to exactly the members
+`api.lua` builds.
+
+CI builds an API reference from the annotations
+(`lua-language-server --doc=lua/core`) and uploads it as the
+`lua-api-reference` artifact, so the reference is always the code's own.
 
 ## Testing
 

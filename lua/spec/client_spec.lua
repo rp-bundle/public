@@ -112,7 +112,7 @@ describe("rpf.client", function()
     it("reports the persisted config version and hash", function()
       local store = {}
       local first = support.fake_platform({ store = store })
-      rpf.config.save(first, 7, "sha256:sample")
+      rpf.config.apply(first, 7, "sha256:sample", rpf.json.object({}))
 
       support.load_core()
       local p = support.fake_platform({ store = store })
@@ -126,7 +126,7 @@ describe("rpf.client", function()
     it("treats a corrupt stored config version as a cold start", function()
       local p = support.fake_platform({ store = { [rpf.config.KEY] = '{"version":7}' } })
       assert.is_nil(rpf.config.load(p))
-      assert.are.equal(1, #p.logged("warn", "config version"))
+      assert.are.equal(1, #p.logged("warn", "stored config"))
     end)
 
     it("keeps one instance id per process, and mints a new one per start", function()

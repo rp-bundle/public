@@ -22,4 +22,4 @@ function ToServer.on_server(name, handler) end
 
 ---Everything the player-client half of the core needs from its engine.
 ---`rpf.start_client` refuses a table missing any of it.
----@class rpf.ClientPlatform: rpf.platform.Engine, rpf.platform.Http, rpf.platform.Storage, rpf.platform.Clock, rpf.platform.ToServer, rpf.platform.Log
+---@class rpf.ClientPlatform: rpf.platform.Engine, rpf.platform.Http, rpf.platform.Storage, rpf.platform.Clock, rpf.platform.ToServer, rpf.platform.Log, rpf.platform.Api

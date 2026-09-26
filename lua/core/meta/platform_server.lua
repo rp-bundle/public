@@ -84,16 +84,6 @@ function ToClients.to_client(player, name, payload) end
 ---@param handler fun(player: rpf.PlayerHandle, payload: string) Called for each message. The payload is hostile input.
 function ToClients.on_client(name, handler) end
 
----How the public API reaches other scripts.
----@class rpf.platform.Api
-local Api = {}
-
----Publishes the public API table: through an export table on an engine where
----each resource has its own Lua state, through the `rpf` global where every
----addon shares one. Only this table is published, never the rest of `rpf`.
----@param api table The public API.
-function Api.expose(api) end
-
 ---Everything the game-server half of the core needs from its engine.
 ---`rpf.start_server` refuses a table missing any of it.
 ---@class rpf.ServerPlatform: rpf.platform.Engine, rpf.platform.Transport, rpf.platform.Http, rpf.platform.Clock, rpf.platform.Storage, rpf.platform.Random, rpf.platform.Players, rpf.platform.ToClients, rpf.platform.Log, rpf.platform.Api
