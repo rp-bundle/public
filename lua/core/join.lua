@@ -65,6 +65,7 @@ join.REASONS = {
 ---@field begins integer How many `BeginJoin`s were sent for this connection.
 ---@field last_begin number? When the last one was sent, by the platform clock.
 ---@field redeem_pending boolean Whether a `RedeemTicket` is awaiting its answer.
+---@field renew_scheduled boolean? Whether a deferred nonce request is waiting for the renewal interval to pass.
 ---@field portal_failed boolean Whether a request to the portal for this login went unanswered or could not be sent.
 ---@field kicked boolean Whether the player has been kicked, so nothing else acts for them.
 
@@ -282,17 +283,30 @@ local function decode(name, payload)
 end
 
 ---Fetches a fresh nonce for a player whose client asked, if nothing is in
----flight for them and the last one was not too recent.
+---flight for them.
+---
+---A request inside `renew_interval_ms` of the last `BeginJoin` is not
+---dropped, because the client asks once and waits: it is deferred to the end
+---of the interval, and any further requests before then fold into that one.
+---So a client can never make the server send more than one `BeginJoin` per
+---interval, and a fast logout or retry still gets its nonce.
 ---@param session rpf.join.Session The login.
 local function renew(session)
-  if session.begin_pending or session.redeem_pending then
+  if session.begin_pending or session.redeem_pending or session.renew_scheduled then
     return
   end
-  if session.last_begin and platform.now() - session.last_begin < options.renew_interval_ms then
-    log("debug", "ignored a nonce request from player " .. tostring(session.handle) .. ": too soon")
+  local wait = session.last_begin and session.last_begin + options.renew_interval_ms - platform.now() or 0
+  if wait <= 0 then
+    begin(session)
     return
   end
-  begin(session)
+  session.renew_scheduled = true
+  platform.after(wait, function()
+    session.renew_scheduled = false
+    if current(session) and not session.begin_pending and not session.redeem_pending then
+      begin(session)
+    end
+  end)
 end
 
 ---The client's core has started: move to `authenticating` and fetch a nonce.

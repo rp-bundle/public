@@ -528,16 +528,20 @@ end
 function auth.logout()
   local token = saved_token()
   save_token(nil)
-  -- Cancel any attempt in flight: its answer is ignored (the generation
-  -- moves on), a ticket not yet redeemed can no longer succeed, and the
-  -- player may start a fresh login.
   drop_session()
-  pending, waiting = nil, nil
-  if not account and where then
-    state = "required"
-  elseif account then
-    state = "authenticated"
+  waiting = nil
+  if state == "working" or state == "resuming" then
+    -- A portal request is in flight and nothing has reached the server yet:
+    -- cancel it (the generation has moved on, so its answer is ignored) and
+    -- let the player start a fresh login.
+    pending = nil
+    state = account and "authenticated" or "required"
   end
+  -- A ticket already handed to the server is not cancelled: the server may
+  -- have redeemed it, and the client must not claim otherwise. Its result is
+  -- honoured as usual, which leaves the player exactly where a logout after
+  -- login does: in the game for this session, with nothing saved and no
+  -- session or API token.
   if not token or not where then
     return
   end

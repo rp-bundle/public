@@ -431,7 +431,9 @@ spec holds to the portal's `PASSWORD_REUSE_WARNING` word for word.
 are not a portal contract, so they have no corpus, but the server decodes
 them as hostile input: size-capped, schema-checked, unknown fields dropped,
 each accepted only in the state it belongs to, one portal request per player
-in flight, and nonces fetched at most once per 10 s per player.
+in flight, and nonces fetched at most once per 10 s per player (a request
+inside that is deferred to the end of the interval, not dropped, because the
+client asks once and waits).
 
 **Joins fail closed.** A player who has not logged in within
 `auth_timeout_ms` (15 minutes by default, because a new player may be reading
@@ -455,8 +457,12 @@ On the client, each token is kept by its own rule:
 
 `auth.logout()` forgets the saved login at once, then asks the server for a
 fresh nonce for this connection and posts `{ nonce, remember_token }` (#70),
-so a token read out of shared client storage cannot log its owner out. A
-nonce the portal calls `invalid_nonce` is replaced once with a fresh one.
+so a token read out of shared client storage cannot log its owner out. It
+cancels a login whose portal request is still in flight, but not a ticket
+already handed to the server, which may have redeemed it: that result is
+honoured, leaving the player logged in for this session with nothing saved,
+exactly as a logout after login does. A nonce the portal calls
+`invalid_nonce` is replaced once with a fresh one.
 
 Events: `auth.required`, `auth.succeeded`, `auth.failed` (with `code`,
 `message`, `during`, and `retry_after` when rate limited) and
