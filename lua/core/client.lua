@@ -93,6 +93,24 @@ client.OUTBOX_PREFIX = "rpf.outbox."
 client.SLOTS_KEY = "rpf.outbox.slots"
 client.ENTRY_HEADER = "rpf.outbox.v1"
 
+---The longest `sent_at` `protocol.timestamp` writes, `2026-01-01T00:00:00.000Z`.
+local MAX_SENT_AT = 24
+
+---How many bytes a reissue could add to a frame. A reissue mints a new
+---`sent_at`, and `protocol.timestamp` writes milliseconds only when there are
+---any, so a frame first sent on a whole second grows by `.mmm` when reissued
+---on a fractional one. Ids and the millisecond clock are fixed width. Every
+---bound is checked with this added, so no reissue can take an entry past one.
+---@param text string? The encoded frame, or nil for a pending request.
+---@return integer growth The bytes to reserve.
+local function reissue_growth(text)
+  local sent_at = text and text:match('"sent_at":"([^"]*)"')
+  if not sent_at then
+    return 0
+  end
+  return math.max(0, MAX_SENT_AT - #sent_at)
+end
+
 ---Timings and bounds for the connection. Every one has a production default;
 ---tests shrink them.
 ---@class rpf.ClientOptions
@@ -140,7 +158,7 @@ client.DEFAULTS = {
 ---@field text string? The encoded frame, sent unchanged on every resend. Nil while it is a pending request.
 ---@field sent_ms number When the envelope was minted, by the platform clock. Its age decides reissue or drop. For a pending request, when the request arrived.
 ---@field request string? The portal request this entry journals, by the request's id: pending until its handler replies, then the reply. Nil for a frame this server originated.
----@field bytes integer How long its persisted form is, for the byte bound.
+---@field bytes integer What it counts against the byte bounds: its persisted size plus what a reissue could add (`reissue_growth`), so a reissue never takes it past what was checked.
 ---@field retries integer? How many times the portal has asked for it again with a retryable code, for the backoff.
 
 ---Handles one kind of request from the portal. It must call `reply` exactly
@@ -324,7 +342,7 @@ local function deserialise(raw, slot)
     request = request ~= "-" and request or nil,
     text = not pending and text or nil,
     sent_ms = tonumber(sent_ms) --[[@as number]],
-    bytes = #raw,
+    bytes = #raw + reissue_growth(text),
   }
 end
 
@@ -335,10 +353,11 @@ end
 ---@param entry rpf.OutboxEntry The entry, with its slot.
 function Client:write(entry)
   local stored = serialise(entry)
+  local charge = #stored + reissue_growth(entry.text)
   if not entry.request then
-    self.origin_bytes = self.origin_bytes - (entry.bytes or 0) + #stored
+    self.origin_bytes = self.origin_bytes - (entry.bytes or 0) + charge
   end
-  entry.bytes = #stored
+  entry.bytes = charge
   self.platform.kv_set(client.OUTBOX_PREFIX .. entry.slot, stored)
 end
 
@@ -376,8 +395,61 @@ function Client:erase(entry)
   self.full_logged = false
 end
 
----Reads the persisted outbox. An unreadable entry is skipped and logged, and
----its slot left alone. A pending request, one whose handler started in an
+---The portal request type a journal entry of type `tag` belongs to: `tag`
+---itself for a pending request, or the request a reply answers.
+---@param tag string The stored entry's type.
+---@return string? request_type The request's type, or nil if `tag` is neither.
+local function request_type_for(tag)
+  if UNKNOWN[tag] then
+    return tag
+  end
+  for request_type, unknown in pairs(UNKNOWN) do
+    if (unknown("")) == tag then
+      return request_type
+    end
+  end
+  return nil
+end
+
+---Deals with a slot that does not parse, failing closed for portal requests.
+---
+---If the header still names a portal request, that request may already have
+---run, and the slot was the only durable record of it. Its id is remembered
+---so a resend cannot run it again, and, when its type is known, the slot is
+---taken over as a pending request, which the load answers `unknown`.
+---Anything else is logged as lost and left in its slot, out of `free`, so the
+---bytes stay for a human rather than being overwritten by the next send.
+---@param raw string The stored value.
+---@param slot integer Its slot.
+---@return rpf.OutboxEntry? pending A pending request to answer `unknown`, if one could be recovered.
+function Client:salvage(raw, slot)
+  local header, tag, request = raw:match("^([^\n]*)\n[^\n]*\n([^\n]*)\n[^\n]*\n([^\n]*)\n")
+  local recognised = header == client.ENTRY_HEADER
+    and request
+    and request:find("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$")
+  if not recognised then
+    self:log("error", "the stored outbox entry in slot " .. slot .. " is unreadable; whatever it held is lost")
+    return nil
+  end
+  self:remember(request)
+  local request_type = request_type_for(tag)
+  if not request_type then
+    self:log("error", "the stored outbox entry in slot " .. slot .. " is unreadable; request " .. request .. " will not be run")
+    return nil
+  end
+  self:log("error", "the stored outbox entry in slot " .. slot .. " is unreadable; answering request " .. request .. " as unknown")
+  ---@type rpf.OutboxEntry
+  local entry = { slot = slot, seq = 0, type = request_type, request = request, sent_ms = self.platform.now(), bytes = 0 }
+  self.slots[slot] = entry
+  self.requests[request] = entry
+  self.request_count = self.request_count + 1
+  return entry
+end
+
+---Reads the persisted outbox. An unreadable entry is logged and handled by
+---`salvage`. Every journalled request id is remembered, so a resend that
+---arrives after the portal acks its reply is ignored, as it would be had the
+---request first arrived in this process. A pending request, one whose handler started in an
 ---earlier process and never recorded an outcome, is answered `unknown` here,
 ---before anything is sent: the effect may or may not have happened, and
 ---running the handler again could do it twice.
@@ -409,6 +481,7 @@ function Client:load_outbox()
         if entry.request then
           self.requests[entry.request] = entry
           self.request_count = self.request_count + 1
+          self:remember(entry.request)
         else
           self.origin_count = self.origin_count + 1
           self.origin_bytes = self.origin_bytes + entry.bytes
@@ -419,10 +492,11 @@ function Client:load_outbox()
           pending[#pending + 1] = entry
         end
       else
-        -- Kept out of `free`, so the bytes stay for a human to look at rather
-        -- than being overwritten by the next send.
         highest = slot
-        self:log("warn", "skipping an unreadable stored outbox entry in slot " .. slot)
+        local salvaged = self:salvage(raw, slot)
+        if salvaged then
+          pending[#pending + 1] = salvaged
+        end
       end
     end
   end
@@ -659,7 +733,7 @@ function Client:send(tag, fields, callback)
   if not text then
     error("rpf: cannot send " .. tostring(tag) .. ": " .. tostring(err), 2)
   end
-  if #text > self.options.max_frame_bytes then
+  if #text + reissue_growth(text) > self.options.max_frame_bytes then
     error(
       "rpf: cannot send "
         .. tag
@@ -680,7 +754,7 @@ function Client:send(tag, fields, callback)
     sent_ms = self.platform.now(),
     bytes = 0,
   }
-  local size = #serialise(entry)
+  local size = #serialise(entry) + reissue_growth(text)
   if not self:has_room(tag, size) then
     if not self.full_logged then
       self.full_logged = true
@@ -1090,7 +1164,7 @@ function Client:encode_reply(entry, tag, fields)
   if not text then
     return nil, nil, err
   end
-  if #text > self.options.max_reply_bytes then
+  if #text + reissue_growth(text) > self.options.max_reply_bytes then
     return nil, nil, #text .. " bytes is over the reply limit of " .. self.options.max_reply_bytes
   end
   return frame, text, nil

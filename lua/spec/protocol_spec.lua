@@ -186,25 +186,25 @@ describe("rpf.protocol against protocol/corpus/v1", function()
     assert.is_nil(protocol.decode("portal_to_server", beyond))
   end)
 
-  -- The same strings `command_outcomes_have_fixed_wire_shapes` pins in
-  -- tests/protocol.rs.
-  it("encodes every command outcome as the portal reads it", function()
-    local raw = corpus("server_to_portal").command_applied
-    local outcomes = {
-      '{"outcome":"applied"}',
-      '{"outcome":"failed","reason":"no such account"}',
-      '{"outcome":"unknown","reason":"the game server restarted while applying it"}',
-    }
+  -- `protocol/corpus/v1/command_outcomes.json` holds one sample of every
+  -- `CommandOutcome`, which `tests/protocol.rs` checks against the Rust type.
+  it("round-trips every command outcome in the corpus inside a command_applied", function()
+    local outcomes = assert(json.decode(support.read("protocol/corpus/v1/command_outcomes.json")))
+    assert.is_true(#outcomes >= 3)
+    local seen = {}
     for _, outcome in ipairs(outcomes) do
-      local text = raw:gsub('{%s*"outcome": "applied"%s*}', function()
-        return outcome
-      end)
-      local frame = assert(protocol.decode("server_to_portal", text), outcome)
-      local encoded = json.decode(assert(protocol.encode("server_to_portal", frame)))
-      assert.are.equal(outcome, assert(json.encode(encoded.outcome)))
+      local frame = assert(json.decode(corpus("server_to_portal").command_applied))
+      frame.outcome = outcome
+      local wire = assert(json.encode(outcome))
+      local decoded = assert(protocol.decode("server_to_portal", assert(json.encode(frame))), wire)
+      local encoded = json.decode(assert(protocol.encode("server_to_portal", decoded)))
+      assert.are.equal(wire, assert(json.encode(encoded.outcome)))
+      seen[outcome.outcome] = true
     end
-    local bad = raw:gsub('"applied"', '"maybe"')
-    assert.is_nil(protocol.decode("server_to_portal", bad))
+    assert.is_true(seen.unknown, "the outcome a game server sends when it cannot vouch for one")
+    local bad = assert(json.decode(corpus("server_to_portal").command_applied))
+    bad.outcome = json.object({ outcome = "maybe" })
+    assert.is_nil(protocol.decode("server_to_portal", assert(json.encode(bad))))
   end)
 
   it("decodes every gender the portal can send", function()

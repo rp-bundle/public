@@ -422,7 +422,7 @@ describe("rpf.client", function()
       local p = support.fake_platform({ store = store })
       local connection = rpf.client.new(p, { url = "ws://portal", api_key = "k", instance_id = "i" })
       assert.are.equal(1, #connection.outbox)
-      assert.are.equal(2, #p.logged("warn", "unreadable"))
+      assert.are.equal(2, #p.logged("error", "unreadable; whatever it held is lost"))
       -- Left for a human to look at, not overwritten by the next send.
       connection:send("player_dropped", dropped())
       assert.are.equal('{"id":1}', store[rpf.client.OUTBOX_PREFIX .. 3])
@@ -739,6 +739,62 @@ describe("rpf.client", function()
       assert.are.equal(0, after.runs)
       assert.are.equal(original, restarted.sent[#restarted.sent])
       assert.are.equal("applied", restarted.last().outcome.outcome)
+
+      -- A copy on the wire when the portal acks is ignored after a restart
+      -- too, not only in the process that first ran it.
+      restarted.deliver(support.portal_frame("ack", { re = restarted.last().id }))
+      assert.are.equal(0, #again.outbox)
+      local before = #restarted.sent
+      restarted.deliver(frame)
+      assert.are.equal(0, after.runs)
+      assert.are.equal(before, #restarted.sent)
+    end)
+
+    for _, case in ipairs({
+      { name = "a pending request", reply = false },
+      { name = "a reply", reply = true },
+    }) do
+      it("fails closed when the stored journal entry for " .. case.name .. " is corrupt", function()
+        local store = {}
+        local p = support.fake_platform({ store = store })
+        local connection = support.connected(p)
+        if case.reply then
+          applying(connection)
+        else
+          connection:handle("apply_command", function() end)
+        end
+        local frame = command()
+        p.deliver(frame)
+        local raw = store[rpf.client.OUTBOX_PREFIX .. 1]
+        store[rpf.client.OUTBOX_PREFIX .. 1] = raw:sub(1, #raw - 1)
+
+        support.load_core()
+        local restarted = support.fake_platform({ store = store, seed = 4242 })
+        local again = support.connected(restarted)
+        local after = applying(again)
+        assert.are.equal(1, #restarted.logged("error", "answering request " .. frame.id .. " as unknown"))
+        assert.are.equal("unknown", restarted.last().outcome.outcome)
+        assert.are.equal(frame.id, restarted.last().re)
+        restarted.deliver(frame)
+        assert.are.equal(0, after.runs, "never run again")
+      end)
+    end
+
+    it("never runs a request whose corrupt entry names it but not its type", function()
+      local store = {}
+      local p = support.fake_platform({ store = store })
+      support.connected(p):handle("apply_command", function() end)
+      local frame = command()
+      p.deliver(frame)
+      local raw = store[rpf.client.OUTBOX_PREFIX .. 1]
+      store[rpf.client.OUTBOX_PREFIX .. 1] = raw:gsub("\napply_command\n", "\nsomething_else\n"):sub(1, -2)
+
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 4242 })
+      local after = applying(support.connected(restarted))
+      assert.are.equal(1, #restarted.logged("error", "request " .. frame.id .. " will not be run"))
+      restarted.deliver(frame)
+      assert.are.equal(0, after.runs)
     end)
 
     it("answers unknown when the handler throws, since it may have done part of the work", function()
@@ -945,16 +1001,40 @@ describe("rpf.client", function()
     it("bounds persisted bytes as well as entries", function()
       local p = support.fake_platform()
       local connection = support.connected(p)
-      local one = connection:send("player_dropped", dropped())
-      assert(one)
-      local size = stored_outbox(p)[1].raw
+      assert(connection:send("player_dropped", dropped()))
+      -- Each entry counts its stored size plus room for a reissue's `.mmm`.
+      local charge = #stored_outbox(p)[1].raw + 4
+      assert.are.equal(charge, connection.outbox[1].bytes)
       support.load_core()
       local q = support.fake_platform()
-      local bounded = support.connected(q, { max_bytes = #size * 3 })
+      local bounded = support.connected(q, { max_bytes = charge * 3 })
       assert.truthy(bounded:send("player_dropped", dropped()))
       assert.truthy(bounded:send("player_dropped", dropped()))
       assert.truthy(bounded:send("player_dropped", dropped()))
       assert.is_nil(bounded:send("player_dropped", dropped()))
+    end)
+
+    -- Sent on a whole second, reissued on a fractional one: `sent_at` gains
+    -- `.mmm`, and the bound that admitted the entry must still hold.
+    it("keeps a reissued entry within the bounds it was admitted under", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      assert(connection:send("player_dropped", dropped()))
+      local charge = connection.outbox[1].bytes
+      support.load_core()
+      local q = support.fake_platform()
+      local bounded = support.connected(q, { max_bytes = charge })
+      local id = assert(bounded:send("player_dropped", dropped()))
+      q.advance(123)
+      q.deliver(support.portal_frame("rejected", { re = id, code = "expired", reason = "too old" }))
+      local reissued = bounded.outbox[1]
+      assert.truthy(rpf.json.decode(reissued.text).sent_at:find("%.%d%d%dZ$"), "reissued on a fractional second")
+      assert.is_true(bounded.origin_bytes <= charge)
+      assert.are.equal(#stored_outbox(q)[1].raw, charge, "the growth was already counted")
+
+      local limit = #p.sent[#p.sent] + 4
+      local exact = support.connected(support.fake_platform(), { max_frame_bytes = limit - 1 })
+      assert.is_false(pcall(exact.send, exact, "player_dropped", dropped()), "no room for the reissue's growth")
     end)
 
     it("keeps room for state reports when requests pile up", function()

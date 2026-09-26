@@ -215,7 +215,9 @@ reply replaces the journal entry in the same storage slot, with one
   logged and ignored: one command has one outcome.
 - **The reply is delivered at least once**: it is an ordinary outbox entry,
   resent under its id until the portal acks it. After the ack the entry is
-  deleted and the id is remembered only in memory.
+  deleted and the id is remembered only in memory. A load remembers every
+  journalled id too, so a copy that arrives after the ack is ignored in a
+  restarted process as well.
 
 The crash windows, in order:
 
@@ -253,7 +255,15 @@ sequence number in each entry, so there is no index to rewrite. An entry is a
 seven-line header and then the frame verbatim, not a JSON wrapper, which
 would escape every quote in the frame again (up to doubling it) and make a
 load parse every byte. The overhead is a fixed ~150 bytes. An entry that does
-not parse exactly is skipped, logged and left in place.
+not parse exactly fails closed: if its header still names a portal request,
+that id is never run again and, when its type is readable, it is answered
+`unknown` in place; anything else is logged as lost and left in its slot for
+a human.
+
+Every byte bound counts an entry at its stored size plus what a reissue could
+add (`sent_at` gains `.mmm` when a frame first sent on a whole second is
+reissued on a fractional one), so a reissue never takes the outbox, a frame
+or a reply past the bound that admitted it.
 
 The bounds, all in `client.DEFAULTS`:
 
