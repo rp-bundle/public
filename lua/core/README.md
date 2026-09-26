@@ -323,5 +323,5 @@ busted                                   # whichever Lua busted was installed fo
 lua-language-server --check=. --checklevel=Warning
 ```
 
-Run the suite under both LuaJIT and Lua 5.4. `CLAUDE.md`'s Testing section has
+Run the suite under both LuaJIT and Lua 5.4. `AGENTS.md`'s Testing section has
 the commands, including installing busted for each without root.
