@@ -65,6 +65,8 @@ join.REASONS = {
 ---@field begins integer How many `BeginJoin`s were sent for this connection.
 ---@field last_begin number? When the last one was sent, by the platform clock.
 ---@field redeem_pending boolean Whether a `RedeemTicket` is awaiting its answer.
+---@field renew_wanted boolean? Whether a nonce request arrived while a redemption was in flight, to serve once it is answered.
+---@field client_trouble boolean? Whether the client said it could not reach the portal. Unverifiable: it only words this player's own kick.
 ---@field renew_scheduled boolean? Whether a deferred nonce request is waiting for the renewal interval to pass.
 ---@field portal_failed boolean Whether a request to the portal for this login went unanswered or could not be sent.
 ---@field kicked boolean Whether the player has been kicked, so nothing else acts for them.
@@ -143,7 +145,11 @@ end
 ---@param session rpf.join.Session The login.
 ---@return boolean blame True if the kick should say the portal is unreachable.
 local function portal_at_fault(session)
-  return connection.state ~= "ready" or session.portal_failed or session.begin_pending ~= nil or session.redeem_pending
+  return connection.state ~= "ready"
+    or session.portal_failed
+    or session.client_trouble
+    or session.begin_pending ~= nil
+    or session.redeem_pending
 end
 
 ---The identifiers sent in `BeginJoin`: everything the engine reports except
@@ -224,12 +230,52 @@ local function begin(session)
   end)
 end
 
+---Fetches a fresh nonce for a player whose client asked, if nothing is in
+---flight for them.
+---
+---A request inside `renew_interval_ms` of the last `BeginJoin` is not
+---dropped, because the client asks once and waits: it is deferred to the end
+---of the interval, and any further requests before then fold into that one.
+---So a client can never make the server send more than one `BeginJoin` per
+---interval, and a fast logout or retry still gets its nonce.
+---@param session rpf.join.Session The login.
+local function renew(session)
+  if session.redeem_pending then
+    -- Served once the redemption is answered: a client logging out straight
+    -- after handing over its ticket still gets its nonce.
+    session.renew_wanted = true
+    return
+  end
+  if session.begin_pending or session.renew_scheduled then
+    -- The nonce already on its way answers this request too.
+    return
+  end
+  local wait = session.last_begin and session.last_begin + options.renew_interval_ms - platform.now() or 0
+  if wait <= 0 then
+    begin(session)
+    return
+  end
+  session.renew_scheduled = true
+  platform.after(wait, function()
+    session.renew_scheduled = false
+    if current(session) and not session.begin_pending and not session.redeem_pending then
+      begin(session)
+    end
+  end)
+end
+
 ---Handles the portal's answer to `RedeemTicket`.
 ---@param session rpf.join.Session The login.
 ---@param reply rpf.Frame? The answer.
 ---@param err string? Why there was none.
 local function redeemed(session, reply, err)
   session.redeem_pending = false
+  if session.renew_wanted then
+    session.renew_wanted = false
+    if current(session) then
+      renew(session)
+    end
+  end
   if not live(session) then
     return
   end
@@ -282,33 +328,6 @@ local function decode(name, payload)
   return fields
 end
 
----Fetches a fresh nonce for a player whose client asked, if nothing is in
----flight for them.
----
----A request inside `renew_interval_ms` of the last `BeginJoin` is not
----dropped, because the client asks once and waits: it is deferred to the end
----of the interval, and any further requests before then fold into that one.
----So a client can never make the server send more than one `BeginJoin` per
----interval, and a fast logout or retry still gets its nonce.
----@param session rpf.join.Session The login.
-local function renew(session)
-  if session.begin_pending or session.redeem_pending or session.renew_scheduled then
-    return
-  end
-  local wait = session.last_begin and session.last_begin + options.renew_interval_ms - platform.now() or 0
-  if wait <= 0 then
-    begin(session)
-    return
-  end
-  session.renew_scheduled = true
-  platform.after(wait, function()
-    session.renew_scheduled = false
-    if current(session) and not session.begin_pending and not session.redeem_pending then
-      begin(session)
-    end
-  end)
-end
-
 ---The client's core has started: move to `authenticating` and fetch a nonce.
 ---A client that says so again (its core restarted, or it never heard back)
 ---is asking for a nonce, under the same limit as any other request.
@@ -343,6 +362,18 @@ local function on_nonce_request(handle, payload)
     return
   end
   renew(session)
+end
+
+---The client could not reach the portal. A client can say this falsely,
+---but all it gains is a kinder wording of its own kick, so it is believed
+---while the player is logging in.
+---@param handle rpf.PlayerHandle The sender.
+---@param payload string The payload.
+local function on_trouble(handle, payload)
+  local session = sessions[handle]
+  if session and live(session) and decode(handoff.PORTAL_TROUBLE, payload) then
+    session.client_trouble = true
+  end
 end
 
 ---The client has a join ticket: redeem it.
@@ -426,6 +457,7 @@ function join.start(p, client, settings)
   p.on_client(handoff.CLIENT_READY, on_ready)
   p.on_client(handoff.NONCE_REQUEST, on_nonce_request)
   p.on_client(handoff.TICKET, on_ticket)
+  p.on_client(handoff.PORTAL_TROUBLE, on_trouble)
 end
 
 rpf.join = join

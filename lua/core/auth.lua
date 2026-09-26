@@ -185,6 +185,11 @@ end
 local function fail(failure)
   state = account and "authenticated" or "required"
   pending = nil
+  if not account and (failure.code == "portal_unreachable" or failure.code == "portal_error") then
+    -- The server cannot see this client's HTTP calls. Telling it keeps a
+    -- later timeout kick from blaming the player for the portal's outage.
+    platform.to_server(handoff.PORTAL_TROUBLE, handoff.encode(handoff.PORTAL_TROUBLE))
+  end
   events.emit("auth.failed", failure)
 end
 

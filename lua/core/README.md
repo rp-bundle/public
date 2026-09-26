@@ -427,7 +427,7 @@ spec holds to the portal's `PASSWORD_REUSE_WARNING` word for word.
    `RedeemTicket`, registers the player on `PlayerAuthenticated`, and answers
    `rpf:join_result`. The client emits `auth.succeeded`.
 
-`rpf.handoff` holds the three messages' schemas, loaded by both sides. They
+`rpf.handoff` holds the handoff messages' schemas, loaded by both sides. They
 are not a portal contract, so they have no corpus, but the server decodes
 them as hostile input: size-capped, schema-checked, unknown fields dropped,
 each accepted only in the state it belongs to, one portal request per player
@@ -438,8 +438,9 @@ client asks once and waits).
 **Joins fail closed.** A player who has not logged in within
 `auth_timeout_ms` (15 minutes by default, because a new player may be reading
 the form and choosing a password) is kicked. The reason says whose fault it
-was: if the portal connection is down, a login request went unanswered, or
-the outbox refused it, the player is told the login service is unreachable
+was: if the portal connection is down, a login request went unanswered, the
+outbox refused it, or the client reported (`rpf:join_portal_trouble`) that its
+own call to the portal failed, the player is told the login service is unreachable
 and that it is not a problem with their account. A `BeginJoin` unanswered for
 `challenge_timeout_ms` (2 minutes) fails the join early, for the same reason.
 

@@ -15,6 +15,7 @@
 ---@field NONCE_REQUEST string Client → server: the nonce ran out (or is about to); please fetch another.
 ---@field TICKET string Client → server: a join ticket for the server to redeem.
 ---@field RESULT string Server → client: whether the ticket was redeemed.
+---@field PORTAL_TROUBLE string Client → server: the client could not reach the portal (or the portal failed). Unverifiable, and only ever used to word this player's own timeout kick so an outage does not read as their fault.
 ---@field MAX_PAYLOAD integer The longest payload decoded, in bytes. Real ones are a few hundred.
 ---@field schemas table<string, table<string, rpf.handoff.FieldKind>> Each message's fields and their kinds.
 local handoff = {}
@@ -27,6 +28,7 @@ handoff.NONCE = "rpf:join_nonce"
 handoff.NONCE_REQUEST = "rpf:join_nonce_request"
 handoff.TICKET = "rpf:join_ticket"
 handoff.RESULT = "rpf:join_result"
+handoff.PORTAL_TROUBLE = "rpf:join_portal_trouble"
 handoff.MAX_PAYLOAD = 4096
 
 ---How one field is checked. A trailing `?` means it may be absent.
@@ -35,6 +37,7 @@ handoff.MAX_PAYLOAD = 4096
 handoff.schemas = {
   [handoff.CLIENT_READY] = {},
   [handoff.NONCE_REQUEST] = {},
+  [handoff.PORTAL_TROUBLE] = {},
   [handoff.NONCE] = {
     nonce = "string",
     expires_in_ms = "number",
