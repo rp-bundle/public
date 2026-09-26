@@ -57,7 +57,7 @@ function Storage.kv_get(key) end
 ---the key holds the old value or the new one, never part of either, and a
 ---value `kv_set` returned from is not lost. The outbox's at-most-once rule
 ---for portal requests rests on this (see `lua/core/README.md`). On FiveM that
----means `SetResourceKvp`, not the `NoSync` variants. Values reach a little
+---means the synchronous KVP setter, not the no-sync one. Values reach a little
 ---over 1 MiB, the portal's frame limit plus a header, and about 9 MiB in
 ---total under the default outbox bounds.
 ---@param key string A key the core chose, always prefixed `rpf.`.
