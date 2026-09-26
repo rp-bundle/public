@@ -173,8 +173,9 @@ The game server's connection to the portal (`rpf.connection` once started).
   byte for byte, in order, under its original id, which is what C3's request
   log relies on. A `Rejected` with `retry` or `rate_limited` resends under the
   same id after a backoff. Any other refusal is final.
-- **The outbox is persisted** through `kv_set` under `rpf.outbox`, written
-  before a frame is sent, so it survives a restart.
+- **The outbox is persisted** through `kv_set`, written before a frame is
+  sent, so it survives a restart. See The outbox, below, for its layout and
+  bounds.
 - **The retry window.** When an entry reaches C3's retry window minus a
   margin (7 days minus 12 hours by default), or the portal refuses it as
   `expired`, a reissuable entry (a state report) is re-sent under a fresh id
@@ -188,10 +189,110 @@ The game server's connection to the portal (`rpf.connection` once started).
   good.
 - **`instance_id`** is minted once per process start and never persisted.
 - **Inbound frames** are decoded as hostile input: one that does not decode is
-  logged and dropped. Replies and notices are acked. A duplicate is acked
-  again and not handled again. Requests (`apply_command`) go to the handler
-  registered with `connection:handle(type, handler)`. Until D5 registers one, a
-  command is answered as failed, so the portal is never left waiting.
+  logged and dropped. Replies and notices are acked, and a duplicate of one is
+  acked again and not handled again. Requests (`apply_command`) go to the
+  handler registered with `connection:handle(type, handler)`, under the rules
+  in Portal requests, below. Until D5 registers one, a command is answered as
+  failed (truthfully: nothing ran), so the portal is never left waiting.
+
+#### Portal requests: the delivery guarantee
+
+A portal request is journalled before its handler runs, and the handler's
+reply replaces the journal entry in the same storage slot, with one
+`kv_set`. That gives, across reconnects and restarts:
+
+- **At most once.** A request id is handed to a handler once. A duplicate of
+  an answered request gets the original reply again, byte for byte under the
+  same id. A duplicate while the handler is still running starts nothing, and
+  the one reply, which names the request in `re`, answers every copy. A
+  duplicate that arrives after the portal acked the reply is ignored.
+- **An outcome is never guessed.** If the handler started and no outcome was
+  recorded, the answer is `command_applied` with outcome `unknown`, never
+  `failed` or `applied`, and the handler is never run again to find out. That
+  covers a restart mid-handler (answered at load, before anything is sent), a
+  handler that throws, and one that has not replied after
+  `request_timeout_ms` (5 minutes). A reply after that, or a second reply, is
+  logged and ignored: one command has one outcome.
+- **The reply is delivered at least once**: it is an ordinary outbox entry,
+  resent under its id until the portal acks it. After the ack the entry is
+  deleted and the id is remembered only in memory.
+
+The crash windows, in order:
+
+1. Before the journal entry is written: nothing ran and nothing is stored.
+   The portal resends, and the request runs then.
+2. After the journal entry, before the reply is stored: the game effect may
+   or may not have happened, because an engine effect and a `kv_set` cannot
+   be atomic. This window is reported as `unknown`, which C4 shows staff as
+   "may or may not have been applied". Commands carry their own idempotency
+   key (`AdjustBalance.client_id`) and, with F5, a revision, so a handler that
+   can check its own effect is how D5 narrows this window further.
+3. After the reply is stored: the portal gets that reply, however often it
+   asks.
+
+This is **not exactly-once**, and nothing may claim it is. It rests on three
+assumptions: `kv_set` is atomic per key and durable when it returns (see
+`meta/platform_shared.lua`); the portal records a reply before acking it and
+never resends a request it has the reply to; and the game server's storage
+survives. A wiped store, or two hosts sharing one, loses the journal as it
+loses the outbox.
+
+A request that arrives when `max_requests` (64) are already journalled is
+neither run nor remembered, and the portal's next resend gets another chance.
+A new kind of portal request is not handed to any handler until
+`client.lua`'s `UNKNOWN` table says what it is answered with when
+interrupted.
+
+#### The outbox
+
+Each entry is its own key, `rpf.outbox.<slot>`, and `rpf.outbox.slots` holds
+the highest slot in use. Adding, answering or reissuing an entry writes that
+entry alone, whatever else is queued, and a freed slot is reused, so a load
+reads at most as many keys as were ever held at once. Order comes from a
+sequence number in each entry, so there is no index to rewrite. An entry is a
+seven-line header and then the frame verbatim, not a JSON wrapper, which
+would escape every quote in the frame again (up to doubling it) and make a
+load parse every byte. The overhead is a fixed ~150 bytes. An entry that does
+not parse exactly is skipped, logged and left in place.
+
+The bounds, all in `client.DEFAULTS`:
+
+| Bound | Default | Why |
+|---|---|---|
+| `max_frame_bytes` | 1 MiB | The portal's `limits::MAX_FRAME_BYTES`; a spec reads `limits.rs` to keep them equal. A larger frame would be refused on arrival, so `send` refuses it at once with an error. It also caps any one stored value at 1 MiB plus the header |
+| `max_entries` | 2048 | Frames this server originates. A day's outage on a busy server is a few hundred joins and leaves, and C7's reports are per record and superseded by revision, so thousands is headroom, while a load still reads only a couple of thousand keys |
+| `max_bytes` | 8 MiB | Their stored size. Eight maximum-size frames, or thousands of ordinary ones. It bounds the disk the engine's store takes and what a load reads at start, which is plain string scanning with no JSON parse |
+| `request_share` | 0.5 | Non-reissuable requests (`begin_join`, `redeem_ticket`, `create_character`) may use only half of both, so they cannot crowd out state reports. They are also useless long after the player who asked has gone |
+| `max_requests` | 64 | Journalled portal requests, which with their replies have a budget of their own, so a full outbox never stops a command from being answered |
+| `max_reply_bytes` / `max_reason_bytes` | 8 KiB / 1 KiB | A reply's `reason` is cut at a character boundary, so replies take at most 64 × 8 KiB beside `max_bytes` |
+
+The platform limits these are sized against are what the adapters must
+provide, because there is no adapter yet to measure: whatever store D2
+(FiveM's resource KVP) and D8 (Gmod's data store) use has to take one value
+of 1 MiB plus the header, and about 9 MiB in total (`max_bytes` plus the
+replies' share). Neither documents a smaller cap, and D2 and D8 each confirm
+theirs with a test at the bound. If one cannot, the adapter lowers
+`max_frame_bytes` and `max_bytes` through the client options.
+
+At capacity, behaviour follows the message type:
+
+- **State reports and notices** (reissuable) use the whole budget. One that
+  does not fit is refused, not queued: `send` returns `nil, "outbox_full"`,
+  and its callback, if given, is called with `nil, "outbox_full"`. Nothing
+  already queued is dropped to make room, and a refusal is never reported as
+  a success. The caller keeps the report and sends it again later, when a
+  newer one supersedes it anyway.
+- **Requests** get the same refusal once they reach `request_share`.
+- **Replies to portal requests** are never refused, because they have their
+  own budget; a request that would exceed it is not run (above).
+- A full outbox logs one warning, not one per refusal, until something is
+  answered.
+
+Recovery: entries leave the outbox as the portal answers them, and each
+answer frees its slot and its bytes at once, so the next `send` fits. A
+restart loads every stored entry even if the bounds have since been lowered,
+because dropping one would lose state, and refuses new frames until it
+drains.
 
 ### `rpf.config`
 

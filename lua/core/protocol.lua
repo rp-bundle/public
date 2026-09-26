@@ -380,6 +380,7 @@ local COMMAND = tagged("command", {
 local OUTCOME = tagged("outcome", {
   applied = {},
   failed = { { "reason", STRING } },
+  unknown = { { "reason", STRING } },
 })
 
 ---Every `RejectCode`, as its wire string.

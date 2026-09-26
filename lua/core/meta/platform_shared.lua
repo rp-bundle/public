@@ -52,6 +52,14 @@ function Storage.kv_get(key) end
 
 ---Stores a value, replacing any earlier one. Strings only, so every engine
 ---stores the same bytes and the core owns the encoding.
+---
+---It must be **atomic per key and durable when it returns**: after a crash
+---the key holds the old value or the new one, never part of either, and a
+---value `kv_set` returned from is not lost. The outbox's at-most-once rule
+---for portal requests rests on this (see `lua/core/README.md`). On FiveM that
+---means `SetResourceKvp`, not the `NoSync` variants. Values reach a little
+---over 1 MiB, the portal's frame limit plus a header, and about 9 MiB in
+---total under the default outbox bounds.
 ---@param key string A key the core chose, always prefixed `rpf.`.
 ---@param value string? The value, or nil to delete it.
 function Storage.kv_set(key, value) end

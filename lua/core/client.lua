@@ -5,7 +5,8 @@
 ---
 --- - **Every frame except `Ack` waits in the outbox until a frame whose `re` is
 ---   its id arrives** (its reply, a `Rejected`, or an `Ack`). The outbox is
----   persisted through `kv_set`, so a restart does not lose a state report.
+---   persisted through `kv_set`, one key per entry, so a restart does not lose
+---   a state report and an enqueue writes only its own entry.
 --- - **A resend reuses the frame's id.** After a reconnect every entry goes out
 ---   again byte for byte, which is what lets the portal's request log (C3)
 ---   recognise a retry instead of running it twice.
@@ -14,14 +15,24 @@
 ---   because its content is idempotent and losing it would lose money or
 ---   inventory. Anything else would be a second request, so it is dropped and
 ---   logged.
+--- - **The outbox is bounded**, in entries and in persisted bytes. A frame that
+---   does not fit is refused to its caller, never dropped behind its back, and
+---   state reports and replies are never crowded out by requests.
+--- - **A portal request runs at most once.** It is journalled in the outbox
+---   before its handler runs, and the journal entry becomes the reply, so a
+---   retried request, on the same connection or after a restart, gets the
+---   original reply. A request whose handler started but never recorded an
+---   outcome is answered `unknown`, never run again and never guessed at.
 --- - **Reconnects back off exponentially, plus random jitter**, so a portal
 ---   restart does not bring every game server back in the same second.
 ---
 ---Every timer goes through the platform clock, so all of this runs instantly
 ---and deterministically under the mock.
 ---@class rpf.client
----@field OUTBOX_KEY string The storage key the outbox is persisted under.
----@field DEFAULTS rpf.ClientOptions The production timings, used for anything the caller leaves out.
+---@field OUTBOX_PREFIX string Each outbox entry is persisted under this prefix and its slot number.
+---@field SLOTS_KEY string Where the highest slot number in use is persisted, so a load knows how far to look.
+---@field ENTRY_HEADER string The first line of every persisted entry, naming its format.
+---@field DEFAULTS rpf.ClientOptions The production timings and bounds, used for anything the caller leaves out.
 local client = {}
 
 local json = rpf.json
@@ -31,18 +42,75 @@ local config = rpf.config
 local OUT = protocol.SERVER_TO_PORTAL
 local IN = protocol.PORTAL_TO_SERVER
 
-client.OUTBOX_KEY = "rpf.outbox"
+---What a request from the portal gets when no module has registered for it:
+---a refusal the portal can record, rather than silence it would wait on.
+---Nothing ran, so `failed` is the truth, not a guess.
+---@type table<string, rpf.RequestHandler>
+local FALLBACKS = {
+  apply_command = function(frame, reply)
+    reply("command_applied", {
+      outcome = { outcome = "failed", reason = "this server has no handler for " .. frame.command.command },
+    })
+  end,
+}
 
----Timings for the connection. Every one has a production default; tests
----shrink them.
+---The reply to each kind of portal request when its handler started and the
+---core cannot say what happened: a restart mid-handler, a handler that threw,
+---or one that never replied. The effect may or may not have taken place, so
+---the answer is `unknown`, never `failed` or `applied`.
+---
+---A request type with no entry here is never handed to a handler, because
+---the core would have no honest answer for it after a crash. A new portal
+---request lands with its entry.
+---@type table<string, fun(reason: string): string, table>
+local UNKNOWN = {
+  apply_command = function(reason)
+    return "command_applied", { outcome = { outcome = "unknown", reason = reason } }
+  end,
+}
+
+---Cuts a string to at most `limit` bytes without splitting a UTF-8 sequence.
+---@param text string The string.
+---@param limit integer The most bytes to keep.
+---@return string clipped The string, or its longest prefix that fits.
+local function clip(text, limit)
+  if #text <= limit then
+    return text
+  end
+  local stop = limit
+  -- Back off while the byte after the cut continues a sequence (10xxxxxx).
+  while stop > 0 do
+    local next_byte = text:byte(stop + 1)
+    if next_byte < 128 or next_byte >= 192 then
+      break
+    end
+    stop = stop - 1
+  end
+  return text:sub(1, stop)
+end
+
+client.OUTBOX_PREFIX = "rpf.outbox."
+client.SLOTS_KEY = "rpf.outbox.slots"
+client.ENTRY_HEADER = "rpf.outbox.v1"
+
+---Timings and bounds for the connection. Every one has a production default;
+---tests shrink them.
 ---@class rpf.ClientOptions
 ---@field backoff_base_ms number? The first reconnect delay, before jitter. Doubles on each failed attempt.
 ---@field backoff_max_ms number? The longest reconnect delay, before jitter.
 ---@field jitter number? The largest random extra, as a fraction of the delay: 0.5 adds up to half again.
 ---@field retry_window_ms number? How long the portal remembers a request id (C3's TTL), which is how old an entry may get before it is reissued or dropped.
 ---@field window_margin_ms number? How long before the window closes an entry is dealt with, to cover clock drift between the hosts and a frame still in flight.
----@field sweep_interval_ms number? How often the outbox is checked against the window while running.
+---@field sweep_interval_ms number? How often the outbox is checked against the window, and running requests against their timeout.
 ---@field seen_limit integer? How many inbound frame ids are remembered to recognise a duplicate.
+---@field max_frame_bytes integer? The largest encoded frame `send` accepts. Mirrors the portal's `limits::MAX_FRAME_BYTES`, which refuses anything larger, so queueing one would only fill the outbox with a frame that can never be delivered.
+---@field max_entries integer? How many frames this server originates (notices, state reports, requests) may wait in the outbox at once.
+---@field max_bytes integer? How many persisted bytes those frames may take.
+---@field request_share number? The fraction of `max_entries` and `max_bytes` that non-reissuable requests may use, so a pile of joins during an outage cannot crowd out state reports.
+---@field max_requests integer? How many portal requests may be journalled at once: running, or answered and waiting for the portal's `Ack`. Their replies have this budget to themselves.
+---@field max_reply_bytes integer? The largest encoded reply to a portal request. With `max_requests` it bounds the replies' share of storage.
+---@field max_reason_bytes integer? The longest free-text `reason` a command outcome carries. Longer ones are cut, so a verbose handler cannot push its reply past `max_reply_bytes`.
+---@field request_timeout_ms number? How long a portal request's handler may run before it is answered `unknown`, so a handler that never replies cannot hold a journal slot, or the portal, forever.
 client.DEFAULTS = {
   backoff_base_ms = 1000,
   backoff_max_ms = 60 * 1000,
@@ -51,21 +119,37 @@ client.DEFAULTS = {
   window_margin_ms = 12 * 60 * 60 * 1000,
   sweep_interval_ms = 60 * 1000,
   seen_limit = 1024,
+  max_frame_bytes = 1024 * 1024,
+  max_entries = 2048,
+  max_bytes = 8 * 1024 * 1024,
+  request_share = 0.5,
+  max_requests = 64,
+  max_reply_bytes = 8 * 1024,
+  max_reason_bytes = 1024,
+  request_timeout_ms = 5 * 60 * 1000,
 }
 
----One frame waiting for its answer. The encoded text is kept, not the Lua
----table, so a resend is the same bytes.
+---One outbox entry: a frame waiting for its answer, or a portal request
+---whose handler has not yet recorded an outcome. The encoded text is kept,
+---not the Lua table, so a resend is the same bytes.
 ---@class rpf.OutboxEntry
----@field id string The frame's envelope id, which its answer names in `re`.
----@field type string The message type, so the entry can be classified without decoding.
----@field text string The encoded frame, sent unchanged on every resend.
----@field sent_ms number When the envelope was minted, by the platform clock. Its age decides reissue or drop.
+---@field slot integer Where it is persisted: under `OUTBOX_PREFIX .. slot`.
+---@field seq integer Its place in send order. Only ever grows, so a load can restore the order without an index.
+---@field id string? The frame's envelope id, which its answer names in `re`. Nil while it is a pending request.
+---@field type string The message type, so the entry can be classified without decoding. For a pending request, the request's type.
+---@field text string? The encoded frame, sent unchanged on every resend. Nil while it is a pending request.
+---@field sent_ms number When the envelope was minted, by the platform clock. Its age decides reissue or drop. For a pending request, when the request arrived.
+---@field request string? The portal request this entry journals, by the request's id: pending until its handler replies, then the reply. Nil for a frame this server originated.
+---@field bytes integer How long its persisted form is, for the byte bound.
 ---@field retries integer? How many times the portal has asked for it again with a retryable code, for the backoff.
 
----Handles one kind of request from the portal.
+---Handles one kind of request from the portal. It must call `reply` exactly
+---once, now or later; a second call is ignored.
 ---@alias rpf.RequestHandler fun(frame: rpf.Frame, reply: fun(tag: string, fields: table?))
 
----Called once with a frame's answer, or with an error if it never got one.
+---Called once with a frame's answer, or with an error if it never got one:
+---`"expired"` when the retry window closed on it, `"outbox_full"` when it
+---was refused at `send`.
 ---@alias rpf.ReplyCallback fun(reply: rpf.Frame?, err: string?)
 
 ---What to construct a connection with.
@@ -73,7 +157,7 @@ client.DEFAULTS = {
 ---@field url string The portal's websocket url.
 ---@field api_key string The API key (C2). A secret: never logged.
 ---@field instance_id string This process's instance id.
----@field options rpf.ClientOptions? Timing overrides.
+---@field options rpf.ClientOptions? Timing and bound overrides.
 
 ---A running connection to the portal.
 ---@class rpf.Client
@@ -81,11 +165,20 @@ client.DEFAULTS = {
 ---@field url string The portal's websocket url.
 ---@field api_key string The API key. A secret: never logged.
 ---@field instance_id string Minted per process start and sent in every `Hello`, so the portal can tell a reconnect from a second host sharing the key.
----@field options rpf.ClientOptions The timings, defaults filled in.
+---@field options rpf.ClientOptions The timings and bounds, defaults filled in.
 ---@field state "idle"|"connecting"|"handshaking"|"ready"|"stopped" Where the connection is. Frames are sent only when `ready`.
 ---@field server_id string? This server's id, as the portal named it in `Welcome`.
 ---@field stopped_reason string? Why the connection stopped for good, when it did.
----@field outbox rpf.OutboxEntry[] Frames awaiting an answer, oldest first.
+---@field outbox rpf.OutboxEntry[] Frames awaiting an answer, in `seq` order. Pending requests are not here: they have no frame yet.
+---@field requests table<string, rpf.OutboxEntry> Journalled portal requests by request id, pending or answered.
+---@field request_count integer How many entries `requests` holds, against `max_requests`.
+---@field origin_count integer How many entries this server originated, against `max_entries`.
+---@field origin_bytes integer Their persisted size, against `max_bytes`.
+---@field slots table<integer, rpf.OutboxEntry> Every entry by the slot it is persisted in.
+---@field free integer[] Slots below `high_slot` that hold nothing, to reuse.
+---@field high_slot integer The highest slot number ever handed out, as persisted under `SLOTS_KEY`.
+---@field next_seq integer The `seq` the next entry gets.
+---@field full_logged boolean Whether a refusal has been logged since the outbox last had room, so a noisy caller does not flood the log.
 ---@field attempt integer Reconnect attempts since the last `Welcome`, for the backoff.
 ---@field generation integer Bumped on every connect, so callbacks and timers from an older connection are ignored.
 ---@field hello_id string? The id of this connection's `Hello`, whose answer completes the handshake.
@@ -119,6 +212,15 @@ function client.new(platform, settings)
     options = options,
     state = "idle",
     outbox = {},
+    requests = {},
+    request_count = 0,
+    origin_count = 0,
+    origin_bytes = 0,
+    slots = {},
+    free = {},
+    high_slot = 0,
+    next_seq = 1,
+    full_logged = false,
     attempt = 0,
     generation = 0,
     callbacks = {},
@@ -142,57 +244,214 @@ end
 ---@param what string What is being called, for the log.
 ---@param fn function The function.
 ---@param ... any Its arguments.
+---@return boolean ok False if it threw.
 function Client:call(what, fn, ...)
   local ok, err = pcall(fn, ...)
   if not ok then
     self:log("error", what .. " failed: " .. tostring(err))
   end
+  return ok
 end
 
 -- Outbox persistence --------------------------------------------------------
+--
+-- Each entry is its own key, `rpf.outbox.<slot>`, so adding, answering or
+-- reissuing one entry writes that entry and nothing else, however full the
+-- outbox is. A slot is reused once free, so the highest slot, persisted under
+-- `rpf.outbox.slots`, never exceeds the most entries ever held at once, and a
+-- load reads at most that many keys. Order comes from each entry's `seq`, so
+-- there is no index to rewrite.
+--
+-- The persisted form is a few header lines and then the frame verbatim, not a
+-- JSON wrapper around it: the frame is JSON already, and wrapping it would
+-- escape every quote in it again, up to doubling its size, and make a load
+-- parse every byte. The overhead is a fixed header of at most ~150 bytes.
 
----Reads the persisted outbox. An entry that is not exactly what `save_outbox`
----writes is skipped and logged: it could only have come from corruption, and
----sending bytes the core did not produce would be worse than losing them.
-function Client:load_outbox()
-  local raw = self.platform.kv_get(client.OUTBOX_KEY)
-  if raw == nil then
-    return
-  end
-  local stored = json.decode(raw)
-  if not json.is_array(stored) then
-    self:log("warn", "ignoring an unreadable stored outbox")
-    return
-  end
-  for _, entry in ipairs(stored) do
-    if
-      json.is_object(entry)
-      and type(entry.id) == "string"
-      and type(entry.type) == "string"
-      and type(entry.text) == "string"
-      and type(entry.sent_ms) == "number"
-    then
-      self.outbox[#self.outbox + 1] = {
-        id = entry.id,
-        type = entry.type,
-        text = entry.text,
-        sent_ms = entry.sent_ms,
-      }
-    else
-      self:log("warn", "skipping an unreadable stored outbox entry")
-    end
-  end
+---The persisted form of an entry: the header lines, then the frame.
+---
+---```
+---rpf.outbox.v1
+---<seq>
+---<type>
+---<id, or - while pending>
+---<request id, or - for a frame this server originated>
+---<sent_ms>
+---<length of the frame in bytes>
+---<the frame, verbatim>
+---```
+---@param entry rpf.OutboxEntry The entry.
+---@return string stored What `kv_set` is given.
+local function serialise(entry)
+  local text = entry.text or ""
+  return table.concat({
+    client.ENTRY_HEADER,
+    string.format("%.0f", entry.seq),
+    entry.type,
+    entry.id or "-",
+    entry.request or "-",
+    string.format("%.0f", entry.sent_ms),
+    tostring(#text),
+    text,
+  }, "\n")
 end
 
----Writes the outbox through `kv_set`. Called after every change, so what is
----stored is never behind what was sent.
-function Client:save_outbox()
-  local list = json.array()
-  for i, entry in ipairs(self.outbox) do
-    list[i] = json.object({ id = entry.id, type = entry.type, text = entry.text, sent_ms = entry.sent_ms })
+---Reads one persisted entry. Anything that is not exactly what `serialise`
+---writes is refused: it could only have come from corruption, and sending
+---bytes the core did not produce would be worse than losing them.
+---@param raw string The stored value.
+---@param slot integer The slot it was read from.
+---@return rpf.OutboxEntry? entry The entry, or nil if it is unreadable.
+local function deserialise(raw, slot)
+  local header = "^" .. client.ENTRY_HEADER:gsub("%.", "%%.") .. "\n"
+  local _, stop, seq, tag, id, request, sent_ms, length =
+    raw:find(header .. "(%d+)\n([%w_]+)\n([^\n]+)\n([^\n]+)\n(%d+)\n(%d+)\n")
+  if not stop then
+    return nil
   end
-  local text = json.encode(list)
-  self.platform.kv_set(client.OUTBOX_KEY, text)
+  local text = raw:sub(stop + 1)
+  if #text ~= tonumber(length) then
+    return nil
+  end
+  local pending = id == "-"
+  if pending and (request == "-" or #text ~= 0) or not pending and #text == 0 then
+    return nil
+  end
+  return {
+    slot = slot,
+    seq = tonumber(seq) --[[@as integer]],
+    type = tag,
+    id = not pending and id or nil,
+    request = request ~= "-" and request or nil,
+    text = not pending and text or nil,
+    sent_ms = tonumber(sent_ms) --[[@as number]],
+    bytes = #raw,
+  }
+end
+
+---Persists an entry in its slot, replacing whatever the slot held, and keeps
+---the byte count in step. One `kv_set`, so the slot holds either the old
+---entry or the new one, never a mix: that is what makes a pending request
+---turning into its reply a single step a crash cannot split.
+---@param entry rpf.OutboxEntry The entry, with its slot.
+function Client:write(entry)
+  local stored = serialise(entry)
+  if not entry.request then
+    self.origin_bytes = self.origin_bytes - (entry.bytes or 0) + #stored
+  end
+  entry.bytes = #stored
+  self.platform.kv_set(client.OUTBOX_PREFIX .. entry.slot, stored)
+end
+
+---Hands out a slot for a new entry, and its place in send order. A fresh slot
+---is recorded under `SLOTS_KEY` before anything is written to it, so a load
+---always looks far enough.
+---@param entry rpf.OutboxEntry The entry, given `slot` and `seq` here.
+function Client:place(entry)
+  local slot = table.remove(self.free)
+  if not slot then
+    self.high_slot = self.high_slot + 1
+    slot = self.high_slot
+    self.platform.kv_set(client.SLOTS_KEY, tostring(self.high_slot))
+  end
+  entry.slot = slot
+  entry.seq = self.next_seq
+  self.next_seq = self.next_seq + 1
+  self.slots[slot] = entry
+end
+
+---Deletes an entry's persisted form and frees its slot and its share of the
+---bounds.
+---@param entry rpf.OutboxEntry The entry.
+function Client:erase(entry)
+  self.platform.kv_set(client.OUTBOX_PREFIX .. entry.slot, nil)
+  self.slots[entry.slot] = nil
+  self.free[#self.free + 1] = entry.slot
+  if entry.request then
+    self.requests[entry.request] = nil
+    self.request_count = self.request_count - 1
+  else
+    self.origin_count = self.origin_count - 1
+    self.origin_bytes = self.origin_bytes - entry.bytes
+  end
+  self.full_logged = false
+end
+
+---Reads the persisted outbox. An unreadable entry is skipped and logged, and
+---its slot left alone. A pending request, one whose handler started in an
+---earlier process and never recorded an outcome, is answered `unknown` here,
+---before anything is sent: the effect may or may not have happened, and
+---running the handler again could do it twice.
+---
+---Entries are loaded even beyond the current bounds (after the bounds were
+---lowered, say), because dropping them would lose state. New frames are
+---refused until it drains.
+function Client:load_outbox()
+  local raw_high = self.platform.kv_get(client.SLOTS_KEY)
+  local high = raw_high and tonumber(raw_high)
+  if raw_high and not (high and high >= 0 and high % 1 == 0) then
+    self:log("warn", "ignoring an unreadable stored outbox size; scanning every slot the bounds allow")
+    high = self.options.max_entries + self.options.max_requests
+  end
+  high = high or 0
+
+  local pending = {}
+  local highest = 0
+  for slot = 1, high do
+    local raw = self.platform.kv_get(client.OUTBOX_PREFIX .. slot)
+    if raw ~= nil then
+      local entry = deserialise(raw, slot)
+      if entry then
+        highest = slot
+        self.slots[slot] = entry
+        if entry.seq >= self.next_seq then
+          self.next_seq = entry.seq + 1
+        end
+        if entry.request then
+          self.requests[entry.request] = entry
+          self.request_count = self.request_count + 1
+        else
+          self.origin_count = self.origin_count + 1
+          self.origin_bytes = self.origin_bytes + entry.bytes
+        end
+        if entry.text then
+          self.outbox[#self.outbox + 1] = entry
+        else
+          pending[#pending + 1] = entry
+        end
+      else
+        -- Kept out of `free`, so the bytes stay for a human to look at rather
+        -- than being overwritten by the next send.
+        highest = slot
+        self:log("warn", "skipping an unreadable stored outbox entry in slot " .. slot)
+      end
+    end
+  end
+  for slot = 1, highest do
+    if self.slots[slot] == nil and self.platform.kv_get(client.OUTBOX_PREFIX .. slot) == nil then
+      self.free[#self.free + 1] = slot
+    end
+  end
+  self.high_slot = highest
+  if highest ~= high then
+    self.platform.kv_set(client.SLOTS_KEY, highest > 0 and tostring(highest) or nil)
+  end
+  table.sort(self.outbox, function(a, b)
+    return a.seq < b.seq
+  end)
+  table.sort(pending, function(a, b)
+    return a.seq < b.seq
+  end)
+  for _, entry in ipairs(pending) do
+    if UNKNOWN[entry.type] then
+      self:log("warn", entry.type .. " " .. entry.request .. " was interrupted by a restart; answering it as unknown")
+      self:settle_unknown(entry, "the game server restarted while applying it")
+    else
+      -- Only a request with an `unknown` reply is ever journalled, so this is
+      -- storage from another version. It cannot be answered honestly here.
+      self:log("error", "discarding a stored " .. entry.type .. " this core cannot answer")
+      self:erase(entry)
+    end
+  end
 end
 
 ---Finds an outbox entry by its frame id.
@@ -213,7 +472,7 @@ end
 ---@param err string? Why there was none.
 function Client:release(index, reply, err)
   local entry = table.remove(self.outbox, index)
-  self:save_outbox()
+  self:erase(entry)
   local callback = self.callbacks[entry.id]
   self.callbacks[entry.id] = nil
   if callback then
@@ -337,31 +596,121 @@ end
 
 -- Sending -------------------------------------------------------------------
 
+---Whether a message type is a reply, which only a request's `reply` may
+---send, so that every reply is journalled against the request it answers.
+---@param tag string The message type.
+---@return boolean reply True if the type carries `re`.
+local function is_reply(tag)
+  local spec = protocol.messages[OUT][tag]
+  if not spec then
+    return false
+  end
+  for _, field in ipairs(spec.fields) do
+    if field[1] == "re" then
+      return true
+    end
+  end
+  return false
+end
+
+---Whether a new frame this server originates fits in the outbox.
+---
+---A reissuable frame (a state report) may use the whole budget. Anything else
+---may use only `request_share` of it, so requests that pile up during an
+---outage leave room for the reports that must not be lost. Replies to portal
+---requests are not counted here at all: they have `max_requests` to
+---themselves, so no amount of either can crowd out the other.
+---@param tag string The message type.
+---@param bytes integer The entry's persisted size.
+---@return boolean room True if it fits.
+function Client:has_room(tag, bytes)
+  local o = self.options
+  local entries, budget = o.max_entries, o.max_bytes
+  if not protocol.reissuable(OUT, tag) then
+    entries = math.floor(entries * o.request_share)
+    budget = math.floor(budget * o.request_share)
+  end
+  return self.origin_count < entries and self.origin_bytes + bytes <= budget
+end
+
 ---Sends a frame to the portal, and keeps it in the outbox until it is
 ---answered. If the connection is not ready it waits there, and goes out after
 ---the next `Welcome`.
----@param tag string The message type. Not `hello`, which the connection owns, and not `ack`, which is never queued.
+---
+---When the outbox is full the frame is refused, not queued, and the caller is
+---told: `send` returns nil and `"outbox_full"`, and the callback, if any, is
+---called with the same. Nothing is dropped to make room, and a refused state
+---report is the caller's to keep and send again (a later report supersedes
+---it anyway, by its revision).
+---@param tag string The message type. Not `hello`, which the connection owns, not `ack`, which is never queued, and not a reply, which goes through a request's `reply`.
 ---@param fields table? The message's own fields.
----@param callback rpf.ReplyCallback? Called once with the answer: the reply, a `Rejected`, or the `Ack`. Called with an error instead if the frame is dropped unanswered.
----@return string id The frame's id, which its answer will name in `re`.
+---@param callback rpf.ReplyCallback? Called once with the answer: the reply, a `Rejected`, or the `Ack`. Called with an error instead if the frame is refused or dropped unanswered.
+---@return string? id The frame's id, which its answer will name in `re`, or nil if the outbox is full.
+---@return string? err `"outbox_full"` when it was refused.
 function Client:send(tag, fields, callback)
   if tag == "hello" or tag == "ack" then
     error("rpf: " .. tag .. " is sent by the connection itself", 2)
+  end
+  if is_reply(tag) then
+    error("rpf: " .. tag .. " is a reply, sent through the request handler's reply function", 2)
   end
   local frame = protocol.envelope(self.platform, tag, fields)
   local text, err = protocol.encode(OUT, frame)
   if not text then
     error("rpf: cannot send " .. tostring(tag) .. ": " .. tostring(err), 2)
   end
-  self.outbox[#self.outbox + 1] = { id = frame.id, type = tag, text = text, sent_ms = self.platform.now() }
-  self:save_outbox()
+  if #text > self.options.max_frame_bytes then
+    error(
+      "rpf: cannot send "
+        .. tag
+        .. ": "
+        .. #text
+        .. " bytes is over the portal's frame limit of "
+        .. self.options.max_frame_bytes,
+      2
+    )
+  end
+  ---@type rpf.OutboxEntry
+  local entry = {
+    seq = self.next_seq,
+    slot = 0,
+    id = frame.id,
+    type = tag,
+    text = text,
+    sent_ms = self.platform.now(),
+    bytes = 0,
+  }
+  local size = #serialise(entry)
+  if not self:has_room(tag, size) then
+    if not self.full_logged then
+      self.full_logged = true
+      self:log(
+        "warn",
+        "the outbox is full ("
+          .. self.origin_count
+          .. " frames, "
+          .. self.origin_bytes
+          .. " bytes); refusing "
+          .. tag
+          .. " and anything else that does not fit until the portal answers some"
+      )
+    end
+    if callback then
+      self:call("the callback for " .. tag, callback, nil, "outbox_full")
+    end
+    return nil, "outbox_full"
+  end
+  self:place(entry)
+  self.origin_count = self.origin_count + 1
+  self:write(entry)
+  self.outbox[#self.outbox + 1] = entry
   if callback then
     self.callbacks[frame.id] = callback
   end
   if self.state == "ready" then
     self.platform.send(text)
   end
-  return frame.id
+  return frame.id, nil
 end
 
 ---Acknowledges a portal frame. Acks never enter the outbox: a lost one is
@@ -382,8 +731,9 @@ function Client:flush()
   end
 end
 
----Re-sends one entry under a fresh id and `sent_at`, keeping its content and
----its callback. Only for reissuable frames: see `sweep`.
+---Re-sends one entry under a fresh id and `sent_at`, keeping its content,
+---its callback and the request it answers. Only for reissuable frames: see
+---`sweep`. Persisted here, one entry.
 ---@param entry rpf.OutboxEntry The entry, changed in place.
 function Client:reissue(entry)
   local frame, err = protocol.decode(OUT, entry.text)
@@ -396,23 +746,26 @@ function Client:reissue(entry)
   if not text then
     return
   end
-  self:log("info", "reissuing " .. entry.type .. " " .. entry.id .. " as " .. fresh.id)
+  self:log("info", "reissuing " .. entry.type .. " " .. tostring(entry.id) .. " as " .. fresh.id)
   self.callbacks[fresh.id] = self.callbacks[entry.id]
   self.callbacks[entry.id] = nil
   entry.id = fresh.id
   entry.text = text
   entry.sent_ms = self.platform.now()
   entry.retries = nil
+  self:write(entry)
 end
 
 ---Deals with every entry that is nearly as old as the portal's retry window:
----a reissuable one is reissued, anything else is dropped and logged.
+---a reissuable one is reissued, anything else is dropped and logged. Then
+---answers `unknown` for any portal request whose handler has run past
+---`request_timeout_ms` without replying.
 ---
 ---Past the window the portal may have forgotten the id, so resending under it
 ---could run a request twice. A reissuable frame is safe to run twice by its
 ---content, so it goes out fresh; for anything else, dropping it is the only
 ---way to be sure it does not happen twice.
----@return boolean changed Whether any entry was reissued or dropped.
+---@return boolean changed Whether any entry was reissued, dropped or settled.
 function Client:sweep()
   local now = self.platform.now()
   local limit = self.options.retry_window_ms - self.options.window_margin_ms
@@ -431,7 +784,11 @@ function Client:sweep()
       else
         self:log(
           "warn",
-          "dropping " .. entry.type .. " " .. entry.id .. ": unanswered for as long as the portal remembers requests"
+          "dropping "
+            .. entry.type
+            .. " "
+            .. tostring(entry.id)
+            .. ": unanswered for as long as the portal remembers requests"
         )
         self:release(i, nil, "expired")
       end
@@ -439,8 +796,20 @@ function Client:sweep()
       i = i + 1
     end
   end
-  if changed then
-    self:save_outbox()
+
+  local overdue = {}
+  for _, entry in pairs(self.requests) do
+    if not entry.text and now - entry.sent_ms >= self.options.request_timeout_ms then
+      overdue[#overdue + 1] = entry
+    end
+  end
+  table.sort(overdue, function(a, b)
+    return a.seq < b.seq
+  end)
+  for _, entry in ipairs(overdue) do
+    changed = true
+    self:log("warn", "the handler for " .. entry.type .. " " .. entry.request .. " has not replied; answering it as unknown")
+    self:settle_unknown(entry, "the game server's handler did not report an outcome in time")
   end
   return changed
 end
@@ -459,6 +828,8 @@ end
 
 ---Registers the handler for one kind of request from the portal. The handler
 ---gets the frame and a `reply` function that sends the answer with `re` set.
+---It runs at most once per request id, however often the portal retries it:
+---see `request`.
 ---@param tag string The request's type, like `apply_command`.
 ---@param handler rpf.RequestHandler The handler.
 function Client:handle(tag, handler)
@@ -484,6 +855,11 @@ end
 ---Handles one frame from the portal. It is hostile input: a frame that does
 ---not decode is logged and dropped, and nothing is sent back, because there is
 ---no message for refusing a portal frame.
+---
+---Two kinds of duplicate are told apart. A repeated frame that an `Ack`
+---answers (a reply or a notice) is acked again, since the first ack may have
+---been lost, and not handled again. A repeated request needs its *result*,
+---not an ack, so it goes to `request`, which answers it from the journal.
 ---@param text string The raw frame.
 function Client:receive(text)
   local frame, err = protocol.decode(IN, text)
@@ -500,19 +876,18 @@ function Client:receive(text)
   end
 
   local answered_by = protocol.answered_by(IN, frame.type)
+  if answered_by == "reply" then
+    self:request(frame)
+    return
+  end
   if self:remember(frame.id) then
-    -- A resend: whatever it asked for has already been done. Ack it again in
-    -- case the first ack was lost, and do nothing else.
     if answered_by == "ack" then
       self:ack(frame.id)
     end
     return
   end
-
   if frame.re then
     self:answer(frame)
-  else
-    self:request(frame)
   end
   if answered_by == "ack" then
     self:ack(frame.id)
@@ -584,7 +959,7 @@ function Client:answer(frame)
     entry.retries = (entry.retries or 0) + 1
     local delay = self:backoff(entry.retries - 1)
     local generation = self.generation
-    local id = entry.id
+    local id = entry.id --[[@as string]]
     self:log("info", entry.type .. " " .. id .. " refused (" .. frame.code .. "); resending in " .. math.floor(delay) .. " ms")
     self.platform.after(delay, function()
       local at = self:find(id)
@@ -596,7 +971,6 @@ function Client:answer(frame)
   end
   if frame.type == "rejected" and frame.code == "expired" and protocol.reissuable(OUT, entry.type) then
     self:reissue(entry)
-    self:save_outbox()
     self.platform.send(entry.text)
     return
   end
@@ -606,38 +980,168 @@ function Client:answer(frame)
   self:release(index, frame, nil)
 end
 
----What a request from the portal gets when no module has registered for it:
----a refusal the portal can record, rather than silence it would wait on.
----@type table<string, rpf.RequestHandler>
-local FALLBACKS = {
-  apply_command = function(frame, reply)
-    reply("command_applied", {
-      outcome = { outcome = "failed", reason = "this server has no handler for " .. frame.command.command },
-    })
-  end,
-}
-
----Hands a request from the portal to its handler, with a `reply` that sends
----the answer through the outbox, `re` set to the request's id.
----@param frame rpf.Frame A frame with no `re`.
+---Hands a request from the portal to its handler, at most once per request
+---id, with a `reply` that records the answer in the request's journal entry.
+---
+---The journal entry is persisted *before* the handler runs, and the reply
+---replaces it in the same slot with one write. So whatever the portal
+---resends, and whenever:
+---
+--- - **A duplicate of a request that has been answered** gets the original
+---   reply again, the same bytes under the same id, because the portal may
+---   have lost it.
+--- - **A duplicate of a request still running** starts nothing. The one reply
+---   the handler eventually sends names the request in `re`, so it answers
+---   every copy.
+--- - **A duplicate after its reply was acked** is ignored: the portal has the
+---   outcome, and this copy was already on the wire when it got it.
+---
+---A request that finds the journal full is not run and not remembered, so
+---the portal's next resend gets another chance, rather than being answered
+---with an outcome that would be a guess.
+---@param frame rpf.Frame A request: a frame the portal expects a reply to.
 function Client:request(frame)
+  local held = self.requests[frame.id]
+  if held then
+    if held.text then
+      self:log("debug", "resending the reply to a repeated " .. frame.type .. " " .. frame.id)
+      self.platform.send(held.text)
+    else
+      self:log("debug", "a repeated " .. frame.type .. " " .. frame.id .. " is still running; its reply will answer both")
+    end
+    return
+  end
+  if self.seen[frame.id] then
+    self:log("debug", "ignoring a repeated " .. frame.type .. " " .. frame.id .. " whose reply the portal has acked")
+    return
+  end
   local handler = self.handlers[frame.type] or FALLBACKS[frame.type]
-  if not handler then
+  if not handler or not UNKNOWN[frame.type] then
     self:log("warn", "no handler for " .. frame.type)
     return
   end
-  ---Sends the answer to this request through the outbox.
+  if self.request_count >= self.options.max_requests then
+    self:log(
+      "warn",
+      "not running "
+        .. frame.type
+        .. " "
+        .. frame.id
+        .. ": "
+        .. self.request_count
+        .. " requests are already waiting on the portal; it will be run when the portal resends it"
+    )
+    return
+  end
+
+  self:remember(frame.id)
+  ---@type rpf.OutboxEntry
+  local entry = { slot = 0, seq = 0, type = frame.type, request = frame.id, sent_ms = self.platform.now(), bytes = 0 }
+  self:place(entry)
+  self.request_count = self.request_count + 1
+  self.requests[frame.id] = entry
+  self:write(entry)
+
+  ---Records the answer to this request and sends it. Only the first call
+  ---counts: the request has one outcome.
   ---@param tag string The reply's type.
   ---@param fields table? Its fields, without `re`, which is set here.
   local function reply(tag, fields)
-    local answer = {}
-    for key, value in pairs(fields or {}) do
-      answer[key] = value
-    end
-    answer.re = frame.id
-    self:send(tag, answer)
+    self:settle(entry, tag, fields)
   end
-  self:call("the handler for " .. frame.type, handler, frame, reply)
+  local ok = self:call("the handler for " .. frame.type, handler, frame, reply)
+  if not ok and not entry.text then
+    -- It may have done part of the work before it threw.
+    self:settle_unknown(entry, "the game server's handler failed while applying it")
+  end
+end
+
+---Encodes a reply to a journalled request, with `re` set and a command
+---outcome's `reason` cut to `max_reason_bytes`.
+---@param entry rpf.OutboxEntry The request's journal entry.
+---@param tag string The reply's type.
+---@param fields table? Its fields, without `re`.
+---@return rpf.Frame? frame The reply, or nil if it is not a valid one.
+---@return string? text Its encoding.
+---@return string? err Why it is not valid.
+function Client:encode_reply(entry, tag, fields)
+  if not is_reply(tag) then
+    return nil, nil, tostring(tag) .. " is not a reply"
+  end
+  local answer = {}
+  for key, value in pairs(fields or {}) do
+    answer[key] = value
+  end
+  answer.re = entry.request
+  local outcome = answer.outcome
+  if type(outcome) == "table" and type(outcome.reason) == "string" then
+    local clipped = clip(outcome.reason, self.options.max_reason_bytes)
+    if clipped ~= outcome.reason then
+      local copy = {}
+      for key, value in pairs(outcome) do
+        copy[key] = value
+      end
+      copy.reason = clipped
+      answer.outcome = copy
+    end
+  end
+  local frame = protocol.envelope(self.platform, tag, answer)
+  local text, err = protocol.encode(OUT, frame)
+  if not text then
+    return nil, nil, err
+  end
+  if #text > self.options.max_reply_bytes then
+    return nil, nil, #text .. " bytes is over the reply limit of " .. self.options.max_reply_bytes
+  end
+  return frame, text, nil
+end
+
+---Turns a pending request's journal entry into its reply, persists it in the
+---same slot, and sends it. The reply is ordered after everything already
+---queued, as it would be had it gone through `send`.
+---
+---Called once per request. A later call is logged and ignored, so a handler
+---that replies twice, or late after a timeout, cannot give the portal two
+---outcomes for one command. A reply that is not valid is logged and replaced
+---by `unknown`, because the handler did run.
+---@param entry rpf.OutboxEntry The request's journal entry.
+---@param tag string The reply's type.
+---@param fields table? Its fields, without `re`.
+function Client:settle(entry, tag, fields)
+  if entry.text or self.requests[entry.request] ~= entry then
+    self:log("warn", "ignored a second reply to " .. entry.type .. " " .. entry.request)
+    return
+  end
+  local frame, text, err = self:encode_reply(entry, tag, fields)
+  if not frame then
+    self:log("error", "the reply to " .. entry.type .. " " .. entry.request .. " is invalid: " .. tostring(err))
+    frame, text, err = self:encode_reply(entry, UNKNOWN[entry.type]("the game server's handler sent an invalid reply"))
+    if not frame then
+      self:log("error", "could not answer " .. entry.type .. " " .. entry.request .. ": " .. tostring(err))
+      return
+    end
+  end
+
+  entry.id = frame.id
+  entry.type = frame.type
+  entry.text = text
+  entry.sent_ms = self.platform.now()
+  entry.seq = self.next_seq
+  self.next_seq = self.next_seq + 1
+  self:write(entry)
+  self.outbox[#self.outbox + 1] = entry
+  if self.state == "ready" then
+    self.platform.send(text --[[@as string]])
+  end
+end
+
+---Answers a pending request as `unknown`: its handler started, and what it
+---did is not known.
+---@param entry rpf.OutboxEntry The request's journal entry.
+---@param reason string Why, for the staff member who issued it.
+function Client:settle_unknown(entry, reason)
+  local tag, fields = UNKNOWN[entry.type](reason)
+  self:settle(entry, tag, fields)
 end
 
 rpf.client = client

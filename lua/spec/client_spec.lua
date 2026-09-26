@@ -65,11 +65,22 @@ local function reconnect(p)
   welcome(p)
 end
 
----The stored outbox, decoded.
+---The stored outbox entries, each as its slot, its type and its raw form.
 ---@param p spec.FakePlatform The platform.
----@return table[] entries The entries.
+---@return { slot: integer, type: string, raw: string }[] entries The entries, by slot.
 local function stored_outbox(p)
-  return rpf.json.decode(p.store[rpf.client.OUTBOX_KEY] or "[]")
+  local out = {}
+  for key, raw in pairs(p.store) do
+    local slot = key:match("^rpf%.outbox%.(%d+)$")
+    if slot then
+      local tag = raw:match("^[^\n]*\n[^\n]*\n([^\n]*)\n")
+      out[#out + 1] = { slot = tonumber(slot), type = tag, raw = raw }
+    end
+  end
+  table.sort(out, function(a, b)
+    return a.slot < b.slot
+  end)
+  return out
 end
 
 describe("rpf.client", function()
@@ -398,11 +409,24 @@ describe("rpf.client", function()
     end)
 
     it("skips a corrupt stored entry and keeps the rest", function()
-      local good = '{"id":"a","sent_ms":1,"text":"{}","type":"player_dropped"}'
-      local p = support.fake_platform({ store = { [rpf.client.OUTBOX_KEY] = "[" .. good .. ',{"id":1}]' } })
+      local store = {}
+      local first = support.connected(support.fake_platform({ store = store }))
+      first:send("player_dropped", dropped())
+      first:send("player_dropped", dropped())
+      first:send("player_dropped", dropped())
+      local raw = store[rpf.client.OUTBOX_PREFIX .. 2]
+      store[rpf.client.OUTBOX_PREFIX .. 2] = raw:sub(1, #raw - 1)
+      store[rpf.client.OUTBOX_PREFIX .. 3] = '{"id":1}'
+
+      support.load_core()
+      local p = support.fake_platform({ store = store })
       local connection = rpf.client.new(p, { url = "ws://portal", api_key = "k", instance_id = "i" })
       assert.are.equal(1, #connection.outbox)
-      assert.are.equal(1, #p.logged("warn", "unreadable"))
+      assert.are.equal(2, #p.logged("warn", "unreadable"))
+      -- Left for a human to look at, not overwritten by the next send.
+      connection:send("player_dropped", dropped())
+      assert.are.equal('{"id":1}', store[rpf.client.OUTBOX_PREFIX .. 3])
+      assert.are.equal("4", store[rpf.client.SLOTS_KEY])
     end)
 
     it("never holds a Hello or an Ack", function()
@@ -554,18 +578,256 @@ describe("rpf.client", function()
       assert.are.equal(1, #connection.outbox)
     end)
 
-    it("applies a duplicate request once", function()
-      local p = support.fake_platform()
-      local connection = support.connected(p)
-      local applied = 0
+    ---Registers a handler that counts its runs and applies at once.
+    ---@param connection rpf.Client The connection.
+    ---@return { runs: integer } counter How often it ran.
+    local function applying(connection)
+      local counter = { runs = 0 }
       connection:handle("apply_command", function(_, reply)
-        applied = applied + 1
+        counter.runs = counter.runs + 1
         reply("command_applied", { outcome = { outcome = "applied" } })
       end)
+      return counter
+    end
+
+    ---Every CommandApplied sent, raw.
+    ---@param p spec.FakePlatform The platform.
+    ---@return string[] texts The frames, in order.
+    local function replies(p)
+      local out = {}
+      for i, frame in ipairs(p.frames()) do
+        if frame.type == "command_applied" then
+          out[#out + 1] = p.sent[i]
+        end
+      end
+      return out
+    end
+
+    -- A lost reply: the portal never got it, so it resends the command. The
+    -- outcome already exists, and the portal must get that one, not a second
+    -- run.
+    it("answers a duplicate request with the original reply, and runs it once", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local counter = applying(connection)
       local frame = command()
       p.deliver(frame)
       p.deliver(frame)
-      assert.are.equal(1, applied)
+
+      assert.are.equal(1, counter.runs)
+      local sent = replies(p)
+      assert.are.equal(2, #sent)
+      assert.are.equal(sent[1], sent[2], "the same bytes, under the same id")
+      assert.are.equal(1, #connection.outbox)
+    end)
+
+    it("starts nothing for a duplicate while the first is running, and answers both with one reply", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local runs, pending = 0, nil
+      connection:handle("apply_command", function(_, reply)
+        runs = runs + 1
+        pending = reply
+      end)
+      local frame = command()
+      p.deliver(frame)
+      local before = #p.sent
+      p.deliver(frame)
+      assert.are.equal(1, runs)
+      assert.are.equal(before, #p.sent, "nothing to say until the handler finishes")
+
+      assert(pending)("command_applied", { outcome = { outcome = "applied" } })
+      local sent = replies(p)
+      assert.are.equal(1, #sent)
+      assert.are.equal(frame.id, p.last().re)
+      p.deliver(frame)
+      assert.are.equal(1, runs)
+      assert.are.equal(sent[1], replies(p)[2])
+    end)
+
+    it("resends the reply after a reconnect, and forgets the request once the reply is acked", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local counter = applying(connection)
+      local frame = command()
+      p.deliver(frame)
+      local original = replies(p)[1]
+
+      reconnect(p)
+      assert.are.equal(original, p.sent[#p.sent], "flushed under its original id")
+      p.deliver(frame)
+      assert.are.equal(1, counter.runs)
+      assert.are.equal(original, p.sent[#p.sent])
+
+      p.deliver(support.portal_frame("ack", { re = p.last().id }))
+      assert.are.equal(0, #connection.outbox)
+      assert.are.equal(0, #stored_outbox(p))
+      -- A copy already on the wire when the portal acked is not run again.
+      p.deliver(frame)
+      assert.are.equal(1, counter.runs)
+      assert.are.equal(3, #replies(p))
+    end)
+
+    it("journals a request before its handler runs", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local stored
+      connection:handle("apply_command", function(_, reply)
+        stored = stored_outbox(p)
+        reply("command_applied", { outcome = { outcome = "applied" } })
+      end)
+      p.deliver(command())
+      assert.are.equal(1, #stored)
+      assert.are.equal("apply_command", stored[1].type)
+      -- The reply took the journal entry's slot, in one write.
+      assert.are.equal(1, #stored_outbox(p))
+      assert.are.equal("command_applied", stored_outbox(p)[1].type)
+    end)
+
+    -- The window a KV write and a game effect cannot close: the handler
+    -- changed the game, and the process died before the outcome was stored.
+    it("answers unknown, and never runs again, when a restart interrupted the handler", function()
+      local store = {}
+      local p = support.fake_platform({ store = store })
+      local connection = support.connected(p)
+      local balance = 0
+      connection:handle("apply_command", function(frame)
+        balance = balance + frame.command.amount
+        -- Dies here: no reply.
+      end)
+      local frame = command()
+      p.deliver(frame)
+      assert.are.equal(-250, balance)
+
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 4242 })
+      local again = rpf.start_server(restarted, { url = "ws://portal", api_key = "k" })
+      again:handle("apply_command", function(f, reply)
+        balance = balance + f.command.amount
+        reply("command_applied", { outcome = { outcome = "applied" } })
+      end)
+      restarted.open()
+      welcome(restarted)
+
+      local reply = restarted.last()
+      assert.are.equal("command_applied", reply.type)
+      assert.are.equal(frame.id, reply.re)
+      assert.are.equal("unknown", reply.outcome.outcome)
+      assert.are.equal(1, #restarted.logged("warn", "interrupted by a restart"))
+      local text = restarted.sent[#restarted.sent]
+
+      restarted.deliver(frame)
+      assert.are.equal(-250, balance, "never applied twice")
+      assert.are.equal(text, restarted.sent[#restarted.sent])
+    end)
+
+    it("resends the stored reply, and does not run again, after a restart before the Ack", function()
+      local store = {}
+      local p = support.fake_platform({ store = store })
+      local counter = applying(support.connected(p))
+      local frame = command()
+      p.deliver(frame)
+      local original = replies(p)[1]
+
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 4242 })
+      local again = support.connected(restarted)
+      local after = applying(again)
+      assert.are.equal(original, restarted.sent[#restarted.sent])
+      restarted.deliver(frame)
+      assert.are.equal(1, counter.runs)
+      assert.are.equal(0, after.runs)
+      assert.are.equal(original, restarted.sent[#restarted.sent])
+      assert.are.equal("applied", restarted.last().outcome.outcome)
+    end)
+
+    it("answers unknown when the handler throws, since it may have done part of the work", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      connection:handle("apply_command", function()
+        error("boom")
+      end)
+      p.deliver(command())
+      assert.are.equal("unknown", p.last().outcome.outcome)
+      assert.are.equal(1, #p.logged("error", "boom"))
+    end)
+
+    it("answers unknown when the handler never replies, and ignores a late reply", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local late
+      connection:handle("apply_command", function(_, reply)
+        late = reply
+      end)
+      local frame = command()
+      p.deliver(frame)
+      local o = rpf.client.DEFAULTS
+      p.advance(o.request_timeout_ms + o.sweep_interval_ms)
+      assert.are.equal("unknown", p.last().outcome.outcome)
+      assert.are.equal(frame.id, p.last().re)
+
+      assert(late)("command_applied", { outcome = { outcome = "applied" } })
+      assert.are.equal(1, #replies(p), "one outcome per command")
+      assert.are.equal(1, #p.logged("warn", "ignored a second reply"))
+    end)
+
+    it("ignores a second reply from the handler", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      connection:handle("apply_command", function(_, reply)
+        reply("command_applied", { outcome = { outcome = "applied" } })
+        reply("command_applied", { outcome = { outcome = "failed", reason = "changed my mind" } })
+      end)
+      p.deliver(command())
+      assert.are.equal(1, #replies(p))
+      assert.are.equal("applied", p.last().outcome.outcome)
+    end)
+
+    it("answers unknown for a reply that does not encode, because the handler did run", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      connection:handle("apply_command", function(_, reply)
+        reply("command_applied", { outcome = { outcome = "sort_of" } })
+      end)
+      p.deliver(command())
+      assert.are.equal("unknown", p.last().outcome.outcome)
+    end)
+
+    it("cuts a long failure reason at a character boundary", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p, { max_reason_bytes = 10 })
+      connection:handle("apply_command", function(_, reply)
+        -- "é" is two bytes, straddling the limit at bytes 10 and 11.
+        reply("command_applied", { outcome = { outcome = "failed", reason = "123456789é and more" } })
+      end)
+      p.deliver(command())
+      assert.are.equal("123456789", p.last().outcome.reason)
+    end)
+
+    it("leaves a request unrun and unremembered while the journal is full, so a resend runs it", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p, { max_requests = 1 })
+      local counter = applying(connection)
+      local first, second = command(), command()
+      p.deliver(first)
+      p.deliver(second)
+      assert.are.equal(1, counter.runs)
+      assert.are.equal(1, #p.logged("warn", "already waiting on the portal"))
+
+      p.deliver(support.portal_frame("ack", { re = p.last().id }))
+      p.deliver(second)
+      assert.are.equal(2, counter.runs)
+      assert.are.equal(second.id, p.last().re)
+    end)
+
+    it("does not let a caller send a reply outside a handler", function()
+      local connection = support.connected(support.fake_platform())
+      local ok, err = pcall(connection.send, connection, "command_applied", {
+        re = PLAYER,
+        outcome = { outcome = "applied" },
+      })
+      assert.is_false(ok)
+      assert.truthy(tostring(err):find("reply", 1, true))
     end)
 
     it("acks a duplicate notice again, in case the first ack was lost", function()
@@ -607,6 +869,192 @@ describe("rpf.client", function()
       p.deliver("not json")
       assert.are.equal(before, #p.sent)
       assert.are.equal(2, #p.logged("warn", "dropped a frame"))
+    end)
+  end)
+
+  describe("the bounded outbox", function()
+    ---Every kv_set the core makes from here on, with the size written.
+    ---@param p spec.FakePlatform The platform.
+    ---@return { key: string, bytes: integer }[] writes The writes, in order.
+    local function record_writes(p)
+      local writes = {}
+      local kv_set = p.kv_set
+      p.kv_set = function(key, value)
+        writes[#writes + 1] = { key = key, bytes = value and #value or 0 }
+        kv_set(key, value)
+      end
+      return writes
+    end
+
+    it("writes only the new entry on each enqueue, however full the outbox is", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      p.drop()
+      local writes = record_writes(p)
+      local first
+      for i = 1, 500 do
+        local before = #writes
+        connection:send("player_dropped", dropped())
+        local bytes = 0
+        for j = before + 1, #writes do
+          bytes = bytes + writes[j].bytes
+        end
+        first = first or bytes
+        -- One entry, plus the slot count when a new slot is opened.
+        assert.is_true(bytes <= first + 8, "enqueue " .. i .. " wrote " .. bytes .. " bytes")
+      end
+    end)
+
+    -- Several days down: reports keep being produced, and none may vanish.
+    it("refuses what does not fit during a long outage, tells the caller, and delivers the rest", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p, { max_entries = 8 })
+      p.drop()
+      local accepted, refused, told = {}, 0, 0
+      for _ = 1, 20 do
+        p.advance(HOUR)
+        local id, err = connection:send("player_dropped", dropped(), function(_, e)
+          if e == "outbox_full" then
+            told = told + 1
+          end
+        end)
+        if id then
+          accepted[#accepted + 1] = id
+        else
+          assert.are.equal("outbox_full", err)
+          refused = refused + 1
+        end
+      end
+      assert.are.equal(8, #accepted)
+      assert.are.equal(12, refused)
+      assert.are.equal(12, told, "every refusal reaches its callback")
+      assert.are.equal(8, #stored_outbox(p))
+      assert.are.equal(1, #p.logged("warn", "the outbox is full"), "logged once, not per refusal")
+
+      p.advance(2 * 60 * 1000)
+      p.open()
+      welcome(p)
+      local reports = sent_of(p, "player_dropped")
+      local flushed = {}
+      for i = #reports - 7, #reports do
+        flushed[#flushed + 1] = reports[i].id
+      end
+      assert.are.same(accepted, flushed)
+    end)
+
+    it("bounds persisted bytes as well as entries", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local one = connection:send("player_dropped", dropped())
+      assert(one)
+      local size = stored_outbox(p)[1].raw
+      support.load_core()
+      local q = support.fake_platform()
+      local bounded = support.connected(q, { max_bytes = #size * 3 })
+      assert.truthy(bounded:send("player_dropped", dropped()))
+      assert.truthy(bounded:send("player_dropped", dropped()))
+      assert.truthy(bounded:send("player_dropped", dropped()))
+      assert.is_nil(bounded:send("player_dropped", dropped()))
+    end)
+
+    it("keeps room for state reports when requests pile up", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p, { max_entries = 4 })
+      p.drop()
+      assert.truthy(connection:send("create_character", character()))
+      assert.truthy(connection:send("create_character", character()))
+      local id, err = connection:send("create_character", character())
+      assert.is_nil(id)
+      assert.are.equal("outbox_full", err)
+      assert.truthy(connection:send("player_dropped", dropped()))
+      assert.truthy(connection:send("player_dropped", dropped()))
+      assert.is_nil(connection:send("player_dropped", dropped()))
+    end)
+
+    it("still answers a portal command when its own frames fill the outbox", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p, { max_entries = 2 })
+      assert.truthy(connection:send("player_dropped", dropped()))
+      assert.truthy(connection:send("player_dropped", dropped()))
+      assert.is_nil(connection:send("player_dropped", dropped()))
+      connection:handle("apply_command", function(_, reply)
+        reply("command_applied", { outcome = { outcome = "applied" } })
+      end)
+      p.deliver(support.portal_frame("apply_command", {
+        command = {
+          command = "adjust_balance",
+          client_id = "00000008-0000-4000-8000-000000000008",
+          account_id = "00000004-0000-4000-8000-000000000004",
+          amount = 5,
+          description = "x",
+        },
+      }))
+      assert.are.equal("command_applied", p.last().type)
+      assert.are.equal(3, #stored_outbox(p))
+    end)
+
+    it("takes its frame limit from the portal's", function()
+      local limits = support.read("src/portal/limits.rs")
+      local expression = limits:match("pub const MAX_FRAME_BYTES: usize = ([%d %*]+);")
+      assert.truthy(expression, "MAX_FRAME_BYTES is no longer a product of integer literals")
+      local bytes = 1
+      for factor in expression:gmatch("%d+") do
+        bytes = bytes * tonumber(factor)
+      end
+      assert.are.equal(bytes, rpf.client.DEFAULTS.max_frame_bytes)
+    end)
+
+    it("refuses a frame over the portal's frame limit", function()
+      local connection = support.connected(support.fake_platform(), { max_frame_bytes = 100 })
+      local ok, err = pcall(connection.send, connection, "player_dropped", {
+        player_id = PLAYER,
+        reason = string.rep("x", 200),
+      })
+      assert.is_false(ok)
+      assert.truthy(tostring(err):find("frame limit", 1, true))
+    end)
+
+    it("restarts with a full queue: keeps every entry, refuses more, and recovers as acks arrive", function()
+      local store = {}
+      local p = support.fake_platform({ store = store })
+      local connection = support.connected(p, { max_entries = 3 })
+      p.drop()
+      local ids = {}
+      for i = 1, 3 do
+        ids[i] = connection:send("player_dropped", dropped())
+      end
+
+      -- Restarted with a smaller bound than it left behind.
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 4242 })
+      local again = support.connected(restarted, { max_entries = 2 })
+      assert.are.equal(3, #again.outbox)
+      assert.are.same(ids, { again.outbox[1].id, again.outbox[2].id, again.outbox[3].id })
+      assert.is_nil(again:send("player_dropped", dropped()))
+
+      restarted.deliver(support.portal_frame("ack", { re = ids[1] }))
+      assert.is_nil(again:send("player_dropped", dropped()), "still at the bound")
+      restarted.deliver(support.portal_frame("ack", { re = ids[2] }))
+      local fresh = again:send("player_dropped", dropped())
+      assert.truthy(fresh)
+      -- The freed slot is reused, so the slots stay within what was ever held.
+      assert.are.equal("3", store[rpf.client.SLOTS_KEY])
+      assert.are.equal(2, #stored_outbox(restarted))
+    end)
+
+    it("shrinks the stored slot count on load when the top slots are empty", function()
+      local store = {}
+      local connection = support.connected(support.fake_platform({ store = store }))
+      for _ = 1, 4 do
+        connection:send("player_dropped", dropped())
+      end
+      -- Answered after the last save of the slot count, as by an older core.
+      for i = 2, 4 do
+        store[rpf.client.OUTBOX_PREFIX .. i] = nil
+      end
+      support.load_core()
+      rpf.client.new(support.fake_platform({ store = store }), { url = "ws://portal", api_key = "k", instance_id = "i" })
+      assert.are.equal("1", store[rpf.client.SLOTS_KEY])
     end)
   end)
 

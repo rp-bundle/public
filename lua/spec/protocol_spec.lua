@@ -186,6 +186,27 @@ describe("rpf.protocol against protocol/corpus/v1", function()
     assert.is_nil(protocol.decode("portal_to_server", beyond))
   end)
 
+  -- The same strings `command_outcomes_have_fixed_wire_shapes` pins in
+  -- tests/protocol.rs.
+  it("encodes every command outcome as the portal reads it", function()
+    local raw = corpus("server_to_portal").command_applied
+    local outcomes = {
+      '{"outcome":"applied"}',
+      '{"outcome":"failed","reason":"no such account"}',
+      '{"outcome":"unknown","reason":"the game server restarted while applying it"}',
+    }
+    for _, outcome in ipairs(outcomes) do
+      local text = raw:gsub('{%s*"outcome": "applied"%s*}', function()
+        return outcome
+      end)
+      local frame = assert(protocol.decode("server_to_portal", text), outcome)
+      local encoded = json.decode(assert(protocol.encode("server_to_portal", frame)))
+      assert.are.equal(outcome, assert(json.encode(encoded.outcome)))
+    end
+    local bad = raw:gsub('"applied"', '"maybe"')
+    assert.is_nil(protocol.decode("server_to_portal", bad))
+  end)
+
   it("decodes every gender the portal can send", function()
     local raw = corpus("portal_to_server").character_created
     for _, gender in ipairs({ '"male"', '"female"', '{"server_specific":"Nonbinary"}' }) do
