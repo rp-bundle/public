@@ -302,7 +302,12 @@ Recovery: entries leave the outbox as the portal answers them, and each
 answer frees its slot and its bytes at once, so the next `send` fits. A
 restart loads every stored entry even if the bounds have since been lowered,
 because dropping one would lose state, and refuses new frames until it
-drains.
+drains. If `rpf.outbox.slots` is unreadable, the core logs an error and
+refuses new portal requests and outbound frames. `send` and its callback
+receive `"outbox_unavailable"`. The damaged key and entries are left intact:
+an operator must restore the correct high slot number and restart the core
+before new work can run. Guessing from the current limits could miss a
+journalled command in a higher slot after those limits were lowered.
 
 ### `rpf.config`
 

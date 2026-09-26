@@ -23,6 +23,7 @@
 ---   retried request, on the same connection or after a restart, gets the
 ---   original reply. A request whose handler started but never recorded an
 ---   outcome is answered `unknown`, never run again and never guessed at.
+---   An unreadable slot count halts new work until the journal can be found.
 --- - **Reconnects back off exponentially, plus random jitter**, so a portal
 ---   restart does not bring every game server back in the same second.
 ---
@@ -197,6 +198,7 @@ client.DEFAULTS = {
 ---@field high_slot integer The highest slot number ever handed out, as persisted under `SLOTS_KEY`.
 ---@field next_seq integer The `seq` the next entry gets.
 ---@field full_logged boolean Whether a refusal has been logged since the outbox last had room, so a noisy caller does not flood the log.
+---@field recovery_failed boolean An unreadable slot count makes the full journal unknowable; new work is refused until the store is repaired and the core restarts.
 ---@field attempt integer Reconnect attempts since the last `Welcome`, for the backoff.
 ---@field generation integer Bumped on every connect, so callbacks and timers from an older connection are ignored.
 ---@field hello_id string? The id of this connection's `Hello`, whose answer completes the handshake.
@@ -239,6 +241,7 @@ function client.new(platform, settings)
     high_slot = 0,
     next_seq = 1,
     full_logged = false,
+    recovery_failed = false,
     attempt = 0,
     generation = 0,
     callbacks = {},
@@ -461,8 +464,13 @@ function Client:load_outbox()
   local raw_high = self.platform.kv_get(client.SLOTS_KEY)
   local high = raw_high and tonumber(raw_high)
   if raw_high and not (high and high >= 0 and high % 1 == 0) then
-    self:log("warn", "ignoring an unreadable stored outbox size; scanning every slot the bounds allow")
-    high = self.options.max_entries + self.options.max_requests
+    -- The old bounds may have admitted entries beyond the current ones. No
+    -- finite scan based on today's options can prove that a command was not
+    -- already journalled there. Keep the damaged key for repair and refuse
+    -- new work, including writes that might reuse an unseen slot.
+    self.recovery_failed = true
+    self:log("error", "the stored outbox slot count is unreadable; refusing new work until storage is repaired and the core restarts")
+    return
   end
   high = high or 0
 
@@ -719,14 +727,20 @@ end
 ---@param tag string The message type. Not `hello`, which the connection owns, not `ack`, which is never queued, and not a reply, which goes through a request's `reply`.
 ---@param fields table? The message's own fields.
 ---@param callback rpf.ReplyCallback? Called once with the answer: the reply, a `Rejected`, or the `Ack`. Called with an error instead if the frame is refused or dropped unanswered.
----@return string? id The frame's id, which its answer will name in `re`, or nil if the outbox is full.
----@return string? err `"outbox_full"` when it was refused.
+---@return string? id The frame's id, which its answer will name in `re`, or nil if refused.
+---@return string? err `"outbox_full"` at capacity, or `"outbox_unavailable"` if journal recovery failed.
 function Client:send(tag, fields, callback)
   if tag == "hello" or tag == "ack" then
     error("rpf: " .. tag .. " is sent by the connection itself", 2)
   end
   if is_reply(tag) then
     error("rpf: " .. tag .. " is a reply, sent through the request handler's reply function", 2)
+  end
+  if self.recovery_failed then
+    if callback then
+      self:call("the callback for " .. tag, callback, nil, "outbox_unavailable")
+    end
+    return nil, "outbox_unavailable"
   end
   local frame = protocol.envelope(self.platform, tag, fields)
   local text, err = protocol.encode(OUT, frame)
@@ -1075,6 +1089,10 @@ end
 ---with an outcome that would be a guess.
 ---@param frame rpf.Frame A request: a frame the portal expects a reply to.
 function Client:request(frame)
+  if self.recovery_failed then
+    self:log("warn", "not running " .. frame.type .. " " .. frame.id .. ": the stored outbox needs repair")
+    return
+  end
   local held = self.requests[frame.id]
   if held then
     if held.text then
@@ -1141,6 +1159,10 @@ end
 function Client:encode_reply(entry, tag, fields)
   if not is_reply(tag) then
     return nil, nil, tostring(tag) .. " is not a reply"
+  end
+  local expected = UNKNOWN[entry.type]("")
+  if tag ~= expected then
+    return nil, nil, tostring(tag) .. " is not the reply to " .. entry.type
   end
   local answer = {}
   for key, value in pairs(fields or {}) do

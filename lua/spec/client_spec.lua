@@ -797,6 +797,47 @@ describe("rpf.client", function()
       assert.are.equal(0, after.runs)
     end)
 
+    it("refuses new work when the slot count is unreadable, even after bounds shrink", function()
+      local store = {}
+      local p = support.fake_platform({ store = store })
+      local first = support.connected(p, { max_entries = 4, max_requests = 1 })
+      for _ = 1, 4 do
+        first:send("player_dropped", dropped())
+      end
+      first:handle("apply_command", function() end)
+      local frame = command()
+      p.deliver(frame)
+      assert.are.equal("5", store[rpf.client.SLOTS_KEY])
+      local journal = store[rpf.client.OUTBOX_PREFIX .. 5]
+      store[rpf.client.SLOTS_KEY] = "unreadable"
+
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 4242 })
+      local again = support.connected(restarted, { max_entries = 1, max_requests = 1 })
+      local after = applying(again)
+      restarted.deliver(frame)
+      assert.are.equal(0, after.runs)
+      assert.are.equal("unreadable", store[rpf.client.SLOTS_KEY])
+      assert.are.equal(journal, store[rpf.client.OUTBOX_PREFIX .. 5])
+      local callback_error
+      local id, err = again:send("player_dropped", dropped(), function(_, why)
+        callback_error = why
+      end)
+      assert.is_nil(id)
+      assert.are.equal("outbox_unavailable", err)
+      assert.are.equal(err, callback_error)
+
+      -- Restoring the high-water mark lets the next process find the journal.
+      store[rpf.client.SLOTS_KEY] = "5"
+      support.load_core()
+      local repaired = support.fake_platform({ store = store, seed = 31337 })
+      local recovered = support.connected(repaired, { max_entries = 1, max_requests = 1 })
+      local recovered_runs = applying(recovered)
+      assert.are.equal("unknown", repaired.last().outcome.outcome)
+      repaired.deliver(frame)
+      assert.are.equal(0, recovered_runs.runs)
+    end)
+
     it("answers unknown when the handler throws, since it may have done part of the work", function()
       local p = support.fake_platform()
       local connection = support.connected(p)
@@ -847,6 +888,21 @@ describe("rpf.client", function()
       end)
       p.deliver(command())
       assert.are.equal("unknown", p.last().outcome.outcome)
+    end)
+
+    it("answers unknown when a handler tries to send an Ack as its result", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      connection:handle("apply_command", function(_, reply)
+        reply("ack")
+      end)
+      local frame = command()
+      p.deliver(frame)
+      assert.are.equal("command_applied", p.last().type)
+      assert.are.equal("unknown", p.last().outcome.outcome)
+      assert.are.equal(frame.id, p.last().re)
+      assert.are.equal(1, #sent_of(p, "ack"), "only the handshake Ack was sent")
+      assert.are.equal(1, #p.logged("error", "is not the reply to apply_command"))
     end)
 
     it("cuts a long failure reason at a character boundary", function()
