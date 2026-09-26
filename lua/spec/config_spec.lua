@@ -68,6 +68,17 @@ describe("rpf.config", function()
     assert.are.equal(1, rpf.config.item("water").weight)
   end)
 
+  it("takes over a copy, so editing the table it was given changes nothing applied", function()
+    local s = snapshot(FIRST)
+    rpf.config.apply(p, 3, "h3", s)
+    s.items[1].weight = 50
+    assert.are.equal(1, rpf.config.item("water").weight)
+    -- And the edited table, applied for real, is a change.
+    rpf.config.apply(p, 4, "h4", s)
+    assert.are.same({ version = 4, sections = { "items" } }, changes[2])
+    assert.are.equal(50, rpf.config.item("water").weight)
+  end)
+
   it("announces every section on the first snapshot", function()
     rpf.config.apply(p, 3, "h3", snapshot(FIRST))
     assert.are.same({ { version = 3, sections = { "employers", "items", "jobs", "settings" } } }, changes)

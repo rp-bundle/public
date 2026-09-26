@@ -126,13 +126,35 @@ local function now()
   return platform and platform.now() or 0
 end
 
+---Moves waiting to be announced, oldest first. See `announce`.
+---@type { changed: rpf.PlayerView, entered: rpf.PlayerView, from: rpf.PlayerState? }[]
+local queue = {}
+
+---Whether `announce` is already emitting further up the stack.
+local draining = false
+
 ---Announces a move: `players.state_changed`, then `players.<state>`, each
----with its own copy.
+---with its own copy, taken now.
+---
+---A handler may move the player again (a character owner moving a newly
+---registered player to `character_select`, say). That move is queued and
+---announced once the current move's events are done, so every handler sees
+---moves one at a time, in order, and each event describes the move it names
+---rather than whatever the record has become since.
 ---@param record rpf.players.Record The record, already moved.
 ---@param from rpf.PlayerState? The state it left, nil for a new player.
 local function announce(record, from)
-  events.emit("players.state_changed", view(record), from)
-  events.emit("players." .. record.state, view(record), from)
+  queue[#queue + 1] = { changed = view(record), entered = view(record), from = from }
+  if draining then
+    return
+  end
+  draining = true
+  while #queue > 0 do
+    local move = table.remove(queue, 1)
+    events.emit("players.state_changed", move.changed, move.from)
+    events.emit("players." .. move.entered.state, move.entered, move.from)
+  end
+  draining = false
 end
 
 ---Moves a record, if the lifecycle allows it, and announces the move.
@@ -167,6 +189,7 @@ end
 function players.start(p)
   platform = p
   by_handle, by_id = {}, {}
+  queue, draining = {}, false
 end
 
 ---A player the engine has just handed over. The adapter calls this from its
@@ -255,7 +278,9 @@ end
 
 ---A player the engine says has left. The adapter calls this from its drop
 ---event. Moves them to `dropping` from whatever state they were in, then
----forgets them, once the `players.dropping` handlers have run.
+---forgets them, once the `players.dropping` handlers have run. (A drop made
+---from inside another lifecycle handler is announced after that handler's
+---move, by which time the record is gone; the handlers still get their copy.)
 ---@param handle rpf.PlayerHandle The player.
 ---@param reason string? Why, as the engine reported it.
 ---@return boolean dropped False if the player was not connected.
@@ -331,13 +356,17 @@ function players.online()
   local out = {}
   for player_id, handle in pairs(by_id) do
     local record = by_handle[handle]
-    out[#out + 1] = {
-      player_id = player_id,
-      username = record.username,
-      name = record.name,
-      state = record.state,
-      connected_at = record.connected_at,
-    }
+    -- A player who is leaving is no longer online, even while the
+    -- `players.dropping` handlers (which may build the resync) still run.
+    if record.state ~= "dropping" then
+      out[#out + 1] = {
+        player_id = player_id,
+        username = record.username,
+        name = record.name,
+        state = record.state,
+        connected_at = record.connected_at,
+      }
+    end
   end
   table.sort(out, function(a, b)
     return a.player_id < b.player_id

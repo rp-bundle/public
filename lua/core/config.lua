@@ -233,6 +233,9 @@ end
 ---@return boolean applied False if the snapshot was refused.
 ---@return string? err Why.
 function config.apply(platform, version, hash, snapshot)
+  -- Taken over as a copy, so a caller that keeps and edits its table cannot
+  -- change the applied config behind the stored snapshot's back.
+  snapshot = copy(snapshot)
   local index, err = check(version, hash, snapshot)
   if not index then
     platform.log("error", "rpf: refused a config snapshot: " .. tostring(err))

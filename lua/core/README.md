@@ -380,8 +380,10 @@ connecting → authenticating → registered → character_select ⇄ active
 ```
 
 Every accepted move emits `players.state_changed(player, from)` and then
-`players.<state>(player, from)`, each with its own copy. Any other move is
-refused and changes nothing. Two kinds of caller move players, through
+`players.<state>(player, from)`, each with its own copy. A move a handler
+makes is queued and announced after the move that triggered it, so handlers
+see moves one at a time, in order. Any other move is refused and changes
+nothing. Two kinds of caller move players, through
 separate functions that share one transition check:
 
 - **The login gate** (`connecting → authenticating → registered`) is RPF's

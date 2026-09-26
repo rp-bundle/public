@@ -71,25 +71,55 @@ local function server()
 end
 
 describe("rpf.api", function()
-  it("is exactly what meta/api.lua documents", function()
-    support.load_core("server")
-    local built, reserved = rpf.api_members()
-    local meta = read_meta()
-    local top = {}
-    for _, name in ipairs(built[""]) do
-      top[#top + 1] = name
+  it("exports exactly what meta/api.lua documents, across both sides", function()
+    -- What each side really exports, read from the tables behind the views.
+    local top, parts, reserved = {}, {}, nil
+    server()
+    local built
+    built, reserved = rpf.api_members()
+    for part, names in pairs(built) do
+      parts[part] = names
+    end
+    support.load_core("client")
+    rpf.start_client(support.fake_client_platform())
+    built = rpf.api_members()
+    for part, names in pairs(built) do
+      if part == "" then
+        for _, name in ipairs(names) do
+          top[name] = true
+        end
+      elseif parts[part] then
+        assert.are.same(parts[part], names, part .. " differs between the sides")
+      else
+        parts[part] = names
+      end
+    end
+    for _, name in ipairs(parts[""]) do
+      top[name] = true
     end
     for _, name in ipairs(reserved) do
-      top[#top + 1] = name
+      top[name] = true
     end
-    assert.are.same(sorted(top), keys(meta["rpf.Api"]))
-    for _, part in ipairs({ "events", "players", "config", "auth" }) do
-      local class = "rpf.api." .. part:sub(1, 1):upper() .. part:sub(2)
-      assert.are.same(sorted(built[part]), keys(meta[class]), class)
+
+    local meta = read_meta()
+    assert.are.same(keys(meta["rpf.Api"]), keys(top))
+    for part, names in pairs(parts) do
+      if part ~= "" then
+        local class = "rpf.api." .. part:sub(1, 1):upper() .. part:sub(2)
+        assert.are.same(keys(meta[class]), names, class)
+      end
     end
+    assert.are.same({ "auth", "config", "events", "players" }, sorted((function()
+      local out = {}
+      for part in pairs(parts) do
+        if part ~= "" then
+          out[#out + 1] = part
+        end
+      end
+      return out
+    end)()))
     assert.are.same({ "register" }, keys(meta["rpf.api.Bridge"]))
   end)
-
   it("reserves bridge and domain_external for Milestone 2 in the meta surface", function()
     local source = support.read("lua/core/meta/api.lua")
     assert.truthy(source:find("---@field bridge rpf.api.Bridge? **Reserved for Milestone 2 (K2", 1, true))

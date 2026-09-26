@@ -528,7 +528,16 @@ end
 function auth.logout()
   local token = saved_token()
   save_token(nil)
+  -- Cancel any attempt in flight: its answer is ignored (the generation
+  -- moves on), a ticket not yet redeemed can no longer succeed, and the
+  -- player may start a fresh login.
   drop_session()
+  pending, waiting = nil, nil
+  if not account and where then
+    state = "required"
+  elseif account then
+    state = "authenticated"
+  end
   if not token or not where then
     return
   end

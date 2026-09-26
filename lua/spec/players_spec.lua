@@ -272,6 +272,37 @@ describe("rpf.players", function()
     end)
   end)
 
+  it("announces a move a handler makes after the move that triggered it, in order", function()
+    rpf.events.on("players.state_changed", function(player)
+      if player.state == "registered" then
+        rpf.players.advance(player.handle, "character_select")
+      end
+    end)
+    reach(7, "authenticating")
+    local seen = record()
+    rpf.players.register(7, { player_id = PLAYER, username = "sam" })
+    local got = {}
+    for i, event in ipairs(seen) do
+      got[i] = event.name .. ":" .. event.player.state .. "<" .. tostring(event.from)
+    end
+    assert.are.same({
+      "players.state_changed:registered<authenticating",
+      "players.registered:registered<authenticating",
+      "players.state_changed:character_select<registered",
+      "players.character_select:character_select<registered",
+    }, got)
+  end)
+
+  it("leaves a departing player out of the online list, even inside the dropping handlers", function()
+    reach(7, "active")
+    local during
+    rpf.events.on("players.dropping", function()
+      during = rpf.players.online()
+    end)
+    rpf.players.dropped(7, "left")
+    assert.are.same({}, during)
+  end)
+
   it("hands out copies, so a handler cannot change the registry", function()
     rpf.events.on("players.connecting", function(player)
       player.state = "active"

@@ -25,6 +25,12 @@
 local rpf = rpf
 local events = rpf.events
 
+---Each read-only view's backing table, so `rpf.api_members` can list what
+---is really exported (LuaJIT cannot iterate a view). Weak keys, so this
+---holds nothing alive.
+---@type table<table, table>
+local backings = setmetatable({}, { __mode = "k" })
+
 ---Builds a read-only view of a table. Reads go through to it, writes are
 ---refused, and the metatable is hidden so it cannot be swapped out.
 ---`__pairs` lets Lua 5.4 (FiveM) iterate the view, which is how an adapter
@@ -34,7 +40,9 @@ local events = rpf.events
 ---@param path string Its name, for the error on a write.
 ---@return table view The read-only view.
 local function freeze(backing, path)
-  return setmetatable({}, {
+  local view = {}
+  backings[view] = backing
+  return setmetatable(view, {
     __index = backing,
     __newindex = function(_, key)
       error("rpf: " .. path .. " is read-only (tried to set " .. tostring(key) .. ")", 2)
@@ -45,27 +53,6 @@ local function freeze(backing, path)
     __metatable = false,
   })
 end
-
----The members of the public API, by table, as names. `meta/api.lua`
----declares exactly these, plus the reserved `bridge`; a test holds the two
----together.
----@type table<string, string[]>
-local MEMBERS = {
-  [""] = { "VERSION", "engine", "events", "players", "config", "auth" },
-  events = { "on", "once", "off", "emit" },
-  players = { "get", "by_player_id", "list", "authenticated" },
-  config = { "item", "job", "employer", "setting", "version" },
-  auth = {
-    "login",
-    "register",
-    "change_password",
-    "logout",
-    "state",
-    "account",
-    "api_token",
-    "PASSWORD_REUSE_WARNING",
-  },
-}
 
 ---Names the public API keeps for later milestones. They are absent (nil)
 ---now, and the frozen table stops a script from claiming them first, so a
@@ -170,12 +157,32 @@ function rpf.publish(platform)
   platform.expose(rpf.api)
 end
 
----The member names of the public API and the names it reserves, for the
----test that holds `meta/api.lua` to them.
----@return table<string, string[]> members Names by table, `""` for the top level.
+---Sorted keys of a table.
+---@param t table The table.
+---@return string[] keys Its keys, as strings.
+local function sorted_keys(t)
+  local out = {}
+  for key in pairs(t) do
+    out[#out + 1] = tostring(key)
+  end
+  table.sort(out)
+  return out
+end
+
+---What the public API really exports on this side, read from the tables
+---behind the views rather than from a list kept by hand, and the names it
+---reserves. The test that holds `meta/api.lua` to the API uses this, so a
+---member added here without its definition there fails it.
+---@return table<string, string[]> members Sorted names by table, `""` for the top level. `engine` appears once the side has started.
 ---@return string[] reserved Top-level names kept for later milestones.
 function rpf.api_members()
-  return MEMBERS, RESERVED
+  local members = { [""] = sorted_keys(surface) }
+  for key, value in pairs(surface) do
+    if backings[value] then
+      members[key] = sorted_keys(backings[value])
+    end
+  end
+  return members, RESERVED
 end
 
 return rpf.api
