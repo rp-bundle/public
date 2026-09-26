@@ -74,6 +74,7 @@ auth.DEFAULTS = {
 ---@field expires_in_ms number Its lifetime, as the portal measured it.
 ---@field portal_url string The portal's HTTP address.
 ---@field server_id string The game server's id, which keys the remember token.
+---@field in_use boolean? A request that may consume it is in flight, or was abandoned in flight, so it must not be sent again.
 
 ---A request waiting for a nonce.
 ---@alias rpf.auth.WithNonce fun(nonce: rpf.auth.Nonce)
@@ -254,7 +255,7 @@ end
 ---@param n rpf.auth.Nonce? The nonce.
 ---@return boolean fresh True if it can be used.
 local function fresh(n)
-  return n ~= nil and platform.now() - n.received < n.expires_in_ms - options.nonce_margin_ms
+  return n ~= nil and not n.in_use and platform.now() - n.received < n.expires_in_ms - options.nonce_margin_ms
 end
 
 ---Runs a request with a usable nonce: at once if the current one is fresh,
@@ -366,9 +367,18 @@ local function send_with_nonce(step, body_for, done)
   ---@param n rpf.auth.Nonce The nonce.
   local function attempt(n)
     local mine = generation
+    -- Until the answer says otherwise, the portal may be consuming this
+    -- nonce, so nothing else (a logout, say) may send it meanwhile.
+    n.in_use = true
     post(step, body_for(n.value), function(status, body)
       if mine ~= generation then
+        -- Abandoned: whether the portal consumed the nonce is unknown, so
+        -- it stays in use and the next request fetches a fresh one.
         return
+      end
+      if status ~= 200 then
+        -- Only a grant consumes it; a refusal leaves it usable for a retry.
+        n.in_use = false
       end
       if status == 401 and body and body.error == "invalid_nonce" and not retried then
         retried = true

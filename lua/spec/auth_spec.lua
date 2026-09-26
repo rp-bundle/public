@@ -515,6 +515,23 @@ describe("rpf.auth", function()
       assert.is_nil(c.pending())
     end)
 
+    it("never reuses the nonce a silent resume in flight may be consuming", function()
+      local c = start({ store = { [REMEMBER_KEY] = '{"token":"rpf_rt_old"}' } })
+      nonce(c, "rpf_jn_resume")
+      assert.are.equal("rpf_jn_resume", c.pending().body.nonce)
+      rpf.auth.logout()
+      -- The portal commits the resume first; its late answer is ignored.
+      c.respond(200, grant({ remember_token = "rpf_rt_new" }))
+      assert.is_nil(c.pending())
+      assert.are.equal(NONCE_REQUEST, c.sent_names()[#c.to_servers])
+      nonce(c, "rpf_jn_logout")
+      local request = assert(c.pending())
+      assert.are.equal(PORTAL .. "/api/v1/player/logout", request.url)
+      -- The old token still logs out inside the portal's 60 s rotation grace.
+      assert.are.same({ nonce = "rpf_jn_logout", remember_token = "rpf_rt_old" }, request.body)
+      assert.is_nil(c.store[REMEMBER_KEY])
+    end)
+
     it("does nothing at the portal when nothing is saved", function()
       local c = start()
       nonce(c)
