@@ -258,8 +258,10 @@ local function renew(session)
   session.renew_scheduled = true
   platform.after(wait, function()
     session.renew_scheduled = false
-    if current(session) and not session.begin_pending and not session.redeem_pending then
-      begin(session)
+    if current(session) then
+      -- Through the same rules again, so a redemption that started while it
+      -- waited defers it until that is answered rather than losing it.
+      renew(session)
     end
   end)
 end
