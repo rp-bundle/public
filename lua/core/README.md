@@ -454,7 +454,7 @@ On the client, each token is kept by its own rule:
   public API. It refreshes the P2 API token through `/token`, which never
   rotates the remember token.
 - **API token**: memory only, refreshed before `api_token_expires_at` (clamped
-  to 10 minutes, because the client's clock may be wrong). Null until P2.
+  to 10 minutes, because the client's clock may be wrong). Always issued since P2; a grant without one (an older portal) is accepted and just never refreshed.
 
 `auth.logout()` forgets the saved login at once, then asks the server for a
 fresh nonce for this connection and posts `{ nonce, remember_token }` (#70),

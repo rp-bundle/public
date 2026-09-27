@@ -26,7 +26,8 @@
 ---   the API token and nothing else, so refreshing never rotates (and so never
 ---   risks) the remember token.
 --- - The **API token** (P2) is for scripts calling the portal directly. It is
----   null until P2 lands, and then refreshed before it expires.
+---   refreshed before it expires. A grant without one (a portal older than P2) is
+---   accepted, and simply has nothing to refresh.
 ---
 ---This module is the flow. The login form is the adapter's (Milestone 2): it
 ---calls these functions and listens for `auth.required`, `auth.succeeded`,
@@ -660,7 +661,7 @@ function auth.state()
 end
 
 ---The API token (P2), for scripts calling the portal directly.
----@return string? token The token, or nil before login, before P2, or once the session has ended.
+---@return string? token The token, or nil before login, from a portal that issues none, or once the session has ended.
 function auth.api_token()
   return api_token
 end
