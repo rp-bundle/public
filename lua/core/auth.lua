@@ -107,6 +107,12 @@ local waiting = nil
 ---@type string?
 local session_token = nil
 
+---The remember token of a login the player chose not to keep. Never saved,
+---but held in memory so `logout` can still revoke its family, and with it
+---the session and API tokens issued alongside.
+---@type string?
+local unsaved_token = nil
+
 ---The API token (P2), or nil. Handed to scripts through the public API.
 ---@type string?
 local api_token = nil
@@ -344,8 +350,10 @@ local function granted(body, remember)
   nonce = nil
   if remember then
     save_token(body.remember_token, body.remember_token_expires_at)
+    unsaved_token = nil
   else
     save_token(nil)
+    unsaved_token = body.remember_token
   end
   drop_session()
   session_token = body.session_token
@@ -541,8 +549,9 @@ end
 ---token is forgotten here at once either way, and the portal answers `204`
 ---whatever it did, so there is nothing to report back.
 function auth.logout()
-  local token = saved_token()
+  local token = saved_token() or unsaved_token
   save_token(nil)
+  unsaved_token = nil
   drop_session()
   waiting = nil
   if state == "working" or state == "resuming" then
@@ -679,6 +688,7 @@ function auth.start(p, settings)
     options[key] = value
   end
   state, nonce, where, waiting, pending, account = "waiting", nil, nil, nil, nil, nil
+  unsaved_token = nil
   drop_session()
   p.on_server(handoff.NONCE, on_nonce)
   p.on_server(handoff.RESULT, on_result)
