@@ -119,7 +119,7 @@ end
 ---@field backoff_base_ms number? The first reconnect delay, before jitter. Doubles on each failed attempt.
 ---@field backoff_max_ms number? The longest reconnect delay, before jitter.
 ---@field jitter number? The largest random extra, as a fraction of the delay: 0.5 adds up to half again.
----@field retry_window_ms number? How long the portal remembers a request id (C3's TTL), which is how old an entry may get before it is reissued or dropped.
+---@field retry_window_ms number? The window the portal promises to remember a request id for (C3's `RETRY_WINDOW`; it keeps them longer), which is how old an entry may get before it is reissued or dropped.
 ---@field window_margin_ms number? How long before the window closes an entry is dealt with, to cover clock drift between the hosts and a frame still in flight.
 ---@field sweep_interval_ms number? How often the outbox is checked against the window, and running requests against their timeout.
 ---@field seen_limit integer? How many inbound frame ids are remembered to recognise a duplicate.
