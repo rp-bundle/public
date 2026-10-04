@@ -1492,7 +1492,7 @@ describe("rpf.client", function()
     end)
 
     it("takes its frame limit from the portal's", function()
-      local limits = support.read("src/portal/limits.rs")
+      local limits = support.read("crates/rpf-domain/src/limits.rs")
       local expression = limits:match("pub const MAX_FRAME_BYTES: usize = ([%d %*]+);")
       assert.truthy(expression, "MAX_FRAME_BYTES is no longer a product of integer literals")
       local bytes = 1

@@ -4,7 +4,7 @@
 ---@diagnostic disable: redundant-parameter
 
 -- The Lua half of the conformance corpus. These read the same files under
--- protocol/corpus/v1/ that tests/protocol.rs does, so the Lua decoder and the
+-- protocol/corpus/v1/ that crates/rpf-protocol/tests/protocol.rs does, so the Lua decoder and the
 -- Rust types are each held to the corpus, never to each other.
 --
 -- The Lua side's ratchet: when a variant is added in Rust and its sample
@@ -47,10 +47,10 @@ end
 ---Values kept whole rather than decoded field by field, by their path in a
 ---frame: what is added there is data the receiver keeps, not an unknown
 ---field it ignores. A config snapshot is one, so a section a newer portal
----adds is not lost (tests/protocol.rs exempts its settings map likewise).
+---adds is not lost (crates/rpf-protocol/tests/protocol.rs exempts its settings map likewise).
 local OPAQUE = { snapshot = true }
 
----Adds a field to every object at every depth, as tests/protocol.rs does,
+---Adds a field to every object at every depth, as crates/rpf-protocol/tests/protocol.rs does,
 ---leaving the `OPAQUE` values alone.
 ---@param value any A decoded JSON value.
 ---@param json rpf.json The codec, for telling objects from arrays.
@@ -210,7 +210,7 @@ describe("rpf.protocol against protocol/corpus/v1", function()
   end)
 
   -- `protocol/corpus/v1/command_outcomes.json` holds one sample of every
-  -- `CommandOutcome`, which `tests/protocol.rs` checks against the Rust type.
+  -- `CommandOutcome`, which `crates/rpf-protocol/tests/protocol.rs` checks against the Rust type.
   it("round-trips every command outcome in the corpus inside a command_applied", function()
     local outcomes = assert(json.decode(support.read("protocol/corpus/v1/command_outcomes.json")))
     assert.is_true(#outcomes >= 3)
@@ -242,7 +242,7 @@ describe("rpf.protocol against protocol/corpus/v1", function()
   end)
 
   describe("classification, mirroring Message::answered_by and Message::reissuable", function()
-    -- These are the values src/protocol/mod.rs gives. Nothing but review
+    -- These are the values crates/rpf-protocol/src/lib.rs gives. Nothing but review
     -- keeps the two in step, so they are pinned here, where a change has to
     -- be made deliberately.
     local ANSWERED_BY = {
@@ -275,7 +275,7 @@ describe("rpf.protocol against protocol/corpus/v1", function()
         end
       end)
 
-      -- The same rules as answers_are_coherent in tests/protocol.rs.
+      -- The same rules as answers_are_coherent in crates/rpf-protocol/tests/protocol.rs.
       it(direction .. " is coherent: a request has no re, and only an ack goes unanswered", function()
         for tag, spec in pairs(protocol.messages[direction]) do
           local has_re = false

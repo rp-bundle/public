@@ -4,7 +4,7 @@
 ---@diagnostic disable: redundant-parameter
 
 -- D3's mock platform (`lua/platform/mock/`), which the fake game server in
--- `fake-server/` drives. The harness exercises it end to end; these hold it
+-- `crates/fake-server/` drives. The harness exercises it end to end; these hold it
 -- to the platform interfaces the core checks at start, so a member the core
 -- gains cannot be missing from the mock until the harness happens to call it.
 

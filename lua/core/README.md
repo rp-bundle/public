@@ -12,7 +12,7 @@ The game side is three layers:
    It fills in a platform table and wires engine events to the core, two lines
    per event. It is the only code that differs between engines.
 3. **Mock platform** (D3, `lua/platform/mock/`), which implements the same
-   interface for the fake game server in `fake-server/`: the real core,
+   interface for the fake game server in `crates/fake-server/`: the real core,
    against the real portal, with faults injected at the socket.
 
 A new engine is one adapter and one mock. The core and its tests do not change.
@@ -164,7 +164,7 @@ through it.
 
 ### `rpf.protocol`
 
-The messages in `src/protocol/mod.rs`, as schemas: `protocol.decode(direction,
+The messages in `crates/rpf-protocol/src/lib.rs`, as schemas: `protocol.decode(direction,
 text)` and `protocol.encode(direction, frame)`. A frame is flat, as on the
 wire (`frame.type`, `frame.id`, `frame.re`, and the message's fields).
 
@@ -176,7 +176,7 @@ wire (`frame.type`, `frame.id`, `frame.re`, and the message's fields).
 - `redact` replaces the credentials (`api_key`, `ticket`, `nonce`) for logging.
 
 `spec/protocol_spec.lua` decodes and re-encodes every file in
-`protocol/corpus/v1/`, the same files `tests/protocol.rs` reads. **This is the
+`protocol/corpus/v1/`, the same files `crates/rpf-protocol/tests/protocol.rs` reads. **This is the
 Lua side's ratchet:** a corpus file with no decoder here fails, and so does a
 decoder with no corpus file. When a variant lands in Rust with its sample, the
 Lua suite stays red until `protocol.lua` learns it.
@@ -561,7 +561,7 @@ Run the suite under both LuaJIT and Lua 5.4. `AGENTS.md`'s Testing section has
 the commands, including installing busted for each without root.
 
 The suite tests the core against a fake platform it drives by hand
-(`spec/support`). The fake game server (`fake-server/`, layer 4 in
+(`spec/support`). The fake game server (`crates/fake-server/`, layer 4 in
 `AGENTS.md`) runs the same core on the mock platform against the real portal,
 over a real socket, under both Luas; `spec/mock_spec.lua` holds the mock to
 the platform interfaces.
