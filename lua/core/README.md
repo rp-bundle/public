@@ -557,11 +557,11 @@ busted                                   # whichever Lua busted was installed fo
 lua-language-server --check=. --checklevel=Warning
 ```
 
-Run the suite under both LuaJIT and Lua 5.4. `AGENTS.md`'s Testing section has
+Run the suite under both LuaJIT and Lua 5.4. `docs/testing.md` has
 the commands, including installing busted for each without root.
 
 The suite tests the core against a fake platform it drives by hand
 (`spec/support`). The fake game server (`crates/fake-server/`, layer 4 in
-`AGENTS.md`) runs the same core on the mock platform against the real portal,
+`docs/testing.md`) runs the same core on the mock platform against the real portal,
 over a real socket, under both Luas; `spec/mock_spec.lua` holds the mock to
 the platform interfaces.
