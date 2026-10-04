@@ -12,7 +12,8 @@ local support = {}
 
 local here = debug.getinfo(1, "S").source:sub(2)
 -- `lua/` is this file's grandparent's parent, however busted was pointed at it.
-support.root = here:gsub("spec/support/init%.lua$", "") .. "../"
+-- Either separator: on Windows busted names this file `./spec\support/init.lua`.
+support.root = here:gsub("spec[/\\]support[/\\]init%.lua$", "") .. "../"
 
 ---A path under the repository root.
 ---@param relative string Relative to the root, like `lua/core/json.lua`.
