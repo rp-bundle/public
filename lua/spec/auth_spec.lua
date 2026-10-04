@@ -5,7 +5,7 @@
 
 -- The client side of a login, with the test playing the game server (the
 -- handoff messages) and the portal (the HTTP answers). The shapes are P1's
--- endpoints in `src/portal/player_auth.rs`.
+-- endpoints in `src/portal/player_auth/mod.rs`.
 
 local support = require("spec.support")
 
@@ -126,7 +126,7 @@ describe("rpf.auth", function()
 
   it("carries P1's password-reuse warning word for word", function()
     support.load_core("client")
-    local rust = support.read("src/portal/player_auth.rs")
+    local rust = support.read("src/portal/player_auth/mod.rs")
     local warning = rust:match('pub const PASSWORD_REUSE_WARNING: &str = "(.-)";')
     warning = warning:gsub("\\\n%s*", "")
     assert.are.equal(warning, rpf.auth.PASSWORD_REUSE_WARNING)
