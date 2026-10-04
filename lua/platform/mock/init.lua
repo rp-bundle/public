@@ -4,7 +4,7 @@
 ---
 ---It is not the busted suite's fake (`spec/support`), which answers the
 ---socket and HTTP itself. This one is half of D3's fake game server: the Rust
----harness in `fake-server/` loads it into its own Lua state, hands it a host
+---harness in `crates/fake-server/` loads it into its own Lua state, hands it a host
 ---table, and connects what the core does to a real socket and to the real
 ---portal. So the mock keeps only what has to live in Lua, because it holds
 ---Lua callbacks (timers, the socket's handlers, HTTP callbacks, client message
