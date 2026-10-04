@@ -77,7 +77,7 @@ local function common(host, seed)
   ---@field expose fun(api: table) Keeps the public API for the harness's scripts.
   ---@field next_due fun(): number? When the earliest pending timer is due.
   ---@field run_due fun() Runs every timer due by the host's clock.
-  ---@field http_done fun(id: integer, status: integer, body: string) Answers a request.
+  ---@field http_done fun(id: integer, status: integer, body: string, headers: table<string, string>?) Answers a request, with the response's headers.
   local p = {
     engine = "mock",
     timers = {},
@@ -149,11 +149,11 @@ local function common(host, seed)
     end
   end
 
-  function p.http_done(id, status, body)
+  function p.http_done(id, status, body, headers)
     local callback = p.http[id]
     if callback then
       p.http[id] = nil
-      callback(status, body, {})
+      callback(status, body, headers or {})
     end
   end
 
