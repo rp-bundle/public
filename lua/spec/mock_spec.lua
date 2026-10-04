@@ -20,7 +20,7 @@ end
 ---@return table host The host.
 ---@return table record What it recorded.
 local function fake_host()
-  local record = { time = 1000, kv = {}, sent = {}, connects = {}, requests = {}, to_clients = {}, to_server = {} }
+  local record = { time = 1000, kv = {}, sent = {}, connects = {}, closes = {}, requests = {}, to_clients = {}, to_server = {} }
   local host = {
     now = function()
       return record.time
@@ -36,6 +36,9 @@ local function fake_host()
     end,
     connect = function(id, url)
       record.connects[#record.connects + 1] = { id = id, url = url }
+    end,
+    close = function(id)
+      record.closes[#record.closes + 1] = id
     end,
     send = function(id, text)
       record.sent[#record.sent + 1] = { id = id, text = text }
@@ -123,6 +126,28 @@ describe("the mock platform", function()
     p.socket_close(id, "gone again")
     assert.are.equal(1, closes)
     assert.is_false(p.send("after close"))
+  end)
+
+  it("hands a disconnect to the host, and still reports the close once", function()
+    local host, record = fake_host()
+    local p = load_mock().server(host, 1)
+    local closes = 0
+    p.connect("ws://portal/ws", {
+      open = function() end,
+      message = function() end,
+      close = function()
+        closes = closes + 1
+      end,
+    })
+    local id = record.connects[1].id
+    p.disconnect()
+    assert.are.same({ id }, record.closes)
+    assert.is_false(p.send("after disconnect"))
+    assert.are.equal(0, #record.sent)
+    p.socket_close(id, "closed by the core")
+    assert.are.equal(1, closes)
+    p.disconnect()
+    assert.are.same({ id }, record.closes, "nothing left to close")
   end)
 
   it("answers each HTTP request once, by id", function()

@@ -40,6 +40,7 @@ local mock = {}
 ---@field http_request fun(id: integer, method: string, url: string, headers: table<string, string>, body: string?) Starts a request. The host answers it later through `http_done` with the same id.
 ---@field connect fun(id: integer, url: string) Opens a socket. The host reports it through `socket_open`, `socket_message` and `socket_close` with the same id.
 ---@field send fun(id: integer, text: string): boolean Sends a frame on that socket, or returns false if it is not open.
+---@field close fun(id: integer) Closes that socket, or abandons it while it opens. The host reports the close through `socket_close`, as for any other.
 ---@field kick fun(player: any, reason: string) Disconnects a player, as the engine would.
 ---@field notify fun(player: any, message: string) Shows a player a message.
 ---@field to_client fun(player: any, name: string, payload: string) Carries a message to that player's client.
@@ -199,6 +200,16 @@ function mock.server(host, seed)
     p.socket = p.seq
     p.sockets[p.seq] = handlers
     host.connect(p.seq, url)
+  end
+
+  -- The handlers stay in `sockets` until the host reports the close, so
+  -- `close` is still called once for this connect, as the interface promises.
+  function p.disconnect()
+    local id = p.socket
+    if id then
+      p.socket = nil
+      host.close(id)
+    end
   end
 
   function p.send(text)

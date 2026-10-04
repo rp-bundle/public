@@ -15,6 +15,13 @@
 ---   because its content is idempotent and losing it would lose money or
 ---   inventory. Anything else would be a second request, so it is dropped and
 ---   logged.
+--- - **A host clock that goes back expires the outbox's requests.** Entries
+---   are aged by the host clock, so a clock moved back would make every queued
+---   frame look young, long enough for the portal to forget a request's id and
+---   run it again. A persisted high-water mark of the clock catches the step,
+---   and every non-reissuable entry queued before it is dropped as expired,
+---   while reissuable ones are reissued under the new clock. A connection
+---   whose `Hello` predates the step is made again before they are sent.
 --- - **The outbox is bounded**, in entries and in persisted bytes. A frame that
 ---   does not fit is refused to its caller, never dropped behind its back, and
 ---   state reports and replies are never crowded out by requests.
@@ -33,6 +40,7 @@
 ---@field OUTBOX_PREFIX string Each outbox entry is persisted under this prefix and its slot number.
 ---@field SLOTS_KEY string Where the highest slot number in use is persisted, so a load knows how far to look.
 ---@field ENTRY_HEADER string The first line of every persisted entry, naming its format.
+---@field CLOCK_KEY string Where the highest host clock reading seen is persisted, so a step back while the process was down is caught at the next load.
 ---@field DEFAULTS rpf.ClientOptions The production timings and bounds, used for anything the caller leaves out.
 local client = {}
 
@@ -102,6 +110,7 @@ end
 client.OUTBOX_PREFIX = "rpf.outbox."
 client.SLOTS_KEY = "rpf.outbox.slots"
 client.ENTRY_HEADER = "rpf.outbox.v1"
+client.CLOCK_KEY = "rpf.outbox.clock"
 
 ---The longest `sent_at` `protocol.timestamp` writes, `2026-01-01T00:00:00.000Z`.
 local MAX_SENT_AT = 24
@@ -130,6 +139,7 @@ end
 ---@field retry_window_ms number? The window the portal promises to remember a request id for (C3's `RETRY_WINDOW`; it keeps them longer), which is how old an entry may get before it is reissued or dropped.
 ---@field window_margin_ms number? How long before the window closes an entry is dealt with, to cover clock drift between the hosts and a frame still in flight.
 ---@field sweep_interval_ms number? How often the outbox is checked against the window, and running requests against their timeout.
+---@field clock_step_tolerance_ms number? How far the host clock may go back, below the highest reading seen, before the outbox treats it as a step and expires its requests (`observe_clock`). Below the portal's `SENT_AT_TOLERANCE` (60 s), so a frame stamped before a step the portal would read as from the future is reissued or expired here rather than refused. It must stay far below `retry_window_ms`: a regress under it goes unnoticed, and the portal's retention margin covers only regresses under one window.
 ---@field seen_limit integer? How many inbound frame ids are remembered to recognise a duplicate.
 ---@field max_frame_bytes integer? The largest encoded frame `send` accepts. Mirrors the portal's `limits::MAX_FRAME_BYTES`, which refuses anything larger, so queueing one would only fill the outbox with a frame that can never be delivered.
 ---@field max_entries integer? How many frames this server originates (notices, state reports, requests) may wait in the outbox at once.
@@ -146,6 +156,7 @@ client.DEFAULTS = {
   retry_window_ms = 7 * 24 * 60 * 60 * 1000,
   window_margin_ms = 12 * 60 * 60 * 1000,
   sweep_interval_ms = 60 * 1000,
+  clock_step_tolerance_ms = 30 * 1000,
   seen_limit = 1024,
   max_frame_bytes = 1024 * 1024,
   max_entries = 2048,
@@ -208,6 +219,8 @@ client.DEFAULTS = {
 ---@field next_seq integer The `seq` the next entry gets.
 ---@field full_logged boolean Whether a refusal has been logged since the outbox last had room, so a noisy caller does not flood the log.
 ---@field recovery_failed boolean An unreadable slot count makes the full journal unknowable; new work is refused until the store is repaired and the core restarts.
+---@field clock_mark number? The highest host clock reading seen, carried across restarts through `CLOCK_KEY`. A reading far enough below it is a step back. Nil until the outbox is loaded, and for good while recovery has failed.
+---@field clock_stored number? The mark as last persisted, so it is written only when it has moved.
 ---@field attempt integer Reconnect attempts since the last `Welcome`, for the backoff.
 ---@field generation integer Bumped on every connect, so callbacks and timers from an older connection are ignored.
 ---@field hello_id string? The id of this connection's `Hello`, whose answer completes the handshake.
@@ -259,6 +272,9 @@ function client.new(platform, settings)
     seen_order = {},
   }, Client)
   self:load_outbox()
+  if not self.recovery_failed then
+    self:load_clock()
+  end
   return self
 end
 
@@ -571,6 +587,171 @@ function Client:release(index, reply, err)
   end
 end
 
+-- The host clock going back -------------------------------------------------
+--
+-- Entries are aged by the host clock, and so is `sent_at`, which the portal
+-- reads against the offset it measured at the current connection's `Hello`.
+-- A clock moved back (a VM restored from a snapshot whose clock ran fast, a
+-- host that booted with a bad clock and synced later) makes every queued
+-- frame look younger by the step. The portal keeps request ids for twice the
+-- retry window, which covers a step under one window; past that, a request
+-- resent under its old id could arrive after its id was forgotten and run
+-- twice. Neither side can tell from timestamps alone, so the outbox keeps the
+-- highest reading it has seen, persisted, and treats a reading well below it
+-- as a step.
+
+---Persists the clock's high-water mark if it has moved since it was last
+---written. Called from the sweep, at load, and when a step is caught, never
+---on an ordinary `send`, so an enqueue still writes only its own entry, and
+---the mark costs at most one write per `sweep_interval_ms`.
+---
+---So the stored mark can trail the newest entry's stamp by a whole sweep
+---interval, twice the tolerance. `load_clock` closes that gap by raising the
+---mark to the newest stamp it loads, which costs no write. What a crash can
+---still lose is the mark's movement past the newest entry, and a step missed
+---that way had nothing queued before it to misdate.
+---
+---Never while recovery has failed: the stored mark could not be read
+---(`load_clock` did not run), and overwriting it with a lower one would hide
+---a step from the process that runs once storage is repaired.
+function Client:store_clock()
+  if self.recovery_failed then
+    return
+  end
+  local mark = self.clock_mark
+  if mark and mark ~= self.clock_stored then
+    self.platform.kv_set(client.CLOCK_KEY, string.format("%.0f", mark))
+    self.clock_stored = mark
+  end
+end
+
+---Reads the persisted high-water mark and checks the clock against it, so a
+---step back taken while the process was down is caught before anything is
+---sent. A mark that does not parse is treated as a step of unknown size:
+---the outbox can no longer prove its requests are younger than they look,
+---and expiring them is the side that cannot run one twice.
+---
+---Every loaded entry's stamp is a reading the clock really gave, so the mark
+---is raised to the newest of them: the stored mark only moves with the sweep
+---and may trail them by `sweep_interval_ms` (see `store_clock`).
+function Client:load_clock()
+  local raw = self.platform.kv_get(client.CLOCK_KEY)
+  if raw ~= nil then
+    local mark = type(raw) == "string" and raw:find("^%d+$") and tonumber(raw)
+    if not mark then
+      self:log("error", "the stored clock high-water mark is unreadable; treating it as a step back")
+      self:clock_stepped_back(self.platform.now(), nil)
+      return
+    end
+    self.clock_mark = mark
+    self.clock_stored = mark
+  end
+  for _, entry in pairs(self.slots) do
+    if not self.clock_mark or entry.sent_ms > self.clock_mark then
+      self.clock_mark = entry.sent_ms
+    end
+  end
+  self:observe_clock()
+  self:store_clock()
+end
+
+---Reads the host clock and checks it against the highest reading seen. A
+---reading more than `clock_step_tolerance_ms` below it is a step back, and
+---the outbox is dealt with by `clock_stepped_back`; otherwise the mark moves
+---up to the reading. A regress under the tolerance is left alone, but the
+---mark stays where it was, so several small steps add up until they cross it.
+---
+---Called before anything is stamped with the clock (`send`, the sweep, the
+---load), so every entry in the outbox when a step is caught was queued before
+---it. Does nothing while recovery has failed: the outbox is empty, and the
+---stored mark was never read, so there is nothing to compare against (see
+---`store_clock`).
+---@return boolean stepped Whether a step back was found.
+function Client:observe_clock()
+  if self.recovery_failed then
+    return false
+  end
+  local now = self.platform.now()
+  local mark = self.clock_mark
+  if mark and now < mark - self.options.clock_step_tolerance_ms then
+    self:clock_stepped_back(now, mark - now)
+    return true
+  end
+  if not mark or now > mark then
+    self.clock_mark = now
+  end
+  return false
+end
+
+---Deals with every outbox entry after the host clock went back.
+---
+---Every entry was stamped before the step, so its true age is unknown: at
+---least what it looks like, plus the step. A non-reissuable entry is
+---dropped, logged, and its callback called with `nil, "expired"`, exactly as
+---when the retry window closes on it: resending it under its old id is the
+---one thing that could run it twice. A reissuable one is reissued under a
+---fresh id and `sent_at` from the new clock, because its content is safe to
+---run twice and losing it would lose state, and because its old `sent_at`
+---would otherwise look to the portal as if it came from the future. A
+---portal request still running has its timeout restarted from now, so the
+---step does not keep its journal slot for as long as the step was.
+---
+---The mark is reset to now before any callback runs, so a callback that
+---sends is not taken for a second step, and only the entries held when the
+---step was caught are touched.
+---
+---A connection whose `Hello` has gone out is dropped and made again
+---(`reconnect`), before anything is reissued. The portal reads `sent_at`
+---against the offset it measured at that `Hello`, under the old clock, so a
+---frame stamped by the new one would look older by the step there: past a
+---window, `expired`, reissued, and refused again, round and round. Nothing
+---is sent on the old connection; the reissued frames, and anything a
+---callback sends from here, go out once, in the flush after the next
+---`Welcome`, read against an offset the new clock gave.
+---@param now number The clock reading that showed the step.
+---@param step number? How far back it went, or nil if unknown.
+function Client:clock_stepped_back(now, step)
+  self.clock_mark = now
+  self:store_clock()
+  if self.state == "ready" or self.state == "handshaking" then
+    self:reconnect("the host clock went back")
+  end
+
+  local reissued, doomed = 0, {}
+  for _, entry in ipairs(self.outbox) do
+    if protocol.reissuable(OUT, entry.type) then
+      self:reissue(entry)
+      reissued = reissued + 1
+    else
+      doomed[#doomed + 1] = entry.id
+    end
+  end
+  for _, entry in pairs(self.requests) do
+    if not entry.text and entry.sent_ms > now then
+      entry.sent_ms = now
+    end
+  end
+
+  self:log(
+    "warn",
+    "the host clock went back "
+      .. (step and ("by " .. math.floor(step) .. " ms") or "by an unknown amount")
+      .. "; expiring "
+      .. #doomed
+      .. " queued requests and reissuing "
+      .. reissued
+      .. " frames, because the portal may have forgotten their ids"
+  )
+  for _, id in ipairs(doomed) do
+    local index = self:find(id)
+    if index then
+      local entry = self.outbox[index]
+      self:log("warn", "dropping " .. entry.type .. " " .. id .. ": queued before the host clock went back")
+      self:release(index, nil, "expired")
+    end
+  end
+end
+
 -- Connecting ----------------------------------------------------------------
 
 ---Starts connecting, and starts the timer that checks the outbox against the
@@ -655,6 +836,17 @@ function Client:closed(reason)
       self:connect()
     end
   end)
+end
+
+---Drops the current connection and connects again, through `closed` and its
+---backoff, as if the socket had gone down. Its generation is moved on first,
+---so nothing the old socket delivers afterwards, its close included, is
+---acted on, and the outbox goes out only on the new one.
+---@param reason string Why, for the log.
+function Client:reconnect(reason)
+  self.generation = self.generation + 1
+  self.platform.disconnect()
+  self:closed(reason)
 end
 
 ---Sends this connection's `Hello`. It is minted fresh for each connection and
@@ -751,6 +943,9 @@ function Client:send(tag, fields, callback)
     end
     return nil, "outbox_unavailable"
   end
+  -- Before the new frame is stamped, so a step back is caught while every
+  -- entry it touches predates it.
+  self:observe_clock()
   local frame = protocol.envelope(self.platform, tag, fields)
   local text, err = protocol.encode(OUT, frame)
   if not text then
@@ -862,11 +1057,14 @@ end
 ---could run a request twice. A reissuable frame is safe to run twice by its
 ---content, so it goes out fresh; for anything else, dropping it is the only
 ---way to be sure it does not happen twice.
+---
+---The clock is checked for a step back first (`observe_clock`), and its
+---high-water mark persisted at the end.
 ---@return boolean changed Whether any entry was reissued, dropped or settled.
 function Client:sweep()
+  local changed = self:observe_clock()
   local now = self.platform.now()
   local limit = self.options.retry_window_ms - self.options.window_margin_ms
-  local changed = false
   local i = 1
   while i <= #self.outbox do
     local entry = self.outbox[i]
@@ -908,6 +1106,7 @@ function Client:sweep()
     self:log("warn", "the handler for " .. entry.type .. " " .. entry.request .. " has not replied; answering it as unknown")
     self:settle_unknown(entry, "the game server's handler did not report an outcome in time")
   end
+  self:store_clock()
   return changed
 end
 
@@ -1011,7 +1210,13 @@ function Client:handshake_reply(frame)
     self:log("info", "connected as server " .. frame.server_id)
     -- Swept before the state changes, so nothing the sweep reissues is sent
     -- twice: it goes out once, with everything else, in the flush.
+    local generation = self.generation
     self:sweep()
+    if generation ~= self.generation then
+      -- The sweep caught a clock step after this `Hello` went out, and is
+      -- making the connection again: this one's offset is the old clock's.
+      return
+    end
     self.state = "ready"
     self:flush()
     if self.on_ready then

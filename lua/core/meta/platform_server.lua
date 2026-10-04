@@ -26,6 +26,13 @@ local Transport = {}
 ---@param handlers rpf.platform.SocketHandlers Where events go.
 function Transport.connect(url, handlers) end
 
+---Closes the open connection, or abandons the attempt under way, so the next
+---`connect` is again the only one. Its `handlers.close` is still called, now
+---or later, as for any close; the core has stopped listening to it by then.
+---Does nothing when there is no connection. The core uses it when the one it
+---has can no longer be trusted, such as after the host clock went back.
+function Transport.disconnect() end
+
 ---Sends one text frame on the open connection.
 ---@param text string The frame, already encoded.
 ---@return boolean sent False when there is no open connection. The core keeps the frame in its outbox either way.

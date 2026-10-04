@@ -64,6 +64,7 @@ function support.fake_platform(opts)
   ---@field rng integer The deterministic random state.
   ---@field socket { handlers: rpf.platform.SocketHandlers, open: boolean }? The current connection attempt.
   ---@field connects number[] When each `connect` was called, by the fake clock.
+  ---@field disconnects number[] When each `disconnect` was called, by the fake clock.
   ---@field sent string[] Every text frame sent on an open socket, in order.
   ---@field logs { level: string, message: string }[] Every log line.
   ---@field exposed table? What `expose` was given.
@@ -79,6 +80,7 @@ function support.fake_platform(opts)
     store = opts.store or {},
     rng = opts.seed or 12345,
     connects = {},
+    disconnects = {},
     sent = {},
     logs = {},
     player_identifiers = {},
@@ -117,6 +119,18 @@ function support.fake_platform(opts)
   function p.connect(_, handlers)
     p.connects[#p.connects + 1] = p.time
     p.socket = { handlers = handlers, open = false }
+  end
+
+  -- Calls the socket's `close` at once, as the interface allows, so the
+  -- tests see the core ignore it.
+  function p.disconnect()
+    p.disconnects[#p.disconnects + 1] = p.time
+    local socket = p.socket
+    if socket then
+      p.socket = nil
+      socket.open = false
+      socket.handlers.close("closed by the core")
+    end
   end
 
   function p.send(text)

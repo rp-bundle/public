@@ -30,6 +30,7 @@ end
 platform.SERVER = members({
   "engine",
   "connect",
+  "disconnect",
   "send",
   "http_request",
   "now",
