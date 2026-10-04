@@ -135,7 +135,7 @@ end
 ---@field max_entries integer? How many frames this server originates (notices, state reports, requests) may wait in the outbox at once.
 ---@field max_bytes integer? How many persisted bytes those frames may take.
 ---@field request_share number? The fraction of `max_entries` and `max_bytes` that non-reissuable requests may use, so a pile of joins during an outage cannot crowd out state reports.
----@field max_requests integer? How many portal requests may be journalled at once: running, or answered and waiting for the portal's `Ack`. Their replies have this budget to themselves.
+---@field max_requests integer? How many portal requests may be journalled at once: running, or answered and waiting for the portal's `Ack`. Their replies have this budget to themselves. A `config` is never refused for it, because the portal never resends one; configs still count, and stay few (one per version the portal sent and has not acked).
 ---@field max_reply_bytes integer? The largest encoded reply to a portal request. With `max_requests` it bounds the replies' share of storage.
 ---@field max_reason_bytes integer? The longest free-text `reason` a command outcome carries. Longer ones are cut, so a verbose handler cannot push its reply past `max_reply_bytes`.
 ---@field request_timeout_ms number? How long a portal request's handler may run before it is answered `unknown`, so a handler that never replies cannot hold a journal slot, or the portal, forever.
@@ -199,7 +199,7 @@ client.DEFAULTS = {
 ---@field stopped_reason string? Why the connection stopped for good, when it did.
 ---@field outbox rpf.OutboxEntry[] Frames awaiting an answer, in `seq` order. Pending requests are not here: they have no frame yet.
 ---@field requests table<string, rpf.OutboxEntry> Journalled portal requests by request id, pending or answered.
----@field request_count integer How many entries `requests` holds, against `max_requests`.
+---@field request_count integer How many entries `requests` holds, against `max_requests` (which a `config` may go past).
 ---@field origin_count integer How many entries this server originated, against `max_entries`.
 ---@field origin_bytes integer Their persisted size, against `max_bytes`.
 ---@field slots table<integer, rpf.OutboxEntry> Every entry by the slot it is persisted in.
