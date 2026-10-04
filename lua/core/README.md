@@ -11,7 +11,9 @@ The game side is three layers:
 2. **Platform adapter**, one per engine (FiveM D2, Gmod D8, both Milestone 2).
    It fills in a platform table and wires engine events to the core, two lines
    per event. It is the only code that differs between engines.
-3. **Mock platform** (D3), which implements the same interface for tests.
+3. **Mock platform** (D3, `lua/platform/mock/`), which implements the same
+   interface for the fake game server in `fake-server/`: the real core,
+   against the real portal, with faults injected at the socket.
 
 A new engine is one adapter and one mock. The core and its tests do not change.
 
@@ -515,3 +517,9 @@ lua-language-server --check=. --checklevel=Warning
 
 Run the suite under both LuaJIT and Lua 5.4. `AGENTS.md`'s Testing section has
 the commands, including installing busted for each without root.
+
+The suite tests the core against a fake platform it drives by hand
+(`spec/support`). The fake game server (`fake-server/`, layer 4 in
+`AGENTS.md`) runs the same core on the mock platform against the real portal,
+over a real socket, under both Luas; `spec/mock_spec.lua` holds the mock to
+the platform interfaces.
