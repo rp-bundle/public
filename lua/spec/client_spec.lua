@@ -54,6 +54,7 @@ local function welcome(p)
     protocol = 1,
     server_id = "00000001-0000-4000-8000-000000000001",
   }))
+  support.declared(p)
 end
 
 ---Drops the socket, waits out the backoff, and completes a new handshake.
@@ -104,7 +105,7 @@ describe("rpf.client", function()
       assert.is_nil(hello.config_version)
       assert.is_nil(hello.config_hash)
       -- Sent as null, not left out: the portal refuses a Hello without them.
-      local raw = rpf.json.decode(p.sent[#p.sent])
+      local raw = rpf.json.decode(support.wire(p)[#support.wire(p)])
       assert.are.equal(rpf.json.null, raw.config_version)
       assert.are.equal(rpf.json.null, raw.config_hash)
     end)
@@ -300,13 +301,13 @@ describe("rpf.client", function()
       local connection = support.connected(p)
       local a = connection:send("create_character", character())
       local b = connection:send("player_dropped", dropped())
-      local texts = { p.sent[#p.sent - 1], p.sent[#p.sent] }
+      local texts = { support.wire(p)[#support.wire(p) - 1], support.wire(p)[#support.wire(p)] }
 
       reconnect(p)
 
       -- After the new Hello and the ack of its Welcome, the same bytes again.
-      assert.are.equal(texts[1], p.sent[#p.sent - 1])
-      assert.are.equal(texts[2], p.sent[#p.sent])
+      assert.are.equal(texts[1], support.wire(p)[#support.wire(p) - 1])
+      assert.are.equal(texts[2], support.wire(p)[#support.wire(p)])
       assert.are.same({ a, b }, { connection.outbox[1].id, connection.outbox[2].id })
     end)
 
@@ -385,13 +386,13 @@ describe("rpf.client", function()
       local p = support.fake_platform({ store = store })
       local connection = support.connected(p)
       local id = connection:send("create_character", character())
-      local text = p.sent[#p.sent]
+      local text = support.wire(p)[#support.wire(p)]
 
       support.load_core()
       local restarted = support.fake_platform({ store = store, seed = 4242 })
       support.connected(restarted)
 
-      assert.are.equal(text, restarted.sent[#restarted.sent])
+      assert.are.equal(text, support.wire(restarted)[#support.wire(restarted)])
       assert.are.equal(id, restarted.last().id)
     end)
 
@@ -751,12 +752,12 @@ describe("rpf.client", function()
       local p = support.fake_platform()
       local connection = support.connected(p)
       local report = connection:send("player_dropped", dropped())
-      local sent = #p.sent
+      local sent = #support.wire(p)
 
       p.time = p.time - window - DAY
       connection:sweep()
 
-      assert.are.equal(sent, #p.sent, "nothing goes out on the connection whose offset is the old clock's")
+      assert.are.equal(sent, #support.wire(p), "nothing goes out on the connection whose offset is the old clock's")
       assert.are.equal(1, #p.disconnects)
       assert.are.equal("connecting", connection.state)
       reconnect_after_step(p)
@@ -891,9 +892,10 @@ describe("rpf.client", function()
     ---@return string[] texts The frames, in order.
     local function replies(p)
       local out = {}
+      local wire = support.wire(p)
       for i, frame in ipairs(p.frames()) do
         if frame.type == "command_applied" then
-          out[#out + 1] = p.sent[i]
+          out[#out + 1] = wire[i]
         end
       end
       return out
@@ -950,10 +952,10 @@ describe("rpf.client", function()
       local original = replies(p)[1]
 
       reconnect(p)
-      assert.are.equal(original, p.sent[#p.sent], "flushed under its original id")
+      assert.are.equal(original, support.wire(p)[#support.wire(p)], "flushed under its original id")
       p.deliver(frame)
       assert.are.equal(1, counter.runs)
-      assert.are.equal(original, p.sent[#p.sent])
+      assert.are.equal(original, support.wire(p)[#support.wire(p)])
 
       p.deliver(support.portal_frame("ack", { re = p.last().id }))
       assert.are.equal(0, #connection.outbox)
@@ -1010,11 +1012,11 @@ describe("rpf.client", function()
       assert.are.equal(frame.id, reply.re)
       assert.are.equal("unknown", reply.outcome.outcome)
       assert.are.equal(1, #restarted.logged("warn", "interrupted by a restart"))
-      local text = restarted.sent[#restarted.sent]
+      local text = support.wire(restarted)[#support.wire(restarted)]
 
       restarted.deliver(frame)
       assert.are.equal(-250, balance, "never applied twice")
-      assert.are.equal(text, restarted.sent[#restarted.sent])
+      assert.are.equal(text, support.wire(restarted)[#support.wire(restarted)])
     end)
 
     it("resends the stored reply, and does not run again, after a restart before the Ack", function()
@@ -1029,11 +1031,11 @@ describe("rpf.client", function()
       local restarted = support.fake_platform({ store = store, seed = 4242 })
       local again = support.connected(restarted)
       local after = applying(again)
-      assert.are.equal(original, restarted.sent[#restarted.sent])
+      assert.are.equal(original, support.wire(restarted)[#support.wire(restarted)])
       restarted.deliver(frame)
       assert.are.equal(1, counter.runs)
       assert.are.equal(0, after.runs)
-      assert.are.equal(original, restarted.sent[#restarted.sent])
+      assert.are.equal(original, support.wire(restarted)[#support.wire(restarted)])
       assert.are.equal("applied", restarted.last().outcome.outcome)
 
       -- A copy on the wire when the portal acks is ignored after a restart
@@ -1450,7 +1452,7 @@ describe("rpf.client", function()
       assert.is_true(bounded.origin_bytes <= charge)
       assert.are.equal(#stored_outbox(q)[1].raw, charge, "the growth was already counted")
 
-      local limit = #p.sent[#p.sent] + 4
+      local limit = #support.wire(p)[#support.wire(p)] + 4
       local exact = support.connected(support.fake_platform(), { max_frame_bytes = limit - 1 })
       assert.is_false(pcall(exact.send, exact, "player_dropped", dropped()), "no room for the reissue's growth")
     end)

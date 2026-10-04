@@ -72,6 +72,7 @@ function support.fake_platform(opts)
   ---@field kicks { player: any, reason: string }[] Every kick, in order.
   ---@field to_clients { player: any, name: string, payload: string }[] Every message sent to a client, in order.
   ---@field client_handlers table<string, fun(player: any, payload: string)> Handlers registered with `on_client`, by name.
+  ---@field bookkeeping table<string, true> Sent texts `support.wire` leaves out: the declaration after a `Welcome` and the ack of its answer.
   local p = {
     engine = "mock",
     time = opts.time or support.EPOCH_MS,
@@ -87,6 +88,7 @@ function support.fake_platform(opts)
     kicks = {},
     to_clients = {},
     client_handlers = {},
+    bookkeeping = {},
   }
 
   function p.now()
@@ -232,11 +234,12 @@ function support.fake_platform(opts)
     assert(p.socket, "nothing is connected").handlers.message(text)
   end
 
-  ---Every sent frame, decoded as the portal would.
+  ---Every sent frame, decoded as the portal would, except the declaration
+  ---exchange `support.declared` answered (see `support.wire`).
   ---@return rpf.Frame[] frames The frames, in order.
   function p.frames()
     local out = {}
-    for i, text in ipairs(p.sent) do
+    for i, text in ipairs(support.wire(p)) do
       out[i] = assert(support.core.protocol.decode(support.core.protocol.SERVER_TO_PORTAL, text))
     end
     return out
@@ -448,6 +451,24 @@ function support.portal_frame(tag, fields)
   return support.core.protocol.envelope(support.portal_rng, tag, fields)
 end
 
+---Answers the declaration of held records that follows every `Welcome`
+---(`rpf.sync`), if one is waiting, as a portal that agrees with it would,
+---so a test that is not about records starts from an empty outbox.
+---@param p spec.FakePlatform The platform.
+function support.declared(p)
+  for i, text in ipairs(p.sent) do
+    local frame = assert(support.core.protocol.decode(support.core.protocol.SERVER_TO_PORTAL, text))
+    if frame.type == "declare_holds" then
+      local connection = support.core.connection
+      if connection and connection:find(frame.id) then
+        p.bookkeeping[p.sent[i]] = true
+        p.deliver(support.portal_frame("state_applied", { re = frame.id, revisions = frame.records }))
+        p.bookkeeping[p.sent[#p.sent]] = true
+      end
+    end
+  end
+end
+
 ---Starts a connection on a fake platform and completes the handshake.
 ---@param p spec.FakePlatform The platform.
 ---@param options rpf.ClientOptions? Timing overrides.
@@ -461,7 +482,23 @@ function support.connected(p, options)
     protocol = 1,
     server_id = "00000001-0000-4000-8000-000000000001",
   }))
+  support.declared(p)
   return connection
+end
+
+---Every frame sent, as text, except the declaration `support.declared`
+---answered and the ack of its answer, so a test about the connection can
+---read what it sent by position.
+---@param p spec.FakePlatform The platform.
+---@return string[] texts The frames, in order.
+function support.wire(p)
+  local out = {}
+  for _, text in ipairs(p.sent) do
+    if not p.bookkeeping[text] then
+      out[#out + 1] = text
+    end
+  end
+  return out
 end
 
 return support

@@ -229,6 +229,7 @@ client.DEFAULTS = {
 ---@field seen table<string, true> Recently received frame ids, to recognise a duplicate.
 ---@field seen_order string[] The same ids, oldest first, to evict from.
 ---@field on_ready fun(client: rpf.Client)? Called after each `Welcome`, once the outbox is flushed.
+---@field on_release fun(client: rpf.Client, entry: rpf.OutboxEntry)? Called after any frame this server originated leaves the outbox, answered or dropped, once its callback has run. `rpf.sync` uses it to see the outbox drain, which callbacks alone cannot show after a restart, when the entries outlived theirs.
 local Client = {}
 Client.__index = Client
 
@@ -584,6 +585,9 @@ function Client:release(index, reply, err)
   self.callbacks[entry.id] = nil
   if callback then
     self:call("the callback for " .. entry.type, callback, reply, err)
+  end
+  if self.on_release then
+    self:call("on_release", self.on_release, self, entry)
   end
 end
 

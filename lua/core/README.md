@@ -48,7 +48,8 @@ files each side loads after it and in what order:
 
 ```lua
 rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, config.lua,
-                 -- client.lua, players.lua, handoff.lua, join.lua, api.lua
+                 -- client.lua, players.lua, records.lua, sync.lua, handoff.lua,
+                 -- join.lua, api.lua
 rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua, api.lua
 ```
 
@@ -66,8 +67,8 @@ Every file also keeps the core table in a local (`local rpf = rpf`), so the
 core keeps working after the Gmod adapter replaces the global with the public
 API (see The public API).
 
-The client never loads `protocol.lua`, `client.lua`, `players.lua` or
-`join.lua`, because the player's client must never hold the server's API key
+The client never loads `protocol.lua`, `client.lua`, `players.lua`,
+`records.lua`, `sync.lua` or `join.lua`, because the player's client must never hold the server's API key
 and has no players to manage.
 
 Then the adapter starts one side:
@@ -322,7 +323,7 @@ The bounds, all in `client.DEFAULTS`:
 | Bound | Default | Why |
 |---|---|---|
 | `max_frame_bytes` | 1 MiB | The portal's `limits::MAX_FRAME_BYTES`; a spec reads `limits.rs` to keep them equal. A larger frame would be refused on arrival, so `send` refuses it at once with an error. It also caps any one stored value at 1 MiB plus the header |
-| `max_entries` | 2048 | Frames this server originates. A day's outage on a busy server is a few hundred joins and leaves, and C7's reports are per record and superseded by revision, so thousands is headroom, while a load still reads only a couple of thousand keys |
+| `max_entries` | 2048 | Frames this server originates. A day's outage on a busy server is a few hundred joins and leaves, and C7's reports batch every changed record into one frame per flush, so thousands is headroom, while a load still reads only a couple of thousand keys |
 | `max_bytes` | 8 MiB | Their stored size. Eight maximum-size frames, or thousands of ordinary ones. It bounds the disk the engine's store takes and what a load reads at start, which is plain string scanning with no JSON parse |
 | `request_share` | 0.5 | Non-reissuable requests (`begin_join`, `redeem_ticket`, `create_character`) may use only half of both, so they cannot crowd out state reports. They are also useless long after the player who asked has gone |
 | `max_requests` | 64 | Journalled portal requests, which with their replies have a budget of their own, so a full outbox never stops a command from being answered |
@@ -421,7 +422,7 @@ hears exactly what the core's own modules hear.
   `MAX_DEPTH` (32) deep are refused and logged, so a cycle is a log line, not
   a stack overflow.
 - **Core event names are reserved.** The public `emit` refuses anything under
-  `players.`, `config.`, `auth.` or `rpf.`, so a script cannot forge a
+  `players.`, `config.`, `auth.`, `records.` or `rpf.`, so a script cannot forge a
   lifecycle event other scripts would believe.
 
 ### `rpf.players`
@@ -459,6 +460,59 @@ forget the check.
 `players.online()` is the shape F2's `OnlinePlayers` resync is built from:
 registered players only, `{ player_id, username, name, state, connected_at }`,
 sorted by player id, nothing engine-specific. F2 defines and sends the message.
+
+### Held records (`rpf.records`, `rpf.sync`)
+
+C7's half of the consistency rules in `AGENTS.md`. A game server is the
+only writer of a character, account or container while it **holds** it, and
+the portal writes Postgres directly for one nobody holds. Both rest on one
+invariant, enforced here rather than left to each module:
+
+**The core never keeps a record it does not hold.** `rpf.records` is the
+only place records live. A record enters only from the portal's `held`
+reply and leaves the moment it is released or the portal says this server
+does not hold it. `records.get` hands out copies, and returns nil for
+anything not held, so a module keeps ids and reads through it every time.
+
+- **Holding.** A registered player's records (everything their account owns
+  on this server) are held for their session, and released when they leave.
+  Anything else is held with `rpf.sync.hold({ owners = …, records = … })`:
+  `owners` holds every live record an owner has here (not transitively: a
+  character's own accounts are held through the character). The portal
+  refuses the whole hold if any named record is not this server's.
+- **Changing.** `records.set_character(id, fields)`,
+  `records.set_contents(id, contents)` and `records.transfer(from, to,
+  amount, description)`. A transfer needs both accounts held, mints the
+  ledger entry's `client_id` here, refuses to overdraw an account without
+  `unlimited_balance`, and keeps every balance within ±`MAX_AMOUNT`.
+- **Reporting.** A change marks its record, and `flush_interval_ms` (1 s)
+  later (a minute while the portal is unreachable, so a long outage cannot
+  fill the outbox) every marked record goes in one `state_changed`, each change naming
+  its base revision. The record moves to the next revision as it is sent,
+  so reports queued behind each other name consecutive revisions, and every
+  report waits in the persisted outbox while the portal is unreachable. A
+  change the outbox refuses stays marked for the next flush; a batch over
+  the frame limit is split.
+- **Stale is answered whole.** The portal applies a report all or nothing.
+  If a base revision is stale, it answers `resync_required`, and every
+  record the report named goes whole in a `resync`, at no lower than the
+  portal's revision: this server holds it, so its state is the truth. A
+  record the portal says this server does not hold (force-released by
+  staff, purged) is dropped and announced with `records.lost`. Ledger
+  entries stay unacknowledged until a reply says they landed, so a resync
+  carries every one still in doubt; the portal appends each `client_id` once.
+- **Releasing.** `rpf.sync.release(refs)` reports each record whole as its
+  final state and forgets it at once. A release the outbox cannot take is
+  refused and nothing is released, because its final state would be lost.
+- **The declaration.** After every `Welcome`, once each hold, release and
+  report queued before it has been answered, the server sends
+  `declare_holds`: what it holds and at which revision. The portal releases
+  anything not declared, which is how a restart, which holds nothing,
+  gives back what the old process held, and answers a stale or released one
+  as above. New holds wait for its answer, so it can never release one.
+
+Events, all reserved: `records.held(views)`, `records.released(refs)` and
+`records.lost(refs, reason)`.
 
 ### The login (`rpf.join`, `rpf.handoff`, `rpf.auth`)
 

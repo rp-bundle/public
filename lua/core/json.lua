@@ -69,6 +69,24 @@ function json.is_object(value)
   return type(value) == "table" and getmetatable(value) == OBJECT
 end
 
+---A deep copy of a decoded JSON value, keeping the array and object marks so
+---the copy encodes exactly as the original did. Modules that hand out what
+---they hold (`rpf.config`, `rpf.records`) give copies, so a caller editing
+---one cannot change what every other module reads.
+---@generic T
+---@param value T The value.
+---@return T copy The copy. `json.null` and scalars are returned as they are.
+function json.copy(value)
+  if type(value) ~= "table" or value == json.null then
+    return value
+  end
+  local out = {}
+  for k, v in pairs(value) do
+    out[k] = json.copy(v)
+  end
+  return setmetatable(out, getmetatable(value))
+end
+
 -- Encoding ---------------------------------------------------------------
 
 ---The escape for each character a JSON string may not hold raw.

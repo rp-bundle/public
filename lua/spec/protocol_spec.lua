@@ -48,7 +48,15 @@ end
 ---frame: what is added there is data the receiver keeps, not an unknown
 ---field it ignores. A config snapshot is one, so a section a newer portal
 ---adds is not lost (crates/rpf-protocol/tests/protocol.rs exempts its settings map likewise).
-local OPAQUE = { snapshot = true }
+---So are a container's contents and flags (C7), which the core passes through
+---as the portal sent them until D6 types them.
+local OPAQUE = {
+  snapshot = true,
+  ["records.contents"] = true,
+  ["changes.contents"] = true,
+  ["records.container.contents"] = true,
+  ["records.container.flags"] = true,
+}
 
 ---Adds a field to every object at every depth, as crates/rpf-protocol/tests/protocol.rs does,
 ---leaving the `OPAQUE` values alone.
@@ -254,6 +262,11 @@ describe("rpf.protocol against protocol/corpus/v1", function()
         player_dropped = "ack",
         command_applied = "ack",
         config_applied = "ack",
+        hold = "reply",
+        release = "ack",
+        state_changed = "reply",
+        resync = "reply",
+        declare_holds = "reply",
         ack = "nothing",
       },
       portal_to_server = {
@@ -264,6 +277,9 @@ describe("rpf.protocol against protocol/corpus/v1", function()
         join_challenge = "ack",
         player_authenticated = "ack",
         character_created = "ack",
+        held = "ack",
+        state_applied = "ack",
+        resync_required = "ack",
         ack = "nothing",
       },
     }
@@ -294,7 +310,7 @@ describe("rpf.protocol against protocol/corpus/v1", function()
       end)
     end
 
-    it("reissues only state reports and presence", function()
+    it("reissues only state reports, holds and presence", function()
       local reissuable = {}
       for _, direction in ipairs(DIRECTIONS) do
         for tag, spec in pairs(protocol.messages[direction]) do
@@ -307,7 +323,11 @@ describe("rpf.protocol against protocol/corpus/v1", function()
       assert.are.same({
         "server_to_portal/command_applied",
         "server_to_portal/config_applied",
+        "server_to_portal/hold",
         "server_to_portal/player_dropped",
+        "server_to_portal/release",
+        "server_to_portal/resync",
+        "server_to_portal/state_changed",
       }, reissuable)
     end)
 

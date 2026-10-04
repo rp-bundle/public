@@ -25,6 +25,8 @@
 ---@field config rpf.config The applied config snapshot, its version, and typed lookups.
 ---@field client rpf.client The game server's connection to the portal.
 ---@field players rpf.players The players on this server and their lifecycle.
+---@field records rpf.records The records this server holds (C7), and nothing else.
+---@field sync rpf.sync Holds, releases and state reports for those records.
 ---@field handoff rpf.handoff The login messages between server and client.
 ---@field join rpf.join The server side of a player's login.
 ---@field auth rpf.auth The client side of a player's login.
@@ -57,6 +59,8 @@ rpf.files = {
     "config.lua",
     "client.lua",
     "players.lua",
+    "records.lua",
+    "sync.lua",
     "handoff.lua",
     "join.lua",
     "api.lua",
@@ -80,6 +84,7 @@ rpf.files = {
 ---@field portal_url string? The portal's HTTP address, which players' clients log in to. Worked out from `url` when left out (`wss://host/ws` becomes `https://host`).
 ---@field client rpf.ClientOptions? Overrides for the connection's timings.
 ---@field join rpf.JoinOptions? Overrides for the login timings, such as how long a player may take to log in.
+---@field sync rpf.SyncOptions? Overrides for how often held records are reported.
 
 ---Starts the game-server half of the core on a platform.
 ---
@@ -104,6 +109,7 @@ function rpf.start_server(platform, options)
     options = options.client,
   })
   rpf.players.start(platform)
+  rpf.sync.start(platform, rpf.connection, options.sync)
   rpf.join.start(platform, rpf.connection, {
     url = options.url,
     portal_url = options.portal_url,

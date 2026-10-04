@@ -70,20 +70,7 @@ config.SECTIONS = {
 ---@type rpf.config.Current
 local current = { index = {} }
 
----A deep copy of a decoded JSON value, keeping the array and object marks so
----the copy encodes exactly as the original did.
----@param value any The value.
----@return any copy The copy.
-local function copy(value)
-  if type(value) ~= "table" or value == json.null then
-    return value
-  end
-  local out = {}
-  for k, v in pairs(value) do
-    out[k] = copy(v)
-  end
-  return setmetatable(out, getmetatable(value))
-end
+local copy = json.copy
 
 ---Builds the lookup index for a snapshot, refusing a known section of the
 ---wrong shape.
