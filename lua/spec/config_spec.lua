@@ -174,6 +174,66 @@ describe("rpf.config", function()
     assert.are.equal("h3", again.last().config_hash)
   end)
 
+  describe("the portal's config requests", function()
+    ---Delivers a `config` request and returns the reply the core sent.
+    ---@param platform spec.FakePlatform The platform, connected.
+    ---@param version integer The version.
+    ---@param text string The snapshot's JSON.
+    ---@return rpf.Frame request The request delivered.
+    ---@return rpf.Frame reply The `config_applied` that answered it.
+    local function push(platform, version, text)
+      local request = support.portal_frame("config", {
+        version = version,
+        hash = "sha256:" .. version,
+        snapshot = snapshot(text),
+      })
+      platform.deliver(request)
+      return request, platform.last()
+    end
+
+    it("applies a pushed config, persists it, and answers applied", function()
+      support.connected(p)
+      local request, reply = push(p, 2, FIRST)
+
+      assert.are.equal("config_applied", reply.type)
+      assert.are.equal(request.id, reply.re)
+      assert.are.same({ outcome = "applied" }, reply.outcome)
+      assert.are.equal(2, rpf.config.version())
+      assert.are.equal(500, rpf.config.setting("starting_cash"))
+      assert.are.same({ 2, "sha256:2" }, { rpf.config.load(p) })
+    end)
+
+    it("refuses a snapshot it cannot index, keeps what it had, and says why", function()
+      support.connected(p)
+      push(p, 2, FIRST)
+      local _, reply = push(p, 3, [[{ "settings": {}, "items": { "water": {} } }]])
+
+      assert.are.equal("failed", reply.outcome.outcome)
+      assert.truthy(reply.outcome.reason:find("items must be an array", 1, true), reply.outcome.reason)
+      assert.are.equal(2, rpf.config.version())
+      assert.are.equal(2, (rpf.config.load(p)))
+    end)
+
+    it("keeps a section it does not index, and announces it", function()
+      support.connected(p)
+      local _, reply = push(p, 4, [[{ "settings": {}, "vehicles": [ { "model": "adder" } ] }]])
+
+      assert.are.same({ outcome = "applied" }, reply.outcome)
+      assert.are.same({ "settings", "vehicles" }, changes[#changes].sections)
+    end)
+
+    it("applies a resent config once, and answers it with the original reply", function()
+      support.connected(p)
+      local request = push(p, 2, FIRST)
+      local announced = #changes
+      local first = p.sent[#p.sent]
+      p.deliver(request)
+
+      assert.are.equal(first, p.sent[#p.sent])
+      assert.are.equal(announced, #changes)
+    end)
+  end)
+
   it("treats a stored entry that does not index as a cold start", function()
     p.store[rpf.config.KEY] = '{"version":3,"hash":"h3","snapshot":{"items":{}}}'
     assert.is_nil(rpf.config.load(p))

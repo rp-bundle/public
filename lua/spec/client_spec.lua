@@ -932,6 +932,72 @@ describe("rpf.client", function()
       assert.are.equal(second.id, p.last().re)
     end)
 
+    ---A `config` request, as the portal sends one.
+    ---@return rpf.Frame frame The frame.
+    local function config_request()
+      return support.portal_frame("config", {
+        version = 2,
+        hash = "sha256:2",
+        snapshot = assert(rpf.json.decode('{"settings":{"server.welcome_message":"hi"}}')),
+      })
+    end
+
+    -- The portal never resends a config, so a full journal must not turn
+    -- one away: the server would run old config until it reconnects.
+    it("runs a config even while the journal is full of commands", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p, { max_requests = 1 })
+      applying(connection)
+      p.deliver(command())
+      local config = config_request()
+      p.deliver(config)
+
+      local reply = p.last()
+      assert.are.equal("config_applied", reply.type)
+      assert.are.equal(config.id, reply.re)
+      assert.are.equal("applied", reply.outcome.outcome)
+      assert.are.equal("hi", rpf.config.setting("server.welcome_message"))
+    end)
+
+    -- Whether it was stored or not, the next Hello names whichever config
+    -- is, so `unknown` is the whole answer the portal needs.
+    it("answers a config interrupted by a restart as unknown, and never applies it again", function()
+      local store = {}
+      local p = support.fake_platform({ store = store })
+      local connection = support.connected(p)
+      connection:handle("config", function()
+        -- Dies here: no reply.
+      end)
+      local config = config_request()
+      p.deliver(config)
+
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 4242 })
+      rpf.start_server(restarted, { url = "ws://portal", api_key = "k" })
+      restarted.open()
+      welcome(restarted)
+
+      local reply = restarted.last()
+      assert.are.equal("config_applied", reply.type)
+      assert.are.equal(config.id, reply.re)
+      assert.are.equal("unknown", reply.outcome.outcome)
+      -- The same frame, rebuilt with the restarted core's codec.
+      local resent = config_request()
+      resent.id, resent.sent_at = config.id, config.sent_at
+      restarted.deliver(resent)
+      assert.is_nil(rpf.config.version(), "the resend is answered from the journal, not applied")
+    end)
+
+    it("refuses a config it has no handler for, rather than leave the portal waiting", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      connection.handlers.config = nil
+      p.deliver(config_request())
+      local reply = p.last()
+      assert.are.equal("config_applied", reply.type)
+      assert.are.equal("failed", reply.outcome.outcome)
+    end)
+
     it("does not let a caller send a reply outside a handler", function()
       local connection = support.connected(support.fake_platform())
       local ok, err = pcall(connection.send, connection, "command_applied", {
