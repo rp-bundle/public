@@ -24,9 +24,12 @@
 ---   Ledger entries stay unacknowledged until a reply says they landed, so a
 ---   resync carries every one still in doubt, and the portal appends each
 ---   `client_id` once.
---- - **Release carries the final state.** A release reports every released
----   record whole, so nothing marked is lost, and they are forgotten here at
----   once.
+--- - **Release carries the final state.** A release flushes everything
+---   marked first, then reports every released record whole, so nothing
+---   marked is lost, and they are forgotten here at once.
+--- - **Whole reports take a revision of their own**, one past the last this
+---   server used, so a late resend of an older whole report is dropped by
+---   the portal rather than put over a newer one.
 --- - **The declaration.** After each `Welcome`, once every hold, release and
 ---   report queued before it has been answered, the server declares what it
 ---   holds and at which revision (`declare_holds`). The portal releases
@@ -117,11 +120,15 @@ local function wire_transaction(tx)
   }
 end
 
----A record whole, as a `resync` or `release` reports it.
+---A record whole, as a `resync` or `release` reports it, at a revision of
+---its own: one past the last this server used, so no two different whole
+---states share a revision, and the portal can drop an older one that
+---arrives late (a resend after a lost reply) instead of putting it over a
+---newer one. The record moves to that revision once the report is queued.
 ---@param entry rpf.records.Entry The record.
 ---@return table report The `RecordReport`.
 local function full_report(entry)
-  local report = { kind = entry.kind, id = entry.id, revision = entry.revision }
+  local report = { kind = entry.kind, id = entry.id, revision = entry.revision + 1 }
   if entry.kind == "character" then
     report.first_name = entry.data.first_name
     report.last_name = entry.data.last_name
@@ -349,6 +356,7 @@ function sync.flush()
     return entry.resync
   end)
   local ok = send_all("resync", wholes, full_report, function(entry)
+    entry.revision = entry.revision + 1
     entry.resync = false
     entry.changed = {}
     mark_sent(entry)
@@ -438,11 +446,16 @@ end
 ---forgotten at once and announced with `records.released`; a record this
 ---server does not hold is ignored. Refused when the outbox is full, in which
 ---case nothing is released, because the final state would be lost.
+---
+---Everything marked is flushed first, so a report naming a released record
+---(another account's payment to it) reaches the portal ahead of the release,
+---in order.
 ---@param refs rpf.RecordRef[] The records.
 ---@param callback fun(reply: table?, err: string?)? Called with the portal's answer.
 ---@return boolean? ok True if the release was queued.
 ---@return string? err Why not.
 function sync.release(refs, callback)
+  sync.flush()
   local reports, held = {}, {}
   for _, ref in ipairs(refs) do
     local entry = records.entries[records.key(ref.kind, ref.id)]

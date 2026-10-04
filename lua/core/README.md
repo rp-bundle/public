@@ -495,14 +495,16 @@ anything not held, so a module keeps ids and reads through it every time.
   the frame limit is split.
 - **Stale is answered whole.** The portal applies a report all or nothing.
   If a base revision is stale, it answers `resync_required`, and every
-  record the report named goes whole in a `resync`, at no lower than the
-  portal's revision: this server holds it, so its state is the truth. A
+  record the report named goes whole in a `resync`: this server holds it,
+  so its state is the truth. Every whole report (a resync or a release)
+  takes a revision of its own, one past the higher of this server's and
+  the portal's, so a late resend of an older one cannot land over it. A
   record the portal says this server does not hold (force-released by
   staff, purged) is dropped and announced with `records.lost`. Ledger
   entries stay unacknowledged until a reply says they landed, so a resync
   carries every one still in doubt; the portal appends each `client_id` once.
-- **Releasing.** `rpf.sync.release(refs)` reports each record whole as its
-  final state and forgets it at once. A release the outbox cannot take is
+- **Releasing.** `rpf.sync.release(refs)` flushes everything marked, then
+  reports each record whole as its final state and forgets it at once. A release the outbox cannot take is
   refused and nothing is released, because its final state would be lost.
 - **The declaration.** After every `Welcome`, once each hold, release and
   report queued before it has been answered, the server sends

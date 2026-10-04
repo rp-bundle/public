@@ -235,7 +235,7 @@ describe("rpf.sync", function()
       assert.are.equal(0, #rpf.records.entries["account:" .. WALLET].transactions)
     end)
 
-    it("answers a stale report with every record it named, whole, at no lower than the portal's revision", function()
+    it("answers a stale report with every record it named, whole, at a revision past the portal's", function()
       rpf.records.set_character(CHARACTER, { first_name = "Janet" })
       local client_id = rpf.records.transfer(WALLET, BANK, 25, "Fine")
       flush(p)
@@ -252,20 +252,20 @@ describe("rpf.sync", function()
       assert.are.same({
         kind = "account",
         id = WALLET,
-        revision = 1,
+        revision = 2,
         transactions = {
           { client_id = client_id, from_account = WALLET, to_account = BANK, amount = 25, description = "Fine" },
         },
-      }, whole.records[1], "the unacknowledged entry goes again")
+      }, whole.records[1], "the unacknowledged entry goes again, at a revision of its own")
       assert.are.same({
         kind = "character",
         id = CHARACTER,
-        revision = 9,
+        revision = 10,
         first_name = "Janet",
         last_name = "Doe",
         gender = "female",
-      }, whole.records[2], "at the portal's revision, which is ahead")
-      assert.are.equal(9, rpf.records.revision("character", CHARACTER))
+      }, whole.records[2], "one past the portal's revision, which is ahead")
+      assert.are.equal(10, rpf.records.revision("character", CHARACTER))
 
       apply(p, whole)
       assert.are.equal(0, #rpf.records.entries["account:" .. WALLET].transactions)
@@ -323,18 +323,24 @@ describe("rpf.sync", function()
       hold_all(p)
     end)
 
-    it("reports the final state whole and forgets the records at once", function()
+    it("flushes first, then reports the final state whole and forgets the records at once", function()
       rpf.records.set_character(CHARACTER, { first_name = "Janet" })
-      local client_id = rpf.records.transfer(WALLET, BANK, 5, "Tip")
+      local client_id = rpf.records.transfer(BANK, WALLET, 5, "Tip")
 
       assert.is_true(rpf.sync.release({ { kind = "character", id = CHARACTER }, { kind = "account", id = WALLET } }))
 
+      local frames = p.frames()
+      assert.are.equal("release", frames[#frames].type)
+      local flushed = frames[#frames - 1]
+      assert.are.equal("state_changed", flushed.type, "the marked changes went first")
+      assert.are.equal(2, #flushed.changes, "the payment to the released wallet among them")
+      assert.are.equal(client_id, flushed.changes[1].transactions[1].client_id)
       local release = last_of(p, "release")
       assert.are.equal("Janet", release.records[1].first_name)
-      assert.are.equal(client_id, release.records[2].transactions[1].client_id)
+      assert.are.equal(5, release.records[1].revision, "one past the flushed change's 4")
       assert.is_false(rpf.records.is_held("character", CHARACTER))
       flush(p)
-      assert.are.equal(0, #sent_of(p, "state_changed"), "nothing marked is left to report")
+      assert.are.equal(1, #sent_of(p, "state_changed"), "nothing marked is left to report")
     end)
 
     it("releases nothing when the outbox cannot take the final state", function()
@@ -414,7 +420,7 @@ describe("rpf.sync", function()
 
       assert.is_false(rpf.records.is_held("container", POCKETS))
       local whole = last_of(p, "resync")
-      assert.are.same({ { kind = "account", id = BANK, revision = 8, transactions = {} } }, whole.records)
+      assert.are.same({ { kind = "account", id = BANK, revision = 9, transactions = {} } }, whole.records)
     end)
   end)
 end)
