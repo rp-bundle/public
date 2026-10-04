@@ -93,6 +93,7 @@ describe("rpf.platform", function()
     assert.are.same({
       "after",
       "connect",
+      "disconnect",
       "engine",
       "expose",
       "http_request",
@@ -113,7 +114,7 @@ describe("rpf.platform", function()
 
   it("keeps the API key's transport off the client", function()
     local client = names(rpf.platform.CLIENT)
-    for _, name in ipairs({ "connect", "send", "random_hex", "kick" }) do
+    for _, name in ipairs({ "connect", "disconnect", "send", "random_hex", "kick" }) do
       for _, member in ipairs(client) do
         assert.are_not.equal(name, member)
       end

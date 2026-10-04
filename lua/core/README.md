@@ -95,6 +95,7 @@ step.
 |---|---|---|
 | Engine | `engine` | `"fivem"`, `"gmod"` or `"mock"`. Reported in `Hello`, never branched on |
 | Transport | `connect(url, handlers)` | Opens the websocket. `handlers` has `open()`, `message(text)` and `close(reason)`. One connection at a time |
+| | `disconnect()` | Closes the open connection or abandons the attempt. Its `close` is still called, and the core ignores it |
 | | `send(text) -> boolean` | Sends one text frame. `false` when there is no open connection |
 | Http | `http_request(method, url, headers, body, callback)` | `callback(status, body, headers)`, exactly once. `status` is 0 when no response arrived |
 | Clock | `now() -> ms` | Wall-clock milliseconds since the Unix epoch |
@@ -207,14 +208,25 @@ The game server's connection to the portal (`rpf.connection` once started).
   snapshot whose clock ran fast, a host that booted with a bad clock and
   synced later) the outbox keeps a high-water mark of the clock, persisted
   under `rpf.outbox.clock` by the sweep (at most one write a minute, never
-  on an ordinary `send`). A reading more than `clock_step_tolerance_ms` (30 s) below it,
-  seen at load, in a sweep, or at `send` before the new frame is stamped, is
-  a step: every non-reissuable entry is dropped, logged, and its callback
-  called with `nil, "expired"`; every reissuable one is reissued under a
-  fresh id and `sent_at`; a portal request still running has its timeout
-  restarted from now; and the mark is reset to now. A smaller regress is
-  left alone, but the mark does not move down, so several add up until they
-  cross the tolerance. An unreadable mark is treated as a step. The
+  on an ordinary `send`). So the stored mark can trail the newest entry by
+  a minute, and a load raises it to the newest entry's stamp before
+  checking. A reading more than `clock_step_tolerance_ms` (30 s) below the
+  mark, seen at load, in a sweep, or at `send` before the new frame is
+  stamped, is a step: every non-reissuable entry is dropped, logged, and its
+  callback called with `nil, "expired"`; every reissuable one is reissued
+  under a fresh id and `sent_at`; a portal request still running has its
+  timeout restarted from now; and the mark is reset to now. A connection
+  whose `Hello` went out before the step is closed (`disconnect`) and made
+  again through the usual backoff, before anything is sent: the portal
+  reads `sent_at` against the offset it measured at `Hello`, so on the old
+  connection a reissued frame would look older by the step, be refused
+  `expired`, and be reissued again in a loop. The reissued frames, and
+  anything a callback sends meanwhile, go out once, after the new
+  `Welcome`. A smaller regress is left alone, but the mark does not move
+  down, so several add up until they cross the tolerance. An unreadable
+  mark is treated as a step. While an unreadable slot count has halted the
+  outbox, the mark is neither checked nor written, so the higher mark
+  stays for the process that runs once storage is repaired. The
   tolerance sits under the portal's `SENT_AT_TOLERANCE` (60 s), so a frame
   stamped before a step is reissued or expired here rather than refused as
   from the future, and far under the window, so a regress it misses stays

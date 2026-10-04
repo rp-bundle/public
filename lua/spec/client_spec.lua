@@ -552,6 +552,19 @@ describe("rpf.client", function()
   describe("when the host clock goes back", function()
     local window = 7 * DAY
 
+    ---Checks that a step caught while connected closed the connection, then
+    ---completes the reconnect it scheduled, so the next `Hello` measures the
+    ---portal's offset under the new clock.
+    ---@param p spec.FakePlatform The platform, just after the step was caught.
+    local function reconnect_after_step(p)
+      assert.is_nil(p.socket, "the connection made under the old clock is closed")
+      local connects = #p.connects
+      p.advance(2 * 60 * 1000)
+      assert.are.equal(connects + 1, #p.connects, "and made again")
+      p.open()
+      welcome(p)
+    end
+
     it("changes nothing for a step under the tolerance", function()
       local p = support.fake_platform()
       local connection = support.connected(p)
@@ -579,15 +592,17 @@ describe("rpf.client", function()
       end)
 
       p.time = p.time - window - DAY
+      local stepped = p.time
       connection:sweep()
 
       assert.are.same({ err = "expired" }, lost)
       assert.are.equal(1, #connection.outbox)
+      reconnect_after_step(p)
       local fresh = p.last()
       assert.are.equal("player_dropped", fresh.type)
       assert.are_not.equal(report, fresh.id)
       assert.are.equal(connection.outbox[1].id, fresh.id)
-      assert.are.equal(rpf.protocol.timestamp(p.time), fresh.sent_at, "stamped by the new clock")
+      assert.are.equal(rpf.protocol.timestamp(stepped), fresh.sent_at, "stamped by the new clock")
       for _, frame in ipairs(sent_of(p, "create_character")) do
         assert.are.equal(request, frame.id, "the request is never sent under another id")
       end
@@ -645,6 +660,30 @@ describe("rpf.client", function()
       assert.are.equal(1, #restarted.logged("warn", "the host clock went back by"))
     end)
 
+    -- The stored mark moves only with the sweep, so it can trail the newest
+    -- entry by a whole sweep interval: here 59 s, which with a step of 80 s
+    -- leaves the clock only 21 s under it, inside the tolerance. The entry's
+    -- own stamp is what shows the step.
+    it("catches a step after a restart that the last sweep's mark alone would miss", function()
+      local store = {}
+      local p = support.fake_platform({ store = store })
+      local connection = support.connected(p)
+      local swept = store[rpf.client.CLOCK_KEY]
+      p.advance(rpf.client.DEFAULTS.sweep_interval_ms - 1000)
+      local id = connection:send("player_dropped", dropped())
+      assert.are.equal(swept, store[rpf.client.CLOCK_KEY], "no sweep has run since")
+
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 31337, time = p.time - 80 * 1000 })
+      support.connected(restarted)
+
+      local reports = sent_of(restarted, "player_dropped")
+      assert.are.equal(1, #reports)
+      assert.are_not.equal(id, reports[1].id, "reissued, not resent under the old id")
+      assert.are.equal(rpf.protocol.timestamp(restarted.time), reports[1].sent_at, "stamped by the new clock")
+      assert.are.equal(1, #restarted.logged("warn", "the host clock went back by " .. (80 * 1000) .. " ms"))
+    end)
+
     it("treats an unreadable stored mark as a step", function()
       local store = {}
       local p = support.fake_platform({ store = store })
@@ -691,8 +730,10 @@ describe("rpf.client", function()
       local o = rpf.client.DEFAULTS
 
       p.time = p.time - window
+      local stepped = p.time
       connection:sweep()
-      p.time = p.time + o.request_timeout_ms - 1
+      reconnect_after_step(p)
+      p.time = stepped + o.request_timeout_ms - 1
       connection:sweep()
       assert.are.equal(0, #sent_of(p, "command_applied"), "not before its timeout")
       p.time = p.time + 1
@@ -700,6 +741,103 @@ describe("rpf.client", function()
       local replies = sent_of(p, "command_applied")
       assert.are.equal(1, #replies)
       assert.are.equal("unknown", replies[1].outcome.outcome)
+    end)
+
+    -- The portal reads `sent_at` against the offset it measured at this
+    -- connection's `Hello`, under the old clock. A frame reissued under the
+    -- new one would look older by the step there, be refused `expired`, be
+    -- reissued, and be refused again, for as long as the connection lasted.
+    it("makes the connection again before sending anything under the new clock", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local report = connection:send("player_dropped", dropped())
+      local sent = #p.sent
+
+      p.time = p.time - window - DAY
+      connection:sweep()
+
+      assert.are.equal(sent, #p.sent, "nothing goes out on the connection whose offset is the old clock's")
+      assert.are.equal(1, #p.disconnects)
+      assert.are.equal("connecting", connection.state)
+      reconnect_after_step(p)
+
+      local after = {}
+      for i, frame in ipairs(p.frames()) do
+        if i > sent then
+          after[#after + 1] = frame
+        end
+      end
+      assert.are.equal("hello", after[1].type, "a fresh Hello measures the offset first")
+      local reports = {}
+      for _, frame in ipairs(after) do
+        if frame.type == "player_dropped" then
+          reports[#reports + 1] = frame
+        end
+      end
+      assert.are.equal(1, #reports, "the reissued report goes out once")
+      assert.are_not.equal(report, reports[1].id)
+      assert.are.equal(connection.outbox[1].id, reports[1].id)
+    end)
+
+    it("sends what a callback sends during the step once, after the new Welcome", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local retried
+      connection:send("create_character", character(), function(_, err)
+        assert.are.equal("expired", err)
+        retried = connection:send("player_dropped", dropped())
+      end)
+      local sent = #p.sent
+
+      p.time = p.time - window - DAY
+      connection:sweep()
+
+      assert.is_string(retried)
+      assert.are.equal(sent, #p.sent, "not on the old connection")
+      assert.are.equal(1, #p.disconnects, "the callback's send is not taken for a second step")
+      assert.are.equal(1, #p.logged("warn", "the host clock went back by"))
+      reconnect_after_step(p)
+      local reports = sent_of(p, "player_dropped")
+      assert.are.equal(1, #reports)
+      assert.are.equal(retried, reports[1].id)
+    end)
+
+    it("makes the connection again when the step comes between Hello and Welcome", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      connection:send("player_dropped", dropped())
+      p.drop()
+      p.advance(2 * 60 * 1000)
+      p.open()
+      local sent = #p.sent
+      local reports = #sent_of(p, "player_dropped")
+
+      p.time = p.time - window - DAY
+      welcome(p)
+
+      assert.are.equal(sent + 1, #p.sent, "only the Welcome's ack goes out on it")
+      assert.are.equal("ack", p.last().type)
+      assert.are.equal("connecting", connection.state)
+      reconnect_after_step(p)
+      assert.are.equal("ready", connection.state)
+      assert.are.equal(reports + 1, #sent_of(p, "player_dropped"), "the reissued report, once")
+    end)
+
+    it("never overwrites a stored mark it could not read when recovery failed", function()
+      local store = {}
+      local p = support.fake_platform({ store = store })
+      support.connected(p):send("create_character", character())
+      local mark = store[rpf.client.CLOCK_KEY]
+      store[rpf.client.SLOTS_KEY] = "unreadable"
+
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 4242, time = p.time - window - DAY })
+      local broken = support.connected(restarted)
+      restarted.advance(2 * rpf.client.DEFAULTS.sweep_interval_ms)
+      broken:sweep()
+
+      assert.are.equal(mark, store[rpf.client.CLOCK_KEY], "the higher mark is left for the repaired process")
+      assert.are.equal(0, #restarted.logged("warn", "the host clock went back"))
     end)
   end)
 
