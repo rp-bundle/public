@@ -54,6 +54,9 @@ local FALLBACKS = {
       outcome = { outcome = "failed", reason = "this server has no handler for " .. frame.command.command },
     })
   end,
+  config = function(_, reply)
+    reply("config_applied", { outcome = { outcome = "failed", reason = "this server has no config handler" } })
+  end,
 }
 
 ---The reply to each kind of portal request when its handler started and the
@@ -68,6 +71,11 @@ local FALLBACKS = {
 local UNKNOWN = {
   apply_command = function(reason)
     return "command_applied", { outcome = { outcome = "unknown", reason = reason } }
+  end,
+  -- A config whose apply was cut off may or may not be stored; the next
+  -- `Hello` names whichever is, so `unknown` is all the portal needs.
+  config = function(reason)
+    return "config_applied", { outcome = { outcome = "unknown", reason = reason } }
   end,
 }
 

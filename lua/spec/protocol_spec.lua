@@ -44,18 +44,29 @@ local function keys(t)
   return out
 end
 
----Adds a field to every object at every depth, as tests/protocol.rs does.
+---Values kept whole rather than decoded field by field, by their path in a
+---frame: what is added there is data the receiver keeps, not an unknown
+---field it ignores. A config snapshot is one, so a section a newer portal
+---adds is not lost (tests/protocol.rs exempts its settings map likewise).
+local OPAQUE = { snapshot = true }
+
+---Adds a field to every object at every depth, as tests/protocol.rs does,
+---leaving the `OPAQUE` values alone.
 ---@param value any A decoded JSON value.
 ---@param json rpf.json The codec, for telling objects from arrays.
-local function add_field_everywhere(value, json)
+---@param path string? Where `value` is in the frame, nil at the top.
+local function add_field_everywhere(value, json, path)
+  if path and OPAQUE[path] then
+    return
+  end
   if json.is_object(value) then
-    for _, child in pairs(value) do
-      add_field_everywhere(child, json)
+    for key, child in pairs(value) do
+      add_field_everywhere(child, json, path and path .. "." .. key or key)
     end
     value.added_later = "from a later version"
   elseif json.is_array(value) then
     for _, item in ipairs(value) do
-      add_field_everywhere(item, json)
+      add_field_everywhere(item, json, path)
     end
   end
 end
@@ -149,6 +160,18 @@ describe("rpf.protocol against protocol/corpus/v1", function()
     assert.are.equal(json.null, json.decode(text).config_hash)
   end)
 
+  it("keeps a config snapshot whole, sections it does not know included", function()
+    local frame = json.decode(corpus("portal_to_server").config)
+    frame.snapshot.items = json.array({ json.object({ slug = "water", weight = 500 }) })
+    frame.snapshot.settings["economy.added_later"] = 10
+    local decoded = assert(protocol.decode("portal_to_server", assert(json.encode(frame))))
+    assert.are.same(frame.snapshot, decoded.snapshot)
+    assert.are.equal(json.encode(frame.snapshot), json.encode(decoded.snapshot))
+
+    frame.snapshot = json.array({})
+    assert.is_nil(protocol.decode("portal_to_server", assert(json.encode(frame))))
+  end)
+
   it("refuses a field of the wrong type", function()
     local raw = corpus("portal_to_server").apply_command
     local cases = {
@@ -230,10 +253,12 @@ describe("rpf.protocol against protocol/corpus/v1", function()
         create_character = "reply",
         player_dropped = "ack",
         command_applied = "ack",
+        config_applied = "ack",
         ack = "nothing",
       },
       portal_to_server = {
         apply_command = "reply",
+        config = "reply",
         welcome = "ack",
         rejected = "ack",
         join_challenge = "ack",
@@ -279,7 +304,11 @@ describe("rpf.protocol against protocol/corpus/v1", function()
         end
       end
       table.sort(reissuable)
-      assert.are.same({ "server_to_portal/command_applied", "server_to_portal/player_dropped" }, reissuable)
+      assert.are.same({
+        "server_to_portal/command_applied",
+        "server_to_portal/config_applied",
+        "server_to_portal/player_dropped",
+      }, reissuable)
     end)
 
     it("retries only retry and rate_limited", function()

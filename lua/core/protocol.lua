@@ -8,7 +8,9 @@
 ---`frame.type`, `frame.id`, `frame.re`, `frame.player_id`.
 ---
 ---Decoding follows the portal's rules exactly. Unknown fields are ignored, at
----every depth, and do not appear in the decoded frame. An unknown `type`, a
+---every depth, and do not appear in the decoded frame. The one exception is a
+---config snapshot, which is data rather than fields, and is kept whole so a
+---section a newer portal adds is not lost on the way. An unknown `type`, a
 ---missing field, or a field of the wrong type is refused. A field that may be
 ---null must still be present, sent as null.
 ---@class rpf.protocol
@@ -354,6 +356,19 @@ local GENDER = same_both_ways(function(value, path)
   fail(path, "expected male, female or { server_specific = string }")
 end)
 
+---A JSON object kept whole, unknown keys and all, for data whose keys are
+---not fields: the config snapshot, whose sections a newer portal adds one at
+---a time (E3–E5) and which `rpf.config` stores, compares and announces
+---whether or not it can index them. Dropping what this core does not know
+---would make a newer portal's config look different from what it sent.
+---`config.apply` checks the sections it does know.
+local OPAQUE_OBJECT = same_both_ways(function(value, path)
+  if not json.is_object(value) then
+    fail(path, "expected an object")
+  end
+  return value
+end)
+
 local OWNER_REF = object({
   { "kind", enum({ "server", "player", "character", "employer" }) },
   { "id", UUID },
@@ -438,6 +453,10 @@ protocol.messages = {
       { "re", UUID },
       { "outcome", OUTCOME },
     }),
+    config_applied = message("ack", true, {
+      { "re", UUID },
+      { "outcome", OUTCOME },
+    }),
     ack = message("nothing", false, {
       { "re", UUID },
     }),
@@ -470,6 +489,11 @@ protocol.messages = {
     }),
     apply_command = message("reply", false, {
       { "command", COMMAND },
+    }),
+    config = message("reply", false, {
+      { "version", U64 },
+      { "hash", STRING },
+      { "snapshot", OPAQUE_OBJECT },
     }),
     ack = message("nothing", false, {
       { "re", UUID },

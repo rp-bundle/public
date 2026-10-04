@@ -1,0 +1,13 @@
+{
+  "id": "00000005-0000-4000-8000-000000000005",
+  "sent_at": "2026-01-01T00:00:00Z",
+  "type": "config",
+  "version": 7,
+  "hash": "sha256:sample",
+  "snapshot": {
+    "settings": {
+      "characters.max_per_player": 3,
+      "server.welcome_message": "Welcome to the city."
+    }
+  }
+}

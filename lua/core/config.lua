@@ -13,16 +13,20 @@
 ---Lookups return copies. A script that edits what `config.item` returned
 ---changes its own copy, never the cached snapshot every other module reads.
 ---
----Nothing applies a snapshot yet: E2 defines `ConfigSnapshot` and calls
----`config.apply` when one arrives. Until then the lookups answer nil and
----`Hello` reports a cold start.
+---The portal sends a `config` request after `Welcome` whenever the version
+---and hash `Hello` named are not its current ones, and again whenever a
+---change moves this server's version. `config.serve` registers the handler,
+---which applies it and answers `config_applied`: `applied`, or `failed` with
+---why, keeping the config it had. The request journal (`rpf.client`) makes
+---that at most once per request, and answers a crash mid-apply `unknown`.
 ---
----**The snapshot's shape is E2's.** Until E2 defines `ConfigSnapshot`, this
----assumes what its issue describes: `settings` as an object keyed by setting
----name, and `items`, `employers` and `jobs` as arrays of objects keyed by
----`slug`. `config.SECTIONS` holds that assumption in one place. A section
----not listed there is kept, compared and reported in `config.changed`, just
----not indexed, so a portal that adds one (as E3–E5 will) is never refused.
+---**The snapshot's shape is `protocol::ConfigSnapshot`.** `settings` is an
+---object keyed by setting name, every key present. `items`, `employers` and
+---`jobs` (E3–E5) will be arrays of objects keyed by `slug`, and
+---`config.SECTIONS` holds that in one place. The protocol decoder keeps the
+---snapshot whole, so a section not listed there is kept, compared and
+---reported in `config.changed`, just not indexed, and a portal that adds one
+---is never refused.
 ---@class rpf.config
 ---@field KEY string The storage key. Namespaced, because the store is shared with whatever else the engine persists.
 ---@field SECTIONS table<string, rpf.config.Section> How each known section is indexed.
@@ -249,6 +253,26 @@ function config.apply(platform, version, hash, snapshot)
   platform.kv_set(config.KEY, text)
   install(version, hash, snapshot, index)
   return true, nil
+end
+
+---Answers the portal's `config` requests on a connection: applies each one
+---and replies `config_applied`, `applied` or `failed` with the reason. Called
+---by `rpf.start_server`.
+---
+---A refused snapshot leaves the config that was applied before, which is
+---what the portal is told, so staff never see a version as live here that
+---this server did not take.
+---@param platform rpf.ServerPlatform The platform the config is stored through.
+---@param connection rpf.Client The connection to the portal.
+function config.serve(platform, connection)
+  connection:handle("config", function(frame, reply)
+    local applied, err = config.apply(platform, frame.version, frame.hash, frame.snapshot)
+    if applied then
+      reply("config_applied", { outcome = { outcome = "applied" } })
+    else
+      reply("config_applied", { outcome = { outcome = "failed", reason = "refused the snapshot: " .. tostring(err) } })
+    end
+  end)
 end
 
 ---The version applied now.

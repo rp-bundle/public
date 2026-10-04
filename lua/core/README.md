@@ -345,12 +345,21 @@ Typed lookups return copies: `config.item(slug)`, `config.job(slug)`,
 `config.employer(slug)`, `config.setting(key)` and `config.version()`. A
 setting sent as `null` is `json.null`, apart from one never sent.
 
-Nothing calls `apply` yet: E2 defines `ConfigSnapshot` and wires it. Until
-then the snapshot's shape is an assumption held in one place,
-`config.SECTIONS` (`settings` an object by key; `items`, `employers` and
-`jobs` arrays of objects keyed by `slug`). A section not listed there is kept
-and reported in `config.changed`, just not indexed, so E3–E5 adding sections
-is never a refusal.
+The portal sends a `config` request (E2) after `Welcome` unless `Hello`
+named its current version and hash, and again whenever a change moves this
+server's version. `config.serve`, registered by `rpf.start_server`, applies
+it and answers `config_applied`: `applied`, or `failed` with why, keeping
+the config it had. It runs through the request journal like a command, so a
+resend is answered from the journal and a crash mid-apply is `unknown`; the
+next `Hello` names whichever config was stored. What the portal shows staff
+as live is this answer, never what it sent.
+
+The snapshot is `protocol::ConfigSnapshot`: `settings` an object by key,
+every key present; `items`, `employers` and `jobs` (E3–E5) arrays of objects
+keyed by `slug`, held in one place, `config.SECTIONS`. The protocol decoder
+keeps the snapshot whole rather than field by field, so a section not listed
+there is kept and reported in `config.changed`, just not indexed, and a
+newer portal adding one is never a refusal.
 
 ### `rpf.events`
 

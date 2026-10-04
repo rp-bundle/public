@@ -110,6 +110,7 @@ function rpf.start_server(platform, options)
     options = options.join,
   })
   rpf.config.restore(platform)
+  rpf.config.serve(platform, rpf.connection)
   rpf.publish(platform)
   rpf.connection:start()
   return rpf.connection
