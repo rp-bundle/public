@@ -9,7 +9,7 @@
 ---The core never branches on it. An engine difference is a platform function,
 ---so a comparison against `engine` inside the core is a missing function.
 ---@class rpf.platform.Engine
----@field engine string `"fivem"`, `"gmod"` or `"mock"`. A free string, so a new adapter needs no portal release.
+---@field engine string `"fivem"`, `"gmod"` or `"mock"`. The portal filters identifiers through a per-engine allowlist, so a new engine's players cannot log in until the portal's `ENGINE_IDENTIFIERS` names it.
 
 ---Outbound HTTP, through whatever the engine offers. The core calls this and
 ---never learns which implementation ran.
