@@ -1121,7 +1121,11 @@ function Client:request(frame)
     self:log("warn", "no handler for " .. frame.type)
     return
   end
-  if self.request_count >= self.options.max_requests then
+  -- A config is never refused for room. The portal sends one only when this
+  -- server's version moves and never resends it, so refusing it would leave
+  -- the server on old config until it reconnects; and its reply is a few
+  -- bytes. `max_requests` exists to bound commands.
+  if frame.type ~= "config" and self.request_count >= self.options.max_requests then
     self:log(
       "warn",
       "not running "
