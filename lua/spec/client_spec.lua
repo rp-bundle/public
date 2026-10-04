@@ -545,6 +545,164 @@ describe("rpf.client", function()
     end)
   end)
 
+  -- #116: entries are aged by the host clock, so a clock moved back by a
+  -- window or more would make a request look young after the portal forgot
+  -- its id. The fake's timers are keyed by its clock, so after a step back
+  -- these tests drive the sweep by hand rather than waiting for its timer.
+  describe("when the host clock goes back", function()
+    local window = 7 * DAY
+
+    it("changes nothing for a step under the tolerance", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local report = connection:send("player_dropped", dropped())
+      local request = connection:send("create_character", character())
+      local sent = #p.sent
+
+      p.time = p.time - rpf.client.DEFAULTS.clock_step_tolerance_ms + 1000
+      connection:sweep()
+
+      assert.are.equal(2, #connection.outbox)
+      assert.are.equal(report, connection.outbox[1].id)
+      assert.are.equal(request, connection.outbox[2].id)
+      assert.are.equal(sent, #p.sent, "nothing is resent")
+      assert.are.equal(0, #p.logged("warn", "host clock went back"))
+    end)
+
+    it("expires every queued request, and reissues the rest, after a step of more than a window", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local lost
+      local report = connection:send("player_dropped", dropped())
+      local request = connection:send("create_character", character(), function(reply, err)
+        lost = { reply = reply, err = err }
+      end)
+
+      p.time = p.time - window - DAY
+      connection:sweep()
+
+      assert.are.same({ err = "expired" }, lost)
+      assert.are.equal(1, #connection.outbox)
+      local fresh = p.last()
+      assert.are.equal("player_dropped", fresh.type)
+      assert.are_not.equal(report, fresh.id)
+      assert.are.equal(connection.outbox[1].id, fresh.id)
+      assert.are.equal(rpf.protocol.timestamp(p.time), fresh.sent_at, "stamped by the new clock")
+      for _, frame in ipairs(sent_of(p, "create_character")) do
+        assert.are.equal(request, frame.id, "the request is never sent under another id")
+      end
+      assert.are.equal(1, #p.logged("warn", "host clock went back by " .. (window + DAY) .. " ms"))
+      assert.are.equal(1, #p.logged("warn", "dropping create_character"))
+      assert.are.equal(string.format("%.0f", p.time), p.store[rpf.client.CLOCK_KEY])
+    end)
+
+    it("catches the step at send, before the new frame is stamped", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local old = connection:send("create_character", character())
+
+      p.time = p.time - window - DAY
+      local new = connection:send("create_character", character())
+
+      assert.are.equal(1, #connection.outbox)
+      assert.are.equal(new, connection.outbox[1].id)
+      assert.are_not.equal(old, new)
+      assert.are.equal(p.time, connection.outbox[1].sent_ms)
+    end)
+
+    it("adds up small steps until they cross the tolerance", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local request = connection:send("create_character", character())
+      local step = rpf.client.DEFAULTS.clock_step_tolerance_ms * 2 / 3
+
+      p.time = p.time - step
+      connection:sweep()
+      assert.are.equal(request, connection.outbox[1].id, "one step is under the tolerance")
+      p.time = p.time - step
+      connection:sweep()
+      assert.are.equal(0, #connection.outbox, "two are not")
+    end)
+
+    it("catches a step taken while the process was down, before anything is sent", function()
+      local store = {}
+      local p = support.fake_platform({ store = store })
+      local connection = support.connected(p)
+      local report = connection:send("player_dropped", dropped())
+      local request = connection:send("create_character", character())
+      p.advance(2 * rpf.client.DEFAULTS.sweep_interval_ms)
+
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 31337, time = p.time - window - DAY })
+      support.connected(restarted)
+
+      for _, frame in ipairs(restarted.frames()) do
+        assert.are_not.equal(report, frame.id)
+        assert.are_not.equal(request, frame.id)
+      end
+      assert.are.equal(1, #sent_of(restarted, "player_dropped"))
+      assert.are.equal(0, #sent_of(restarted, "create_character"))
+      assert.are.equal(1, #restarted.logged("warn", "the host clock went back by"))
+    end)
+
+    it("treats an unreadable stored mark as a step", function()
+      local store = {}
+      local p = support.fake_platform({ store = store })
+      support.connected(p):send("create_character", character())
+      store[rpf.client.CLOCK_KEY] = "not a time"
+
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 31337, time = p.time })
+      local connection = support.connected(restarted)
+
+      assert.are.equal(0, #connection.outbox)
+      assert.are.equal(0, #sent_of(restarted, "create_character"))
+      assert.are.equal(1, #restarted.logged("error", "clock high-water mark is unreadable"))
+      assert.are.equal(string.format("%.0f", restarted.time), store[rpf.client.CLOCK_KEY])
+    end)
+
+    it("persists the mark from the sweep, not from each send", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local stored = p.store[rpf.client.CLOCK_KEY]
+      assert.are.equal(string.format("%.0f", p.time), stored)
+
+      p.time = p.time + 1000
+      connection:send("player_dropped", dropped())
+      assert.are.equal(stored, p.store[rpf.client.CLOCK_KEY])
+      connection:sweep()
+      assert.are.equal(string.format("%.0f", p.time), p.store[rpf.client.CLOCK_KEY])
+    end)
+
+    it("restarts a running portal request's timeout from the step", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      connection:handle("apply_command", function() end)
+      p.deliver(support.portal_frame("apply_command", {
+        command = {
+          command = "adjust_balance",
+          client_id = "00000008-0000-4000-8000-000000000008",
+          account_id = "00000004-0000-4000-8000-000000000004",
+          amount = -250,
+          description = "Admin correction.",
+        },
+      }))
+      assert.are.equal(1, connection.request_count, "the handler is running")
+      local o = rpf.client.DEFAULTS
+
+      p.time = p.time - window
+      connection:sweep()
+      p.time = p.time + o.request_timeout_ms - 1
+      connection:sweep()
+      assert.are.equal(0, #sent_of(p, "command_applied"), "not before its timeout")
+      p.time = p.time + 1
+      connection:sweep()
+      local replies = sent_of(p, "command_applied")
+      assert.are.equal(1, #replies)
+      assert.are.equal("unknown", replies[1].outcome.outcome)
+    end)
+  end)
+
   describe("requests from the portal", function()
     ---An ApplyCommand frame.
     ---@return rpf.Frame frame The frame.

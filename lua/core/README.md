@@ -201,6 +201,26 @@ The game server's connection to the portal (`rpf.connection` once started).
   and `sent_at`, and anything else is dropped, logged, and its callback called
   with `nil, "expired"`. A long outage never loses a state report and never
   replays a request the portal may have forgotten.
+- **A host clock that goes back.** Entries are aged by the host clock, and
+  the portal keeps request ids for two windows, which covers a clock
+  corrected back by less than one. For a larger step (a VM restored from a
+  snapshot whose clock ran fast, a host that booted with a bad clock and
+  synced later) the outbox keeps a high-water mark of the clock, persisted
+  under `rpf.outbox.clock` by the sweep (at most one write a minute, never
+  on an ordinary `send`). A reading more than `clock_step_tolerance_ms` (30 s) below it,
+  seen at load, in a sweep, or at `send` before the new frame is stamped, is
+  a step: every non-reissuable entry is dropped, logged, and its callback
+  called with `nil, "expired"`; every reissuable one is reissued under a
+  fresh id and `sent_at`; a portal request still running has its timeout
+  restarted from now; and the mark is reset to now. A smaller regress is
+  left alone, but the mark does not move down, so several add up until they
+  cross the tolerance. An unreadable mark is treated as a step. The
+  tolerance sits under the portal's `SENT_AT_TOLERANCE` (60 s), so a frame
+  stamped before a step is reissued or expired here rather than refused as
+  from the future, and far under the window, so a regress it misses stays
+  inside the portal's margin. The cost is that a step of more than 30 s
+  expires requests that might still have been answered; they are joins and
+  character creations a player can retry.
 - **Reconnects** back off exponentially from 1 s to a 60 s cap, plus up to
   half that again in random jitter, so a portal restart does not bring every
   server back in the same second. A `Hello` refused with a code that may not be
@@ -267,7 +287,8 @@ interrupted.
 #### The outbox
 
 Each entry is its own key, `rpf.outbox.<slot>`, and `rpf.outbox.slots` holds
-the highest slot in use. Adding, answering or reissuing an entry writes that
+the highest slot in use (`rpf.outbox.clock`, the clock's high-water mark, is
+the one other key). Adding, answering or reissuing an entry writes that
 entry alone, whatever else is queued, and a freed slot is reused, so a load
 reads at most as many keys as were ever held at once. Order comes from a
 sequence number in each entry, so there is no index to rewrite. An entry is a
