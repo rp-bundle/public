@@ -229,6 +229,7 @@ client.DEFAULTS = {
 ---@field seen table<string, true> Recently received frame ids, to recognise a duplicate.
 ---@field seen_order string[] The same ids, oldest first, to evict from.
 ---@field on_ready fun(client: rpf.Client)? Called after each `Welcome`, once the outbox is flushed.
+---@field on_orphan (fun(client: rpf.Client, entry: rpf.OutboxEntry, frame: rpf.Frame): boolean?)? Called with a final answer to a frame that has no callback, which after a restart is every frame the old process queued: the entry outlived whatever would have acted on its answer. Returning true keeps the entry and resends it under the same id after a backoff, as a retryable refusal does; `entry.retries` counts how often. `rpf.sync` uses it for a report the portal found stale only because the report before it has not landed yet.
 ---@field on_release fun(client: rpf.Client, entry: rpf.OutboxEntry)? Called after any frame this server originated leaves the outbox, answered or dropped, once its callback has run. `rpf.sync` uses it to see the outbox drain, which callbacks alone cannot show after a restart, when the entries outlived theirs.
 local Client = {}
 Client.__index = Client
@@ -1249,7 +1250,8 @@ end
 ---Matches an answer to the frame it answers and releases it.
 ---
 ---A `Rejected` with a retryable code keeps the entry and resends it under the
----same id after a backoff. `expired` means the portal has already forgotten
+---same id after a backoff, and so does any other answer to a frame with no
+---callback that `on_orphan` asks to have sent again. `expired` means the portal has already forgotten
 ---the id: a reissuable entry is reissued, anything else dropped. Any other
 ---refusal is final and goes to the callback.
 ---@param frame rpf.Frame A frame carrying `re`.
@@ -1261,12 +1263,22 @@ function Client:answer(frame)
     return
   end
   local entry = self.outbox[index]
-  if frame.type == "rejected" and protocol.may_retry(frame.code) then
+  local again = frame.type == "rejected" and protocol.may_retry(frame.code) and frame.code or nil
+  if not again and self.on_orphan and not self.callbacks[entry.id] then
+    -- Its own pcall, not `Client:call`, because the answer is wanted.
+    local ok, wanted = pcall(self.on_orphan, self, entry, frame)
+    if not ok then
+      self:log("error", "on_orphan failed: " .. tostring(wanted))
+    elseif wanted then
+      again = frame.type
+    end
+  end
+  if again then
     entry.retries = (entry.retries or 0) + 1
     local delay = self:backoff(entry.retries - 1)
     local generation = self.generation
     local id = entry.id --[[@as string]]
-    self:log("info", entry.type .. " " .. id .. " refused (" .. frame.code .. "); resending in " .. math.floor(delay) .. " ms")
+    self:log("info", entry.type .. " " .. id .. " refused (" .. again .. "); resending in " .. math.floor(delay) .. " ms")
     self.platform.after(delay, function()
       local at = self:find(id)
       if generation == self.generation and self.state == "ready" and at then

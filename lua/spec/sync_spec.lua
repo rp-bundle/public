@@ -579,6 +579,60 @@ describe("rpf.sync", function()
       assert.are.same({}, last_of(restarted, "declare_holds").records)
     end)
 
+    it("sends a stale report from before a restart again, and declares only once it has landed", function()
+      local store = p.store
+      hold_all(p)
+      rpf.records.set_character(CHARACTER, { first_name = "Janet" })
+      flush(p)
+      rpf.records.set_character(CHARACTER, { last_name = "Roe" })
+      flush(p)
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 99 })
+      rpf.start_server(restarted, { url = "ws://portal", api_key = "rpf_test_secret" })
+      restarted.open()
+      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = 1, server_id = SERVER }))
+      local reports = sent_of(restarted, "state_changed")
+      assert.are.equal(2, #reports, "both replayed")
+
+      -- The portal asks for the first again, so the second finds its base
+      -- revision not reached yet.
+      restarted.deliver(support.portal_frame("rejected", { re = reports[1].id, code = "retry", reason = "busy" }))
+      restarted.deliver(support.portal_frame("resync_required", {
+        re = reports[2].id,
+        stale = { { kind = "character", id = CHARACTER, revision = 3 } },
+        released = {},
+      }))
+      restarted.advance(3000)
+      local again = sent_of(restarted, "state_changed")
+      assert.are.equal(4, #again, "each sent again, under its own id")
+      assert.are.equal(reports[2].id, again[4].id)
+      assert.are.equal(0, #sent_of(restarted, "declare_holds"), "which would release the record")
+
+      apply(restarted, reports[1])
+      apply(restarted, reports[2])
+      assert.are.same({}, last_of(restarted, "declare_holds").records)
+    end)
+
+    it("drops a report from before a restart that names a record no longer held here", function()
+      local store = p.store
+      hold_all(p)
+      rpf.records.set_character(CHARACTER, { first_name = "Janet" })
+      flush(p)
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 99 })
+      rpf.start_server(restarted, { url = "ws://portal", api_key = "rpf_test_secret" })
+      restarted.open()
+      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = 1, server_id = SERVER }))
+
+      restarted.deliver(support.portal_frame("resync_required", {
+        re = last_of(restarted, "state_changed").id,
+        stale = {},
+        released = { { kind = "character", id = CHARACTER } },
+      }))
+
+      assert.are.equal(1, #sent_of(restarted, "declare_holds"))
+    end)
+
     it("makes new holds wait for its answer", function()
       reconnect(p)
       local declaration = last_of(p, "declare_holds")

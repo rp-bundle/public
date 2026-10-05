@@ -39,6 +39,10 @@
 ---   `held` hands over then includes
 ---   them, and a record released and held again comes back with the final
 ---   state this server gave it, payments from other accounts included.
+--- - **After a restart** the records are gone from memory but the reports
+---   the old process queued are still in the outbox, and go out first. One
+---   the portal finds stale cannot be answered with a resync, so it is sent
+---   again as it is a few times: the report before it is on its way.
 --- - **The declaration.** After each `Welcome`, once every hold, release and
 ---   report queued before it has been answered, the server declares what it
 ---   holds and at which revision (`declare_holds`). The portal releases
@@ -66,11 +70,13 @@ local records = rpf.records
 ---@field offline_flush_interval_ms number? The same while the portal is unreachable. Longer, because every flush then waits in the outbox, which has room for `max_entries` frames: at one a minute that is more than a day of play, while each change still reaches storage within the minute.
 ---@field max_records_per_frame integer? The most records one report carries. A batch whose frame would still be over the portal's frame limit is split further.
 ---@field max_transactions_per_report integer? The most ledger entries one report on an account carries. An account with more to report (a till through a long outage) goes in several consecutive reports, so its backlog can never outgrow a frame: with `records.MAX_DESCRIPTION_BYTES`, this many entries always fit in one.
+---@field orphan_retries integer? How often a `state_changed` that outlived a restart is sent again when the portal finds it stale, before it is given up as lost. The connection backs off between them, a second at first and doubling, so five is about half a minute for the report before it to land.
 sync.DEFAULTS = {
   flush_interval_ms = 1000,
   offline_flush_interval_ms = 60 * 1000,
   max_records_per_frame = 64,
   max_transactions_per_report = 256,
+  orphan_retries = 5,
 }
 
 sync.RECORD_FRAMES = {
@@ -784,6 +790,34 @@ function sync.connected()
   sync.check_declaration()
 end
 
+---Whether a report that outlived a restart should be sent again rather than
+---dropped. The records it was about are gone from memory with the old
+---process, so it cannot be answered with a resync: the frame itself is all
+---that is left of the change. The portal finds it stale when the report
+---queued before it has not landed yet (it was asked for again, and this one
+---was answered first), and that one lands within a backoff or two, after
+---which this one applies as it is. One naming a record the portal says is
+---not held here can never apply, and one still stale after
+---`orphan_retries` is not waiting on anything, so both are dropped, as a
+---restart drops everything unreported.
+---
+---While it waits it stays in the outbox, so the declaration, which would
+---release its record, waits for it too.
+---@param _ rpf.Client The connection.
+---@param entry rpf.OutboxEntry The frame, which has no callback.
+---@param frame rpf.Frame Its answer.
+---@return boolean again True to keep it and send it again.
+function sync.orphaned(_, entry, frame)
+  if entry.type ~= "state_changed" or frame.type ~= "resync_required" then
+    return false
+  end
+  if #frame.released > 0 or (entry.retries or 0) >= sync.options.orphan_retries then
+    log("warn", "a report from before the restart could not be applied and is dropped")
+    return false
+  end
+  return true
+end
+
 ---Called whenever a frame this server originated leaves the outbox: the
 ---declaration may be due, a hold may have nothing left to wait for, and a
 ---release that could not be queued may now go.
@@ -819,6 +853,7 @@ function sync.start(platform, connection, options)
   records.reset()
   connection.on_ready = sync.connected
   connection.on_release = sync.drained
+  connection.on_orphan = sync.orphaned
   events.on("players.registered", function(player)
     sync.hold({ owners = { { kind = "player", id = player.player_id } } }, player.player_id)
   end)

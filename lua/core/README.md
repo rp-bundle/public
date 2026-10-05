@@ -524,6 +524,12 @@ anything not held, so a module keeps ids and reads through it every time.
   final state would be lost, and the call says so. A departing player's release that could not be queued
   is tried again whenever a frame leaves the outbox, unless they have come
   back.
+- **After a restart** the held records are gone from memory, but the reports
+  the old process queued are still in the outbox and go out first. One the
+  portal finds stale cannot be answered with a resync, so the connection
+  sends it again as it is (`on_orphan`, up to `orphan_retries` times): the
+  report before it was asked for again and is on its way. One naming a
+  record no longer held here is dropped.
 - **The declaration.** After every `Welcome`, once each hold, release and
   report queued before it has been answered, the server sends
   `declare_holds`: what it holds and at which revision. The portal releases
