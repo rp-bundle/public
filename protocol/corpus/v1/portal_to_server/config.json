@@ -8,6 +8,48 @@
     "settings": {
       "characters.max_per_player": 3,
       "server.welcome_message": "Welcome to the city."
+    },
+    "items": [
+      {
+        "slug": "pistol",
+        "name": "Pistol",
+        "base": "weapon",
+        "weight": 12,
+        "size": {
+          "x": 2,
+          "y": 1
+        },
+        "stack_limit": 1
+      },
+      {
+        "slug": "water_bottle",
+        "name": "Water bottle",
+        "weight": 1,
+        "size": {
+          "x": 1,
+          "y": 1
+        },
+        "stack_limit": 10
+      }
+    ],
+    "item_bases": [
+      {
+        "slug": "weapon",
+        "name": "Weapon",
+        "weight": 30,
+        "size": {
+          "x": 2,
+          "y": 1
+        }
+      }
+    ],
+    "item_defaults": {
+      "weight": 1,
+      "size": {
+        "x": 1,
+        "y": 1
+      },
+      "stack_limit": 1
     }
   }
 }

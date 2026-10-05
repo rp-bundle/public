@@ -55,6 +55,62 @@ describe("rpf.config", function()
     assert.is_nil(rpf.config.item(nil))
   end)
 
+  -- The corpus assertion for E3's sections: the snapshot the Rust types
+  -- serialize is one this side applies and can look every entry up in.
+  it("indexes the items, bases and defaults of the corpus snapshot", function()
+    local frame = assert(rpf.json.decode(support.read("protocol/corpus/v1/portal_to_server/config.json")))
+    assert.is_true((rpf.config.apply(p, frame.version, frame.hash, frame.snapshot)))
+
+    -- Resolved by the portal: every field is there, and the base is named.
+    assert.are.same(
+      { slug = "pistol", name = "Pistol", base = "weapon", weight = 12, size = { x = 2, y = 1 }, stack_limit = 1 },
+      rpf.config.item("pistol")
+    )
+    assert.is_nil(rpf.config.item("water_bottle").base)
+    assert.are.equal(10, rpf.config.item("water_bottle").stack_limit)
+
+    -- A base as staff wrote it: what it does not set is absent.
+    local weapon = assert(rpf.config.item_base("weapon"))
+    assert.are.equal("Weapon", weapon.name)
+    assert.are.equal(30, weapon.weight)
+    assert.is_nil(weapon.stack_limit)
+    assert.is_nil(rpf.config.item_base("pistol"))
+
+    assert.are.same({ weight = 1, size = { x = 1, y = 1 }, stack_limit = 1 }, rpf.config.item_defaults())
+    assert.is_nil(rpf.config.item("unknown"))
+  end)
+
+  it("answers no item defaults before a config, or from a snapshot without them", function()
+    assert.is_nil(rpf.config.item_defaults())
+    assert.is_nil(rpf.config.item_base("weapon"))
+    rpf.config.apply(p, 3, "h3", snapshot(FIRST))
+    assert.is_nil(rpf.config.item_defaults())
+    assert.is_nil(rpf.config.item_base("weapon"))
+  end)
+
+  it("hands out copies of the item defaults and bases", function()
+    local frame = assert(rpf.json.decode(support.read("protocol/corpus/v1/portal_to_server/config.json")))
+    rpf.config.apply(p, frame.version, frame.hash, frame.snapshot)
+    rpf.config.item_defaults().size.x = 9
+    rpf.config.item_base("weapon").weight = 9
+    assert.are.equal(1, rpf.config.item_defaults().size.x)
+    assert.are.equal(30, rpf.config.item_base("weapon").weight)
+  end)
+
+  it("refuses a snapshot whose item sections are the wrong shape", function()
+    for _, bad in ipairs({
+      '{"item_bases":{}}',
+      '{"item_bases":[{"name":"No slug"}]}',
+      '{"item_bases":[{"slug":"a"},{"slug":"a"}]}',
+      '{"item_defaults":[]}',
+    }) do
+      local applied, err = rpf.config.apply(p, 3, "h3", snapshot(bad))
+      assert.is_false(applied, bad)
+      assert.is_string(err, bad)
+    end
+    assert.is_nil(rpf.config.version())
+  end)
+
   it("keeps a setting sent as null apart from one never sent", function()
     rpf.config.apply(p, 3, "h3", snapshot(FIRST))
     assert.are.equal(rpf.json.null, rpf.config.setting("unset"))
