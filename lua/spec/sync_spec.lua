@@ -239,6 +239,54 @@ describe("rpf.sync", function()
       assert.are.equal(2, #sent_of(p, "hold"))
     end)
 
+    it("keeps a hold behind the recovery of a refused report", function()
+      hold_all(p)
+      rpf.records.transfer(WALLET, BANK, 25, "Fine")
+      rpf.records.set_contents(POCKETS, rpf.json.object({ layout = "list", stacks = rpf.json.array() }))
+      assert.is_true(rpf.sync.release({ { kind = "account", id = BANK } }))
+      local report, release = last_of(p, "state_changed"), last_of(p, "release")
+      rpf.sync.hold({ records = { { kind = "account", id = BANK } } })
+      assert.are.equal(1, #sent_of(p, "hold"))
+
+      -- The portal refuses the report, so the payment has not landed, and
+      -- the hold must not hand the payee over without it.
+      p.deliver(support.portal_frame("rejected", { re = report.id, code = "malformed", reason = "too heavy" }))
+      apply(p, release)
+      assert.are.equal(2, #sent_of(p, "resync"), "recovered at once")
+      assert.are.equal(1, #sent_of(p, "hold"), "behind the recovery")
+
+      for _, frame in ipairs(sent_of(p, "resync")) do
+        if frame.records[1].kind == "account" then
+          apply(p, frame)
+        else
+          p.deliver(support.portal_frame("rejected", { re = frame.id, code = "malformed", reason = "no" }))
+        end
+      end
+      assert.are.equal(2, #sent_of(p, "hold"), "a record refused alone holds nothing up")
+    end)
+
+    it("keeps a hold behind a recovery the outbox could not take yet", function()
+      hold_all(p)
+      rpf.records.set_character(CHARACTER, { first_name = "Janet" })
+      flush(p)
+      rpf.sync.hold({ records = { { kind = "container", id = POCKETS } } })
+
+      -- Full once the report it answers has left.
+      connection.options.max_entries = #connection.outbox - 1
+      p.deliver(support.portal_frame("resync_required", {
+        re = last_of(p, "state_changed").id,
+        stale = { { kind = "character", id = CHARACTER, revision = 3 } },
+        released = {},
+      }))
+      assert.are.equal(0, #sent_of(p, "resync"))
+      assert.are.equal(1, #sent_of(p, "hold"), "the recovery is still to be queued")
+
+      connection.options.max_entries = 2048
+      flush(p)
+      apply(p, last_of(p, "resync"))
+      assert.are.equal(2, #sent_of(p, "hold"))
+    end)
+
     it("does not keep a record that was released after the hold answering now was sent", function()
       local ref = { kind = "container", id = POCKETS }
       local pockets = { records_held()[4] }

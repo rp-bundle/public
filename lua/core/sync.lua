@@ -275,6 +275,7 @@ local function resync(keys, stale)
     if entry then
       entry.revision = math.max(entry.revision, stale[key] or 0)
       entry.resync = true
+      entry.recovering = true
     end
   end
   sync.flush()
@@ -347,19 +348,21 @@ local function settle_report(id, reply, err)
     -- never stale, so nothing else would send them again. One change the
     -- portal will not take refuses every change beside it, so each record
     -- of a refused frame is then reported alone until one of its frames is
-    -- applied. A record refused alone is not hurried back: it goes with the
-    -- next flush, so a state the portal keeps refusing is not resent in a
-    -- loop.
+    -- applied, and that goes at once: it is the recovery of a report a hold
+    -- may be waiting behind. A record refused alone is not hurried back: it
+    -- goes with the next flush, so a state the portal keeps refusing is not
+    -- resent in a loop.
     log("error", "the portal refused a state report (" .. tostring(reply.code) .. "): " .. tostring(reply.reason))
     for _, key in ipairs(sent.keys) do
       local entry = records.entries[key]
       if entry then
         entry.alone = true
         entry.resync = true
+        entry.recovering = #sent.keys > 1 or nil
       end
     end
     if #sent.keys > 1 then
-      sync.schedule()
+      sync.flush()
     end
   end
 end
@@ -394,6 +397,8 @@ local function send_batch(tag, entries, build, sent)
   if not ok then
     if #entries == 1 then
       log("error", "cannot report " .. keys[1] .. ": " .. tostring(result))
+      -- Nothing can carry it, so no hold waits for it.
+      entries[1].recovering = nil
       return true
     end
     local half = math.floor(#entries / 2)
@@ -471,6 +476,7 @@ end
 ---@param entry rpf.records.Entry The record.
 ---@param report table The report queued.
 local function whole_sent(entry, report)
+  entry.recovering = nil
   entry.revision = entry.revision + 1
   entry.changed = {}
   mark_carried(entry, report)
@@ -649,7 +655,8 @@ end
 ---Sends every waiting hold that no longer has to wait: not while a
 ---declaration is owed on the current connection, not while a report or
 ---release queued before the hold was asked for is unanswered, and not while
----any `resync` is, which is such a report being recovered.
+---any `resync` is, which is such a report being recovered, or is still to
+---be queued.
 local function send_deferred()
   local connection = sync.connection
   if not connection or (declaration.pending and connection.state == "ready") then
@@ -664,6 +671,9 @@ local function send_deferred()
       oldest = entry.seq
     end
     recovering = recovering or entry.type == "resync"
+  end
+  for _, entry in pairs(records.entries) do
+    recovering = recovering or entry.recovering == true
   end
   local waiting = deferred
   deferred = {}

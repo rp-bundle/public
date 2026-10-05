@@ -75,6 +75,7 @@ local events = rpf.events
 ---@field resync boolean Whether the portal needs the whole record, because a report on it was stale, refused or lost.
 ---@field more boolean? Whether the last report queued for it left ledger entries for the next. Only `rpf.sync` sets it.
 ---@field awaiting string? The whole report in flight for it, by frame id: no other whole report on it is sent until that one is answered. Only `rpf.sync` sets it.
+---@field recovering boolean? Whether its whole report recovers one the portal answered stale or refused, and has not been queued yet: holds wait for it as for the report it recovers. Only `rpf.sync` sets it.
 ---@field alone boolean? Whether it is reported in a frame of its own, because a frame carrying it was refused, until one is applied. Only `rpf.sync` sets it.
 
 records.KINDS = { character = true, account = true, container = true }

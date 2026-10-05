@@ -481,7 +481,7 @@ anything not held, so a module keeps ids and reads through it every time.
   character's own accounts are held through the character). The portal
   refuses the whole hold if any named record is not this server's. A hold
   is sent once every report and release queued before it has been answered
-  (and any resync recovering one),
+  (and any resync recovering a stale or refused one, queued or still to be),
   because the portal can ask for a frame again and answer the ones behind
   it first: what `held` hands over then includes everything reported, so a
   record released and held again comes back as this server left it. A
