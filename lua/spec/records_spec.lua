@@ -162,6 +162,63 @@ describe("rpf.records", function()
     end)
   end)
 
+  describe("containers", function()
+    local json
+
+    before_each(function()
+      json = rpf.json
+      rpf.records.take(held())
+    end)
+
+    it("takes list and grid contents shaped as the protocol's", function()
+      local stack = json.object({ item = "water_bottle", count = 2, data = json.object({ fill = 3 }) })
+      assert.is_true(rpf.records.set_contents(POCKETS, json.object({ layout = "list", stacks = json.array({ stack }) })))
+      assert.is_true(rpf.records.set_contents(POCKETS, json.object({
+        layout = "grid",
+        placements = json.array({
+          json.object({ stack = stack, position = json.object({ x = 0, y = 1 }), rotated = true }),
+        }),
+      })))
+      assert.are.equal("grid", rpf.records.get("container", POCKETS).contents.layout)
+    end)
+
+    -- Contents the portal cannot decode would fail every later report and
+    -- release carrying them, so a release would end nothing while this server
+    -- forgot the container.
+    it("refuses contents the portal could not decode and changes nothing", function()
+      local function stacks(...)
+        return json.object({ layout = "list", stacks = json.array({ ... }) })
+      end
+      local function placed(position, rotated)
+        return json.object({
+          layout = "grid",
+          placements = json.array({
+            json.object({ stack = json.object({ item = "a", count = 1 }), position = position, rotated = rotated }),
+          }),
+        })
+      end
+      for i, contents in ipairs({
+        json.object({ layout = "list" }),
+        json.object({ layout = "grid", stacks = json.array() }),
+        json.object({ layout = "pile", stacks = json.array() }),
+        json.object({ layout = "list", stacks = json.object() }),
+        json.object({ layout = "list", stacks = json.array({ [2] = json.object({ item = "a", count = 1 }) }) }),
+        stacks(json.object({ count = 1 })),
+        stacks(json.object({ item = "a", count = -1 })),
+        stacks(json.object({ item = "a", count = 1.5 })),
+        stacks(json.object({ item = "a", count = 4294967296 })),
+        stacks(json.object({ item = "a", count = 1, data = json.array() })),
+        stacks(json.object({ item = "a", count = 1, data = json.null })),
+        placed(json.object({ x = 0 })),
+        placed(json.object({ x = 0, y = 2147483648 })),
+        placed(json.object({ x = 0, y = 0 }), "yes"),
+      }) do
+        assert.are.same({ nil, "invalid" }, { rpf.records.set_contents(POCKETS, contents) }, tostring(i))
+      end
+      assert.is_nil(next(rpf.records.entries["container:" .. POCKETS].changed))
+    end)
+  end)
+
   describe("money", function()
     before_each(function()
       rpf.records.take(held())

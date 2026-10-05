@@ -494,6 +494,9 @@ anything not held, so a module keeps ids and reads through it every time.
   ledger entry's `client_id` here, refuses to overdraw an account without
   `unlimited_balance`, and keeps every balance within ±`MAX_AMOUNT`.
   A description is at most `records.MAX_DESCRIPTION_BYTES` (256).
+  Contents must have the protocol's `ContainerContents` shape, every array
+  and object JSON-marked, or they are refused as `"invalid"`: the portal
+  could not decode a frame carrying them, so a release would end nothing.
 - **Reporting.** A change marks its record, and `flush_interval_ms` (1 s)
   later (a minute while the portal is unreachable, so a long outage cannot
   fill the outbox) every marked record goes in one `state_changed`, each change naming
