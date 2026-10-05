@@ -527,9 +527,10 @@ anything not held, so a module keeps ids and reads through it every time.
 - **After a restart** the held records are gone from memory, but the reports
   the old process queued are still in the outbox and go out first. One the
   portal finds stale cannot be answered with a resync, so the connection
-  sends it again as it is (`on_orphan`, up to `orphan_retries` times): the
-  report before it was asked for again and is on its way. One naming a
-  record no longer held here is dropped.
+  sends it again as it is (`on_orphan`) for as long as a report queued
+  before it is unanswered: that one was asked for again and is on its way.
+  With nothing before it left it gets `orphan_retries` more tries, and one
+  naming a record no longer held here is dropped at once.
 - **The declaration.** After every `Welcome`, once each hold, release and
   report queued before it has been answered, the server sends
   `declare_holds`: what it holds and at which revision. The portal releases

@@ -613,6 +613,69 @@ describe("rpf.sync", function()
       assert.are.same({}, last_of(restarted, "declare_holds").records)
     end)
 
+    it("keeps a stale report from before a restart for as long as the one before it is unanswered", function()
+      local store = p.store
+      hold_all(p)
+      rpf.records.set_character(CHARACTER, { first_name = "Janet" })
+      flush(p)
+      rpf.records.set_character(CHARACTER, { last_name = "Roe" })
+      flush(p)
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 99 })
+      rpf.start_server(restarted, { url = "ws://portal", api_key = "rpf_test_secret" })
+      restarted.open()
+      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = 1, server_id = SERVER }))
+      local reports = sent_of(restarted, "state_changed")
+      local stale = {
+        re = reports[2].id,
+        stale = { { kind = "character", id = CHARACTER, revision = 3 } },
+        released = {},
+      }
+
+      -- A long transient fault: far more refusals than a report with
+      -- nothing before it would be given.
+      for _ = 1, 12 do
+        restarted.deliver(support.portal_frame("rejected", { re = reports[1].id, code = "retry", reason = "busy" }))
+        restarted.deliver(support.portal_frame("resync_required", stale))
+        restarted.advance(2 * 60 * 1000)
+      end
+      assert.are.equal(0, #sent_of(restarted, "declare_holds"))
+      local sent = #sent_of(restarted, "state_changed")
+
+      apply(restarted, reports[1])
+      restarted.deliver(support.portal_frame("resync_required", stale))
+      restarted.advance(2 * 60 * 1000)
+      assert.are.equal(sent + 1, #sent_of(restarted, "state_changed"), "still kept, and sent again")
+      apply(restarted, reports[2])
+      assert.are.same({}, last_of(restarted, "declare_holds").records)
+    end)
+
+    it("gives up a stale report from before a restart that has nothing before it to wait for", function()
+      local store = p.store
+      hold_all(p)
+      rpf.records.set_character(CHARACTER, { first_name = "Janet" })
+      flush(p)
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 99 })
+      rpf.start_server(restarted, { url = "ws://portal", api_key = "rpf_test_secret" })
+      restarted.open()
+      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = 1, server_id = SERVER }))
+      local report = last_of(restarted, "state_changed")
+
+      for _ = 1, rpf.sync.options.orphan_retries + 1 do
+        assert.are.equal(0, #sent_of(restarted, "declare_holds"))
+        restarted.deliver(support.portal_frame("resync_required", {
+          re = report.id,
+          stale = { { kind = "character", id = CHARACTER, revision = 9 } },
+          released = {},
+        }))
+        restarted.advance(2 * 60 * 1000)
+      end
+
+      assert.are.equal(1 + rpf.sync.options.orphan_retries, #sent_of(restarted, "state_changed"))
+      assert.are.equal(1, #sent_of(restarted, "declare_holds"))
+    end)
+
     it("drops a report from before a restart that names a record no longer held here", function()
       local store = p.store
       hold_all(p)

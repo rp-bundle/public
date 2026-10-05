@@ -70,13 +70,13 @@ local records = rpf.records
 ---@field offline_flush_interval_ms number? The same while the portal is unreachable. Longer, because every flush then waits in the outbox, which has room for `max_entries` frames: at one a minute that is more than a day of play, while each change still reaches storage within the minute.
 ---@field max_records_per_frame integer? The most records one report carries. A batch whose frame would still be over the portal's frame limit is split further.
 ---@field max_transactions_per_report integer? The most ledger entries one report on an account carries. An account with more to report (a till through a long outage) goes in several consecutive reports, so its backlog can never outgrow a frame: with `records.MAX_DESCRIPTION_BYTES`, this many entries always fit in one.
----@field orphan_retries integer? How often a `state_changed` that outlived a restart is sent again when the portal finds it stale, before it is given up as lost. The connection backs off between them, a second at first and doubling, so five is about half a minute for the report before it to land.
+---@field orphan_retries integer? How often a `state_changed` that outlived a restart is sent again when the portal finds it stale with no report queued before it left to land, before it is given up as lost. While one before it is unanswered it is kept without limit.
 sync.DEFAULTS = {
   flush_interval_ms = 1000,
   offline_flush_interval_ms = 60 * 1000,
   max_records_per_frame = 64,
   max_transactions_per_report = 256,
-  orphan_retries = 5,
+  orphan_retries = 2,
 }
 
 sync.RECORD_FRAMES = {
@@ -122,6 +122,11 @@ local deferred = {}
 
 ---Whether a flush is already scheduled.
 local scheduled = false
+
+---How often a report that outlived a restart has been found stale with
+---nothing queued before it, by frame id (`sync.orphaned`).
+---@type table<string, integer>
+local orphan_tries = {}
 
 ---Players who left while their records could not be released, by player id.
 ---@type table<string, true>
@@ -793,26 +798,44 @@ end
 ---Whether a report that outlived a restart should be sent again rather than
 ---dropped. The records it was about are gone from memory with the old
 ---process, so it cannot be answered with a resync: the frame itself is all
----that is left of the change. The portal finds it stale when the report
----queued before it has not landed yet (it was asked for again, and this one
----was answered first), and that one lands within a backoff or two, after
----which this one applies as it is. One naming a record the portal says is
----not held here can never apply, and one still stale after
----`orphan_retries` is not waiting on anything, so both are dropped, as a
----restart drops everything unreported.
+---that is left of the change. The portal finds it stale when a report
+---queued before it has not landed yet (that one was asked for again, and
+---this one was answered first), and once that one lands this one applies as
+---it is.
+---
+--- - While any report or release queued before it is still unanswered, it is
+---   kept, however long that takes: what it waits for is still coming.
+--- - With nothing before it left, it is sent again `orphan_retries` times
+---   and then dropped: it is not waiting on anything, and a restart drops
+---   everything unreported.
+--- - One naming a record the portal says is not held here can never apply,
+---   and is dropped at once.
 ---
 ---While it waits it stays in the outbox, so the declaration, which would
 ---release its record, waits for it too.
----@param _ rpf.Client The connection.
+---@param client rpf.Client The connection.
 ---@param entry rpf.OutboxEntry The frame, which has no callback.
 ---@param frame rpf.Frame Its answer.
 ---@return boolean again True to keep it and send it again.
-function sync.orphaned(_, entry, frame)
+function sync.orphaned(client, entry, frame)
   if entry.type ~= "state_changed" or frame.type ~= "resync_required" then
     return false
   end
-  if #frame.released > 0 or (entry.retries or 0) >= sync.options.orphan_retries then
-    log("warn", "a report from before the restart could not be applied and is dropped")
+  local id = entry.id --[[@as string]]
+  if #frame.released > 0 then
+    orphan_tries[id] = nil
+    log("warn", "a report from before the restart names a record no longer held here and is dropped")
+    return false
+  end
+  for _, other in ipairs(client.outbox) do
+    if other.seq < entry.seq and sync.REPORT_FRAMES[other.type] then
+      return true
+    end
+  end
+  orphan_tries[id] = (orphan_tries[id] or 0) + 1
+  if orphan_tries[id] > sync.options.orphan_retries then
+    orphan_tries[id] = nil
+    log("warn", "a report from before the restart is stale with nothing before it left to land, and is dropped")
     return false
   end
   return true
@@ -848,6 +871,7 @@ function sync.start(platform, connection, options)
   inflight = {}
   deferred = {}
   departed = {}
+  orphan_tries = {}
   scheduled = false
   declaration = { pending = false, mark = 0 }
   records.reset()
