@@ -504,8 +504,13 @@ anything not held, so a module keeps ids and reads through it every time.
   entries stay unacknowledged until a reply says they landed, so a resync
   carries every one still in doubt; the portal appends each `client_id` once.
 - **Releasing.** `rpf.sync.release(refs)` flushes everything marked, then
-  reports each record whole as its final state and forgets it at once. A release the outbox cannot take is
-  refused and nothing is released, because its final state would be lost.
+  reports each record whole as its final state and forgets it at once. Final
+  states too large for one frame together go in several. A record whose
+  final state cannot be queued (the outbox is full, or it is too large for
+  any frame) is not released, because its final state would be lost, and
+  the call says so. A departing player's release that could not be queued
+  is tried again whenever a frame leaves the outbox, unless they have come
+  back.
 - **The declaration.** After every `Welcome`, once each hold, release and
   report queued before it has been answered, the server sends
   `declare_holds`: what it holds and at which revision. The portal releases

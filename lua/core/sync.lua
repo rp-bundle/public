@@ -26,7 +26,9 @@
 ---   `client_id` once.
 --- - **Release carries the final state.** A release flushes everything
 ---   marked first, then reports every released record whole, so nothing
----   marked is lost, and they are forgotten here at once.
+---   marked is lost, and they are forgotten here at once. A departing
+---   player's release that the outbox cannot take is tried again as the
+---   outbox drains.
 --- - **Whole reports take a revision of their own**, one past the last this
 ---   server used, so a late resend of an older whole report is dropped by
 ---   the portal rather than put over a newer one.
@@ -95,6 +97,10 @@ local deferred = {}
 
 ---Whether a flush is already scheduled.
 local scheduled = false
+
+---Players who left while their records could not be released, by player id.
+---@type table<string, true>
+local departed = {}
 
 ---Logs through the platform with the module's prefix.
 ---@param level "debug"|"info"|"warn"|"error" How much it matters.
@@ -442,41 +448,98 @@ function sync.hold(request, through, callback)
   send_hold(fields, through, callback)
 end
 
+---Queues the release of some records, in one frame if it fits. A frame over
+---the portal's frame limit is split in two and each half tried, so one
+---large container cannot keep a whole session's records held; a single
+---record too large to send at all stays held, and is logged. Records are
+---forgotten only once the frame carrying their final state is queued.
+---@param entries rpf.records.Entry[] The records, all held.
+---@param callback fun(reply: table?, err: string?)? Called with the portal's answer to each frame.
+---@param released rpf.RecordRef[] Collects the records let go.
+---@return boolean? ok True if every one was queued.
+---@return string? err Why not: the outbox's refusal, or `"too_large"`.
+local function release_batch(entries, callback, released)
+  local reports, refs = {}, {}
+  for i, entry in ipairs(entries) do
+    reports[i] = full_report(entry)
+    refs[i] = { kind = entry.kind, id = entry.id }
+  end
+  local ok, id, err = pcall(sync.connection.send, sync.connection, "release", { records = reports }, callback)
+  if not ok then
+    if #entries == 1 then
+      log("error", "cannot release " .. records.key(refs[1].kind, refs[1].id) .. ": " .. tostring(id))
+      return nil, "too_large"
+    end
+    local half = math.floor(#entries / 2)
+    local first, second = {}, {}
+    for i, entry in ipairs(entries) do
+      if i <= half then
+        first[#first + 1] = entry
+      else
+        second[#second + 1] = entry
+      end
+    end
+    -- Both halves are tried whatever the first does, so everything that can
+    -- go does.
+    local first_ok, first_err = release_batch(first, callback, released)
+    local second_ok, second_err = release_batch(second, callback, released)
+    if first_ok and second_ok then
+      return true
+    end
+    return nil, first_err or second_err
+  end
+  if not id then
+    return nil, err
+  end
+  for _, ref in ipairs(records.forget(refs)) do
+    released[#released + 1] = ref
+  end
+  return true
+end
+
 ---Lets records go, reporting each whole as its final state. They are
 ---forgotten at once and announced with `records.released`; a record this
----server does not hold is ignored. Refused when the outbox is full, in which
----case nothing is released, because the final state would be lost.
+---server does not hold is ignored. A record whose final state cannot be
+---queued (the outbox is full, or it is too large for any frame) is not
+---released, because its final state would be lost: it stays held, and the
+---call says so.
 ---
 ---Everything marked is flushed first, so a report naming a released record
 ---(another account's payment to it) reaches the portal ahead of the release,
 ---in order.
 ---@param refs rpf.RecordRef[] The records.
----@param callback fun(reply: table?, err: string?)? Called with the portal's answer.
----@return boolean? ok True if the release was queued.
----@return string? err Why not.
+---@param callback fun(reply: table?, err: string?)? Called with the portal's answer: once, unless the final states were over the frame limit together and went in several frames, when it is called for each.
+---@return boolean? ok True if every held record named was released.
+---@return string? err Why not: `"outbox_full"`, or `"too_large"` for a record no frame can carry. Records that could be queued were released all the same.
 function sync.release(refs, callback)
   sync.flush()
-  local reports, held = {}, {}
+  local entries, seen = {}, {}
   for _, ref in ipairs(refs) do
-    local entry = records.entries[records.key(ref.kind, ref.id)]
-    if entry then
-      reports[#reports + 1] = full_report(entry)
-      held[#held + 1] = ref
+    local key = records.key(ref.kind, ref.id)
+    local entry = records.entries[key]
+    if entry and not seen[key] then
+      seen[key] = true
+      entries[#entries + 1] = entry
     end
   end
-  if #reports == 0 then
+  if #entries == 0 then
     return true
   end
-  local id, err = sync.connection:send("release", { records = reports }, callback)
-  if not id then
+  local released = {}
+  local ok, err = release_batch(entries, callback, released)
+  if #released > 0 then
+    events.emit("records.released", released)
+  end
+  if not ok then
     return nil, err
   end
-  local released = records.forget(held)
-  events.emit("records.released", released)
   return true
 end
 
----Releases everything held for one player's session.
+---Releases everything held for one player's session. If some of it cannot
+---be released now (the outbox is full), the player is remembered and the
+---release tried again whenever a frame leaves the outbox, so a departed
+---player's records are not left held for as long as the process runs.
 ---@param player_id string The player.
 function sync.release_through(player_id)
   local refs = {}
@@ -486,8 +549,31 @@ function sync.release_through(player_id)
     refs[#refs + 1] = { kind = entry.kind, id = entry.id }
   end
   local ok, err = sync.release(refs)
-  if not ok then
-    log("error", "could not release a departing player's records: " .. tostring(err))
+  if ok then
+    departed[player_id] = nil
+    return
+  end
+  if not departed[player_id] then
+    log("error", "could not release a departing player's records (" .. tostring(err) .. "); trying again as the outbox drains")
+  end
+  departed[player_id] = true
+end
+
+---Tries again to release the records of players who left while the outbox
+---could not take their final state. A player who has come back keeps them:
+---they are their session's records again.
+function sync.retry_departures()
+  local ids = {}
+  for player_id in pairs(departed) do
+    ids[#ids + 1] = player_id
+  end
+  table.sort(ids)
+  for _, player_id in ipairs(ids) do
+    if rpf.players.by_player_id(player_id) then
+      departed[player_id] = nil
+    else
+      sync.release_through(player_id)
+    end
   end
 end
 
@@ -559,6 +645,13 @@ function sync.connected()
   sync.check_declaration()
 end
 
+---Called whenever a frame this server originated leaves the outbox: the
+---declaration may be due, and a release the outbox refused may now fit.
+function sync.drained()
+  sync.check_declaration()
+  sync.retry_departures()
+end
+
 -- Starting ------------------------------------------------------------------
 
 ---Starts the module on a connection: declares after every `Welcome`, holds
@@ -579,11 +672,12 @@ function sync.start(platform, connection, options)
   end
   inflight = {}
   deferred = {}
+  departed = {}
   scheduled = false
   declaration = { pending = false, mark = 0 }
   records.reset()
   connection.on_ready = sync.connected
-  connection.on_release = sync.check_declaration
+  connection.on_release = sync.drained
   events.on("players.registered", function(player)
     sync.hold({ owners = { { kind = "player", id = player.player_id } } }, player.player_id)
   end)

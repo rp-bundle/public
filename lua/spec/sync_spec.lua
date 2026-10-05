@@ -156,6 +156,44 @@ describe("rpf.sync", function()
       assert.are.same({}, rpf.records.held())
     end)
 
+    it("tries a departed player's release again once the outbox has room", function()
+      rpf.players.connected(1)
+      rpf.players.authenticating(1)
+      rpf.players.register(1, { player_id = PLAYER, username = "jane" })
+      p.deliver(support.portal_frame("held", { re = last_of(p, "hold").id, records = records_held() }))
+      local waiting = assert(connection:send("player_dropped", { player_id = BANK, reason = "probe" }))
+
+      connection.options.max_entries = #connection.outbox
+      rpf.players.dropped(1, "left")
+      assert.are.equal(0, #sent_of(p, "release"))
+      assert.are.equal(4, #rpf.records.held(), "kept, because their final state would be lost")
+
+      connection.options.max_entries = 2048
+      p.deliver(support.portal_frame("ack", { re = waiting }))
+
+      assert.are.equal(4, #last_of(p, "release").records)
+      assert.are.same({}, rpf.records.held())
+    end)
+
+    it("leaves a returned player their records when a release was still owed", function()
+      rpf.players.connected(1)
+      rpf.players.authenticating(1)
+      rpf.players.register(1, { player_id = PLAYER, username = "jane" })
+      p.deliver(support.portal_frame("held", { re = last_of(p, "hold").id, records = records_held() }))
+      local waiting = assert(connection:send("player_dropped", { player_id = BANK, reason = "probe" }))
+      connection.options.max_entries = #connection.outbox
+      rpf.players.dropped(1, "left")
+
+      connection.options.max_entries = 2048
+      rpf.players.connected(2)
+      rpf.players.authenticating(2)
+      rpf.players.register(2, { player_id = PLAYER, username = "jane" })
+      p.deliver(support.portal_frame("ack", { re = waiting }))
+
+      assert.are.equal(0, #sent_of(p, "release"))
+      assert.are.equal(4, #rpf.records.held())
+    end)
+
     it("gives a hold straight back when its player left while it was in flight", function()
       rpf.players.connected(1)
       rpf.players.authenticating(1)
@@ -348,6 +386,39 @@ describe("rpf.sync", function()
       local ok, err = rpf.sync.release({ { kind = "character", id = CHARACTER } })
       assert.are.same({ nil, "outbox_full" }, { ok, err })
       assert.is_true(rpf.records.is_held("character", CHARACTER))
+    end)
+
+    it("splits a release that would be over the frame limit", function()
+      connection.options.max_frame_bytes = 300
+      local released = {}
+      rpf.events.on("records.released", function(refs)
+        released = refs
+      end)
+
+      assert.is_true(rpf.sync.release({ { kind = "character", id = CHARACTER }, { kind = "container", id = POCKETS } }))
+
+      local releases = sent_of(p, "release")
+      assert.are.equal(2, #releases)
+      assert.are.equal(1, #releases[1].records)
+      assert.are.equal(1, #releases[2].records)
+      assert.are.equal(2, #released, "announced together")
+      assert.is_false(rpf.records.is_held("container", POCKETS))
+    end)
+
+    it("keeps a record no frame can carry, says so, and releases the rest", function()
+      connection.options.max_frame_bytes = 300
+      local stacks = rpf.json.array()
+      for i = 1, 20 do
+        stacks[i] = rpf.json.object({ item = "water_bottle", count = 1 })
+      end
+      rpf.records.set_contents(POCKETS, rpf.json.object({ layout = "list", stacks = stacks }))
+
+      local ok, err = rpf.sync.release({ { kind = "character", id = CHARACTER }, { kind = "container", id = POCKETS } })
+
+      assert.are.same({ nil, "too_large" }, { ok, err })
+      assert.is_true(rpf.records.is_held("container", POCKETS), "its final state would be lost")
+      assert.is_false(rpf.records.is_held("character", CHARACTER))
+      assert.are.equal(1, #sent_of(p, "release"))
     end)
   end)
 
