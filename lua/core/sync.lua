@@ -57,10 +57,12 @@ local records = rpf.records
 ---@field flush_interval_ms number? How long after a change the flush that reports it runs, so changes made together go in one frame.
 ---@field offline_flush_interval_ms number? The same while the portal is unreachable. Longer, because every flush then waits in the outbox, which has room for `max_entries` frames: at one a minute that is more than a day of play, while each change still reaches storage within the minute.
 ---@field max_records_per_frame integer? The most records one report carries. A batch whose frame would still be over the portal's frame limit is split further.
+---@field max_transactions_per_report integer? The most ledger entries one report on an account carries. An account with more to report (a till through a long outage) goes in several consecutive reports, so its backlog can never outgrow a frame: with `records.MAX_DESCRIPTION_BYTES`, this many entries always fit in one.
 sync.DEFAULTS = {
   flush_interval_ms = 1000,
   offline_flush_interval_ms = 60 * 1000,
   max_records_per_frame = 64,
+  max_transactions_per_report = 256,
 }
 
 sync.RECORD_FRAMES = {
@@ -131,6 +133,12 @@ end
 ---states share a revision, and the portal can drop an older one that
 ---arrives late (a resend after a lost reply) instead of putting it over a
 ---newer one. The record moves to that revision once the report is queued.
+---
+---An account's whole state is its unacknowledged ledger entries. More than
+---`max_transactions_per_report` of them go in consecutive whole reports, each
+---at a revision of its own, which appends the same entries a single report
+---would: this one carries the next entries no report in the sequence has
+---yet (`whole` on the entry).
 ---@param entry rpf.records.Entry The record.
 ---@return table report The `RecordReport`.
 local function full_report(entry)
@@ -141,8 +149,13 @@ local function full_report(entry)
     report.gender = entry.data.gender
   elseif entry.kind == "account" then
     report.transactions = {}
-    for i, tx in ipairs(entry.transactions) do
-      report.transactions[i] = wire_transaction(tx)
+    for _, tx in ipairs(entry.transactions) do
+      if #report.transactions == sync.options.max_transactions_per_report then
+        break
+      end
+      if not tx.whole then
+        report.transactions[#report.transactions + 1] = wire_transaction(tx)
+      end
     end
   else
     report.contents = entry.data.contents
@@ -151,7 +164,8 @@ local function full_report(entry)
 end
 
 ---What changed in a record since its last report, as `state_changed` names
----it, or nil if nothing has.
+---it, or nil if nothing has. At most `max_transactions_per_report` ledger
+---entries; the rest go in the next report.
 ---@param entry rpf.records.Entry The record.
 ---@return table? change The `StateChange`.
 local function change_of(entry)
@@ -166,6 +180,9 @@ local function change_of(entry)
   elseif entry.kind == "account" then
     change.transactions = {}
     for _, tx in ipairs(entry.transactions) do
+      if #change.transactions == sync.options.max_transactions_per_report then
+        break
+      end
       if not tx.sent then
         change.transactions[#change.transactions + 1] = wire_transaction(tx)
       end
@@ -211,6 +228,10 @@ local function resync(keys, stale)
     if entry then
       entry.revision = math.max(entry.revision, stale[key] or 0)
       entry.resync = true
+      -- A whole report under way starts over: every entry is in doubt again.
+      for _, tx in ipairs(entry.transactions) do
+        tx.whole = nil
+      end
     end
   end
   sync.flush()
@@ -274,7 +295,7 @@ end
 ---@param tag "state_changed"|"resync" The frame type.
 ---@param entries rpf.records.Entry[] The records.
 ---@param build fun(entry: rpf.records.Entry): table The change or report for one.
----@param sent fun(entry: rpf.records.Entry) Marks one as reported, once the frame is queued.
+---@param sent fun(entry: rpf.records.Entry, item: table) Marks one as reported, once the frame carrying `item` for it is queued.
 ---@return boolean ok False if the outbox refused it, so the flush stops and tries later.
 local function send_batch(tag, entries, build, sent)
   if #entries == 0 then
@@ -315,8 +336,8 @@ local function send_batch(tag, entries, build, sent)
   end
   id = result
   inflight[id] = { keys = keys, transactions = transactions }
-  for _, entry in ipairs(entries) do
-    sent(entry)
+  for i, entry in ipairs(entries) do
+    sent(entry, items[i])
   end
   return true
 end
@@ -325,7 +346,7 @@ end
 ---@param tag "state_changed"|"resync" The frame type.
 ---@param entries rpf.records.Entry[] The records.
 ---@param build fun(entry: rpf.records.Entry): table The change or report for one.
----@param sent fun(entry: rpf.records.Entry) Marks one as reported.
+---@param sent fun(entry: rpf.records.Entry, item: table) Marks one as reported.
 ---@return boolean ok False if the outbox refused one.
 local function send_all(tag, entries, build, sent)
   local size = sync.options.max_records_per_frame
@@ -341,12 +362,79 @@ local function send_all(tag, entries, build, sent)
   return true
 end
 
----Marks every ledger entry on a record as sent.
+---Marks the ledger entries a queued report carried.
 ---@param entry rpf.records.Entry The record.
-local function mark_sent(entry)
-  for _, tx in ipairs(entry.transactions) do
-    tx.sent = true
+---@param item table The change or report queued for it.
+---@param whole boolean Whether it was a whole report, whose entries the rest of its sequence leaves out.
+---@return boolean more Whether the record has entries the report did not carry.
+local function mark_carried(entry, item, whole)
+  local carried = {}
+  for _, tx in ipairs(item.transactions or {}) do
+    carried[tx.client_id] = true
   end
+  local more = false
+  for _, tx in ipairs(entry.transactions) do
+    if carried[tx.client_id] then
+      tx.sent = true
+      if whole then
+        tx.whole = true
+      end
+    elseif (whole and not tx.whole) or (not whole and not tx.sent) then
+      more = true
+    end
+  end
+  return more
+end
+
+---Settles a record whose whole report was queued. An account with more
+---unacknowledged entries than one report carries stays marked for the next
+---report of the sequence.
+---@param entry rpf.records.Entry The record.
+---@param report table The report queued.
+local function whole_sent(entry, report)
+  entry.revision = entry.revision + 1
+  entry.changed = {}
+  entry.more = mark_carried(entry, report, true)
+  if not entry.more then
+    entry.resync = false
+    for _, tx in ipairs(entry.transactions) do
+      tx.whole = nil
+    end
+  end
+end
+
+---Settles a record whose change was queued.
+---@param entry rpf.records.Entry The record.
+---@param change table The change queued.
+local function change_sent(entry, change)
+  entry.revision = entry.revision + 1
+  entry.changed = {}
+  entry.more = mark_carried(entry, change, false)
+end
+
+---Sends one kind of report for every record matching a test, and then again
+---for the accounts whose backlog one report did not empty, until none is
+---left. Only a record the last pass moved on is tried again, so a record
+---that cannot be sent at all is tried once per flush.
+---@param tag "state_changed"|"resync" The frame type.
+---@param test fun(entry: rpf.records.Entry): boolean Which records.
+---@param build fun(entry: rpf.records.Entry): table The change or report for one.
+---@param sent fun(entry: rpf.records.Entry, item: table) Settles one once queued, and sets `more` on it.
+---@return boolean ok False if the outbox refused a frame.
+local function send_until_done(tag, test, build, sent)
+  local entries = select_entries(test)
+  while #entries > 0 do
+    for _, entry in ipairs(entries) do
+      entry.more = nil
+    end
+    if not send_all(tag, entries, build, sent) then
+      return false
+    end
+    entries = select_entries(function(entry)
+      return entry.more == true and test(entry)
+    end)
+  end
+  return true
 end
 
 ---Reports everything marked: first the records the portal needs whole, then
@@ -358,26 +446,15 @@ function sync.flush()
   if not sync.connection then
     return
   end
-  local wholes = select_entries(function(entry)
+  local ok = send_until_done("resync", function(entry)
     return entry.resync
-  end)
-  local ok = send_all("resync", wholes, full_report, function(entry)
-    entry.revision = entry.revision + 1
-    entry.resync = false
-    entry.changed = {}
-    mark_sent(entry)
-  end)
+  end, full_report, whole_sent)
   if ok then
-    local changed = select_entries(function(entry)
+    ok = send_until_done("state_changed", function(entry)
       return not entry.resync and change_of(entry) ~= nil
-    end)
-    ok = send_all("state_changed", changed, function(entry)
-      return change_of(entry) --[[@as table]]
     end, function(entry)
-      entry.revision = entry.revision + 1
-      entry.changed = {}
-      mark_sent(entry)
-    end)
+      return change_of(entry) --[[@as table]]
+    end, change_sent)
   end
   if not ok then
     sync.schedule()
@@ -448,6 +525,20 @@ function sync.hold(request, through, callback)
   send_hold(fields, through, callback)
 end
 
+---How many of an account's unacknowledged entries its whole report has yet
+---to carry.
+---@param entry rpf.records.Entry The record.
+---@return integer count The entries no report of the sequence under way has carried.
+local function backlog(entry)
+  local count = 0
+  for _, tx in ipairs(entry.transactions) do
+    if not tx.whole then
+      count = count + 1
+    end
+  end
+  return count
+end
+
 ---Queues the release of some records, in one frame if it fits. A frame over
 ---the portal's frame limit is split in two and each half tried, so one
 ---large container cannot keep a whole session's records held; a single
@@ -461,6 +552,18 @@ end
 local function release_batch(entries, callback, released)
   local reports, refs = {}, {}
   for i, entry in ipairs(entries) do
+    -- An account with more unacknowledged entries than one report carries
+    -- sends the surplus whole first, so the release carries the last of it.
+    while backlog(entry) > sync.options.max_transactions_per_report do
+      local before = entry.revision
+      entry.resync = true
+      if not send_batch("resync", { entry }, full_report, whole_sent) then
+        return nil, "outbox_full"
+      end
+      if entry.revision == before then
+        return nil, "too_large"
+      end
+    end
     reports[i] = full_report(entry)
     refs[i] = { kind = entry.kind, id = entry.id }
   end

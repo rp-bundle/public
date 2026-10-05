@@ -343,6 +343,79 @@ describe("rpf.sync", function()
       assert.are.equal(3, last_of(p, "state_changed").changes[1].base_revision)
     end)
 
+    ---The ledger entries each frame carried for the treasury, and the
+    ---revisions the frames named.
+    ---@param frames rpf.Frame[] The reports.
+    ---@param field string `changes` or `records`.
+    ---@param revision string `base_revision` or `revision`.
+    ---@return integer[] counts How many entries each carried.
+    ---@return number[] revisions The revision each named.
+    local function carried(frames, field, revision)
+      local counts, revisions = {}, {}
+      for i, frame in ipairs(frames) do
+        local item = frame[field][1]
+        assert.are.equal(BANK, item.id)
+        counts[i] = #item.transactions
+        revisions[i] = item[revision]
+      end
+      return counts, revisions
+    end
+
+    it("reports an account's backlog in consecutive bounded reports", function()
+      rpf.sync.options.max_transactions_per_report = 2
+      local ids = {}
+      for i = 1, 5 do
+        ids[i] = rpf.records.transfer(BANK, WALLET, 1, "Tip " .. i)
+      end
+      flush(p)
+
+      local reports = sent_of(p, "state_changed")
+      local counts, bases = carried(reports, "changes", "base_revision")
+      assert.are.same({ 2, 2, 1 }, counts)
+      assert.are.same({ 7, 8, 9 }, bases)
+      assert.are.equal(ids[5], reports[3].changes[1].transactions[1].client_id)
+      flush(p)
+      assert.are.equal(3, #sent_of(p, "state_changed"), "each entry reported once")
+    end)
+
+    it("answers a resync of an account with a backlog in consecutive whole reports", function()
+      rpf.sync.options.max_transactions_per_report = 2
+      for i = 1, 5 do
+        rpf.records.transfer(BANK, WALLET, 1, "Tip " .. i)
+      end
+      flush(p)
+      p.deliver(support.portal_frame("resync_required", {
+        re = sent_of(p, "state_changed")[1].id,
+        stale = { { kind = "account", id = BANK, revision = 7 } },
+        released = {},
+      }))
+
+      local counts, revisions = carried(sent_of(p, "resync"), "records", "revision")
+      assert.are.same({ 2, 2, 1 }, counts, "every entry still in doubt, none twice")
+      assert.are.same({ 11, 12, 13 }, revisions)
+      flush(p)
+      assert.are.equal(3, #sent_of(p, "resync"), "the sequence ended")
+    end)
+
+    it("releases an account with a backlog after reporting the surplus whole", function()
+      rpf.sync.options.max_transactions_per_report = 2
+      for i = 1, 5 do
+        rpf.records.transfer(BANK, WALLET, 1, "Tip " .. i)
+      end
+
+      assert.is_true(rpf.sync.release({ { kind = "account", id = BANK } }))
+
+      local counts, revisions = carried(sent_of(p, "resync"), "records", "revision")
+      assert.are.same({ 2, 2 }, counts)
+      assert.are.same({ 11, 12 }, revisions)
+      local release = last_of(p, "release")
+      assert.are.equal(1, #release.records[1].transactions)
+      assert.are.equal(13, release.records[1].revision)
+      local frames = p.frames()
+      assert.are.equal("release", frames[#frames].type, "after the reports it completes")
+      assert.is_false(rpf.records.is_held("account", BANK))
+    end)
+
     it("splits a report that would be over the frame limit", function()
       connection.options.max_frame_bytes = 300
       rpf.records.set_character(CHARACTER, { first_name = "Janet" })

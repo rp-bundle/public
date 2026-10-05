@@ -192,6 +192,9 @@ describe("rpf.records", function()
       assert.are.same({ nil, "invalid" }, { rpf.records.transfer(WALLET, WALLET, 1, "x") })
       ---@diagnostic disable-next-line: param-type-mismatch
       assert.are.same({ nil, "invalid" }, { rpf.records.transfer(WALLET, BANK, 1, nil) })
+      local long = string.rep("x", rpf.records.MAX_DESCRIPTION_BYTES)
+      assert.are.same({ nil, "invalid" }, { rpf.records.transfer(BANK, WALLET, 1, long .. "x") })
+      assert.is_string(rpf.records.transfer(BANK, WALLET, 1, long))
     end)
 
     it("refuses to overdraw an account unless its balance is unlimited", function()

@@ -485,6 +485,7 @@ anything not held, so a module keeps ids and reads through it every time.
   amount, description)`. A transfer needs both accounts held, mints the
   ledger entry's `client_id` here, refuses to overdraw an account without
   `unlimited_balance`, and keeps every balance within ±`MAX_AMOUNT`.
+  A description is at most `records.MAX_DESCRIPTION_BYTES` (256).
 - **Reporting.** A change marks its record, and `flush_interval_ms` (1 s)
   later (a minute while the portal is unreachable, so a long outage cannot
   fill the outbox) every marked record goes in one `state_changed`, each change naming
@@ -492,7 +493,10 @@ anything not held, so a module keeps ids and reads through it every time.
   so reports queued behind each other name consecutive revisions, and every
   report waits in the persisted outbox while the portal is unreachable. A
   change the outbox refuses stays marked for the next flush; a batch over
-  the frame limit is split.
+  the frame limit is split. An account reports at most
+  `max_transactions_per_report` (256) ledger entries at a time, and the rest
+  in the reports that follow, whole reports included, so a backlog built up
+  through an outage never outgrows a frame.
 - **Stale is answered whole.** The portal applies a report all or nothing.
   If a base revision is stale, it answers `resync_required`, and every
   record the report named goes whole in a `resync`: this server holds it,

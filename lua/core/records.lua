@@ -35,6 +35,7 @@
 ---by holding them again if it still needs them.
 ---@class rpf.records
 ---@field KINDS table<rpf.RecordKind, true> The kinds of record a server can hold.
+---@field MAX_DESCRIPTION_BYTES integer The longest description a transfer may carry, the portal's `limits::MAX_TRANSACTION_DESCRIPTION_BYTES`. Bounded so that a report's worth of ledger entries always fits one frame, and an account's backlog can always be reported.
 ---@field entries table<string, rpf.records.Entry> Every held record by `records.key`. Internal: `rpf.sync` reads it to build reports, and nothing else may.
 local records = {}
 
@@ -61,6 +62,7 @@ local events = rpf.events
 ---@field amount number How much, a positive integer up to `protocol.MAX_AMOUNT`.
 ---@field description string Why, for the statement and staff.
 ---@field sent boolean Whether a frame carrying it has been sent, so a change reports only new entries.
+---@field whole boolean? Whether a whole report of the sequence under way has carried it, when the account's backlog takes more than one. Only `rpf.sync` sets it.
 
 ---One held record.
 ---@class rpf.records.Entry
@@ -72,8 +74,10 @@ local events = rpf.events
 ---@field changed table<string, true> What has changed since the last report: character field names, or `contents`.
 ---@field transactions rpf.records.Transaction[] On an account, the entries the portal has not acknowledged, oldest first.
 ---@field resync boolean Whether the portal needs the whole record, because a report on it was stale or refused.
+---@field more boolean? Whether the last report queued for it left ledger entries for the next. Only `rpf.sync` sets it.
 
 records.KINDS = { character = true, account = true, container = true }
+records.MAX_DESCRIPTION_BYTES = 256
 
 records.entries = {}
 
@@ -334,7 +338,7 @@ end
 ---@param amount number A positive integer, at most `protocol.MAX_AMOUNT`.
 ---@param description string Why, for the statement and staff.
 ---@return string? client_id The entry's id, or nil if refused.
----@return string? err `"not_held"`, `"invalid"` (a bad amount, the same account twice, or a description that is not a string), `"insufficient_funds"` or `"out_of_range"`. Nothing changes on an error.
+---@return string? err `"not_held"`, `"invalid"` (a bad amount, the same account twice, or a description that is not a string of at most `MAX_DESCRIPTION_BYTES`), `"insufficient_funds"` or `"out_of_range"`. Nothing changes on an error.
 function records.transfer(from, to, amount, description)
   local payer = records.entries[records.key("account", from)]
   local payee = records.entries[records.key("account", to)]
@@ -349,6 +353,7 @@ function records.transfer(from, to, amount, description)
     or amount < 1
     or amount > max
     or type(description) ~= "string"
+    or #description > records.MAX_DESCRIPTION_BYTES
   then
     return nil, "invalid"
   end
