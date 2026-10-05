@@ -239,6 +239,66 @@ describe("rpf.sync", function()
       assert.are.equal(2, #sent_of(p, "hold"))
     end)
 
+    it("does not keep a record that was released after the hold answering now was sent", function()
+      local ref = { kind = "container", id = POCKETS }
+      local pockets = { records_held()[4] }
+      rpf.sync.hold({ records = { ref } })
+      rpf.sync.hold({ records = { ref } })
+      local holds = sent_of(p, "hold")
+      assert.are.equal(2, #holds)
+
+      p.deliver(support.portal_frame("held", { re = holds[1].id, records = pockets }))
+      assert.is_true(rpf.sync.release({ ref }))
+      -- The portal answered the second hold before it saw the release, and
+      -- has since ended the hold: keeping the record would leave it with two
+      -- writers.
+      local views
+      rpf.events.on("records.held", function(held)
+        views = held
+      end)
+      p.deliver(support.portal_frame("held", { re = holds[2].id, records = pockets }))
+
+      assert.is_false(rpf.records.is_held("container", POCKETS))
+      assert.are.equal(2, #sent_of(p, "release"), "given back again, in case the portal answered out of order")
+      assert.are.same({}, views, "and never announced as held")
+    end)
+
+    it("keeps a record a later hold took, when an earlier hold's reply arrives late", function()
+      local ref = { kind = "container", id = POCKETS }
+      local pockets = { records_held()[4] }
+      rpf.sync.hold({ records = { ref } })
+      local first = last_of(p, "hold")
+      p.deliver(support.portal_frame("held", { re = first.id, records = pockets }))
+      rpf.sync.hold({ records = { ref } })
+      local late = last_of(p, "hold")
+      assert.is_true(rpf.sync.release({ ref }))
+      p.deliver(support.portal_frame("ack", { re = last_of(p, "release").id }))
+      rpf.sync.hold({ records = { ref } })
+      local newest = last_of(p, "hold")
+      p.deliver(support.portal_frame("held", { re = newest.id, records = pockets }))
+
+      -- The portal was asked for `late` again and answers it last: the
+      -- record is held on both sides, by the newest hold.
+      p.deliver(support.portal_frame("held", { re = late.id, records = pockets }))
+
+      assert.is_true(rpf.records.is_held("container", POCKETS))
+      assert.are.equal(1, #sent_of(p, "release"))
+    end)
+
+    it("tries a player's hold again when the outbox could not take it", function()
+      connection.options.max_entries = #connection.outbox
+      rpf.players.connected(1)
+      rpf.players.authenticating(1)
+      rpf.players.register(1, { player_id = PLAYER, username = "jane" })
+      assert.are.equal(0, #sent_of(p, "hold"))
+
+      connection.options.max_entries = 2048
+      local probe = assert(connection:send("player_dropped", { player_id = BANK, reason = "probe" }))
+      p.deliver(support.portal_frame("ack", { re = probe }))
+
+      assert.are.same({ { kind = "player", id = PLAYER } }, last_of(p, "hold").owners)
+    end)
+
     it("hands a refusal to the caller and holds nothing", function()
       local result
       rpf.sync.hold({ records = { { kind = "account", id = WALLET } } }, nil, function(views, err)

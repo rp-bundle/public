@@ -484,7 +484,10 @@ anything not held, so a module keeps ids and reads through it every time.
   (and any resync recovering one),
   because the portal can ask for a frame again and answer the ones behind
   it first: what `held` hands over then includes everything reported, so a
-  record released and held again comes back as this server left it.
+  record released and held again comes back as this server left it. A
+  record released while a hold naming it was in flight is not kept when
+  that hold's reply arrives: it is given straight back. A player's hold the
+  outbox refuses is tried again as the outbox drains.
 - **Changing.** `records.set_character(id, fields)`,
   `records.set_contents(id, contents)` and `records.transfer(from, to,
   amount, description)`. A transfer needs both accounts held, mints the

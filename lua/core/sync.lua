@@ -114,11 +114,29 @@ local inflight = {}
 ---@type rpf.sync.Declaration
 local declaration = { pending = false, mark = 0 }
 
+---A hold waiting to be sent.
+---@class rpf.sync.DeferredHold
+---@field fields table The `hold` frame's fields.
+---@field through string? The player whose session it is for.
+---@field callback fun(views: table[]?, err: string?)? Called with copies of the records, or the refusal.
+---@field mark integer The connection's `next_seq` when the hold was asked for: reports and releases below it are what it waits for.
+
 ---Holds waiting to be sent: for the declaration's answer, and for the
----answer to every report and release queued before them (`mark` is the
----connection's `next_seq` when the hold was asked for).
----@type { fields: table, through: string?, callback: fun(views: table[]?, err: string?)?, mark: integer }[]
+---answer to every report and release queued before them.
+---@type rpf.sync.DeferredHold[]
 local deferred = {}
+
+---How many releases this process has queued, as a clock for `released_at`.
+local releases = 0
+
+---When each record was last released, on the `releases` clock, so a hold's
+---reply can tell a release that came after the hold was sent. Kept only
+---while a hold is in flight.
+---@type table<string, integer>
+local released_at = {}
+
+---How many holds are queued and unanswered.
+local holds_in_flight = 0
 
 ---Whether a flush is already scheduled.
 local scheduled = false
@@ -517,15 +535,56 @@ end
 
 -- Holding and releasing -----------------------------------------------------
 
+---The id a record is known by in a `held` reply.
+---@param record table One of the reply's records.
+---@return string key Its `records.key`.
+local function held_key(record)
+  local data = record.character or record.account or record.container
+  return records.key(record.kind, data.id)
+end
+
 ---Sends a hold now.
----@param fields table The `hold` frame's fields.
----@param through string? The player it is for.
----@param callback fun(views: table[]?, err: string?)? Called with copies of the records, or the refusal.
-local function send_hold(fields, through, callback)
-  sync.connection:send("hold", fields, function(reply, err)
+---
+---A record released after the hold was sent, and not held again since, is
+---not kept when the reply hands it over: the reply is from before that
+---release, and the portal, which answers in order, has ended the hold. It
+---is taken and released again at once instead, so that even if the portal
+---answered the two out of order the record ends up held by neither side,
+---never by this one alone.
+---
+---A hold for a player's session that the outbox refuses is kept, and sent
+---again as the outbox drains, for as long as the player is here.
+---@param hold rpf.sync.DeferredHold The hold.
+local function send_hold(hold)
+  local through, callback = hold.through, hold.callback
+  local sent_at = releases
+  local queued
+  queued = sync.connection:send("hold", hold.fields, function(reply, err)
+    if queued then
+      holds_in_flight = holds_in_flight - 1
+    end
     local views, why
     if reply and reply.type == "held" then
-      views = records.take(reply.records, through)
+      local superseded = {}
+      for _, record in ipairs(reply.records) do
+        local key = held_key(record)
+        if not records.entries[key] and (released_at[key] or 0) > sent_at then
+          local data = record.character or record.account or record.container
+          superseded[#superseded + 1] = { kind = record.kind, id = data.id }
+        end
+      end
+      records.take(reply.records, through)
+      if #superseded > 0 then
+        local ok, why_not = sync.release(superseded)
+        if not ok then
+          log("error", "could not give back records released while their hold was in flight: " .. tostring(why_not))
+        end
+      end
+      views = {}
+      for _, record in ipairs(reply.records) do
+        local data = record.character or record.account or record.container
+        views[#views + 1] = records.get(record.kind, data.id)
+      end
       events.emit("records.held", views)
       if through and not rpf.players.by_player_id(through) then
         -- They left while the hold was in flight: give it straight back.
@@ -533,12 +592,24 @@ local function send_hold(fields, through, callback)
       end
     else
       why = reply and reply.code or err
+      if why == "outbox_full" and through and rpf.players.by_player_id(through) then
+        log("warn", "a player's hold could not be queued; trying again as the outbox drains")
+        hold.mark = sync.connection.next_seq
+        deferred[#deferred + 1] = hold
+        return
+      end
       log("warn", "a hold was refused (" .. tostring(why) .. ")")
+    end
+    if holds_in_flight == 0 then
+      released_at = {}
     end
     if callback then
       callback(views, why)
     end
   end)
+  if queued then
+    holds_in_flight = holds_in_flight + 1
+  end
 end
 
 ---Sends every waiting hold that no longer has to wait: not while a
@@ -566,7 +637,7 @@ local function send_deferred()
     if recovering or (oldest and oldest < hold.mark) then
       deferred[#deferred + 1] = hold
     else
-      send_hold(hold.fields, hold.through, hold.callback)
+      send_hold(hold)
     end
   end
 end
@@ -636,8 +707,12 @@ local function release_batch(entries, callback, released)
   if not id then
     return nil, err
   end
+  releases = releases + 1
   for _, ref in ipairs(records.forget(refs)) do
     released[#released + 1] = ref
+    if holds_in_flight > 0 then
+      released_at[records.key(ref.kind, ref.id)] = releases
+    end
   end
   return true
 end
@@ -872,6 +947,9 @@ function sync.start(platform, connection, options)
   deferred = {}
   departed = {}
   orphan_tries = {}
+  releases = 0
+  released_at = {}
+  holds_in_flight = 0
   scheduled = false
   declaration = { pending = false, mark = 0 }
   records.reset()
