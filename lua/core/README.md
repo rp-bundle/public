@@ -510,12 +510,12 @@ anything not held, so a module keeps ids and reads through it every time.
   outgrows a frame.
 - **A refused report is taken apart.** A report the portal refuses outright
   (contents that no longer fit after a catalog change, say) lands nothing,
-  and its frame leaves the outbox. Its ledger entries go back to unreported,
-  since an account's report is never stale and nothing else would send them
-  again, and every record it named is reported in a frame of its own until
-  one of its reports is applied, so one change the portal will not take
-  cannot hold back the others. A record refused alone goes again with the
-  next flush, not in a loop.
+  and its frame leaves the outbox. Every record it named goes again whole,
+  since its changes were cleared as the frame was queued and an account's
+  report is never stale, so nothing else would send them again. Each goes
+  in a frame of its own until one of its reports is applied, so one change
+  the portal will not take cannot hold back the others. A record refused
+  alone goes again with the next flush, not in a loop.
 - **Stale is answered whole.** The portal applies a report's characters and
   containers all or nothing; ledger entries on a held account it appends
   whatever else it makes of the report, since they have no state to be

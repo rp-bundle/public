@@ -72,7 +72,7 @@ local events = rpf.events
 ---@field through string? The player whose session it is held for, released when they leave. Nil for a record held on its own.
 ---@field changed table<string, true> What has changed since the last report: character field names, or `contents`.
 ---@field transactions rpf.records.Transaction[] On an account, the entries the portal has not acknowledged, oldest first.
----@field resync boolean Whether the portal needs the whole record, because a report on it was stale or refused.
+---@field resync boolean Whether the portal needs the whole record, because a report on it was stale, refused or lost.
 ---@field more boolean? Whether the last report queued for it left ledger entries for the next. Only `rpf.sync` sets it.
 ---@field awaiting string? The whole report in flight for it, by frame id: no other whole report on it is sent until that one is answered. Only `rpf.sync` sets it.
 ---@field alone boolean? Whether it is reported in a frame of its own, because a frame carrying it was refused, until one is applied. Only `rpf.sync` sets it.

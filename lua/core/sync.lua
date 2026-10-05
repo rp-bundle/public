@@ -339,28 +339,23 @@ local function settle_report(id, reply, err)
     records.lose(reply.released, "the portal says this server does not hold them")
     resync(sent.keys, stale_map(reply))
   else
-    -- A final refusal: the portal took nothing. The records keep their
-    -- state, and a character's or container's next report is stale and
-    -- resyncs it. An account's never is (its entries land whatever revision
-    -- they name), so the entries this frame carried go back to unreported,
-    -- to be queued again: the dropped frame was their only durable copy.
-    -- One change the portal will not take refuses every change beside it,
-    -- so each record of a refused frame is then reported alone until one of
-    -- its frames is applied. A record refused alone is not hurried back: it
-    -- goes with the next flush, so a change the portal keeps refusing is
-    -- not resent in a loop.
+    -- A final refusal: the portal took nothing, and the frame, the only
+    -- durable copy of what it carried, has left the outbox. So every record
+    -- it named goes again whole: a character's or container's state as it
+    -- is now, an account's every unacknowledged ledger entry. Its changes
+    -- were cleared as the frame was queued, and an account's report is
+    -- never stale, so nothing else would send them again. One change the
+    -- portal will not take refuses every change beside it, so each record
+    -- of a refused frame is then reported alone until one of its frames is
+    -- applied. A record refused alone is not hurried back: it goes with the
+    -- next flush, so a state the portal keeps refusing is not resent in a
+    -- loop.
     log("error", "the portal refused a state report (" .. tostring(reply.code) .. "): " .. tostring(reply.reason))
     for _, key in ipairs(sent.keys) do
       local entry = records.entries[key]
       if entry then
         entry.alone = true
-        if entry.kind == "account" then
-          for _, tx in ipairs(entry.transactions) do
-            if sent.transactions[tx.client_id] then
-              tx.sent = false
-            end
-          end
-        end
+        entry.resync = true
       end
     end
     if #sent.keys > 1 then
