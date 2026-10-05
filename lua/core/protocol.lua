@@ -398,6 +398,132 @@ local OUTCOME = tagged("outcome", {
   unknown = { { "reason", STRING } },
 })
 
+-- Records (C7) ------------------------------------------------------------
+
+local RECORD_KIND = enum({ "character", "account", "container" })
+
+---`RecordRef`: one held record, by kind and id.
+local RECORD_REF = object({
+  { "kind", RECORD_KIND },
+  { "id", UUID },
+})
+
+---`RecordRevision`: a record and the revision one side holds it at.
+local RECORD_REVISION = object({
+  { "kind", RECORD_KIND },
+  { "id", UUID },
+  { "revision", U64 },
+})
+
+---`AccountFlags`: `"unlimited_balance"`, or `{ "server_specific": "…" }`,
+---externally tagged like `Gender` and held to one key the same way.
+local ACCOUNT_FLAG = same_both_ways(function(value, path)
+  if value == "unlimited_balance" then
+    return value
+  end
+  if type(value) == "table" then
+    local count = 0
+    for _ in pairs(value) do
+      count = count + 1
+    end
+    if count == 1 and type(value.server_specific) == "string" then
+      return json.object({ server_specific = value.server_specific })
+    end
+  end
+  fail(path, "expected unlimited_balance or { server_specific = string }")
+end)
+
+local ACCOUNT = object({
+  { "id", UUID },
+  { "server_id", UUID },
+  { "owner", OWNER_REF },
+  { "name", STRING },
+  { "flags", array_of(ACCOUNT_FLAG) },
+})
+
+---A container as the portal hands it over. Its contents and flags are kept
+---whole: D6 types them and runs the shared validation, and until then the
+---core passes them through as the portal sent them.
+local CONTAINER = object({
+  { "id", UUID },
+  { "server_id", UUID },
+  { "owner", OWNER_REF },
+  { "name", STRING },
+  { "contents", OPAQUE_OBJECT },
+  { "flags", array_of(OPAQUE_OBJECT) },
+})
+
+---`HeldRecord`: a record as the portal hands it over in `Held`.
+local HELD_RECORD = tagged("kind", {
+  character = {
+    { "revision", U64 },
+    { "character", CHARACTER },
+  },
+  account = {
+    { "revision", U64 },
+    { "account", ACCOUNT },
+    { "balance", AMOUNT },
+  },
+  container = {
+    { "revision", U64 },
+    { "container", CONTAINER },
+  },
+})
+
+---`ReportedTransaction`: one ledger entry this server made, keyed by the
+---`client_id` it minted, so a resend appends nothing.
+local TRANSACTION = object({
+  { "client_id", UUID },
+  { "from_account", UUID },
+  { "to_account", UUID },
+  { "amount", integer(1, protocol.MAX_AMOUNT) },
+  { "description", STRING },
+})
+
+---`RecordReport`: a record's whole state as its holder has it, in a
+---`resync` or a `release`.
+local RECORD_REPORT = tagged("kind", {
+  character = {
+    { "id", UUID },
+    { "revision", U64 },
+    { "first_name", STRING },
+    { "last_name", STRING },
+    { "gender", GENDER },
+  },
+  account = {
+    { "id", UUID },
+    { "revision", U64 },
+    { "transactions", array_of(TRANSACTION) },
+  },
+  container = {
+    { "id", UUID },
+    { "revision", U64 },
+    { "contents", OPAQUE_OBJECT },
+  },
+})
+
+---`StateChange`: what changed in one record since `base_revision`. A
+---character field left null is unchanged.
+local STATE_CHANGE = tagged("kind", {
+  character = {
+    { "id", UUID },
+    { "base_revision", U64 },
+    { "first_name", nullable(STRING) },
+    { "last_name", nullable(STRING) },
+    { "gender", nullable(GENDER) },
+  },
+  account = {
+    { "id", UUID },
+    { "base_revision", U64 },
+    { "transactions", array_of(TRANSACTION) },
+  },
+  container = {
+    { "id", UUID },
+    { "base_revision", U64 },
+    { "contents", OPAQUE_OBJECT },
+  },
+})
+
 ---Every `RejectCode`, as its wire string.
 local REJECT_CODES = {
   "unauthorised",
@@ -457,6 +583,22 @@ protocol.messages = {
       { "re", UUID },
       { "outcome", OUTCOME },
     }),
+    hold = message("reply", true, {
+      { "owners", array_of(OWNER_REF) },
+      { "records", array_of(RECORD_REF) },
+    }),
+    release = message("ack", true, {
+      { "records", array_of(RECORD_REPORT) },
+    }),
+    state_changed = message("reply", true, {
+      { "changes", array_of(STATE_CHANGE) },
+    }),
+    resync = message("reply", true, {
+      { "records", array_of(RECORD_REPORT) },
+    }),
+    declare_holds = message("reply", false, {
+      { "records", array_of(RECORD_REVISION) },
+    }),
     ack = message("nothing", false, {
       { "re", UUID },
     }),
@@ -494,6 +636,19 @@ protocol.messages = {
       { "version", U64 },
       { "hash", STRING },
       { "snapshot", OPAQUE_OBJECT },
+    }),
+    held = message("ack", false, {
+      { "re", UUID },
+      { "records", array_of(HELD_RECORD) },
+    }),
+    state_applied = message("ack", false, {
+      { "re", UUID },
+      { "revisions", array_of(RECORD_REVISION) },
+    }),
+    resync_required = message("ack", false, {
+      { "re", UUID },
+      { "stale", array_of(RECORD_REVISION) },
+      { "released", array_of(RECORD_REF) },
     }),
     ack = message("nothing", false, {
       { "re", UUID },
