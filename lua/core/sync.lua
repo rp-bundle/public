@@ -15,8 +15,10 @@
 ---   change names the revision it was made on, and the record moves to the
 ---   next revision as it is sent, so frames queued behind each other name
 ---   consecutive revisions.
---- - **Stale is answered with the whole record.** The portal applies a frame
----   all or nothing. If it finds a revision stale it answers
+--- - **Stale is answered with the whole record.** The portal applies a
+---   frame's characters and containers all or nothing (ledger entries on a
+---   held account it appends regardless: they have no state to be stale
+---   against). If it finds a revision stale it answers
 ---   `resync_required`, and every record the frame named is reported whole in
 ---   a `resync`, at a revision no lower than the portal's: this server holds
 ---   it, so its state is the truth. A record the portal says is not held here

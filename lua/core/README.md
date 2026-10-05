@@ -505,7 +505,10 @@ anything not held, so a module keeps ids and reads through it every time.
   `max_transactions_per_report` (256) ledger entries at a time and the rest
   in the reports that follow, so a backlog built up through an outage never
   outgrows a frame.
-- **Stale is answered whole.** The portal applies a report all or nothing.
+- **Stale is answered whole.** The portal applies a report's characters and
+  containers all or nothing; ledger entries on a held account it appends
+  whatever else it makes of the report, since they have no state to be
+  stale against.
   If a base revision is stale, it answers `resync_required`, and every
   record the report named goes whole in a `resync`: this server holds it,
   so its state is the truth. Every whole report (a resync or a release)
