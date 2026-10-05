@@ -490,10 +490,11 @@ end
 ---every changed one. Runs `flush_interval_ms` after a change, and at once
 ---when a reply asks for a resync. Whatever the outbox refuses stays marked,
 ---and another flush is scheduled.
+---@return boolean ok False if the outbox refused a report, so something marked is still unreported.
 function sync.flush()
   scheduled = false
   if not sync.connection then
-    return
+    return false
   end
   -- One whole report per record at a time: see `full_report`.
   local ok = send_all(
@@ -514,6 +515,7 @@ function sync.flush()
   if not ok then
     sync.schedule()
   end
+  return ok
 end
 
 ---Schedules a flush `flush_interval_ms` from now, or
@@ -729,13 +731,18 @@ end
 ---
 ---Everything marked is flushed first, so a report naming a released record
 ---(another account's payment to it) reaches the portal ahead of the release,
----in order.
+---in order. If the outbox cannot take those reports, nothing is released.
 ---@param refs rpf.RecordRef[] The records.
 ---@param callback fun(reply: table?, err: string?)? Called with the portal's answer: once, unless the final states were over the frame limit together and went in several frames, when it is called for each.
 ---@return boolean? ok True if every held record named was released.
 ---@return string? err Why not: `"outbox_full"`, `"too_large"` for a record no frame can carry, or `"backlog"` for an account with more unacknowledged ledger entries than one report carries, which can be released once the portal has acknowledged enough of them. Records that could be queued were released all the same.
 function sync.release(refs, callback)
-  sync.flush()
+  if not sync.flush() then
+    -- A report that could not be queued may be a payment to one of these
+    -- records. Released now, it could be held again before that payment
+    -- lands, and handed back without it.
+    return nil, "outbox_full"
+  end
   local entries, seen, backlog = {}, {}, false
   for _, ref in ipairs(refs) do
     local key = records.key(ref.kind, ref.id)

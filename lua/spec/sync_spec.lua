@@ -560,6 +560,21 @@ describe("rpf.sync", function()
       assert.is_true(rpf.records.is_held("character", CHARACTER))
     end)
 
+    it("releases nothing while a report that goes first cannot be queued", function()
+      -- Room for the wallet's small release, not for the treasury's report
+      -- of its payments to it.
+      for i = 1, 20 do
+        rpf.records.transfer(BANK, WALLET, 1, string.rep("x", 250) .. i)
+      end
+      connection.options.max_bytes = connection.origin_bytes + 2500
+
+      local ok, err = rpf.sync.release({ { kind = "account", id = WALLET } })
+
+      assert.are.same({ nil, "outbox_full" }, { ok, err })
+      assert.is_true(rpf.records.is_held("account", WALLET), "or a later hold could hand it back without them")
+      assert.are.equal(0, #sent_of(p, "release"))
+    end)
+
     it("splits a release that would be over the frame limit", function()
       connection.options.max_frame_bytes = 300
       local released = {}
