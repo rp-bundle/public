@@ -423,6 +423,39 @@ describe("rpf.sync", function()
       assert.are.equal("character", whole.records[1].kind)
     end)
 
+    it("reports a refused frame's ledger entries again, each record alone, until one lands", function()
+      local client_id = rpf.records.transfer(WALLET, BANK, 25, "Fine")
+      rpf.records.set_contents(POCKETS, rpf.json.object({ layout = "list", stacks = rpf.json.array() }))
+      flush(p)
+      local refused = last_of(p, "state_changed")
+      assert.are.equal(2, #refused.changes)
+
+      -- The contents do not fit, so the portal takes neither change.
+      p.deliver(support.portal_frame("rejected", { re = refused.id, code = "malformed", reason = "too heavy" }))
+      flush(p)
+
+      local again = sent_of(p, "state_changed")
+      assert.are.equal(2, #again, "the payment, alone")
+      local retry = again[2]
+      assert.are.equal(1, #retry.changes)
+      assert.are.equal(WALLET, retry.changes[1].id)
+      assert.are.equal(client_id, retry.changes[1].transactions[1].client_id)
+
+      -- Refused alone, it is not hurried back, but goes with the next flush,
+      -- still in a frame of its own.
+      p.deliver(support.portal_frame("rejected", { re = retry.id, code = "malformed", reason = "no" }))
+      flush(p)
+      assert.are.equal(2, #sent_of(p, "state_changed"))
+      rpf.records.set_character(CHARACTER, { first_name = "Janet" })
+      flush(p)
+      local frames = sent_of(p, "state_changed")
+      assert.are.equal(4, #frames, "the character and the payment, apart")
+      apply(p, frames[3])
+      apply(p, frames[4])
+      assert.are.equal(0, #rpf.records.entries["account:" .. WALLET].transactions)
+      assert.is_nil(rpf.records.entries["account:" .. WALLET].alone, "together again once applied")
+    end)
+
     it("keeps a change marked when the outbox refuses it, and reports it later", function()
       connection.options.max_entries = #connection.outbox
       rpf.records.set_character(CHARACTER, { first_name = "Janet" })

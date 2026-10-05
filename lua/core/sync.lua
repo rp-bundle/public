@@ -318,6 +318,9 @@ local function settle_report(id, reply, err)
   if reply.type == "state_applied" then
     for _, key in ipairs(sent.keys) do
       local entry = records.entries[key]
+      if entry then
+        entry.alone = nil
+      end
       if entry and entry.kind == "account" then
         local kept = {}
         for _, tx in ipairs(entry.transactions) do
@@ -336,9 +339,33 @@ local function settle_report(id, reply, err)
     records.lose(reply.released, "the portal says this server does not hold them")
     resync(sent.keys, stale_map(reply))
   else
-    -- A final refusal. The records keep their state and their unacknowledged
-    -- entries; the next report on them is stale and resyncs them.
+    -- A final refusal: the portal took nothing. The records keep their
+    -- state, and a character's or container's next report is stale and
+    -- resyncs it. An account's never is (its entries land whatever revision
+    -- they name), so the entries this frame carried go back to unreported,
+    -- to be queued again: the dropped frame was their only durable copy.
+    -- One change the portal will not take refuses every change beside it,
+    -- so each record of a refused frame is then reported alone until one of
+    -- its frames is applied. A record refused alone is not hurried back: it
+    -- goes with the next flush, so a change the portal keeps refusing is
+    -- not resent in a loop.
     log("error", "the portal refused a state report (" .. tostring(reply.code) .. "): " .. tostring(reply.reason))
+    for _, key in ipairs(sent.keys) do
+      local entry = records.entries[key]
+      if entry then
+        entry.alone = true
+        if entry.kind == "account" then
+          for _, tx in ipairs(entry.transactions) do
+            if sent.transactions[tx.client_id] then
+              tx.sent = false
+            end
+          end
+        end
+      end
+    end
+    if #sent.keys > 1 then
+      sync.schedule()
+    end
   end
 end
 
@@ -400,7 +427,8 @@ local function send_batch(tag, entries, build, sent)
   return true
 end
 
----Sends a list in batches of at most `max_records_per_frame`.
+---Sends a list in batches of at most `max_records_per_frame`, and each
+---record marked `alone` in a frame of its own.
 ---@param tag "state_changed"|"resync" The frame type.
 ---@param entries rpf.records.Entry[] The records.
 ---@param build fun(entry: rpf.records.Entry): table The change or report for one.
@@ -408,16 +436,23 @@ end
 ---@return boolean ok False if the outbox refused one.
 local function send_all(tag, entries, build, sent)
   local size = sync.options.max_records_per_frame
-  for start = 1, #entries, size do
-    local batch = {}
-    for i = start, math.min(start + size - 1, #entries) do
-      batch[#batch + 1] = entries[i]
-    end
-    if not send_batch(tag, batch, build, sent) then
-      return false
+  local batch = {}
+  for _, entry in ipairs(entries) do
+    if entry.alone then
+      if not send_batch(tag, { entry }, build, sent) then
+        return false
+      end
+    else
+      batch[#batch + 1] = entry
+      if #batch == size then
+        if not send_batch(tag, batch, build, sent) then
+          return false
+        end
+        batch = {}
+      end
     end
   end
-  return true
+  return send_batch(tag, batch, build, sent)
 end
 
 ---Marks the ledger entries a queued report carried as sent.
