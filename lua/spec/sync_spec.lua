@@ -207,6 +207,20 @@ describe("rpf.sync", function()
       assert.are.same({}, rpf.records.held())
     end)
 
+    it("sends a hold only once the reports queued before it are answered", function()
+      hold_all(p)
+      rpf.records.set_character(CHARACTER, { first_name = "Janet" })
+      flush(p)
+
+      -- The portal may ask for the report again and answer what follows it
+      -- first, and a hold answered before it would hand over state without it.
+      rpf.sync.hold({ records = { { kind = "container", id = POCKETS } } })
+      assert.are.equal(1, #sent_of(p, "hold"))
+
+      apply(p, last_of(p, "state_changed"))
+      assert.are.equal(2, #sent_of(p, "hold"))
+    end)
+
     it("hands a refusal to the caller and holds nothing", function()
       local result
       rpf.sync.hold({ records = { { kind = "account", id = WALLET } } }, nil, function(views, err)
@@ -378,7 +392,7 @@ describe("rpf.sync", function()
       assert.are.equal(3, #sent_of(p, "state_changed"), "each entry reported once")
     end)
 
-    it("answers a resync of an account with a backlog in consecutive whole reports", function()
+    it("answers a resync of an account with a backlog one whole report at a time", function()
       rpf.sync.options.max_transactions_per_report = 2
       for i = 1, 5 do
         rpf.records.transfer(BANK, WALLET, 1, "Tip " .. i)
@@ -390,29 +404,36 @@ describe("rpf.sync", function()
         released = {},
       }))
 
+      -- Each whole report carries the oldest entries still in doubt, and the
+      -- next waits for its answer, so none can overtake another.
+      assert.are.equal(1, #sent_of(p, "resync"))
+      apply(p, last_of(p, "resync"))
+      assert.are.equal(2, #sent_of(p, "resync"))
+      apply(p, last_of(p, "resync"))
       local counts, revisions = carried(sent_of(p, "resync"), "records", "revision")
       assert.are.same({ 2, 2, 1 }, counts, "every entry still in doubt, none twice")
       assert.are.same({ 11, 12, 13 }, revisions)
+      apply(p, last_of(p, "resync"))
       flush(p)
       assert.are.equal(3, #sent_of(p, "resync"), "the sequence ended")
     end)
 
-    it("releases an account with a backlog after reporting the surplus whole", function()
+    it("keeps an account with a backlog until enough of it is acknowledged to release it whole", function()
       rpf.sync.options.max_transactions_per_report = 2
       for i = 1, 5 do
         rpf.records.transfer(BANK, WALLET, 1, "Tip " .. i)
       end
 
-      assert.is_true(rpf.sync.release({ { kind = "account", id = BANK } }))
+      assert.are.same({ nil, "backlog" }, { rpf.sync.release({ { kind = "account", id = BANK } }) })
+      assert.is_true(rpf.records.is_held("account", BANK))
+      local reports = sent_of(p, "state_changed")
+      assert.are.equal(3, #reports, "flushed, so the backlog can drain")
 
-      local counts, revisions = carried(sent_of(p, "resync"), "records", "revision")
-      assert.are.same({ 2, 2 }, counts)
-      assert.are.same({ 11, 12 }, revisions)
+      apply(p, reports[1])
+      apply(p, reports[2])
+      assert.is_true(rpf.sync.release({ { kind = "account", id = BANK } }))
       local release = last_of(p, "release")
-      assert.are.equal(1, #release.records[1].transactions)
-      assert.are.equal(13, release.records[1].revision)
-      local frames = p.frames()
-      assert.are.equal("release", frames[#frames].type, "after the reports it completes")
+      assert.are.equal(1, #release.records[1].transactions, "every entry still in doubt")
       assert.is_false(rpf.records.is_held("account", BANK))
     end)
 

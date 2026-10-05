@@ -32,6 +32,12 @@
 --- - **Whole reports take a revision of their own**, one past the last this
 ---   server used, so a late resend of an older whole report is dropped by
 ---   the portal rather than put over a newer one.
+--- - **A hold never overtakes a report.** The portal can ask for a frame
+---   again (a transient fault), and the frames behind it are then answered
+---   first. So a hold is sent only once every report and release queued
+---   before it has been answered: what `held` hands over then includes
+---   them, and a record released and held again comes back with the final
+---   state this server gave it, payments from other accounts included.
 --- - **The declaration.** After each `Welcome`, once every hold, release and
 ---   report queued before it has been answered, the server declares what it
 ---   holds and at which revision (`declare_holds`). The portal releases
@@ -43,6 +49,7 @@
 ---@class rpf.sync
 ---@field DEFAULTS rpf.SyncOptions The production timings and bounds.
 ---@field RECORD_FRAMES table<string, true> The frame types a declaration waits for, when they were queued before the `Welcome`.
+---@field REPORT_FRAMES table<string, true> The frame types a hold waits for, when they were queued before it was asked for.
 ---@field platform rpf.ServerPlatform? The platform, once started.
 ---@field connection rpf.Client? The connection, once started.
 ---@field options rpf.SyncOptions The options in force.
@@ -73,6 +80,12 @@ sync.RECORD_FRAMES = {
   declare_holds = true,
 }
 
+sync.REPORT_FRAMES = {
+  release = true,
+  state_changed = true,
+  resync = true,
+}
+
 sync.options = sync.DEFAULTS
 
 ---What a report in flight carried, by its frame id, so its reply can settle
@@ -80,6 +93,7 @@ sync.options = sync.DEFAULTS
 ---@class rpf.sync.Inflight
 ---@field keys string[] The records it named, by `records.key`.
 ---@field transactions table<string, true> The ledger entries it carried, by `client_id`.
+---@field whole boolean Whether it was a `resync`, whose records send no other whole report until it is answered.
 
 ---@type table<string, rpf.sync.Inflight>
 local inflight = {}
@@ -93,8 +107,10 @@ local inflight = {}
 ---@type rpf.sync.Declaration
 local declaration = { pending = false, mark = 0 }
 
----Holds waiting for the declaration's answer.
----@type { fields: table, through: string?, callback: fun(views: table[]?, err: string?)? }[]
+---Holds waiting to be sent: for the declaration's answer, and for the
+---answer to every report and release queued before them (`mark` is the
+---connection's `next_seq` when the hold was asked for).
+---@type { fields: table, through: string?, callback: fun(views: table[]?, err: string?)?, mark: integer }[]
 local deferred = {}
 
 ---Whether a flush is already scheduled.
@@ -134,11 +150,12 @@ end
 ---arrives late (a resend after a lost reply) instead of putting it over a
 ---newer one. The record moves to that revision once the report is queued.
 ---
----An account's whole state is its unacknowledged ledger entries. More than
----`max_transactions_per_report` of them go in consecutive whole reports, each
----at a revision of its own, which appends the same entries a single report
----would: this one carries the next entries no report in the sequence has
----yet (`whole` on the entry).
+---An account's whole state is its unacknowledged ledger entries, oldest
+---first, at most `max_transactions_per_report` of them. With more than
+---that, the record stays marked and the next whole report follows once this
+---one is answered and its entries are acknowledged, so a whole report always
+---carries every entry in doubt up to its last: whichever of an account's
+---frames the portal takes last, nothing before it is missing.
 ---@param entry rpf.records.Entry The record.
 ---@return table report The `RecordReport`.
 local function full_report(entry)
@@ -153,9 +170,7 @@ local function full_report(entry)
       if #report.transactions == sync.options.max_transactions_per_report then
         break
       end
-      if not tx.whole then
-        report.transactions[#report.transactions + 1] = wire_transaction(tx)
-      end
+      report.transactions[#report.transactions + 1] = wire_transaction(tx)
     end
   else
     report.contents = entry.data.contents
@@ -228,10 +243,6 @@ local function resync(keys, stale)
     if entry then
       entry.revision = math.max(entry.revision, stale[key] or 0)
       entry.resync = true
-      -- A whole report under way starts over: every entry is in doubt again.
-      for _, tx in ipairs(entry.transactions) do
-        tx.whole = nil
-      end
     end
   end
   sync.flush()
@@ -258,6 +269,14 @@ local function settle_report(id, reply, err)
   end
   local sent = inflight[id]
   inflight[id] = nil
+  if sent.whole then
+    for _, key in ipairs(sent.keys) do
+      local entry = records.entries[key]
+      if entry and entry.awaiting == id then
+        entry.awaiting = nil
+      end
+    end
+  end
   if not reply then
     -- Never reached the portal: report the whole records again.
     log("warn", "a state report was not delivered (" .. tostring(err) .. "); resyncing its records")
@@ -276,6 +295,10 @@ local function settle_report(id, reply, err)
         end
         entry.transactions = kept
       end
+    end
+    if sent.whole then
+      -- The next whole report of an account whose backlog took several.
+      sync.flush()
     end
   elseif reply.type == "resync_required" then
     records.lose(reply.released, "the portal says this server does not hold them")
@@ -335,9 +358,12 @@ local function send_batch(tag, entries, build, sent)
     return false
   end
   id = result
-  inflight[id] = { keys = keys, transactions = transactions }
+  inflight[id] = { keys = keys, transactions = transactions, whole = tag == "resync" }
   for i, entry in ipairs(entries) do
     sent(entry, items[i])
+    if tag == "resync" then
+      entry.awaiting = id
+    end
   end
   return true
 end
@@ -362,45 +388,31 @@ local function send_all(tag, entries, build, sent)
   return true
 end
 
----Marks the ledger entries a queued report carried.
+---Marks the ledger entries a queued report carried as sent.
 ---@param entry rpf.records.Entry The record.
 ---@param item table The change or report queued for it.
----@param whole boolean Whether it was a whole report, whose entries the rest of its sequence leaves out.
----@return boolean more Whether the record has entries the report did not carry.
-local function mark_carried(entry, item, whole)
+local function mark_carried(entry, item)
   local carried = {}
   for _, tx in ipairs(item.transactions or {}) do
     carried[tx.client_id] = true
   end
-  local more = false
   for _, tx in ipairs(entry.transactions) do
     if carried[tx.client_id] then
       tx.sent = true
-      if whole then
-        tx.whole = true
-      end
-    elseif (whole and not tx.whole) or (not whole and not tx.sent) then
-      more = true
     end
   end
-  return more
 end
 
 ---Settles a record whose whole report was queued. An account with more
----unacknowledged entries than one report carries stays marked for the next
----report of the sequence.
+---unacknowledged entries than the report carried stays marked: its next
+---whole report goes once this one is answered.
 ---@param entry rpf.records.Entry The record.
 ---@param report table The report queued.
 local function whole_sent(entry, report)
   entry.revision = entry.revision + 1
   entry.changed = {}
-  entry.more = mark_carried(entry, report, true)
-  if not entry.more then
-    entry.resync = false
-    for _, tx in ipairs(entry.transactions) do
-      tx.whole = nil
-    end
-  end
+  mark_carried(entry, report)
+  entry.resync = #entry.transactions > #(report.transactions or {})
 end
 
 ---Settles a record whose change was queued.
@@ -409,19 +421,24 @@ end
 local function change_sent(entry, change)
   entry.revision = entry.revision + 1
   entry.changed = {}
-  entry.more = mark_carried(entry, change, false)
+  mark_carried(entry, change)
+  entry.more = false
+  for _, tx in ipairs(entry.transactions) do
+    if not tx.sent then
+      entry.more = true
+    end
+  end
 end
 
----Sends one kind of report for every record matching a test, and then again
----for the accounts whose backlog one report did not empty, until none is
----left. Only a record the last pass moved on is tried again, so a record
+---Sends changes for every record matching a test, and then again for the
+---accounts whose backlog one report did not empty, until none is left. Only a record the last pass moved on is tried again, so a record
 ---that cannot be sent at all is tried once per flush.
----@param tag "state_changed"|"resync" The frame type.
 ---@param test fun(entry: rpf.records.Entry): boolean Which records.
----@param build fun(entry: rpf.records.Entry): table The change or report for one.
+---@param build fun(entry: rpf.records.Entry): table The change for one.
 ---@param sent fun(entry: rpf.records.Entry, item: table) Settles one once queued, and sets `more` on it.
 ---@return boolean ok False if the outbox refused a frame.
-local function send_until_done(tag, test, build, sent)
+local function send_changes(test, build, sent)
+  local tag = "state_changed"
   local entries = select_entries(test)
   while #entries > 0 do
     for _, entry in ipairs(entries) do
@@ -446,11 +463,17 @@ function sync.flush()
   if not sync.connection then
     return
   end
-  local ok = send_until_done("resync", function(entry)
-    return entry.resync
-  end, full_report, whole_sent)
+  -- One whole report per record at a time: see `full_report`.
+  local ok = send_all(
+    "resync",
+    select_entries(function(entry)
+      return entry.resync and not entry.awaiting
+    end),
+    full_report,
+    whole_sent
+  )
   if ok then
-    ok = send_until_done("state_changed", function(entry)
+    ok = send_changes(function(entry)
       return not entry.resync and change_of(entry) ~= nil
     end, function(entry)
       return change_of(entry) --[[@as table]]
@@ -506,37 +529,51 @@ local function send_hold(fields, through, callback)
   end)
 end
 
+---Sends every waiting hold that no longer has to wait: not while a
+---declaration is owed on the current connection, and not while a report or
+---release queued before the hold was asked for is unanswered.
+local function send_deferred()
+  local connection = sync.connection
+  if not connection or (declaration.pending and connection.state == "ready") then
+    return
+  end
+  local oldest
+  for _, entry in ipairs(connection.outbox) do
+    if sync.REPORT_FRAMES[entry.type] and (not oldest or entry.seq < oldest) then
+      oldest = entry.seq
+    end
+  end
+  local waiting = deferred
+  deferred = {}
+  for _, hold in ipairs(waiting) do
+    if oldest and oldest < hold.mark then
+      deferred[#deferred + 1] = hold
+    else
+      send_hold(hold.fields, hold.through, hold.callback)
+    end
+  end
+end
+
 ---Asks the portal to hand records over. `owners` holds every live record
 ---each owner has on this server (not transitively: a character's own
 ---accounts are held through the character); `records` holds those named.
 ---
----Waits while a declaration is owed on the current connection, so the
+---Sent once every report and release already queued has been answered, so
+---the records come back with everything this server has reported, and not
+---while a declaration is owed on the current connection, so the
 ---declaration can never release it. The portal refuses the whole hold if any
 ---named record is not this server's to hold, exactly as if it did not exist.
 ---@param request { owners: table[]?, records: rpf.RecordRef[]? } What to hold.
 ---@param through string? The player whose session it is for, released when they leave.
 ---@param callback fun(views: table[]?, err: string?)? Called with copies of the records now held, or the refusal's code.
 function sync.hold(request, through, callback)
-  local fields = { owners = request.owners or {}, records = request.records or {} }
-  if declaration.pending and sync.connection.state == "ready" then
-    deferred[#deferred + 1] = { fields = fields, through = through, callback = callback }
-    return
-  end
-  send_hold(fields, through, callback)
-end
-
----How many of an account's unacknowledged entries its whole report has yet
----to carry.
----@param entry rpf.records.Entry The record.
----@return integer count The entries no report of the sequence under way has carried.
-local function backlog(entry)
-  local count = 0
-  for _, tx in ipairs(entry.transactions) do
-    if not tx.whole then
-      count = count + 1
-    end
-  end
-  return count
+  deferred[#deferred + 1] = {
+    fields = { owners = request.owners or {}, records = request.records or {} },
+    through = through,
+    callback = callback,
+    mark = sync.connection.next_seq,
+  }
+  send_deferred()
 end
 
 ---Queues the release of some records, in one frame if it fits. A frame over
@@ -552,18 +589,6 @@ end
 local function release_batch(entries, callback, released)
   local reports, refs = {}, {}
   for i, entry in ipairs(entries) do
-    -- An account with more unacknowledged entries than one report carries
-    -- sends the surplus whole first, so the release carries the last of it.
-    while backlog(entry) > sync.options.max_transactions_per_report do
-      local before = entry.revision
-      entry.resync = true
-      if not send_batch("resync", { entry }, full_report, whole_sent) then
-        return nil, "outbox_full"
-      end
-      if entry.revision == before then
-        return nil, "too_large"
-      end
-    end
     reports[i] = full_report(entry)
     refs[i] = { kind = entry.kind, id = entry.id }
   end
@@ -603,9 +628,10 @@ end
 ---Lets records go, reporting each whole as its final state. They are
 ---forgotten at once and announced with `records.released`; a record this
 ---server does not hold is ignored. A record whose final state cannot be
----queued (the outbox is full, or it is too large for any frame) is not
----released, because its final state would be lost: it stays held, and the
----call says so.
+---queued whole (the outbox is full, it is too large for any frame, or it is
+---an account with a backlog of unacknowledged ledger entries) is not
+---released, because some of its final state would be lost: it stays held,
+---and the call says so.
 ---
 ---Everything marked is flushed first, so a report naming a released record
 ---(another account's payment to it) reaches the portal ahead of the release,
@@ -613,34 +639,42 @@ end
 ---@param refs rpf.RecordRef[] The records.
 ---@param callback fun(reply: table?, err: string?)? Called with the portal's answer: once, unless the final states were over the frame limit together and went in several frames, when it is called for each.
 ---@return boolean? ok True if every held record named was released.
----@return string? err Why not: `"outbox_full"`, or `"too_large"` for a record no frame can carry. Records that could be queued were released all the same.
+---@return string? err Why not: `"outbox_full"`, `"too_large"` for a record no frame can carry, or `"backlog"` for an account with more unacknowledged ledger entries than one report carries, which can be released once the portal has acknowledged enough of them. Records that could be queued were released all the same.
 function sync.release(refs, callback)
   sync.flush()
-  local entries, seen = {}, {}
+  local entries, seen, backlog = {}, {}, false
   for _, ref in ipairs(refs) do
     local key = records.key(ref.kind, ref.id)
     local entry = records.entries[key]
     if entry and not seen[key] then
       seen[key] = true
-      entries[#entries + 1] = entry
+      if #entry.transactions > sync.options.max_transactions_per_report then
+        -- Its final state would not carry every entry in doubt. The flush
+        -- above sent them; it can go once enough are acknowledged.
+        backlog = true
+      else
+        entries[#entries + 1] = entry
+      end
     end
   end
-  if #entries == 0 then
-    return true
-  end
   local released = {}
-  local ok, err = release_batch(entries, callback, released)
-  if #released > 0 then
-    events.emit("records.released", released)
+  if #entries > 0 then
+    local ok, err = release_batch(entries, callback, released)
+    if #released > 0 then
+      events.emit("records.released", released)
+    end
+    if not ok then
+      return nil, err
+    end
   end
-  if not ok then
-    return nil, err
+  if backlog then
+    return nil, "backlog"
   end
   return true
 end
 
 ---Releases everything held for one player's session. If some of it cannot
----be released now (the outbox is full), the player is remembered and the
+---be released now (the outbox is full, an account has a backlog), the player is remembered and the
 ---release tried again whenever a frame leaves the outbox, so a departed
 ---player's records are not left held for as long as the process runs.
 ---@param player_id string The player.
@@ -709,11 +743,7 @@ local function settle_declaration(id, reply, err)
     return
   end
   declaration.pending = false
-  local waiting = deferred
-  deferred = {}
-  for _, hold in ipairs(waiting) do
-    send_hold(hold.fields, hold.through, hold.callback)
-  end
+  send_deferred()
 end
 
 ---Sends the declaration once every record frame queued before the `Welcome`
@@ -749,9 +779,11 @@ function sync.connected()
 end
 
 ---Called whenever a frame this server originated leaves the outbox: the
----declaration may be due, and a release the outbox refused may now fit.
+---declaration may be due, a hold may have nothing left to wait for, and a
+---release that could not be queued may now go.
 function sync.drained()
   sync.check_declaration()
+  send_deferred()
   sync.retry_departures()
 end
 

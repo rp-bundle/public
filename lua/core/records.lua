@@ -62,7 +62,6 @@ local events = rpf.events
 ---@field amount number How much, a positive integer up to `protocol.MAX_AMOUNT`.
 ---@field description string Why, for the statement and staff.
 ---@field sent boolean Whether a frame carrying it has been sent, so a change reports only new entries.
----@field whole boolean? Whether a whole report of the sequence under way has carried it, when the account's backlog takes more than one. Only `rpf.sync` sets it.
 
 ---One held record.
 ---@class rpf.records.Entry
@@ -75,6 +74,7 @@ local events = rpf.events
 ---@field transactions rpf.records.Transaction[] On an account, the entries the portal has not acknowledged, oldest first.
 ---@field resync boolean Whether the portal needs the whole record, because a report on it was stale or refused.
 ---@field more boolean? Whether the last report queued for it left ledger entries for the next. Only `rpf.sync` sets it.
+---@field awaiting string? The whole report in flight for it, by frame id: no other whole report on it is sent until that one is answered. Only `rpf.sync` sets it.
 
 records.KINDS = { character = true, account = true, container = true }
 records.MAX_DESCRIPTION_BYTES = 256

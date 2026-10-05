@@ -479,7 +479,11 @@ anything not held, so a module keeps ids and reads through it every time.
   Anything else is held with `rpf.sync.hold({ owners = …, records = … })`:
   `owners` holds every live record an owner has here (not transitively: a
   character's own accounts are held through the character). The portal
-  refuses the whole hold if any named record is not this server's.
+  refuses the whole hold if any named record is not this server's. A hold
+  is sent once every report and release queued before it has been answered,
+  because the portal can ask for a frame again and answer the ones behind
+  it first: what `held` hands over then includes everything reported, so a
+  record released and held again comes back as this server left it.
 - **Changing.** `records.set_character(id, fields)`,
   `records.set_contents(id, contents)` and `records.transfer(from, to,
   amount, description)`. A transfer needs both accounts held, mints the
@@ -494,9 +498,9 @@ anything not held, so a module keeps ids and reads through it every time.
   report waits in the persisted outbox while the portal is unreachable. A
   change the outbox refuses stays marked for the next flush; a batch over
   the frame limit is split. An account reports at most
-  `max_transactions_per_report` (256) ledger entries at a time, and the rest
-  in the reports that follow, whole reports included, so a backlog built up
-  through an outage never outgrows a frame.
+  `max_transactions_per_report` (256) ledger entries at a time and the rest
+  in the reports that follow, so a backlog built up through an outage never
+  outgrows a frame.
 - **Stale is answered whole.** The portal applies a report all or nothing.
   If a base revision is stale, it answers `resync_required`, and every
   record the report named goes whole in a `resync`: this server holds it,
@@ -507,12 +511,16 @@ anything not held, so a module keeps ids and reads through it every time.
   staff, purged) is dropped and announced with `records.lost`. Ledger
   entries stay unacknowledged until a reply says they landed, so a resync
   carries every one still in doubt; the portal appends each `client_id` once.
+  An account with more of them than one report carries sends the oldest,
+  and the next whole report only once that one is answered, so no whole
+  report can overtake an earlier one and leave entries behind.
 - **Releasing.** `rpf.sync.release(refs)` flushes everything marked, then
   reports each record whole as its final state and forgets it at once. Final
   states too large for one frame together go in several. A record whose
-  final state cannot be queued (the outbox is full, or it is too large for
-  any frame) is not released, because its final state would be lost, and
-  the call says so. A departing player's release that could not be queued
+  final state cannot be queued whole (the outbox is full, it is too large
+  for any frame, or it is an account with more unacknowledged entries than
+  one report carries: `"backlog"`) is not released, because some of its
+  final state would be lost, and the call says so. A departing player's release that could not be queued
   is tried again whenever a frame leaves the outbox, unless they have come
   back.
 - **The declaration.** After every `Welcome`, once each hold, release and
