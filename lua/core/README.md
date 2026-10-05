@@ -374,9 +374,18 @@ start), and `rpf.start_server` restores the snapshot before connecting, so
 lookups answer from the last applied config while the portal is still being
 reached.
 
-Typed lookups return copies: `config.item(slug)`, `config.job(slug)`,
-`config.employer(slug)`, `config.setting(key)` and `config.version()`. A
-setting sent as `null` is `json.null`, apart from one never sent.
+Typed lookups return copies: `config.item(slug)`, `config.item_base(slug)`,
+`config.item_defaults()`, `config.job(slug)`, `config.employer(slug)`,
+`config.setting(key)` and `config.version()`. A setting sent as `null` is
+`json.null`, apart from one never sent.
+
+Items arrive **resolved** (E3). The portal applies server inheritance, then
+each item's base, then the catalog defaults, before it sends a snapshot, so
+`config.item(slug)` always has `weight`, `size` and `stack_limit`, plus the
+`base` it names if any, and the core never resolves anything. `item_base` is
+the base as staff wrote it, for a script that treats every `weapon` alike.
+`item_defaults()` is what an item the config does not define behaves as, the
+same fallback the portal applies when it validates contents.
 
 The portal sends a `config` request (E2) after `Welcome` unless `Hello`
 named its current version and hash, and again whenever a change moves this
@@ -388,8 +397,9 @@ next `Hello` names whichever config was stored. What the portal shows staff
 as live is this answer, never what it sent.
 
 The snapshot is `protocol::ConfigSnapshot`: `settings` an object by key,
-every key present; `items`, `employers` and `jobs` (E3–E5) arrays of objects
-keyed by `slug`, held in one place, `config.SECTIONS`. The protocol decoder
+every key present; `items` and `item_bases` (E3), and later `employers` and
+`jobs` (E4, E5), arrays of objects keyed by `slug`; `item_defaults` one
+object. That is held in one place, `config.SECTIONS`. The protocol decoder
 keeps the snapshot whole rather than field by field, so a section not listed
 there is kept and reported in `config.changed`, just not indexed, and a
 newer portal adding one is never a refusal.
@@ -526,7 +536,7 @@ internal.
 | `VERSION`, `engine` | both | The core's version, and the engine (`"fivem"`, `"gmod"` or `"mock"`) for owners' scripts. The core never branches on it |
 | `events` | both | `on`, `once`, `off`, `emit` (core names refused) |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
-| `config` | server | `item`, `job`, `employer`, `setting`, `version` |
+| `config` | server | `item`, `item_base`, `item_defaults`, `job`, `employer`, `setting`, `version` |
 | `auth` | client | `login`, `register`, `change_password`, `logout`, `state`, `account`, `api_token`, `PASSWORD_REUSE_WARNING` |
 | `bridge` | — | Reserved for K2 (Milestone 2), nil now |
 

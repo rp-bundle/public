@@ -135,10 +135,22 @@ function Players.authenticated(handle) end
 ---@class rpf.api.Config
 local Config = {}
 
----An item definition, by slug.
+---An item definition, by slug, with every field resolved by the portal (E3):
+---the item's own value, else its base's, else the catalog default.
 ---@param slug string The item's slug.
----@return table? item A copy, or nil if the config has none by that slug.
+---@return rpf.ConfigItem? item A copy, or nil if the config has none by that slug. Treat such an item as `item_defaults()`.
 function Config.item(slug) end
+
+---An item base, by slug: the template an item names in `base`. Reference
+---data, since every item already has its base's values applied.
+---@param slug string The base's slug.
+---@return rpf.ConfigItemBase? base A copy, or nil if the config has none by that slug.
+function Config.item_base(slug) end
+
+---What an item the config does not define behaves as, which is what the
+---portal assumes of it too.
+---@return rpf.ConfigItemDefaults? defaults A copy, or nil before any config has arrived.
+function Config.item_defaults() end
 
 ---A job, by slug.
 ---@param slug string The job's slug.
@@ -158,6 +170,36 @@ function Config.setting(key) end
 ---The config version applied now.
 ---@return number? version The version, or nil before any config has arrived.
 function Config.version() end
+
+---A grid footprint, in cells.
+---@class rpf.ConfigSize
+---@field x number Columns.
+---@field y number Rows.
+
+---An item as the config snapshot carries it (E3), resolved by the portal so
+---no field is ever missing.
+---@class rpf.ConfigItem
+---@field slug string The item's id, which stacks name it by.
+---@field name string Its display name.
+---@field base string? The slug of the base it was resolved against, nil if it names none.
+---@field weight number Weight of one unit.
+---@field size rpf.ConfigSize Footprint in a grid container, before rotation.
+---@field stack_limit number The most that may sit in one stack.
+
+---An item base as the config snapshot carries it (E3): what staff wrote,
+---with the fields it leaves to the defaults absent.
+---@class rpf.ConfigItemBase
+---@field slug string What items name the base by.
+---@field name string Its display name.
+---@field weight number? Weight its items take unless they set their own.
+---@field size rpf.ConfigSize? Footprint its items take unless they set their own.
+---@field stack_limit number? Stack limit its items take unless they set their own.
+
+---What an item the config does not define behaves as (E3).
+---@class rpf.ConfigItemDefaults
+---@field weight number Weight of one unit.
+---@field size rpf.ConfigSize Footprint in a grid container.
+---@field stack_limit number The most that may sit in one stack.
 
 ---What `config.changed` carries.
 ---@class rpf.ConfigChange

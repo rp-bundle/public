@@ -103,6 +103,12 @@ if config then
     item = function(slug)
       return config.item(slug)
     end,
+    item_base = function(slug)
+      return config.item_base(slug)
+    end,
+    item_defaults = function()
+      return config.item_defaults()
+    end,
     job = function(slug)
       return config.job(slug)
     end,

@@ -240,6 +240,17 @@ describe("rpf.api", function()
       assert.is_nil(rpf.api.config.job("none"))
       assert.is_nil(rpf.api.config.employer("none"))
       assert.are.equal(2, rpf.api.config.version())
+      assert.is_nil(rpf.api.config.item_base("none"))
+      assert.is_nil(rpf.api.config.item_defaults())
+
+      rpf.config.apply(
+        p,
+        3,
+        "h",
+        assert(rpf.json.decode('{"item_bases":[{"slug":"food","name":"Food"}],"item_defaults":{"weight":1}}'))
+      )
+      assert.are.equal("Food", rpf.api.config.item_base("food").name)
+      assert.are.equal(1, rpf.api.config.item_defaults().weight)
     end)
   end)
 

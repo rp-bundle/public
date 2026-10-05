@@ -21,12 +21,20 @@
 ---that at most once per request, and answers a crash mid-apply `unknown`.
 ---
 ---**The snapshot's shape is `protocol::ConfigSnapshot`.** `settings` is an
----object keyed by setting name, every key present. `items`, `employers` and
----`jobs` (E3–E5) will be arrays of objects keyed by `slug`, and
----`config.SECTIONS` holds that in one place. The protocol decoder keeps the
----snapshot whole, so a section not listed there is kept, compared and
----reported in `config.changed`, just not indexed, and a portal that adds one
----is never refused.
+---object keyed by setting name, every key present. `items` and `item_bases`
+---(E3) are arrays of objects keyed by `slug`, as `employers` and `jobs`
+---(E4, E5) will be, and `item_defaults` is one object. `config.SECTIONS`
+---holds that in one place. The protocol decoder keeps the snapshot whole, so
+---a section not listed there is kept, compared and reported in
+---`config.changed`, just not indexed, and a portal that adds one is never
+---refused.
+---
+---**Items arrive resolved.** The portal applies server inheritance, then
+---each item's base, then the catalog defaults, before it sends anything
+---(E3), so every item in `items` has its weight, size and stack limit, and
+---nothing here ever resolves one. `item_bases` is reference data for scripts
+---that treat a category alike; `item_defaults` is what an item the config
+---does not define behaves as.
 ---@class rpf.config
 ---@field KEY string The storage key. Namespaced, because the store is shared with whatever else the engine persists.
 ---@field SECTIONS table<string, rpf.config.Section> How each known section is indexed.
@@ -46,6 +54,8 @@ config.KEY = "rpf.config.applied"
 config.SECTIONS = {
   settings = { kind = "map" },
   items = { kind = "list", key = "slug" },
+  item_bases = { kind = "list", key = "slug" },
+  item_defaults = { kind = "map" },
   employers = { kind = "list", key = "slug" },
   jobs = { kind = "list", key = "slug" },
 }
@@ -86,7 +96,7 @@ local function build_index(snapshot)
     local value = snapshot[name]
     local by_key = {}
     if value == nil or value == json.null then
-      -- An absent section is empty: E3–E5 add them one at a time.
+      -- An absent section is empty: E3–E5 add them one at a time, and an older portal sends fewer.
     elseif section.kind == "map" then
       if not json.is_object(value) then
         return nil, name .. " must be an object"
@@ -293,11 +303,33 @@ local function lookup(section, key)
   return copy(by_key[key])
 end
 
----An item definition, by slug.
+---An item definition, by slug, as the portal resolved it (E3): its own
+---fields, then its base's, then the catalog defaults, so every field is set.
 ---@param slug string The item's slug.
----@return table? item A copy of the item, or nil if the config has none by that slug.
+---@return rpf.ConfigItem? item A copy of the item, or nil if the config has none by that slug. An item the config does not define behaves as `config.item_defaults()`.
 function config.item(slug)
   return lookup("items", slug)
+end
+
+---An item base, by slug, as staff wrote it: a field the base does not set is
+---nil. Reference data only, since every item already has its base applied.
+---@param slug string The base's slug, which an item names in `base`.
+---@return rpf.ConfigItemBase? base A copy of the base, or nil if the config has none by that slug.
+function config.item_base(slug)
+  return lookup("item_bases", slug)
+end
+
+---What an item the config does not define behaves as (E3): the weight, size
+---and stack limit the portal gives an unknown item when it validates
+---contents, sent so this side applies the same fallback and keeps no copy
+---of its own.
+---@return rpf.ConfigItemDefaults? defaults A copy, or nil before any config has arrived or from a portal older than E3.
+function config.item_defaults()
+  local defaults = current.snapshot and current.snapshot.item_defaults
+  if not json.is_object(defaults) then
+    return nil
+  end
+  return copy(defaults)
 end
 
 ---A job, by slug.
