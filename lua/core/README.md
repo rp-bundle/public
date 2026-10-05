@@ -463,7 +463,7 @@ sorted by player id, nothing engine-specific. F2 defines and sends the message.
 
 ### Held records (`rpf.records`, `rpf.sync`)
 
-C7's half of the consistency rules in `AGENTS.md`. A game server is the
+C7's half of the consistency rules in `docs/architecture/data-model.md`. A game server is the
 only writer of a character, account or container while it **holds** it, and
 the portal writes Postgres directly for one nobody holds. Both rest on one
 invariant, enforced here rather than left to each module:
