@@ -480,7 +480,8 @@ anything not held, so a module keeps ids and reads through it every time.
   `owners` holds every live record an owner has here (not transitively: a
   character's own accounts are held through the character). The portal
   refuses the whole hold if any named record is not this server's. A hold
-  is sent once every report and release queued before it has been answered,
+  is sent once every report and release queued before it has been answered
+  (and any resync recovering one),
   because the portal can ask for a frame again and answer the ones behind
   it first: what `held` hands over then includes everything reported, so a
   record released and held again comes back as this server left it.

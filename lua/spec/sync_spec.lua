@@ -221,6 +221,24 @@ describe("rpf.sync", function()
       assert.are.equal(2, #sent_of(p, "hold"))
     end)
 
+    it("keeps a hold behind the resync that recovers an earlier report", function()
+      hold_all(p)
+      rpf.records.set_character(CHARACTER, { first_name = "Janet" })
+      flush(p)
+      rpf.sync.hold({ records = { { kind = "container", id = POCKETS } } })
+
+      p.deliver(support.portal_frame("resync_required", {
+        re = last_of(p, "state_changed").id,
+        stale = { { kind = "character", id = CHARACTER, revision = 3 } },
+        released = {},
+      }))
+      assert.are.equal(1, #sent_of(p, "resync"))
+      assert.are.equal(1, #sent_of(p, "hold"), "the report it waited for has not landed yet")
+
+      apply(p, last_of(p, "resync"))
+      assert.are.equal(2, #sent_of(p, "hold"))
+    end)
+
     it("hands a refusal to the caller and holds nothing", function()
       local result
       rpf.sync.hold({ records = { { kind = "account", id = WALLET } } }, nil, function(views, err)

@@ -35,7 +35,8 @@
 --- - **A hold never overtakes a report.** The portal can ask for a frame
 ---   again (a transient fault), and the frames behind it are then answered
 ---   first. So a hold is sent only once every report and release queued
----   before it has been answered: what `held` hands over then includes
+---   before it has been answered, and every resync that recovers one: what
+---   `held` hands over then includes
 ---   them, and a record released and held again comes back with the final
 ---   state this server gave it, payments from other accounts included.
 --- - **The declaration.** After each `Welcome`, once every hold, release and
@@ -530,23 +531,28 @@ local function send_hold(fields, through, callback)
 end
 
 ---Sends every waiting hold that no longer has to wait: not while a
----declaration is owed on the current connection, and not while a report or
----release queued before the hold was asked for is unanswered.
+---declaration is owed on the current connection, not while a report or
+---release queued before the hold was asked for is unanswered, and not while
+---any `resync` is, which is such a report being recovered.
 local function send_deferred()
   local connection = sync.connection
   if not connection or (declaration.pending and connection.state == "ready") then
     return
   end
-  local oldest
+  -- A `resync` counts whenever it was queued: it is the recovery of a report
+  -- from before the hold, queued by that report's answer, and it carries
+  -- what that report failed to land.
+  local oldest, recovering
   for _, entry in ipairs(connection.outbox) do
     if sync.REPORT_FRAMES[entry.type] and (not oldest or entry.seq < oldest) then
       oldest = entry.seq
     end
+    recovering = recovering or entry.type == "resync"
   end
   local waiting = deferred
   deferred = {}
   for _, hold in ipairs(waiting) do
-    if oldest and oldest < hold.mark then
+    if recovering or (oldest and oldest < hold.mark) then
       deferred[#deferred + 1] = hold
     else
       send_hold(hold.fields, hold.through, hold.callback)
