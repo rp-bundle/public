@@ -36,6 +36,7 @@
 ---@class rpf.records
 ---@field KINDS table<rpf.RecordKind, true> The kinds of record a server can hold.
 ---@field MAX_DESCRIPTION_BYTES integer The longest description a transfer may carry, the portal's `limits::MAX_TRANSACTION_DESCRIPTION_BYTES`. Bounded so that a report's worth of ledger entries always fits one frame, and an account's backlog can always be reported.
+---@field MAX_NAME_BYTES integer The longest first or last name, after trimming, or server-specific gender a character may have, the portal's `limits::MAX_CHARACTER_NAME_BYTES`. The portal refuses a longer one on every write of a character, so one changed here would be a report it refuses.
 ---@field entries table<string, rpf.records.Entry> Every held record by `records.key`. Internal: `rpf.sync` reads it to build reports, and nothing else may.
 local records = {}
 
@@ -80,6 +81,7 @@ local events = rpf.events
 
 records.KINDS = { character = true, account = true, container = true }
 records.MAX_DESCRIPTION_BYTES = 256
+records.MAX_NAME_BYTES = 64
 
 records.entries = {}
 
@@ -226,17 +228,17 @@ local function touched()
   end
 end
 
----Trims a character's name and checks it is one, as the portal does for a
----new character. Shared with `rpf.characters`, so a name it creates and a
----name changed here follow one rule.
+---Trims a character's name and checks it is one, as the portal does for
+---every write of a character. Shared with `rpf.characters`, so a name it
+---creates and a name changed here follow one rule.
 ---@param value any The proposed name.
----@return string? name The trimmed name, or nil if it is not a non-empty string.
+---@return string? name The trimmed name, or nil if it is not a non-empty string of at most `MAX_NAME_BYTES` once trimmed.
 function records.check_name(value)
   if type(value) ~= "string" then
     return nil
   end
   local trimmed = value:match("^%s*(.-)%s*$")
-  if trimmed == "" then
+  if trimmed == "" or #trimmed > records.MAX_NAME_BYTES then
     return nil
   end
   return trimmed
@@ -245,12 +247,16 @@ end
 ---Checks a gender as the protocol carries one. Shared with
 ---`rpf.characters`.
 ---@param value any The proposed gender.
----@return any? gender `"male"`, `"female"`, or a marked `{ server_specific = … }`; nil if it is none of them.
+---@return any? gender `"male"`, `"female"`, or a marked `{ server_specific = … }` of at most `MAX_NAME_BYTES`; nil if it is none of them.
 function records.check_gender(value)
   if value == "male" or value == "female" then
     return value
   end
-  if type(value) == "table" and type(value.server_specific) == "string" then
+  if
+    type(value) == "table"
+    and type(value.server_specific) == "string"
+    and #value.server_specific <= records.MAX_NAME_BYTES
+  then
     local count = 0
     for _ in pairs(value) do
       count = count + 1
@@ -266,7 +272,7 @@ end
 ---@param id string The character's uuid.
 ---@param fields { first_name: string?, last_name: string?, gender: any? } The new values.
 ---@return boolean? ok True if changed.
----@return string? err `"not_held"`, or `"invalid"` for an empty name or an unknown gender. Nothing changes on an error.
+---@return string? err `"not_held"`, or `"invalid"` for an empty or overlong name or an unknown or overlong gender. Nothing changes on an error.
 function records.set_character(id, fields)
   local entry = records.entries[records.key("character", id)]
   if not entry then

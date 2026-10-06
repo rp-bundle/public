@@ -557,6 +557,10 @@ anything not held, so a module keeps ids and reads through it every time.
   ledger entry's `client_id` here, refuses to overdraw an account without
   `unlimited_balance`, and keeps every balance within ±`MAX_AMOUNT`.
   A description is at most `records.MAX_DESCRIPTION_BYTES` (256).
+  A character's names, trimmed, and a server-specific gender are at most
+  `records.MAX_NAME_BYTES` (64), the portal's
+  `limits::MAX_CHARACTER_NAME_BYTES`, which it checks on every write of a
+  character, so a rename here never becomes a report it refuses.
   Contents are validated whole by `rpf.inventory` (below) against the
   container's flags and the config's catalog, and refused as `"invalid"`
   with the rule they break, so nothing the portal would refuse is ever
@@ -721,7 +725,10 @@ records over would break "the core never keeps a record it does not hold".
   funds the starting accounts from the server's starting funds in the same
   transaction (E5), so nothing here pays a starting balance, and a resent
   request, replayed from the request log, pays nothing twice. The new
-  character is then held for the session; it is not selected.
+  character is then held for the session; it is not selected. How many a
+  player may have is the portal's `characters.max_per_player` setting,
+  which the portal enforces for every caller, so this module reads it from
+  the config rather than keeping a bound of its own.
 - **Selecting** holds the character's own records (owners: the character),
   its accounts and containers, and only once they are here moves the player
   to `active` and emits `characters.selected`: a character is never in play
@@ -753,7 +760,8 @@ leave, whatever is selected.
 | `list(player_id)` | The player's held characters, as copies, by name |
 | `loaded(player_id)` | Whether their session hold has landed, so `list` is complete |
 | `selected(player_id)` | The character in play, as a copy, or nil |
-| `create(handle, fields, callback)` | Names trimmed and at most `MAX_NAME_BYTES` (64), gender `"male"`, `"female"` or `{ server_specific = … }`. At most `max_characters` (5, an option from 1 to `MAX_CHARACTERS`, 40, so the list always fits in what the client reads) per player |
+| `create(handle, fields, callback)` | Names trimmed and at most `MAX_NAME_BYTES` (64), gender `"male"`, `"female"` or `{ server_specific = … }` (also at most 64). At most `max_per_player()` per player |
+| `max_per_player()` | The portal's `characters.max_per_player` setting from the config in force, or `MAX_CHARACTERS` (40, the portal's `limits::MAX_CHARACTERS_PER_OWNER`, so the list always fits in what the client reads) without a usable one. The portal refuses a create past it too, as `forbidden` |
 | `select(handle, id, callback)` | One of the player's own held characters, switching from the one in play |
 | `deselect(handle)` | Back to `character_select` |
 

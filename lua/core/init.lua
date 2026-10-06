@@ -96,7 +96,6 @@ rpf.files = {
 ---@field client rpf.ClientOptions? Overrides for the connection's timings.
 ---@field join rpf.JoinOptions? Overrides for the login timings, such as how long a player may take to log in.
 ---@field sync rpf.SyncOptions? Overrides for how often held records are reported.
----@field characters rpf.CharacterOptions? Overrides for the character bounds, such as how many characters one player may have.
 
 ---Starts the game-server half of the core on a platform.
 ---
@@ -129,7 +128,7 @@ function rpf.start_server(platform, options)
     portal_url = options.portal_url,
     options = options.join,
   })
-  rpf.characters.start(platform, rpf.connection, options.characters)
+  rpf.characters.start(platform, rpf.connection)
   rpf.config.restore(platform)
   rpf.config.serve(platform, rpf.connection)
   rpf.publish(platform)

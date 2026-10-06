@@ -92,11 +92,27 @@ local function account(id, owner, name, balance)
   }
 end
 
+---Config versions pushed so far, so each push is a new one.
+local configured = 0
+
 ---Answers the last hold with these records.
 ---@param p spec.FakePlatform The platform.
 ---@param records table[] The records.
 local function held(p, records)
   p.deliver(support.portal_frame("held", { re = last_of(p, "hold").id, records = records }))
+end
+
+---Pushes a config whose `characters.max_per_player` is `value`, as JSON.
+---@param p spec.FakePlatform The platform.
+---@param value string|integer The setting's value.
+local function configure(p, value)
+  configured = configured + 1
+  p.deliver(support.portal_frame("config", {
+    version = configured,
+    hash = "sha256:" .. configured,
+    snapshot = assert(rpf.json.decode('{ "settings": { "characters.max_per_player": ' .. tostring(value) .. " } }")),
+  }))
+  assert.are.equal("config_applied", p.last().type)
 end
 
 ---Registers player 7 as `PLAYER`, which holds their session records.
@@ -589,19 +605,26 @@ describe("rpf.characters", function()
       assert.are.equal(0, #sent_of(p, "create_character"))
     end)
 
-    it("refuses past the character limit", function()
-      support.load_core()
-      p = support.fake_platform()
-      rpf.start_server(p, { url = "ws://portal", api_key = "k", characters = { max_characters = 2 } })
-      p.open()
-      p.deliver(support.portal_frame("welcome", { re = p.last().id, protocol = 1, server_id = SERVER }))
-      support.declared(p)
+    it("refuses past the portal's characters-per-player setting", function()
+      configure(p, 2)
       loaded()
+      assert.are.equal(2, rpf.characters.max_per_player())
       assert.are.same(
         { nil, "limit" },
         { rpf.characters.create(7, { first_name = "A", last_name = "B", gender = "male" }) }
       )
       assert.are.equal(0, #sent_of(p, "create_character"))
+
+      configure(p, 3)
+      assert.is_true(rpf.characters.create(7, { first_name = "A", last_name = "B", gender = "male" }))
+    end)
+
+    it("leaves the limit to the portal without a usable setting", function()
+      assert.are.equal(rpf.characters.MAX_CHARACTERS, rpf.characters.max_per_player(), "no config yet")
+      for _, value in ipairs({ "0", "1.5", "-3", '"5"', "null", tostring(rpf.characters.MAX_CHARACTERS + 1) }) do
+        configure(p, value)
+        assert.are.equal(rpf.characters.MAX_CHARACTERS, rpf.characters.max_per_player(), value)
+      end
     end)
 
     it("reports the portal's refusal and is free again", function()
@@ -815,13 +838,11 @@ describe("rpf.characters", function()
       assert.are.equal(JOHN, fields.characters[1].id)
     end)
 
-    it("refuses a character limit the list could not carry", function()
-      for _, max in ipairs({ 0, 1.5, rpf.characters.MAX_CHARACTERS + 1 }) do
-        support.load_core()
-        local q = support.fake_platform()
-        local ok = pcall(rpf.start_server, q, { url = "ws://portal", api_key = "k", characters = { max_characters = max } })
-        assert.is_false(ok, tostring(max))
-      end
+    it("allows no more characters than the portal does", function()
+      local limits = support.read("crates/rpf-domain/src/limits.rs")
+      local max = limits:match("pub const MAX_CHARACTERS_PER_OWNER: usize = (%d+);")
+      assert.truthy(max, "MAX_CHARACTERS_PER_OWNER is no longer an integer literal")
+      assert.are.equal(tonumber(max), rpf.characters.MAX_CHARACTERS)
     end)
   end)
 
