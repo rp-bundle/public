@@ -376,8 +376,12 @@ lookups answer from the last applied config while the portal is still being
 reached.
 
 Typed lookups return copies: `config.item(slug)`, `config.item_base(slug)`,
-`config.item_defaults()`, `config.job(slug)`, `config.employer(slug)`,
-`config.setting(key)` and `config.version()`. A setting sent as `null` is
+`config.item_defaults()`, `config.employer(slug)`,
+`config.department(employer, slug)`, `config.job(employer, slug)`,
+`config.setting(key)` and `config.version()`. A department's or a job's slug
+is unique only within its employer (E4), so they are looked up by both: two
+employers may each have an `officer`. Only employers the server runs are
+config; a player's business is never in it. A setting sent as `null` is
 `json.null`, apart from one never sent.
 
 Items arrive **resolved** (E3). The portal applies server inheritance, then
@@ -398,8 +402,9 @@ next `Hello` names whichever config was stored. What the portal shows staff
 as live is this answer, never what it sent.
 
 The snapshot is `protocol::ConfigSnapshot`: `settings` an object by key,
-every key present; `items` and `item_bases` (E3), and later `employers` and
-`jobs` (E4, E5), arrays of objects keyed by `slug`; `item_defaults` one
+every key present; `items`, `item_bases` (E3) and `employers` (E4),
+arrays of objects keyed by `slug`; `departments` and `jobs` (E4), arrays of
+objects keyed by `employer` and `slug` together; `item_defaults` one
 object. That is held in one place, `config.SECTIONS`. The protocol decoder
 keeps the snapshot whole rather than field by field, so a section not listed
 there is kept and reported in `config.changed`, just not indexed, and a
@@ -634,7 +639,7 @@ internal.
 | `VERSION`, `engine` | both | The core's version, and the engine (`"fivem"`, `"gmod"` or `"mock"`) for owners' scripts. The core never branches on it |
 | `events` | both | `on`, `once`, `off`, `emit` (core names refused) |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
-| `config` | server | `item`, `item_base`, `item_defaults`, `job`, `employer`, `setting`, `version` |
+| `config` | server | `item`, `item_base`, `item_defaults`, `employer`, `department`, `job`, `setting`, `version` |
 | `auth` | client | `login`, `register`, `change_password`, `logout`, `state`, `account`, `api_token`, `PASSWORD_REUSE_WARNING` |
 | `bridge` | — | Reserved for K2 (Milestone 2), nil now |
 

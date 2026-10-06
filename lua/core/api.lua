@@ -109,11 +109,14 @@ if config then
     item_defaults = function()
       return config.item_defaults()
     end,
-    job = function(slug)
-      return config.job(slug)
-    end,
     employer = function(slug)
       return config.employer(slug)
+    end,
+    department = function(employer, slug)
+      return config.department(employer, slug)
+    end,
+    job = function(employer, slug)
+      return config.job(employer, slug)
     end,
     setting = function(key)
       return config.setting(key)
