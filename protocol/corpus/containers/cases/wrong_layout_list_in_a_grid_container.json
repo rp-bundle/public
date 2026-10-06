@@ -1,0 +1,20 @@
+{
+  "description": "List contents in a grid container.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 5,
+        "y": 5
+      }
+    }
+  ],
+  "contents": {
+    "layout": "list",
+    "stacks": []
+  },
+  "error": {
+    "error": "wrong_layout",
+    "grid_container": true
+  }
+}

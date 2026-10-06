@@ -1,0 +1,19 @@
+{
+  "description": "A flag for the server's own Lua means nothing to validation.",
+  "flags": [
+    {
+      "flag": "server_specific",
+      "value": "locked"
+    }
+  ],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 4
+      }
+    ]
+  },
+  "error": null
+}

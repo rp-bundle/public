@@ -48,8 +48,8 @@ end
 ---frame: what is added there is data the receiver keeps, not an unknown
 ---field it ignores. A config snapshot is one, so a section a newer portal
 ---adds is not lost (crates/rpf-protocol/tests/protocol.rs exempts its settings map likewise).
----So are a container's contents and flags (C7), which the core passes through
----as the portal sent them until D6 types them.
+---So are a container's contents and flags (C7), which `rpf.inventory` reads
+---and validates as they are, so a stack's data comes back byte for byte.
 local OPAQUE = {
   snapshot = true,
   ["records.contents"] = true,

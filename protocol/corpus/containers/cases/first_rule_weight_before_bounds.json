@@ -1,0 +1,37 @@
+{
+  "description": "Weight comes before the grid is walked.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 1,
+        "y": 1
+      }
+    },
+    {
+      "flag": "max_weight",
+      "value": 1
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "rifle",
+          "count": 1
+        },
+        "position": {
+          "x": 5,
+          "y": 5
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "error": {
+    "error": "too_heavy",
+    "limit": 1,
+    "actual": 40
+  }
+}

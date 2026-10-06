@@ -1,0 +1,26 @@
+{
+  "description": "Every stack's data is measured before any stack's count is checked.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 0
+      },
+      {
+        "item": "rifle",
+        "count": 1,
+        "data": {
+          "note": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      }
+    ]
+  },
+  "error": {
+    "error": "data_too_large",
+    "item": "rifle",
+    "bytes": 71,
+    "limit": 64
+  }
+}

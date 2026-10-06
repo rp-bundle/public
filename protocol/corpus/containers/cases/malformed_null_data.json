@@ -1,0 +1,17 @@
+{
+  "description": "Data is an object when present; null is not one.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 1,
+        "data": null
+      }
+    ]
+  },
+  "error": {
+    "error": "malformed"
+  }
+}

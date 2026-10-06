@@ -1,0 +1,62 @@
+{
+  "description": "The layout is checked first, before the stack count.",
+  "flags": [
+    {
+      "flag": "max_weight",
+      "value": 10
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "water",
+          "count": 0
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotated": false
+      },
+      {
+        "stack": {
+          "item": "water",
+          "count": 0
+        },
+        "position": {
+          "x": 1,
+          "y": 0
+        },
+        "rotated": false
+      },
+      {
+        "stack": {
+          "item": "water",
+          "count": 0
+        },
+        "position": {
+          "x": 2,
+          "y": 0
+        },
+        "rotated": false
+      },
+      {
+        "stack": {
+          "item": "water",
+          "count": 0
+        },
+        "position": {
+          "x": 3,
+          "y": 0
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "error": {
+    "error": "wrong_layout",
+    "grid_container": false
+  }
+}

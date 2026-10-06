@@ -1,0 +1,11 @@
+{
+  "description": "A layout that is neither list nor grid cannot be decoded.",
+  "flags": [],
+  "contents": {
+    "layout": "pile",
+    "stacks": []
+  },
+  "error": {
+    "error": "malformed"
+  }
+}

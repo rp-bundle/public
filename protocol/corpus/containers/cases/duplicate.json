@@ -1,0 +1,30 @@
+{
+  "description": "Unstackable(false) allows one stack of each item.",
+  "flags": [
+    {
+      "flag": "unstackable",
+      "value": false
+    }
+  ],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 1
+      },
+      {
+        "item": "rifle",
+        "count": 1
+      },
+      {
+        "item": "water",
+        "count": 1
+      }
+    ]
+  },
+  "error": {
+    "error": "duplicate",
+    "item": "water"
+  }
+}

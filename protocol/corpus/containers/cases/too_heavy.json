@@ -1,0 +1,23 @@
+{
+  "description": "Four water at 5 each is 20, over a limit of 19.",
+  "flags": [
+    {
+      "flag": "max_weight",
+      "value": 19
+    }
+  ],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 4
+      }
+    ]
+  },
+  "error": {
+    "error": "too_heavy",
+    "limit": 19,
+    "actual": 20
+  }
+}

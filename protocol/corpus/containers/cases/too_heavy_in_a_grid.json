@@ -1,0 +1,37 @@
+{
+  "description": "Grid containers respect weight too.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 5,
+        "y": 5
+      }
+    },
+    {
+      "flag": "max_weight",
+      "value": 30
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "rifle",
+          "count": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "error": {
+    "error": "too_heavy",
+    "limit": 30,
+    "actual": 40
+  }
+}

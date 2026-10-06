@@ -1,0 +1,15 @@
+{
+  "description": "Every stack names its item.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "count": 1
+      }
+    ]
+  },
+  "error": {
+    "error": "malformed"
+  }
+}

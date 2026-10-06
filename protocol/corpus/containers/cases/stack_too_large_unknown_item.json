@@ -1,0 +1,19 @@
+{
+  "description": "An item the catalog does not define stacks to the default limit, ten.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "brand_new_thing",
+        "count": 11
+      }
+    ]
+  },
+  "error": {
+    "error": "stack_too_large",
+    "item": "brand_new_thing",
+    "count": 11,
+    "limit": 10
+  }
+}

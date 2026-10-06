@@ -170,16 +170,24 @@ describe("rpf.records", function()
       rpf.records.take(held())
     end)
 
-    it("takes list and grid contents shaped as the protocol's", function()
-      local stack = json.object({ item = "water_bottle", count = 2, data = json.object({ fill = 3 }) })
-      assert.is_true(rpf.records.set_contents(POCKETS, json.object({ layout = "list", stacks = json.array({ stack }) })))
-      assert.is_true(rpf.records.set_contents(POCKETS, json.object({
-        layout = "grid",
-        placements = json.array({
-          json.object({ stack = stack, position = json.object({ x = 0, y = 1 }), rotated = true }),
-        }),
-      })))
-      assert.are.equal("grid", rpf.records.get("container", POCKETS).contents.layout)
+    it("takes contents that fit the container, and refuses ones that do not", function()
+      local function holding(count)
+        local stack = json.object({ item = "water_bottle", count = count, data = json.object({ fill = 3 }) })
+        return json.object({ layout = "list", stacks = json.array({ stack }) })
+      end
+      assert.is_true(rpf.records.set_contents(POCKETS, holding(1)))
+      assert.are.equal(1, rpf.records.get("container", POCKETS).contents.stacks[1].count)
+
+      -- With no config yet, an item stacks to the portal's default of one,
+      -- and the pockets are no grid. Each refusal names the rule, as the
+      -- portal's `ContentsError` would.
+      local _, err, refusal = rpf.records.set_contents(POCKETS, holding(2))
+      assert.are.equal("invalid", err)
+      assert.are.same({ error = "stack_too_large", item = "water_bottle", count = 2, limit = 1 }, refusal)
+      _, err, refusal = rpf.records.set_contents(POCKETS, json.object({ layout = "grid", placements = json.array() }))
+      assert.are.equal("invalid", err)
+      assert.are.same({ error = "wrong_layout", grid_container = false }, refusal)
+      assert.are.equal(1, rpf.records.get("container", POCKETS).contents.stacks[1].count, "unchanged")
     end)
 
     -- Contents the portal cannot decode would fail every later report and
@@ -213,7 +221,11 @@ describe("rpf.records", function()
         placed(json.object({ x = 0, y = 2147483648 })),
         placed(json.object({ x = 0, y = 0 }), "yes"),
       }) do
-        assert.are.same({ nil, "invalid" }, { rpf.records.set_contents(POCKETS, contents) }, tostring(i))
+        assert.are.same(
+          { nil, "invalid", { error = "malformed" } },
+          { rpf.records.set_contents(POCKETS, contents) },
+          tostring(i)
+        )
       end
       assert.is_nil(next(rpf.records.entries["container:" .. POCKETS].changed))
     end)

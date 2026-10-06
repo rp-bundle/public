@@ -1,0 +1,10 @@
+{
+  "description": "A list must carry its stacks.",
+  "flags": [],
+  "contents": {
+    "layout": "list"
+  },
+  "error": {
+    "error": "malformed"
+  }
+}

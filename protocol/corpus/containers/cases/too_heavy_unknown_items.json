@@ -1,0 +1,23 @@
+{
+  "description": "Items the catalog does not define weigh the default, 1 each.",
+  "flags": [
+    {
+      "flag": "max_weight",
+      "value": 9
+    }
+  ],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "brand_new_thing",
+        "count": 10
+      }
+    ]
+  },
+  "error": {
+    "error": "too_heavy",
+    "limit": 9,
+    "actual": 10
+  }
+}

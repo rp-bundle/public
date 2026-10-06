@@ -1,0 +1,40 @@
+{
+  "description": "A 1x3 rifle at y=3 in a 5-tall grid runs off the bottom: the extent is checked, not the origin.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 5,
+        "y": 5
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "rifle",
+          "count": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 3
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "error": {
+    "error": "out_of_bounds",
+    "item": "rifle",
+    "position": {
+      "x": 0,
+      "y": 3
+    },
+    "grid": {
+      "x": 5,
+      "y": 5
+    }
+  }
+}

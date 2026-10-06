@@ -1,0 +1,46 @@
+{
+  "description": "A crate over a crate: the second claims (1,1) and (2,1) of which (1,1) comes first.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 5,
+        "y": 5
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "crate",
+          "count": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotated": false
+      },
+      {
+        "stack": {
+          "item": "crate",
+          "count": 1
+        },
+        "position": {
+          "x": 1,
+          "y": 1
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "error": {
+    "error": "overlap",
+    "position": {
+      "x": 1,
+      "y": 1
+    }
+  }
+}

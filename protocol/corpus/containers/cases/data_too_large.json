@@ -1,0 +1,22 @@
+{
+  "description": "54 characters of text is 65 bytes serialised, one over.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 1,
+        "data": {
+          "note": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      }
+    ]
+  },
+  "error": {
+    "error": "data_too_large",
+    "item": "water",
+    "bytes": 65,
+    "limit": 64
+  }
+}

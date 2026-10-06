@@ -1,0 +1,19 @@
+{
+  "description": "Data is an object, never a bare array.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 1,
+        "data": [
+          1
+        ]
+      }
+    ]
+  },
+  "error": {
+    "error": "malformed"
+  }
+}

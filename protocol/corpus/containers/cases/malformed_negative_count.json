@@ -1,0 +1,16 @@
+{
+  "description": "A count is a u32.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": -1
+      }
+    ]
+  },
+  "error": {
+    "error": "malformed"
+  }
+}

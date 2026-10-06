@@ -1,0 +1,29 @@
+{
+  "description": "An item the catalog does not define takes the default 1x1 footprint.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 1,
+        "y": 1
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "brand_new_thing",
+          "count": 3
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "error": null
+}

@@ -1,0 +1,24 @@
+{
+  "description": "ItemData is any JSON object, kept as it is: arrays, nested objects, numbers, booleans, null and text all measure and round-trip unchanged.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "rifle",
+        "count": 1,
+        "data": {
+          "ammo": [
+            30
+          ],
+          "mods": {
+            "scope": true,
+            "sling": null
+          },
+          "owner": "Jane"
+        }
+      }
+    ]
+  },
+  "error": null
+}

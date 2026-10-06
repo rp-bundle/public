@@ -1,0 +1,57 @@
+{
+  "description": "Placements are walked in order, so an overlap before a placement off the grid is the answer.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 2,
+        "y": 2
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "water",
+          "count": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotated": false
+      },
+      {
+        "stack": {
+          "item": "water",
+          "count": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotated": false
+      },
+      {
+        "stack": {
+          "item": "water",
+          "count": 1
+        },
+        "position": {
+          "x": 9,
+          "y": 9
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "error": {
+    "error": "overlap",
+    "position": {
+      "x": 0,
+      "y": 0
+    }
+  }
+}

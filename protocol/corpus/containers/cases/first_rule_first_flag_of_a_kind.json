@@ -1,0 +1,27 @@
+{
+  "description": "Only the first flag of a kind counts: a second, looser weight limit changes nothing.",
+  "flags": [
+    {
+      "flag": "max_weight",
+      "value": 19
+    },
+    {
+      "flag": "max_weight",
+      "value": 100
+    }
+  ],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 4
+      }
+    ]
+  },
+  "error": {
+    "error": "too_heavy",
+    "limit": 19,
+    "actual": 20
+  }
+}
