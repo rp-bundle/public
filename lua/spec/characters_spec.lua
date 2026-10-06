@@ -497,6 +497,59 @@ describe("rpf.characters", function()
       assert.is_true(rpf.characters.select(7, JANE), "no longer busy")
     end)
 
+    it("holds the session again when a created character could not be held", function()
+      loaded()
+      local fields = { first_name = "Ada", last_name = "L", gender = "female" }
+      p.from_client(7, CREATE, '{"first_name":"Ada","last_name":"L","gender":"female"}')
+      p.deliver(support.portal_frame("character_created", {
+        re = last_of(p, "create_character").id,
+        character = character(NEW, "Ada").character,
+      }))
+      p.deliver(support.portal_frame("rejected", { re = last_of(p, "hold").id, code = "not_found", reason = "x" }))
+      assert.are.same({ during = "create", ok = false, reason = "not_found" }, last_to(p, RESULT))
+
+      local reload = last_of(p, "hold")
+      assert.are.same({ { kind = "player", id = PLAYER } }, reload.owners, "the session is held again at once")
+      assert.are.same({ nil, "not_ready" }, { rpf.characters.create(7, fields) }, "not against a short list")
+      p.deliver(support.portal_frame("rejected", { re = reload.id, code = "not_found", reason = "x" }))
+      assert.are.same({ nil, "not_ready" }, { rpf.characters.create(7, fields) })
+
+      local holds = #sent_of(p, "hold")
+      p.from_client(7, REQUEST, "{}")
+      assert.are.equal(holds + 1, #sent_of(p, "hold"), "a refresh tries again")
+      held(p, { character(JANE, "Jane"), character(JOHN, "John"), character(NEW, "Ada") })
+      assert.are.equal(3, #last_to(p, CHARACTERS).characters, "the created character is back")
+      assert.is_true(rpf.characters.create(7, fields))
+    end)
+
+    it("holds the session once more if a hold of it was already in flight", function()
+      loaded()
+      p.from_client(7, CREATE, '{"first_name":"Ada","last_name":"L","gender":"female"}')
+      p.deliver(support.portal_frame("character_created", {
+        re = last_of(p, "create_character").id,
+        character = character(NEW, "Ada").character,
+      }))
+      local hold_new = last_of(p, "hold")
+      rpf.records.lose({ { kind = "character", id = JOHN } }, "force-released")
+      local inflight = last_of(p, "hold")
+      assert.are.same({ { kind = "player", id = PLAYER } }, inflight.owners)
+      p.deliver(support.portal_frame("rejected", { re = hold_new.id, code = "not_found", reason = "x" }))
+      assert.are.equal(inflight.id, last_of(p, "hold").id, "not two session holds at once")
+
+      -- Sent before the character could be held, its answer may lack it.
+      p.deliver(support.portal_frame("held", { re = inflight.id, records = { character(JANE, "Jane") } }))
+      local again = last_of(p, "hold")
+      assert.are_not.equal(inflight.id, again.id)
+      assert.are.same({ { kind = "player", id = PLAYER } }, again.owners)
+      assert.are.same(
+        { nil, "not_ready" },
+        { rpf.characters.create(7, { first_name = "A", last_name = "B", gender = "male" }) }
+      )
+      held(p, { character(JANE, "Jane"), character(NEW, "Ada") })
+      assert.are.equal(2, #rpf.characters.list(PLAYER), "the created character is listed")
+      assert.is_true(rpf.characters.create(7, { first_name = "A", last_name = "B", gender = "male" }))
+    end)
+
     it("leaves a character created after the player left for next time", function()
       loaded()
       local result

@@ -77,7 +77,8 @@ characters.options = {}
 ---@field handle rpf.PlayerHandle The player's handle, for moving them and messaging their client.
 ---@field loaded boolean Whether their session records have been held, so their characters can be listed.
 ---@field loading boolean Whether a hold of their session records is in flight.
----@field stale boolean Whether the last hold of their session records, asked for again after the portal took some back, was refused, so the list may be missing characters that are still theirs. A client's request for the list then holds them again rather than resending it.
+---@field again boolean? Whether the session must be held once more when the hold in flight is answered, because a character may have been created after it was sent.
+---@field stale boolean Whether the list may be missing characters that are still theirs: the last hold of their session records, asked for again, was refused, or a character may have been created without being held (its hold failed, or the portal never answered the create). The session is held again at once, a client's request for the list holds it again rather than resending it, and creating waits until it lands.
 ---@field selected string? The character in play, from the moment its records are held.
 ---@field busy string? The request in flight for them: `"create"` or `"select"`.
 ---@field recovering integer How many holds of the selected character's own records are in flight after the portal took some of them back (`on_lost`). The player counts as busy while any is, so the selection cannot change under one.
@@ -259,6 +260,20 @@ local function load(session)
   rpf.sync.hold_session(session.player_id)
 end
 
+---Marks a player's list as possibly missing a character of theirs and holds
+---their session records again, so it comes back. Until that lands, creating
+---is refused and a list request holds them again.
+---@param session rpf.characters.Session The player.
+local function reload(session)
+  session.stale = true
+  if session.loading then
+    -- The hold in flight may have been sent before the character existed.
+    session.again = true
+    return
+  end
+  load(session)
+end
+
 ---A player's session, made when they register. Made here as well as on
 ---`players.registered`, because `rpf.sync`, which starts first, can answer
 ---the session hold before this module hears of the registration (an outbox
@@ -298,6 +313,11 @@ local function on_session(player_id, err)
     return
   end
   session.loading = false
+  if session.again then
+    session.again = false
+    load(session)
+    return
+  end
   if err then
     log("warn", "could not load a player's characters (" .. tostring(err) .. ")")
     session.stale = session.loaded
@@ -448,11 +468,11 @@ end
 ---@param fields { first_name: any, last_name: any, gender: any } The names, trimmed and at most `MAX_NAME_BYTES` each, and the gender: `"male"`, `"female"` or `{ server_specific = … }` of at most `MAX_NAME_BYTES`.
 ---@param callback fun(character: table?, err: string?)? Called with a copy of the character once it is held, or why not: `"unavailable"` when the portal could not be asked or did not answer, the portal's reject code, or `"gone"` if the player left first.
 ---@return boolean? ok True if the request is under way.
----@return string? err `"not_ready"`, `"busy"`, `"invalid"` for a bad name or gender, `"limit"` at `max_characters`.
+---@return string? err `"not_ready"` before the characters are loaded, and while the list may be missing one (`stale`), so `max_characters` is never checked against a short list; `"busy"`, `"invalid"` for a bad name or gender, `"limit"` at `max_characters`.
 function characters.create(handle, fields, callback)
   local player = players.get(handle)
   local session = player and player.player_id and session_of(player.player_id)
-  if not session or not session.loaded then
+  if not session or not session.loaded or session.stale then
     return nil, "not_ready"
   end
   if is_busy(session) then
@@ -499,6 +519,10 @@ function characters.create(handle, fields, callback)
     if not reply or reply.type ~= "character_created" then
       local why = reply and reply.code or "unavailable"
       log("warn", "a character was not created (" .. tostring(reply and reply.code or err) .. ")")
+      if not reply and sessions[session.player_id] == session then
+        -- Unanswered: it may have been created all the same.
+        reload(session)
+      end
       finish(nil, why)
       return
     end
@@ -511,6 +535,10 @@ function characters.create(handle, fields, callback)
     rpf.sync.hold({ records = { { kind = "character", id = id } } }, session.player_id, function(_, hold_err)
       local character = own_character(session.player_id, id)
       if hold_err or not character then
+        if sessions[session.player_id] == session then
+          -- It exists, but is not in their list: hold the whole session again.
+          reload(session)
+        end
         finish(nil, hold_err or "unavailable")
         return
       end

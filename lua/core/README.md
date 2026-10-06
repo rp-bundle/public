@@ -755,7 +755,10 @@ leave, whatever is selected.
 | `deselect(handle)` | Back to `character_select` |
 
 Each returns `true` (under way) or `nil, err`: `not_ready` before the
-characters are loaded, `busy` while one of the player's requests is in
+characters are loaded (and, for `create`, while the list may be missing one
+of theirs: a created character whose hold failed, a create the portal never
+answered, or a refused re-hold, after each of which the session is held
+again and a client's list request retries it), `busy` while one of the player's requests is in
 flight (one at a time, so a client cannot queue a flood of creations),
 `not_found` for a character that is not theirs here (another player's and a
 missing one are one answer), `invalid`, `limit`. The callback gets the
