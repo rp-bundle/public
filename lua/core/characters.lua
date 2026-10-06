@@ -229,6 +229,23 @@ local function release_owned(id, context)
   end
 end
 
+---Gives back what a hold for a connection the player has since left brought
+---of a character's own records. If they are gone, `rpf.sync` has released
+---everything held for them already; but if they are back, it keeps the
+---records for their new session, which has not selected the character, so
+---nothing would release them until they leave again, and the portal could
+---not write them meanwhile. Kept only if the new session has the character
+---in play, or is putting it there.
+---@param player_id string The player.
+---@param id string The character the hold was for.
+local function abandon(player_id, id)
+  local current = sessions[player_id]
+  if current and (current.selected == id or current.selecting == id) then
+    return
+  end
+  release_owned(id, "a hold for a connection the player has left")
+end
+
 -- Telling the client ---------------------------------------------------------
 
 ---Room left in a list payload for everything but the characters: the
@@ -479,6 +496,7 @@ function characters.select(handle, id, callback)
   session.selecting = id
   rpf.sync.hold({ owners = { { kind = "character", id = id } } }, session.player_id, function(_, err)
     if sessions[session.player_id] ~= session then
+      abandon(session.player_id, id)
       if callback then
         callback(nil, "gone")
       end
@@ -766,7 +784,7 @@ local function recover(session, id)
   session.recovering = session.recovering + 1
   rpf.sync.hold({ owners = { { kind = "character", id = id } } }, session.player_id, function(_, err)
     if sessions[session.player_id] ~= session then
-      -- They left: `rpf.sync` releases everything held for their session.
+      abandon(session.player_id, id)
       return
     end
     session.recovering = session.recovering - 1

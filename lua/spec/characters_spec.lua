@@ -363,6 +363,17 @@ describe("rpf.characters", function()
       end
     end)
 
+    it("gives back a selection's records when the player is back on a new connection", function()
+      loaded()
+      rpf.characters.select(7, JANE)
+      local hold = last_of(p, "hold")
+      rpf.players.dropped(7, "quit")
+      register()
+      p.deliver(support.portal_frame("held", { re = hold.id, records = { account(JANE_WALLET, JANE, "Wallet", 1) } }))
+      assert.is_false(rpf.records.is_held("account", JANE_WALLET), "the new session has nothing selected")
+      assert.are.equal(JANE_WALLET, last_of(p, "release").records[1].id)
+    end)
+
     it("puts the character away, back to choosing", function()
       loaded()
       rpf.characters.select(7, JANE)
@@ -506,6 +517,15 @@ describe("rpf.characters", function()
       local released = last_of(p, "release").records
       assert.are.equal(1, #released)
       assert.are.equal(JANE_WALLET, released[1].id)
+    end)
+
+    it("gives back a recovery's records when the player is back on a new connection", function()
+      local recovery = wallet_lost()
+      rpf.players.dropped(7, "quit")
+      register()
+      p.deliver(support.portal_frame("held", { re = recovery.id, records = { account(JANE_WALLET, JANE, "Wallet", 250) } }))
+      assert.is_false(rpf.records.is_held("account", JANE_WALLET))
+      assert.are.equal(JANE_WALLET, last_of(p, "release").records[1].id)
     end)
 
     it("goes back to choosing when the character in play's records cannot be held again", function()
