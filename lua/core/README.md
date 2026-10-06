@@ -523,6 +523,22 @@ online list has, so that is a player who left while it was on its way.
 Warnings and bans need nothing here: a warning stays on the portal, and a
 ban arrives as a kick and as a refusal at the next login.
 
+`rpf.edits` registers the record commands (F5): `adjust_balance`,
+`give_item`, `take_item`, `move_item`, `edit_character` and
+`delete_character`, the portal's edits of a character, an account or a
+container this server holds. Each names the revision the staff member saw,
+and is applied only if `records.current(kind, id, revision)` says the record
+is held at exactly that revision with no change of this server's own still
+to report; anything else is `failed` with a reason for staff
+(`edits.REASONS`), and nothing changes. A command is made through the calls a
+script uses (`records.set_character`, `records.adjust`,
+`inventory.apply_edit`, `characters.remove`), so it keeps every rule they
+keep, and the change is flushed (`sync.flush`) before the answer, so the
+portal has the new state when it reads `applied`. `delete_character` lets
+the character and everything it owns go, with their final state (a player
+with it in play goes back to choosing first); the portal purges them once
+it has the answer.
+
 ### Held records (`rpf.records`, `rpf.sync`)
 
 C7's half of the consistency rules in `docs/architecture/data-model.md`. A game server is the
@@ -564,6 +580,12 @@ anything not held, so a module keeps ids and reads through it every time.
   `records.MAX_NAME_BYTES` (64), the portal's
   `limits::MAX_CHARACTER_NAME_BYTES`, which it checks on every write of a
   character, so a rename here never becomes a report it refuses.
+  A staff adjustment (F5) is `records.adjust(account, funds_account,
+  amount, client_id, description)`: one entry between the held account and
+  the server's funds account, which this server never holds, under the
+  portal's `client_id`, so it is made once however often it is sent. The
+  portal accepts an entry naming its funds account only as the adjustment it
+  asked for.
   Contents are validated whole by `rpf.inventory` (below) against the
   container's flags and the config's catalog, and refused as `"invalid"`
   with the rule they break, so nothing the portal would refuse is ever
@@ -698,6 +720,15 @@ either.
 | `split(id, index, count, opts)` | Splits units into a new stack with the same data: next to it in a list, at `opts.position` or the first free spot in a grid. Never merges |
 | `count(id, item)` | Units of an item across every stack |
 
+`inventory.edit(contents, flags, catalog, edit)` is the staff edits' pure
+twin of the portal's `ContentsEdit::apply` (F5): `give` (units with no data,
+where `add` would put them), `take` (units off the stack at an index,
+whatever its data) and `move` (a whole grid placement to a new cell), with
+indexes from zero as the wire carries them, and the result validated whole.
+The portal works an edit out with its port before it sends it, so both are
+held to `protocol/corpus/containers/edits/`. `inventory.apply_edit(id,
+edit)` makes one on a held container.
+
 Each returns `true`, or `nil, err` with `err` one of `not_held`,
 `invalid_argument`, `no_stack`, `insufficient`, `no_space`, or `invalid` plus
 the refusal (and, for a move, which container broke the rule). A container
@@ -757,6 +788,12 @@ records over would break "the core never keeps a record it does not hold".
 
 Everything is held through the player, so it is all released when they
 leave, whatever is selected.
+
+`characters.remove(id)` lets a character go for a staff deletion (F5): a
+player with it in play is put away first, then it and what it owns still
+held here are released with their final state, and its player's client gets
+the list without it. Refused as `busy` while its player has a request in
+flight, and refused if the release cannot be queued.
 
 | Call | What |
 |---|---|
