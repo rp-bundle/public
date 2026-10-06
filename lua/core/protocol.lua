@@ -390,6 +390,10 @@ local COMMAND = tagged("command", {
     { "amount", AMOUNT },
     { "description", STRING },
   },
+  kick = {
+    { "player_id", UUID },
+    { "reason", STRING },
+  },
 })
 
 local OUTCOME = tagged("outcome", {

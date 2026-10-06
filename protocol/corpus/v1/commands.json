@@ -1,0 +1,14 @@
+[
+  {
+    "command": "adjust_balance",
+    "client_id": "00000008-0000-4000-8000-000000000008",
+    "account_id": "00000004-0000-4000-8000-000000000004",
+    "amount": -250,
+    "description": "Admin correction."
+  },
+  {
+    "command": "kick",
+    "player_id": "00000002-0000-4000-8000-000000000002",
+    "reason": "Kicked by staff: stop spawning cars."
+  }
+]

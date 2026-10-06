@@ -238,6 +238,29 @@ describe("rpf.protocol against protocol/corpus/v1", function()
     assert.is_nil(protocol.decode("server_to_portal", assert(json.encode(bad))))
   end)
 
+  -- `protocol/corpus/v1/commands.json` holds one sample of every `Command`,
+  -- which `crates/rpf-protocol/tests/protocol.rs` checks against the Rust type. A
+  -- command this decoder refuses is one the server can never answer.
+  it("decodes every command in the corpus inside an apply_command", function()
+    local commands = assert(json.decode(support.read("protocol/corpus/v1/commands.json")))
+    local seen = {}
+    for _, command in ipairs(commands) do
+      local frame = assert(json.decode(corpus("portal_to_server").apply_command))
+      frame.command = command
+      local wire = assert(json.encode(command))
+      local decoded = assert(protocol.decode("portal_to_server", assert(json.encode(frame))), wire)
+      local encoded = json.decode(assert(protocol.encode("portal_to_server", decoded)))
+      assert.are.equal(wire, assert(json.encode(encoded.command)))
+      seen[command.command] = true
+    end
+    assert.is_true(seen.adjust_balance)
+    assert.is_true(seen.kick)
+
+    local kick = assert(json.decode(corpus("portal_to_server").apply_command))
+    kick.command = json.object({ command = "kick", player_id = "not-a-uuid", reason = "x" })
+    assert.is_nil(protocol.decode("portal_to_server", assert(json.encode(kick))))
+  end)
+
   it("decodes every gender the portal can send", function()
     local raw = corpus("portal_to_server").character_created
     for _, gender in ipairs({ '"male"', '"female"', '{"server_specific":"Nonbinary"}' }) do
