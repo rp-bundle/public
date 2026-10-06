@@ -240,9 +240,10 @@ local LIST_ENVELOPE_BYTES = 256
 ---The list always fits in `handoff.MAX_LIST_PAYLOAD`, which is all the
 ---client reads. `MAX_CHARACTERS` keeps characters made here within it, but
 ---the portal bounds neither names nor characters per player (#168), so a
----list that would not fit is cut short, keeping the character in play, and
----sent with `truncated`: a short list the player can still use, rather
----than one their client drops.
+---list that would not fit is cut short, keeping the character in play
+---unless it is too long to fit on its own, and sent with `truncated`: a
+---short list the player can still use, rather than one their client drops.
+---`selected` is sent either way.
 ---@param session rpf.characters.Session The player.
 local function send_list(session)
   if not platform then
@@ -250,6 +251,8 @@ local function send_list(session)
   end
   local all, sizes = characters.list(session.player_id), {}
   local list, size, truncated = {}, LIST_ENVELOPE_BYTES, false
+  ---@type string?
+  local kept = nil
   for i, character in ipairs(all) do
     all[i] = json.object({
       id = character.id,
@@ -258,14 +261,17 @@ local function send_list(session)
       gender = character.gender,
     })
     sizes[i] = #assert(json.encode(all[i])) + 1
-    if character.id == session.selected then
-      -- Room for the character in play is kept first.
+    if character.id == session.selected and size + sizes[i] <= handoff.MAX_LIST_PAYLOAD then
+      -- Room for the character in play is kept first, if it fits at all.
       size = size + sizes[i]
+      kept = character.id
     end
   end
   for i, entry in ipairs(all) do
-    if entry.id == session.selected then
+    if entry.id == kept then
       list[#list + 1] = entry
+    elseif entry.id == session.selected then
+      truncated = true
     elseif size + sizes[i] <= handoff.MAX_LIST_PAYLOAD then
       list[#list + 1] = entry
       size = size + sizes[i]

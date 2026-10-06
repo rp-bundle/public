@@ -739,6 +739,23 @@ describe("rpf.characters", function()
       assert.are.equal(last, fields.characters[#fields.characters].id, "the character in play is listed")
     end)
 
+    it("leaves out a character in play too long to fit on its own", function()
+      register()
+      local huge = character(JANE, string.rep("x", rpf.handoff.MAX_LIST_PAYLOAD))
+      held(p, { huge, character(JOHN, "John") })
+      rpf.characters.select(7, JANE)
+      held(p, {})
+      p.from_client(7, REQUEST, "{}")
+
+      local raw = last_list()
+      assert.is_true(#raw <= rpf.handoff.MAX_LIST_PAYLOAD, "the client reads it")
+      local fields = assert(rpf.handoff.decode(CHARACTERS, raw))
+      assert.is_true(fields.truncated)
+      assert.are.equal(JANE, fields.selected, "still says which is in play")
+      assert.are.equal(1, #fields.characters)
+      assert.are.equal(JOHN, fields.characters[1].id)
+    end)
+
     it("refuses a character limit the list could not carry", function()
       for _, max in ipairs({ 0, 1.5, rpf.characters.MAX_CHARACTERS + 1 }) do
         support.load_core()
