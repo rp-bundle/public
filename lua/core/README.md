@@ -402,6 +402,7 @@ Typed lookups return copies: `config.item(slug)`, `config.item_base(slug)`,
 `config.item_defaults()`, `config.employer(slug)`,
 `config.department(employer, slug)`, `config.job(employer, slug)`,
 `config.starting_accounts()`, `config.default_job()`,
+`config.paying_account(name)`, `config.paying_accounts()`,
 `config.setting(key)` and `config.version()`. A department's or a job's slug
 is unique only within its employer (E4), so they are looked up by both: two
 employers may each have an `officer`. Only employers the server runs are
@@ -426,6 +427,12 @@ not have (deleted, or inherited from a parent whose employers it does not
 share), the portal sends no default job, and applying the snapshot logs a
 warning naming the setting's job. The starting funds account is the portal's
 alone and is never handed to a hold.
+
+`paying_accounts` (#169) names the accounts this server pays out of, each
+`{ id, name }`, found by name with `config.paying_account(name)`: the
+sources `rpf.accounts.pay` draws on. Only which accounts; their balances are
+live state and arrive with the hold `rpf.accounts` takes of them (below).
+Neither lookup is in `rpf.api` yet, like `rpf.accounts` itself.
 
 The portal sends a `config` request (E2) after `Welcome` unless `Hello`
 named its current version and hash, and again whenever a change moves this
@@ -555,6 +562,8 @@ anything not held, so a module keeps ids and reads through it every time.
 - **Holding.** A registered player's records (everything their account owns
   on this server) are held for their session (`sync.hold_session`, announced
   with `records.session(player_id, err, serial)`), and released when they leave.
+  The server's paying accounts are held by `rpf.accounts` after every
+  `Welcome` (#169, below).
   Anything else is held with `rpf.sync.hold({ owners = …, records = … })`:
   `owners` holds every live record an owner has here (not transitively: a
   character's own accounts are held through the character). The portal
@@ -854,8 +863,28 @@ next report.
 | `balance(id)` | A held account's balance, or `nil, "not_held"` |
 | `get(id)`, `owned_by(kind, id)` | Held accounts, as copies, by name |
 | `transfer(from, to, amount, description)` | Between two held accounts. Refused (`insufficient_funds`) if it would overdraw the payer, unless it has `unlimited_balance` |
-| `pay(from, to, amount, description)` | Server-sourced money: a transfer whose payer must have `unlimited_balance` and be owned by the server or an employer (a treasury or payroll account the server holds), refused `not_a_source` otherwise, the owner included because staff can set the flag on any account, so a script that means "the server pays" cannot drain a player's account. The server's starting funds are never held, so never a source |
+| `pay(from, to, amount, description)` | Server-sourced money: a transfer whose payer must have `unlimited_balance` and be owned by the server or an employer (a treasury or payroll account the server holds), refused `not_a_source` otherwise, the owner included because staff can set the flag on any account, so a script that means "the server pays" cannot drain a player's account. The server's paying accounts are such sources, held for it (below); its starting funds are never held, so never a source |
+| `hold_paying()` | Holds every paying account the config lists that is not held or being asked for; run after each `Welcome` and on a config that changes `paying_accounts` |
 | `fold(account_id, ledger)` | The fold itself |
+
+**The paying accounts are held for the server (#169).** Staff open them in
+the portal, and the config lists them (`config.paying_account(name)`).
+`accounts.start`, run by `rpf.start_server` after `rpf.sync`, holds every
+one after each `Welcome`, chained after the declaration so the hold waits for
+its answer and can never be released by it, and again whenever a config
+changes `paying_accounts`, so `pay` has a source without a script holding
+one:
+
+```lua
+local treasury = rpf.config.paying_account("treasury")
+rpf.accounts.pay(treasury.id, wallet_id, 250, "Wage")
+```
+
+They are held for no player, so no departure releases them; a restart gives
+them back with the declaration and holds them again. Until a hold lands,
+`pay` from one is `not_held`. A hold the portal refuses, or that never
+reaches it, is logged and asked for again at the next `Welcome` or config
+change.
 
 **No floats, and no Lua 5.4 integers.** Every amount is a whole number from
 1 to `protocol.MAX_AMOUNT` (2^53 − 1), the widest integer a double holds

@@ -22,7 +22,8 @@
 ---
 ---**The snapshot's shape is `protocol::ConfigSnapshot`.** `settings` is an
 ---object keyed by setting name, every key present. `items`, `item_bases`
----(E3) and `employers` (E4) are arrays of objects keyed by `slug`;
+---(E3) and `employers` (E4) are arrays of objects keyed by `slug`, and
+---`paying_accounts` (#169) one keyed by `name`;
 ---`employer_departments` and `employer_jobs` (E4) are arrays of objects
 ---keyed by `employer` and `slug` together, because their slugs are unique
 ---only within their employer; and `item_defaults` is one object. There is
@@ -40,6 +41,11 @@
 ---nothing here ever resolves one. `item_bases` is reference data for scripts
 ---that treat a category alike; `item_defaults` is what an item the config
 ---does not define behaves as.
+---
+---**`paying_accounts` (#169) names the accounts this server pays out of**,
+---by `name`, each with the `id` `rpf.accounts.pay` takes. Only which
+---accounts: their balances are live state, and arrive when `rpf.accounts`
+---holds them.
 ---
 ---**`new_character` arrives checked (E5).** `accounts` are the accounts the
 ---portal opens and funds when it creates a character: this side never
@@ -73,6 +79,7 @@ config.SECTIONS = {
   employers = { kind = "list", key = "slug" },
   employer_departments = { kind = "list", key = "slug", within = "employer" },
   employer_jobs = { kind = "list", key = "slug", within = "employer" },
+  paying_accounts = { kind = "list", key = "name" },
 }
 
 ---The index key of an entry named within a parent: both names, joined by a
@@ -186,6 +193,23 @@ local function check_new_character(section)
   return nil
 end
 
+---Checks the `paying_accounts` section (#169), if there is one: every entry
+---has a string `id`, which `rpf.accounts` holds it by. Its `name` is checked
+---by the index, like every list section's key.
+---@param section any The section, as decoded.
+---@return string? err What is wrong, or nil if it is acceptable.
+local function check_paying_accounts(section)
+  if not json.is_array(section) then
+    return nil -- The index refuses a section of the wrong shape.
+  end
+  for i, account in ipairs(section) do
+    if json.is_object(account) and type(account.id) ~= "string" then
+      return "paying_accounts[" .. i .. "] has no string id"
+    end
+  end
+  return nil
+end
+
 ---Checks what `apply` and `load` accept: a non-negative integer version, a
 ---string hash, and a snapshot object whose known sections index.
 ---@param version any The version.
@@ -203,7 +227,7 @@ local function check(version, hash, snapshot)
   if not json.is_object(snapshot) then
     return nil, "the snapshot must be an object"
   end
-  local err = check_new_character(snapshot.new_character)
+  local err = check_new_character(snapshot.new_character) or check_paying_accounts(snapshot.paying_accounts)
   if err then
     return nil, err
   end
@@ -481,6 +505,34 @@ function config.default_job()
     return nil
   end
   return copy(job)
+end
+
+---An account this server pays out of (#169), as the config names it.
+---@class rpf.ConfigPayingAccount
+---@field id string The account's uuid: what `rpf.accounts.pay` takes as the paying account.
+---@field name string What scripts find it by, unique among this server's paying accounts.
+
+---One of the accounts this server pays out of (#169), by name: `id` and
+---`name`. Its id is what `rpf.accounts.pay` takes as the paying account.
+---The core holds every paying account after each `Welcome` and whenever the
+---config names one it does not hold, so a script never holds one itself;
+---`rpf.accounts.balance(id)` says whether it is held yet.
+---@param name string The account's name, as staff opened it.
+---@return rpf.ConfigPayingAccount? account A copy, or nil if the config has none by that name.
+function config.paying_account(name)
+  return lookup("paying_accounts", name)
+end
+
+---Every account this server pays out of (#169), in name order, as copies.
+---What `rpf.accounts` holds.
+---@return rpf.ConfigPayingAccount[] accounts Copies; empty before any config has arrived or from a portal older than #169.
+function config.paying_accounts()
+  ---@type table?
+  local section = current.snapshot and current.snapshot.paying_accounts or nil
+  if type(section) ~= "table" or not json.is_array(section) then
+    return {}
+  end
+  return copy(section)
 end
 
 ---A setting's effective value, by key.

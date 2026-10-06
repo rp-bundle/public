@@ -125,6 +125,7 @@ function rpf.start_server(platform, options)
   rpf.commands.serve(rpf.connection)
   rpf.moderation.start(platform)
   rpf.sync.start(platform, rpf.connection, options.sync)
+  rpf.accounts.start(platform, rpf.connection)
   rpf.join.start(platform, rpf.connection, {
     url = options.url,
     portal_url = options.portal_url,

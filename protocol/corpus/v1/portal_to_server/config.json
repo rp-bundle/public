@@ -110,6 +110,12 @@
         "employer": "lspd",
         "job": "officer"
       }
-    }
+    },
+    "paying_accounts": [
+      {
+        "id": "0000000c-0000-4000-8000-00000000000c",
+        "name": "treasury"
+      }
+    ]
   }
 }
