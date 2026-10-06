@@ -628,6 +628,35 @@ describe("rpf.characters", function()
       assert.are.equal(holds, #sent_of(p, "hold"))
     end)
 
+    it("holds a rejoined player's session again when their old creation lands late", function()
+      loaded()
+      local result
+      rpf.characters.create(7, { first_name = "A", last_name = "B", gender = "male" }, function(c, err)
+        result = { c, err }
+      end)
+      local create = last_of(p, "create_character")
+      rpf.players.dropped(7, "quit")
+      local release = last_of(p, "release")
+      register()
+      p.deliver(support.portal_frame("ack", { re = release.id }))
+      held(p, { character(JANE, "Jane"), character(JOHN, "John") })
+      assert.are.equal("character_select", rpf.players.get(7).state)
+      local holds = #sent_of(p, "hold")
+
+      p.deliver(support.portal_frame("character_created", { re = create.id, character = character(NEW, "A").character }))
+
+      assert.are.same({ nil, "gone" }, result)
+      assert.are.equal(holds + 1, #sent_of(p, "hold"), "the new session is held again")
+      assert.are.same({ { kind = "player", id = PLAYER } }, last_of(p, "hold").owners)
+      assert.are.same(
+        { nil, "not_ready" },
+        { rpf.characters.create(7, { first_name = "C", last_name = "D", gender = "male" }) },
+        "not against the list without it"
+      )
+      held(p, { character(JANE, "Jane"), character(JOHN, "John"), character(NEW, "A") })
+      assert.are.equal(3, #rpf.characters.list(PLAYER))
+    end)
+
     it("announces nothing for a creation whose player left while it was being held", function()
       loaded()
       local result

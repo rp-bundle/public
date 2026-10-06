@@ -541,16 +541,24 @@ function characters.create(handle, fields, callback)
     if not reply or reply.type ~= "character_created" then
       local why = reply and reply.code or "unavailable"
       log("warn", "a character was not created (" .. tostring(reply and reply.code or err) .. ")")
-      if not reply and sessions[session.player_id] == session then
-        -- Unanswered: it may have been created all the same.
-        reload(session)
+      local current = sessions[session.player_id]
+      if not reply and current then
+        -- Unanswered: it may have been created all the same, for whichever
+        -- connection of theirs is here now.
+        reload(current)
       end
       finish(nil, why)
       return
     end
     local id = reply.character.id
     if sessions[session.player_id] ~= session then
-      -- They left: the character exists, and is theirs next time.
+      -- They left: the character exists, and is theirs next time. If they
+      -- are back already, their new session may have been held before it
+      -- existed, so it is held again.
+      local current = sessions[session.player_id]
+      if current then
+        reload(current)
+      end
       finish(nil, "gone")
       return
     end
