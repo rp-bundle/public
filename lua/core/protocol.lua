@@ -156,6 +156,8 @@ local function integer(min, max)
 end
 
 local U16 = integer(0, 65535)
+local U32 = integer(0, 4294967295)
+local I32 = integer(-2147483648, 2147483647)
 local U64 = integer(0, json.MAX_SAFE_INTEGER)
 local AMOUNT = integer(-protocol.MAX_AMOUNT, protocol.MAX_AMOUNT)
 
@@ -383,16 +385,58 @@ local CHARACTER = object({
   { "gender", GENDER },
 })
 
+---`IVector2`: a grid cell or a footprint.
+local IVECTOR = object({
+  { "x", I32 },
+  { "y", I32 },
+})
+
+---`Command`: what staff ask of a held record (F5) or an online player (F4).
+---Every edit of a record names the revision it was made on.
 local COMMAND = tagged("command", {
   adjust_balance = {
     { "client_id", UUID },
     { "account_id", UUID },
+    { "base_revision", U64 },
+    { "funds_account", UUID },
     { "amount", AMOUNT },
     { "description", STRING },
   },
   kick = {
     { "player_id", UUID },
     { "reason", STRING },
+  },
+  give_item = {
+    { "container_id", UUID },
+    { "base_revision", U64 },
+    { "item", STRING },
+    { "count", U32 },
+    { "position", nullable(IVECTOR) },
+    { "rotated", BOOLEAN },
+  },
+  take_item = {
+    { "container_id", UUID },
+    { "base_revision", U64 },
+    { "index", U32 },
+    { "count", U32 },
+  },
+  move_item = {
+    { "container_id", UUID },
+    { "base_revision", U64 },
+    { "index", U32 },
+    { "position", IVECTOR },
+    { "rotated", BOOLEAN },
+  },
+  edit_character = {
+    { "character_id", UUID },
+    { "base_revision", U64 },
+    { "first_name", nullable(STRING) },
+    { "last_name", nullable(STRING) },
+    { "gender", nullable(GENDER) },
+  },
+  delete_character = {
+    { "character_id", UUID },
+    { "base_revision", U64 },
   },
 })
 

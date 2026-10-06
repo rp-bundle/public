@@ -1,0 +1,39 @@
+{
+  "description": "Given units have no data, so they never merge into the bottle with a note.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 2,
+        "data": {
+          "note": "x"
+        }
+      }
+    ]
+  },
+  "edit": {
+    "op": "give",
+    "item": "water",
+    "count": 1
+  },
+  "expect": {
+    "contents": {
+      "layout": "list",
+      "stacks": [
+        {
+          "item": "water",
+          "count": 2,
+          "data": {
+            "note": "x"
+          }
+        },
+        {
+          "item": "water",
+          "count": 1
+        }
+      ]
+    }
+  }
+}

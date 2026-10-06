@@ -1,0 +1,33 @@
+{
+  "description": "Unstackable caps every stack at one, whatever the item allows.",
+  "flags": [
+    {
+      "flag": "unstackable",
+      "value": true
+    }
+  ],
+  "contents": {
+    "layout": "list",
+    "stacks": []
+  },
+  "edit": {
+    "op": "give",
+    "item": "water",
+    "count": 2
+  },
+  "expect": {
+    "contents": {
+      "layout": "list",
+      "stacks": [
+        {
+          "item": "water",
+          "count": 1
+        },
+        {
+          "item": "water",
+          "count": 1
+        }
+      ]
+    }
+  }
+}

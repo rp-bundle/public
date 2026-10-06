@@ -1,0 +1,55 @@
+{
+  "description": "A rifle moved with rotated lies turned at its new spot.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 4,
+        "y": 4
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "rifle",
+          "count": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "edit": {
+    "op": "move",
+    "index": 0,
+    "position": {
+      "x": 0,
+      "y": 3
+    },
+    "rotated": true
+  },
+  "expect": {
+    "contents": {
+      "layout": "grid",
+      "placements": [
+        {
+          "stack": {
+            "item": "rifle",
+            "count": 1
+          },
+          "position": {
+            "x": 0,
+            "y": 3
+          },
+          "rotated": true
+        }
+      ]
+    }
+  }
+}

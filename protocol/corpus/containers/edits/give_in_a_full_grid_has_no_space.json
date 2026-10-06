@@ -1,0 +1,38 @@
+{
+  "description": "The crate fills the 2x2 grid, so nothing else has a spot.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 2,
+        "y": 2
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "crate",
+          "count": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "edit": {
+    "op": "give",
+    "item": "water",
+    "count": 1
+  },
+  "expect": {
+    "error": {
+      "error": "no_space"
+    }
+  }
+}

@@ -740,6 +740,50 @@ local function on_deselect(player, payload)
   send_result(session, "deselect", nil, not ok and err or nil)
 end
 
+-- Staff deletion ---------------------------------------------------------------
+
+---Lets a character go because staff are deleting it (F5), so the portal can
+---purge it as a record nobody holds.
+---
+---A player with it in play is put back to choosing first, as a switch does,
+---which releases what it owns with its final state. Then the character
+---itself, and anything it owns still held here, is released, and its
+---player's client is sent the list without it. The portal purges the
+---character and its records once this server has answered, and the release
+---is queued ahead of that answer, so the portal has the final state first.
+---Refused while a request of its player's is in flight (one at a time, as
+---for the player), and if the release cannot be queued: then the character
+---stays held, and nothing is deleted.
+---@param id string The character's uuid.
+---@return boolean? ok True once it has been let go.
+---@return string? err `"not_held"`, `"busy"`, or the release's refusal (`"outbox_full"`, `"too_large"`, `"backlog"`).
+function characters.remove(id)
+  local character = records.get("character", id)
+  if not character then
+    return nil, "not_held"
+  end
+  local session = nil
+  if type(character.owner) == "table" and character.owner.kind == "player" then
+    session = sessions[character.owner.id]
+  end
+  if session and (is_busy(session) or session.selecting == id) then
+    return nil, "busy"
+  end
+  if session and session.selected == id then
+    put_away(session)
+  end
+  local refs = owned_records(id)
+  refs[#refs + 1] = { kind = "character", id = id }
+  local ok, err = rpf.sync.release(refs)
+  if session and session.loaded then
+    send_list(session)
+  end
+  if not ok then
+    return nil, err
+  end
+  return true
+end
+
 -- Lifecycle ------------------------------------------------------------------
 
 ---A player registered: their session records are being held (`rpf.sync`),

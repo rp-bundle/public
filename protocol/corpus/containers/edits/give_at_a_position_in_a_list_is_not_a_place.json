@@ -1,0 +1,22 @@
+{
+  "description": "A list has no positions.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": []
+  },
+  "edit": {
+    "op": "give",
+    "item": "water",
+    "count": 1,
+    "position": {
+      "x": 0,
+      "y": 0
+    }
+  },
+  "expect": {
+    "error": {
+      "error": "invalid_argument"
+    }
+  }
+}

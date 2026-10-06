@@ -110,3 +110,53 @@ describe("rpf.inventory.validate against protocol/corpus/containers", function()
     end
   end)
 end)
+
+-- The staff edits (F5) have cases of their own under edits/: a container,
+-- one edit as the portal's `ContentsEdit` serialises it, and the contents it
+-- must come to or the exact refusal. The portal works an edit out before it
+-- sends it here, so `rpf.inventory.edit` and `ContentsEdit::apply` must put
+-- every unit in the same place; both are held to these cases.
+describe("rpf.inventory.edit against protocol/corpus/containers/edits", function()
+  local shared
+
+  before_each(function()
+    support.load_core()
+    shared = assert(rpf.json.decode(support.read("protocol/corpus/containers/catalog.json")))
+  end)
+
+  ---Every edit case, by name.
+  ---@return table<string, table> cases The cases.
+  local function edit_cases()
+    local out = {}
+    local dir = "protocol/corpus/containers/edits"
+    for name in lfs.dir(support.path(dir)) do
+      local stem = name:match("^(.+)%.json$")
+      if stem then
+        out[stem] = assert(rpf.json.decode(support.read(dir .. "/" .. name)), name)
+      end
+    end
+    return out
+  end
+
+  it("makes every edit as the portal makes it, or refuses it the same way", function()
+    local ops = {}
+    for name, case in pairs(edit_cases()) do
+      ops[case.edit.op] = true
+      local before = rpf.json.encode(case.contents)
+      local contents, err, refusal = rpf.inventory.edit(case.contents, case.flags, catalog_for(case, shared), case.edit)
+      assert.are.equal(before, rpf.json.encode(case.contents), name .. ": the input is not changed")
+      if case.expect.contents ~= nil then
+        assert.is_not_nil(contents, name .. ": " .. tostring(err) .. " " .. tostring(refusal and rpf.json.encode(refusal)))
+        assert.are.equal(rpf.json.encode(case.expect.contents), rpf.json.encode(contents), name)
+      else
+        assert.is_nil(contents, name)
+        local got = rpf.json.object({ error = err })
+        if refusal ~= nil then
+          got.refusal = refusal
+        end
+        assert.are.equal(rpf.json.encode(case.expect.error), rpf.json.encode(got), name)
+      end
+    end
+    assert.are.same({ give = true, take = true, move = true }, ops)
+  end)
+end)

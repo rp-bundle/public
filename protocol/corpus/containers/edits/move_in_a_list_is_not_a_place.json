@@ -1,0 +1,26 @@
+{
+  "description": "A list has no positions to move to.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 1
+      }
+    ]
+  },
+  "edit": {
+    "op": "move",
+    "index": 0,
+    "position": {
+      "x": 0,
+      "y": 0
+    }
+  },
+  "expect": {
+    "error": {
+      "error": "invalid_argument"
+    }
+  }
+}

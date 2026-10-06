@@ -1,0 +1,39 @@
+{
+  "description": "A 1x3 rifle does not fit a 3x1 grid upright, so it lies turned.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 3,
+        "y": 1
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": []
+  },
+  "edit": {
+    "op": "give",
+    "item": "rifle",
+    "count": 1
+  },
+  "expect": {
+    "contents": {
+      "layout": "grid",
+      "placements": [
+        {
+          "stack": {
+            "item": "rifle",
+            "count": 1
+          },
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotated": true
+        }
+      ]
+    }
+  }
+}

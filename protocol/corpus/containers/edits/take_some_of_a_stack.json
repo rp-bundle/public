@@ -1,0 +1,37 @@
+{
+  "description": "Two of three waters are taken, whatever else is there.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 3
+      },
+      {
+        "item": "crate",
+        "count": 1
+      }
+    ]
+  },
+  "edit": {
+    "op": "take",
+    "index": 0,
+    "count": 2
+  },
+  "expect": {
+    "contents": {
+      "layout": "list",
+      "stacks": [
+        {
+          "item": "water",
+          "count": 1
+        },
+        {
+          "item": "crate",
+          "count": 1
+        }
+      ]
+    }
+  }
+}

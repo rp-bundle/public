@@ -1,0 +1,23 @@
+{
+  "description": "There is no stack at index 5.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 3
+      }
+    ]
+  },
+  "edit": {
+    "op": "take",
+    "index": 5,
+    "count": 1
+  },
+  "expect": {
+    "error": {
+      "error": "no_stack"
+    }
+  }
+}

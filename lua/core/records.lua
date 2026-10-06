@@ -149,6 +149,36 @@ function records.revision(kind, id)
   return entry and entry.revision
 end
 
+---Whether a held record is exactly as the portal has it at `revision`: held
+---here, at that revision, with no change made to it here that has not been
+---reported yet. A staff edit (F5) names the revision the staff member saw,
+---and is applied only then, so it never lands on a state nobody looked at.
+---
+---The revision moves as a report is sent, so a record whose report is still
+---in flight is past the portal's revision and counts as changed, as does one
+---with a change marked for the next flush or a resync owed: the portal's
+---copy is behind this server's either way.
+---@param kind string The record's kind.
+---@param id string The record's uuid.
+---@param revision number The revision the edit was made on.
+---@return boolean? current True if the record is held at exactly that state.
+---@return string? err `"not_held"`, or `"changed"` if it has moved on.
+function records.current(kind, id, revision)
+  local entry = records.entries[records.key(kind, id)]
+  if not entry then
+    return nil, "not_held"
+  end
+  if entry.revision ~= revision or entry.resync or next(entry.changed) ~= nil then
+    return nil, "changed"
+  end
+  for _, tx in ipairs(entry.transactions) do
+    if not tx.sent then
+      return nil, "changed"
+    end
+  end
+  return true
+end
+
 -- Taking records over -------------------------------------------------------
 
 ---Takes over the records the portal handed over in a `held` reply. A record
@@ -454,6 +484,74 @@ function records.transfer(from, to, amount, description)
     from_account = from,
     to_account = to,
     amount = amount,
+    description = description,
+    sent = false,
+  }
+  touched()
+  return client_id
+end
+
+---Makes a staff balance adjustment on a held account (F5): one ledger entry
+---between it and the server's funds account, which the portal names and
+---never hands over. Positive credits the account, negative debits it.
+---
+---The entry's `client_id` is the portal's, minted when the staff member
+---acted, so an adjustment sent again is made once: one still waiting to be
+---reported here is not made twice, and the portal appends each `client_id`
+---once. The portal accepts an entry naming its funds account only as the
+---adjustment it asked for, so this is the one way one is made. Balances
+---move here at once, under the rules a transfer keeps: a debit may not take
+---an account below zero unless it has `unlimited_balance`, and no balance
+---may leave ±`protocol.MAX_AMOUNT`.
+---@param account_id string The held account.
+---@param funds_account string The server's funds account, from the command.
+---@param amount number A non-zero integer within ±`protocol.MAX_AMOUNT`.
+---@param client_id string The entry's id, from the command.
+---@param description string Why, at most `MAX_DESCRIPTION_BYTES`.
+---@return string? client_id The entry's id, or nil if refused.
+---@return string? err `"not_held"`, `"invalid"`, `"insufficient_funds"` or `"out_of_range"`. Nothing changes on an error.
+function records.adjust(account_id, funds_account, amount, client_id, description)
+  local entry = records.entries[records.key("account", account_id)]
+  if not entry then
+    return nil, "not_held"
+  end
+  local max = rpf.protocol.MAX_AMOUNT
+  if
+    type(funds_account) ~= "string"
+    or funds_account == account_id
+    or type(client_id) ~= "string"
+    or type(amount) ~= "number"
+    or amount ~= math.floor(amount)
+    or amount == 0
+    or amount > max
+    or amount < -max
+    or type(description) ~= "string"
+    or #description > records.MAX_DESCRIPTION_BYTES
+  then
+    return nil, "invalid"
+  end
+  for _, tx in ipairs(entry.transactions) do
+    if tx.client_id == client_id then
+      return client_id
+    end
+  end
+  local after = entry.data.balance + amount
+  if after < (unlimited(entry.data) and -max or 0) then
+    return nil, unlimited(entry.data) and "out_of_range" or "insufficient_funds"
+  end
+  if after > max then
+    return nil, "out_of_range"
+  end
+  entry.data.balance = after
+  local from, to = funds_account, account_id
+  if amount < 0 then
+    from, to = account_id, funds_account
+  end
+  entry.transactions[#entry.transactions + 1] = {
+    client_id = client_id,
+    from_account = from,
+    to_account = to,
+    amount = math.abs(amount),
     description = description,
     sent = false,
   }

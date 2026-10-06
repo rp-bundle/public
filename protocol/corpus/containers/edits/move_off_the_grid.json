@@ -1,0 +1,53 @@
+{
+  "description": "A 2x2 crate at (3, 3) runs off a 4x4 grid.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 4,
+        "y": 4
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "crate",
+          "count": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "edit": {
+    "op": "move",
+    "index": 0,
+    "position": {
+      "x": 3,
+      "y": 3
+    }
+  },
+  "expect": {
+    "error": {
+      "error": "invalid",
+      "refusal": {
+        "error": "out_of_bounds",
+        "item": "crate",
+        "position": {
+          "x": 3,
+          "y": 3
+        },
+        "grid": {
+          "x": 4,
+          "y": 4
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "description": "A take of nothing is refused.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 3
+      }
+    ]
+  },
+  "edit": {
+    "op": "take",
+    "index": 0,
+    "count": 0
+  },
+  "expect": {
+    "error": {
+      "error": "invalid_argument"
+    }
+  }
+}

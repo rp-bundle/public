@@ -1,0 +1,44 @@
+{
+  "description": "Given at a position, the new placement is turned only if asked.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 4,
+        "y": 4
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": []
+  },
+  "edit": {
+    "op": "give",
+    "item": "rifle",
+    "count": 1,
+    "position": {
+      "x": 0,
+      "y": 0
+    },
+    "rotated": true
+  },
+  "expect": {
+    "contents": {
+      "layout": "grid",
+      "placements": [
+        {
+          "stack": {
+            "item": "rifle",
+            "count": 1
+          },
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotated": true
+        }
+      ]
+    }
+  }
+}

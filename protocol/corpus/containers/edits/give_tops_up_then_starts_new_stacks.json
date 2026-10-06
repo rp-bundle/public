@@ -1,0 +1,37 @@
+{
+  "description": "Water stacks to 4: the 3 tops up to 4, and the other 5 go in a stack of 4 and one of 1.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 3
+      }
+    ]
+  },
+  "edit": {
+    "op": "give",
+    "item": "water",
+    "count": 6
+  },
+  "expect": {
+    "contents": {
+      "layout": "list",
+      "stacks": [
+        {
+          "item": "water",
+          "count": 4
+        },
+        {
+          "item": "water",
+          "count": 4
+        },
+        {
+          "item": "water",
+          "count": 1
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "description": "Water put on the crate's cell is refused, naming the first cell claimed twice.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 4,
+        "y": 4
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "crate",
+          "count": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "edit": {
+    "op": "give",
+    "item": "water",
+    "count": 1,
+    "position": {
+      "x": 1,
+      "y": 1
+    }
+  },
+  "expect": {
+    "error": {
+      "error": "invalid",
+      "refusal": {
+        "error": "overlap",
+        "position": {
+          "x": 1,
+          "y": 1
+        }
+      }
+    }
+  }
+}

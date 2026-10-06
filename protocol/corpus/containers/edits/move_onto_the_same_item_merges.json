@@ -1,0 +1,65 @@
+{
+  "description": "Water moved onto water with the same data joins it.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 4,
+        "y": 4
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "water",
+          "count": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotated": false
+      },
+      {
+        "stack": {
+          "item": "water",
+          "count": 2
+        },
+        "position": {
+          "x": 1,
+          "y": 0
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "edit": {
+    "op": "move",
+    "index": 0,
+    "position": {
+      "x": 1,
+      "y": 0
+    }
+  },
+  "expect": {
+    "contents": {
+      "layout": "grid",
+      "placements": [
+        {
+          "stack": {
+            "item": "water",
+            "count": 3
+          },
+          "position": {
+            "x": 1,
+            "y": 0
+          },
+          "rotated": false
+        }
+      ]
+    }
+  }
+}
