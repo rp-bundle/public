@@ -1,0 +1,18 @@
+{
+  "description": "Every entry is checked, not only this account's.",
+  "account": "00000000-0000-4000-8000-00000000000a",
+  "ledger": [
+    {
+      "from_account": "00000000-0000-4000-8000-00000000000b",
+      "to_account": "00000000-0000-4000-8000-00000000000a",
+      "amount": 5
+    },
+    {
+      "from_account": "00000000-0000-4000-8000-00000000000b",
+      "to_account": "00000000-0000-4000-8000-00000000000c",
+      "amount": 0
+    }
+  ],
+  "balance": null,
+  "error": "invalid_amount"
+}

@@ -1,0 +1,13 @@
+{
+  "description": "The bottom bound is as far out as the top.",
+  "account": "00000000-0000-4000-8000-00000000000a",
+  "ledger": [
+    {
+      "from_account": "00000000-0000-4000-8000-00000000000a",
+      "to_account": "00000000-0000-4000-8000-00000000000b",
+      "amount": 9007199254740991
+    }
+  ],
+  "balance": -9007199254740991,
+  "error": null
+}

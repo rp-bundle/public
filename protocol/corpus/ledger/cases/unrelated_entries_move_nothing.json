@@ -1,0 +1,13 @@
+{
+  "description": "Entries between two other accounts are not this one's.",
+  "account": "00000000-0000-4000-8000-00000000000a",
+  "ledger": [
+    {
+      "from_account": "00000000-0000-4000-8000-00000000000b",
+      "to_account": "00000000-0000-4000-8000-00000000000c",
+      "amount": 900
+    }
+  ],
+  "balance": 0,
+  "error": null
+}

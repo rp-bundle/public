@@ -226,10 +226,12 @@ local function touched()
   end
 end
 
----Trims a name and checks it is one, as the portal does for a new character.
+---Trims a character's name and checks it is one, as the portal does for a
+---new character. Shared with `rpf.characters`, so a name it creates and a
+---name changed here follow one rule.
 ---@param value any The proposed name.
 ---@return string? name The trimmed name, or nil if it is not a non-empty string.
-local function name(value)
+function records.check_name(value)
   if type(value) ~= "string" then
     return nil
   end
@@ -240,10 +242,11 @@ local function name(value)
   return trimmed
 end
 
----Checks a gender as the protocol carries one.
+---Checks a gender as the protocol carries one. Shared with
+---`rpf.characters`.
 ---@param value any The proposed gender.
 ---@return any? gender `"male"`, `"female"`, or a marked `{ server_specific = … }`; nil if it is none of them.
-local function gender(value)
+function records.check_gender(value)
   if value == "male" or value == "female" then
     return value
   end
@@ -272,14 +275,14 @@ function records.set_character(id, fields)
   local new = {}
   for _, field in ipairs({ "first_name", "last_name" }) do
     if fields[field] ~= nil then
-      new[field] = name(fields[field])
+      new[field] = records.check_name(fields[field])
       if not new[field] then
         return nil, "invalid"
       end
     end
   end
   if fields.gender ~= nil then
-    new.gender = gender(fields.gender)
+    new.gender = records.check_gender(fields.gender)
     if not new.gender then
       return nil, "invalid"
     end

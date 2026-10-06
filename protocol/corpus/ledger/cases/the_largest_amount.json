@@ -1,0 +1,13 @@
+{
+  "description": "One entry of 2^53 - 1, the largest amount and the largest balance.",
+  "account": "00000000-0000-4000-8000-00000000000a",
+  "ledger": [
+    {
+      "from_account": "00000000-0000-4000-8000-00000000000b",
+      "to_account": "00000000-0000-4000-8000-00000000000a",
+      "amount": 9007199254740991
+    }
+  ],
+  "balance": 9007199254740991,
+  "error": null
+}

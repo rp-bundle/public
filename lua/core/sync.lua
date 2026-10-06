@@ -837,6 +837,27 @@ function sync.release_through(player_id)
   departed[player_id] = true
 end
 
+---Holds a player's session records: everything their account owns on this
+---server (their characters, and anything else they own), held for their
+---session and released when they leave. Sent when they register, and again
+---by `rpf.characters` when the portal says this server no longer holds some
+---of them. Records already held keep the state they have here.
+---
+---Its answer is announced with `records.session(player_id, err, serial)`:
+---`err` is nil once the records are held, or the portal's refusal, and
+---`serial` is the player's connection when it was sent, so a listener can
+---tell an answer meant for a connection they have since left and rejoined
+---from. A hold the outbox cannot take yet is tried again as it drains, and
+---announced then.
+---@param player_id string The player.
+function sync.hold_session(player_id)
+  local player = rpf.players.by_player_id(player_id)
+  local serial = player and player.serial
+  sync.hold({ owners = { { kind = "player", id = player_id } } }, player_id, function(_, err)
+    events.emit("records.session", player_id, err, serial)
+  end)
+end
+
 ---Tries again to release the records of players who left while the outbox
 ---could not take their final state. A player who has come back keeps them:
 ---they are their session's records again.
@@ -1006,7 +1027,7 @@ function sync.start(platform, connection, options)
   connection.on_release = sync.drained
   connection.on_orphan = sync.orphaned
   events.on("players.registered", function(player)
-    sync.hold({ owners = { { kind = "player", id = player.player_id } } }, player.player_id)
+    sync.hold_session(player.player_id)
   end)
   events.on("players.dropping", function(player)
     if player.player_id then

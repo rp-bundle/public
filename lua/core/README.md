@@ -49,8 +49,10 @@ files each side loads after it and in what order:
 ```lua
 rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, config.lua,
                  -- client.lua, players.lua, commands.lua, moderation.lua, inventory.lua,
-                 -- records.lua, sync.lua, handoff.lua, join.lua, api.lua
-rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua, api.lua
+                 -- records.lua, sync.lua, accounts.lua, handoff.lua, join.lua,
+                 -- characters.lua, api.lua
+rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua,
+                 -- picker.lua, api.lua
 ```
 
 Every later file registers itself on `rpf` (`rpf.json = json`) *and* returns
@@ -68,8 +70,10 @@ core keeps working after the Gmod adapter replaces the global with the public
 API (see The public API).
 
 The client never loads `protocol.lua`, `client.lua`, `players.lua`,
-`commands.lua`, `moderation.lua`, `inventory.lua`, `records.lua`, `sync.lua` or `join.lua`, because the player's client must never hold the server's API key
-and has no players to manage.
+`commands.lua`, `moderation.lua`, `inventory.lua`, `records.lua`, `sync.lua`,
+`accounts.lua`, `join.lua` or `characters.lua`, because the player's client
+must never hold the server's API key and has no players or records to
+manage.
 
 Then the adapter starts one side:
 
@@ -299,7 +303,7 @@ The crash windows, in order:
    be atomic. This window is reported as `unknown`, which C4 shows staff as
    "may or may not have been applied". Commands carry their own idempotency
    key (`AdjustBalance.client_id`) and, with F5, a revision, so a handler that
-   can check its own effect is how D5 narrows this window further.
+   can check its own effect is how F5 narrows this window further.
 3. After the reply is stored: the portal gets that reply, however often it
    asks.
 
@@ -460,8 +464,8 @@ hears exactly what the core's own modules hear.
   `MAX_DEPTH` (32) deep are refused and logged, so a cycle is a log line, not
   a stack overflow.
 - **Core event names are reserved.** The public `emit` refuses anything under
-  `players.`, `config.`, `auth.`, `records.` or `rpf.`, so a script cannot forge a
-  lifecycle event other scripts would believe.
+  `players.`, `config.`, `auth.`, `records.`, `characters.` or `rpf.`, so a
+  script cannot forge a lifecycle event other scripts would believe.
 
 ### `rpf.players`
 
@@ -485,8 +489,8 @@ separate functions that share one transition check:
   `players.register`. One account is one player: registering an account that
   is already playing here is refused.
 - **`character_select ⇄ active`** is driven through `players.advance(handle,
-  to)` by whichever module owns characters on the server: D5 on a native
-  server, a framework bridge (K2) on a companion one. `advance` refuses the
+  to)` by whichever module owns characters on the server: `rpf.characters`
+  (D5, below) on a native server, a framework bridge (K2) on a companion one. `advance` refuses the
   gate's states and `dropping`, so a character owner can neither let a player
   past login nor forget one the engine still has.
 
@@ -533,7 +537,8 @@ does not hold it. `records.get` hands out copies, and returns nil for
 anything not held, so a module keeps ids and reads through it every time.
 
 - **Holding.** A registered player's records (everything their account owns
-  on this server) are held for their session, and released when they leave.
+  on this server) are held for their session (`sync.hold_session`, announced
+  with `records.session(player_id, err, serial)`), and released when they leave.
   Anything else is held with `rpf.sync.hold({ owners = …, records = … })`:
   `owners` holds every live record an owner has here (not transitively: a
   character's own accounts are held through the character). The portal
@@ -616,8 +621,9 @@ anything not held, so a module keeps ids and reads through it every time.
   gives back what the old process held, and answers a stale or released one
   as above. New holds wait for its answer, so it can never release one.
 
-Events, all reserved: `records.held(views)`, `records.released(refs)` and
-`records.lost(refs, reason)`.
+Events, all reserved: `records.held(views)`, `records.released(refs)`,
+`records.lost(refs, reason)` and `records.session(player_id, err, serial)`,
+`serial` being the player's connection the hold was sent for.
 
 ### `rpf.inventory`
 
@@ -693,6 +699,133 @@ this server does not hold, or no longer holds, is never changed.
 A stack's `data` is the server's own: nothing here reads it, a move or
 split carries it as it is, two stacks merge only when their data encodes
 identically, and it is reported byte for byte.
+
+### Characters (`rpf.characters`, `rpf.picker`)
+
+A logged-in player's characters (D5): list, create, select and switch. Server
+only for the decisions; `rpf.picker` is the client half the character select
+screen (the adapter's, Milestone 2, like the login form) calls. Both are
+internal for now: the public character calls are K1's domain-neutral facade
+(`docs/architecture/framework-integration.md`), which routes here when RPF
+owns characters.
+
+**Everything is a held record (C7)**, so no protocol message lists or
+selects characters: holding already does both, and a second way to hand
+records over would break "the core never keeps a record it does not hold".
+
+- **Listing.** A player's session hold (owners: the player) brings every
+  character their account has here. When it lands (`records.session`) the
+  player moves `registered → character_select` and their client is sent the
+  list. `characters.list(player_id)` reads `rpf.records` every time.
+- **Creating** is `create_character` (owner: the player). The portal opens and
+  funds the starting accounts from the server's starting funds in the same
+  transaction (E5), so nothing here pays a starting balance, and a resent
+  request, replayed from the request log, pays nothing twice. The new
+  character is then held for the session; it is not selected.
+- **Selecting** holds the character's own records (owners: the character),
+  its accounts and containers, and only once they are here moves the player
+  to `active` and emits `characters.selected`: a character is never in play
+  without its money.
+- **Switching** releases the character in play's own records first, with
+  their final state, moves the player back to `character_select` and emits
+  `characters.deselected`, then selects the next. The hold for the next one
+  waits for that release to be answered, as every hold waits for the reports
+  queued before it. A record whose final state the outbox cannot take yet
+  stays held for the session and is released when the player leaves; the
+  switch is not refused for it.
+- **Lost records.** If the portal takes the character in play away
+  (force-release, purge), the player goes back to `character_select` and
+  whatever the character owns that is still held here is released, as a
+  put-away does. Every player's session (and character in play) is held
+  again, so whatever is still theirs comes back; until it lands their list
+  counts as stale and `create` waits. While a character in play's records are held
+  again the player counts as `busy`, so they cannot switch or put it away
+  under that hold; a character that goes away meanwhile has whatever the
+  hold brings back released at once. If the portal refuses to hand them
+  back, the character is put away (a `select` result with `unavailable`)
+  and the player chooses again, from where selecting it retries.
+
+Everything is held through the player, so it is all released when they
+leave, whatever is selected.
+
+| Call | What |
+|---|---|
+| `list(player_id)` | The player's held characters, as copies, by name |
+| `loaded(player_id)` | Whether their session hold has landed, so `list` is complete |
+| `selected(player_id)` | The character in play, as a copy, or nil |
+| `create(handle, fields, callback)` | Names trimmed and at most `MAX_NAME_BYTES` (64), gender `"male"`, `"female"` or `{ server_specific = … }`. At most `max_characters` (5, an option from 1 to `MAX_CHARACTERS`, 40, so the list always fits in what the client reads) per player |
+| `select(handle, id, callback)` | One of the player's own held characters, switching from the one in play |
+| `deselect(handle)` | Back to `character_select` |
+
+Each returns `true` (under way) or `nil, err`: `not_ready` before the
+characters are loaded (and, for `create`, while the list may be missing one
+of theirs: a created character whose hold failed, a create the portal never
+answered, or a refused re-hold, after each of which the session is held
+again and a client's list request retries it), `busy` while one of the player's requests is in
+flight (one at a time, so a client cannot queue a flood of creations),
+`not_found` for a character that is not theirs here (another player's and a
+missing one are one answer), `invalid`, `limit`. The callback gets the
+character, or the portal's refusal code, `unavailable`, or `gone` if the
+player left first.
+
+**The client messages** (`rpf.handoff`, decoded against their schemas,
+reaching the module only through `players.on_client`):
+
+| Message | Direction | Fields |
+|---|---|---|
+| `rpf:characters_request` | client → server | none: send the list again (and retry a failed load) |
+| `rpf:characters` | server → client | `characters` (each `id`, `first_name`, `last_name`, `gender`), `selected`, `truncated` (set when the list was cut short to fit `MAX_LIST_PAYLOAD`, keeping the character in play: only a portal that bounds neither names nor characters per player can make one that long, #168) |
+| `rpf:character_create` | client → server | `first_name`, `last_name`, `gender` (a string: `"male"`, `"female"`, or the server's own option) |
+| `rpf:character_select` | client → server | `id` |
+| `rpf:character_deselect` | client → server | none |
+| `rpf:character_result` | server → client | `during` (`create`, `select`, `deselect` or `load`), `ok`, `id`, `reason` |
+
+On the client, `rpf.picker` keeps the last list (`list()`, `selected()`),
+sends `create`, `select`, `deselect` and `refresh`, and emits
+`characters.listed(list, selected, truncated)` and `characters.result(result)`.
+
+Events on the server, reserved: `characters.created(player, character)`,
+`characters.selected(player, character)` and
+`characters.deselected(player, character_id)`.
+
+### Money (`rpf.accounts`)
+
+Balances, transfers and payments on held accounts (D5). Server only, and
+internal for now, like `rpf.characters`.
+
+**A balance is a fold over the ledger.** An account's balance here is the
+one the portal folded when it handed the account over, moved by every entry
+made since: a running balance, kept only for speed, that always equals the
+fold. **No function sets a balance**; money moves only as a ledger entry
+through `records.transfer`, which mints its `client_id` from
+`platform.random_hex` (C7's idempotency key) and marks both accounts for the
+next report.
+
+| Call | What |
+|---|---|
+| `balance(id)` | A held account's balance, or `nil, "not_held"` |
+| `get(id)`, `owned_by(kind, id)` | Held accounts, as copies, by name |
+| `transfer(from, to, amount, description)` | Between two held accounts. Refused (`insufficient_funds`) if it would overdraw the payer, unless it has `unlimited_balance` |
+| `pay(from, to, amount, description)` | Server-sourced money: a transfer whose payer must have `unlimited_balance` and be owned by the server or an employer (a treasury or payroll account the server holds), refused `not_a_source` otherwise, the owner included because staff can set the flag on any account, so a script that means "the server pays" cannot drain a player's account. The server's starting funds are never held, so never a source |
+| `fold(account_id, ledger)` | The fold itself |
+
+**No floats, and no Lua 5.4 integers.** Every amount is a whole number from
+1 to `protocol.MAX_AMOUNT` (2^53 − 1), the widest integer a double holds
+exactly, and every balance stays within ±`MAX_AMOUNT` (`out_of_range`
+otherwise). An amount past it never arrives: `rpf.json` refuses one on
+decode rather than round it. `fold` keeps its running total in two exact
+parts (`high * 2^32 + low`), so a total that passes 2^53 on the way to its
+answer is still exact, on LuaJIT as on 5.4.
+
+**The shared ledger cases.** `fold` and the portal's
+`money::checked_balance` are held to the same cases in
+`protocol/corpus/ledger/cases/` (`spec/ledger_spec.lua` here,
+`crates/rpf-domain/tests/ledger.rs` there), never to each other: an account,
+a ledger, and the balance or the error expected (`invalid_amount`,
+`out_of_range`). A case whose amount the codec will not decode (2^53) is
+refused here before any fold, and expects `invalid_amount`. The spec also
+replays each case as transfers on held accounts, so the running balance is
+held to the same answers.
 
 ### The login (`rpf.join`, `rpf.handoff`, `rpf.auth`)
 

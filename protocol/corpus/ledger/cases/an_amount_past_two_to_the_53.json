@@ -1,0 +1,13 @@
+{
+  "description": "2^53 is refused rather than rounded: the Lua codec will not even decode it.",
+  "account": "00000000-0000-4000-8000-00000000000a",
+  "ledger": [
+    {
+      "from_account": "00000000-0000-4000-8000-00000000000b",
+      "to_account": "00000000-0000-4000-8000-00000000000a",
+      "amount": 9007199254740992
+    }
+  ],
+  "balance": null,
+  "error": "invalid_amount"
+}
