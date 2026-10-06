@@ -48,10 +48,9 @@
 ---`characters.deselected(player, character_id)` once they are back in
 ---`character_select`.
 ---@class rpf.characters
----@field DEFAULTS rpf.CharacterOptions The production bounds.
----@field MAX_CHARACTERS integer The highest `max_characters` may be set. A list of that many characters, each with names and gender at `MAX_NAME_BYTES` made only of bytes JSON escapes six bytes long, still fits in `handoff.MAX_LIST_PAYLOAD`, so no setting can make the list one the client refuses to read.
----@field MAX_NAME_BYTES integer The longest first or last name, or server-specific gender, a character may be created with, in bytes after trimming.
----@field options rpf.CharacterOptions The options in force.
+---@field MAX_CHARACTERS integer The most live characters the portal lets one owner have on a server, its `limits::MAX_CHARACTERS_PER_OWNER`, and so the most a player's list can hold. A list of that many characters, each with names and gender at `MAX_NAME_BYTES` made only of bytes JSON escapes six bytes long, still fits in `handoff.MAX_LIST_PAYLOAD`, so no list the portal can hand over is one the client refuses to read.
+---@field MAX_NAME_BYTES integer The longest first or last name, or server-specific gender, a character may be created with, in bytes after trimming: `records.MAX_NAME_BYTES`, the portal's bound.
+---@field SETTING string The portal setting naming how many characters one player may have on this server (`characters.max_per_player`), which the portal enforces too.
 local characters = {}
 
 local rpf = rpf
@@ -60,19 +59,13 @@ local events = rpf.events
 local players = rpf.players
 local records = rpf.records
 local handoff = rpf.handoff
-
----Bounds on what one player may do.
----@class rpf.CharacterOptions
----@field max_characters integer? The most characters one player may have on this server, from 1 to `MAX_CHARACTERS`. Creating another is refused as `limit`. A bound on what a client can make the server create, not a game rule: a server owner wanting more raises it.
-characters.DEFAULTS = {
-  max_characters = 5,
-}
+local config = rpf.config
 
 characters.MAX_CHARACTERS = 40
 
-characters.MAX_NAME_BYTES = 64
+characters.MAX_NAME_BYTES = records.MAX_NAME_BYTES
 
-characters.options = {}
+characters.SETTING = "characters.max_per_player"
 
 ---One logged-in player's character state.
 ---@class rpf.characters.Session
@@ -531,15 +524,18 @@ end
 
 -- Creating -------------------------------------------------------------------
 
----Trims and checks one name for a new character.
----@param value any The name as given.
----@return string? name The name, or nil if it is not one.
-local function new_name(value)
-  local name = records.check_name(value)
-  if not name or #name > characters.MAX_NAME_BYTES then
-    return nil
+---How many characters one player may have on this server: the portal's
+---`characters.max_per_player` setting, from the config in force. The portal
+---refuses a create past it whatever this says, so this only spares asking.
+---Without a usable value (no config yet, or a portal that does not send the
+---setting) it is `MAX_CHARACTERS`, and the portal decides.
+---@return integer max From 1 to `MAX_CHARACTERS`.
+function characters.max_per_player()
+  local value = config.setting(characters.SETTING)
+  if type(value) ~= "number" or value % 1 ~= 0 or value < 1 or value > characters.MAX_CHARACTERS then
+    return characters.MAX_CHARACTERS
   end
-  return name
+  return value
 end
 
 ---Creates a character for a player, through the portal, which opens and
@@ -550,7 +546,7 @@ end
 ---@param fields { first_name: any, last_name: any, gender: any } The names, trimmed and at most `MAX_NAME_BYTES` each, and the gender: `"male"`, `"female"` or `{ server_specific = … }` of at most `MAX_NAME_BYTES`.
 ---@param callback fun(character: table?, err: string?)? Called with a copy of the character once it is held, or why not: `"unavailable"` when the portal could not be asked or did not answer, the portal's reject code, or `"gone"` if the player left first.
 ---@return boolean? ok True if the request is under way.
----@return string? err `"not_ready"` before the characters are loaded, and while the list may be missing one (`stale`), so `max_characters` is never checked against a short list; `"busy"`, `"invalid"` for a bad name or gender, `"limit"` at `max_characters`.
+---@return string? err `"not_ready"` before the characters are loaded, and while the list may be missing one (`stale`), so the limit is never checked against a short list; `"busy"`, `"invalid"` for a bad name or gender, `"limit"` at `max_per_player()`.
 function characters.create(handle, fields, callback)
   local player = players.get(handle)
   local session = player and player.player_id and session_of(player.player_id)
@@ -563,17 +559,12 @@ function characters.create(handle, fields, callback)
   if type(fields) ~= "table" then
     return nil, "invalid"
   end
-  local first_name, last_name = new_name(fields.first_name), new_name(fields.last_name)
+  local first_name, last_name = records.check_name(fields.first_name), records.check_name(fields.last_name)
   local gender = records.check_gender(fields.gender)
-  if
-    not first_name
-    or not last_name
-    or not gender
-    or (type(gender) == "table" and #gender.server_specific > characters.MAX_NAME_BYTES)
-  then
+  if not first_name or not last_name or not gender then
     return nil, "invalid"
   end
-  if #characters.list(session.player_id) >= characters.options.max_characters then
+  if #characters.list(session.player_id) >= characters.max_per_player() then
     return nil, "limit"
   end
   session.busy = "create"
@@ -867,22 +858,10 @@ end
 ---lost records, and for the client's character messages.
 ---@param p rpf.ServerPlatform The platform.
 ---@param client rpf.Client The connection to the portal.
----@param options rpf.CharacterOptions? Overrides for the bounds.
-function characters.start(p, client, options)
+function characters.start(p, client)
   platform = p
   connection = client
   sessions = {}
-  characters.options = {}
-  for key, value in pairs(characters.DEFAULTS) do
-    characters.options[key] = value
-  end
-  for key, value in pairs(options or {}) do
-    characters.options[key] = value
-  end
-  local max = characters.options.max_characters
-  if type(max) ~= "number" or max % 1 ~= 0 or max < 1 or max > characters.MAX_CHARACTERS then
-    error("rpf: characters.max_characters must be a whole number from 1 to " .. characters.MAX_CHARACTERS, 2)
-  end
   events.on("players.registered", on_registered)
   events.on("players.dropping", on_dropping)
   events.on("records.session", on_session)

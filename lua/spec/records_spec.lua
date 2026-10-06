@@ -160,6 +160,31 @@ describe("rpf.records", function()
       assert.is_true(rpf.records.set_character(CHARACTER, { gender = { server_specific = "nonbinary" } }))
       assert.are.equal("nonbinary", rpf.records.get("character", CHARACTER).gender.server_specific)
     end)
+
+    it("refuses a name or gender longer than the portal stores, and changes nothing", function()
+      local long = string.rep("x", rpf.records.MAX_NAME_BYTES)
+      for _, fields in ipairs({
+        { first_name = long .. "x" },
+        { last_name = "  " .. long .. "x  " },
+        { gender = { server_specific = long .. "x" } },
+      }) do
+        assert.are.same({ nil, "invalid" }, { rpf.records.set_character(CHARACTER, fields) })
+      end
+      assert.is_nil(next(rpf.records.entries["character:" .. CHARACTER].changed))
+
+      assert.is_true(rpf.records.set_character(CHARACTER, {
+        first_name = "  " .. long .. "  ",
+        gender = { server_specific = long },
+      }))
+      assert.are.equal(long, rpf.records.get("character", CHARACTER).first_name, "the bound is after trimming")
+    end)
+
+    it("bounds names as the portal does", function()
+      local limits = support.read("crates/rpf-domain/src/limits.rs")
+      local max = limits:match("pub const MAX_CHARACTER_NAME_BYTES: usize = (%d+);")
+      assert.truthy(max, "MAX_CHARACTER_NAME_BYTES is no longer an integer literal")
+      assert.are.equal(tonumber(max), rpf.records.MAX_NAME_BYTES)
+    end)
   end)
 
   describe("containers", function()
