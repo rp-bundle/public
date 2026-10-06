@@ -790,8 +790,11 @@ end
 ---for again, their list counting as `stale` until they land: whatever is
 ---still theirs comes back, and the rest is gone from their list.
 ---
----The release waits a tick: this runs while the reply that found the loss
----is being settled, and the records it names are resynced after it.
+---The release and the holds wait a tick: this runs while the reply that
+---found the loss is being settled, and the records it names are resynced
+---after it. Sent then, they queue behind that resync, so an account held
+---again comes back with every transfer the resync carries, never with the
+---balance from before them.
 ---@param _ rpf.RecordRef[] The records lost.
 local function on_lost(_)
   local ids = {}
@@ -819,10 +822,25 @@ local function on_lost(_)
       end)
     end
     if session.loaded then
-      reload(session)
-      if session.selected then
-        recover(session, session.selected)
+      -- Marked now, so nothing is created against the short list or switched
+      -- under the recovery meanwhile; asked for a tick later (see above).
+      session.stale = true
+      local in_play = session.selected
+      if in_play then
+        session.recovering = session.recovering + 1
       end
+      assert(platform).after(0, function()
+        if sessions[player_id] ~= session then
+          return
+        end
+        reload(session)
+        if in_play then
+          session.recovering = session.recovering - 1
+          if session.selected == in_play then
+            recover(session, in_play)
+          end
+        end
+      end)
     end
   end
 end

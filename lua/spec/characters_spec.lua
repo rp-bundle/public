@@ -197,6 +197,7 @@ describe("rpf.characters", function()
     it("ignores an answer meant for an earlier connection of the player's", function()
       loaded()
       rpf.records.lose({ { kind = "character", id = JOHN } }, "force-released")
+      p.advance(0)
       local old = last_of(p, "hold")
       rpf.players.dropped(7, "quit")
       local release = last_of(p, "release")
@@ -222,6 +223,7 @@ describe("rpf.characters", function()
     it("holds the session again on request after holding it again failed", function()
       loaded()
       rpf.records.lose({ { kind = "character", id = JOHN } }, "force-released")
+      p.advance(0)
       p.deliver(support.portal_frame("rejected", { re = last_of(p, "hold").id, code = "not_found", reason = "x" }))
       assert.are.same({ during = "load", ok = false, reason = "unavailable" }, last_to(p, RESULT))
 
@@ -379,6 +381,7 @@ describe("rpf.characters", function()
       local holds = #sent_of(p, "hold")
       local lists = #p.messages_to(7, CHARACTERS)
       rpf.records.lose({ { kind = "character", id = JANE }, { kind = "account", id = JANE_WALLET } }, "purged")
+      p.advance(0)
       assert.are.equal("character_select", rpf.players.get(7).state)
       assert.is_nil(rpf.characters.selected(PLAYER))
       assert.are.equal("characters.deselected", seen[#seen].name)
@@ -408,6 +411,7 @@ describe("rpf.characters", function()
       rpf.characters.select(7, JANE)
       local hold = last_of(p, "hold")
       rpf.records.lose({ { kind = "character", id = JANE } }, "purged")
+      p.advance(0)
       p.deliver(support.portal_frame("held", { re = hold.id, records = { account(JANE_WALLET, JANE, "Wallet", 250) } }))
 
       assert.are.equal("character_select", rpf.players.get(7).state)
@@ -419,9 +423,41 @@ describe("rpf.characters", function()
       loaded()
       local fields = { first_name = "A", last_name = "B", gender = "male" }
       rpf.records.lose({ { kind = "character", id = JOHN } }, "force-released")
+      p.advance(0)
       assert.are.same({ nil, "not_ready" }, { rpf.characters.create(7, fields) }, "the list is short")
       held(p, { character(JANE, "Jane"), character(JOHN, "John") })
       assert.is_true(rpf.characters.create(7, fields))
+    end)
+
+    it("holds again only behind the resync that recovers a lost account's transfers", function()
+      loaded()
+      rpf.characters.select(7, JANE)
+      held(p, { account(JANE_WALLET, JANE, "Wallet", 250), account(JANE_BANK, JANE, "Bank", 0) })
+      assert.is_truthy(rpf.accounts.transfer(JANE_WALLET, JANE_BANK, 100, "Deposit"))
+      -- Carried by the bank's change, which the portal keeps: a wallet held
+      -- again before its resync lands would come back without it.
+      assert.is_truthy(rpf.accounts.transfer(JANE_BANK, JANE_WALLET, 40, "Withdrawal"))
+      p.advance(60 * 1000)
+      local report = last_of(p, "state_changed")
+      local holds = #sent_of(p, "hold")
+
+      p.deliver(support.portal_frame("resync_required", {
+        re = report.id,
+        stale = {},
+        released = { { kind = "account", id = JANE_WALLET } },
+      }))
+      p.advance(0)
+      p.advance(0)
+      assert.are.equal(holds, #sent_of(p, "hold"), "not before the resync carrying the transfer lands")
+
+      p.deliver(support.portal_frame("state_applied", { re = last_of(p, "resync").id, revisions = {} }))
+      assert.is_true(#sent_of(p, "hold") > holds)
+      local owners = {}
+      for i = holds + 1, #sent_of(p, "hold") do
+        owners[#owners + 1] = sent_of(p, "hold")[i].owners[1].kind
+      end
+      table.sort(owners)
+      assert.are.same({ "character", "player" }, owners, "the session and the character in play")
     end)
 
     ---Selects Jane with her wallet, has the portal take the wallet back, and
@@ -432,6 +468,7 @@ describe("rpf.characters", function()
       rpf.characters.select(7, JANE)
       held(p, { account(JANE_WALLET, JANE, "Wallet", 250) })
       rpf.records.lose({ { kind = "account", id = JANE_WALLET } }, "force-released")
+      p.advance(0)
       local recovery
       for _, frame in ipairs(sent_of(p, "hold")) do
         if frame.owners[1] and frame.owners[1].kind == "character" then
@@ -458,6 +495,7 @@ describe("rpf.characters", function()
     it("gives back what a recovery brings if the character went away meanwhile", function()
       local recovery = wallet_lost()
       rpf.records.lose({ { kind = "character", id = JANE } }, "purged")
+      p.advance(0)
       assert.is_nil(rpf.characters.selected(PLAYER))
       local releases = #sent_of(p, "release")
 
@@ -595,6 +633,7 @@ describe("rpf.characters", function()
       }))
       local hold_new = last_of(p, "hold")
       rpf.records.lose({ { kind = "character", id = JOHN } }, "force-released")
+      p.advance(0)
       local inflight = last_of(p, "hold")
       assert.are.same({ { kind = "player", id = PLAYER } }, inflight.owners)
       p.deliver(support.portal_frame("rejected", { re = hold_new.id, code = "not_found", reason = "x" }))
