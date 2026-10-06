@@ -50,6 +50,36 @@
         "y": 1
       },
       "stack_limit": 1
-    }
+    },
+    "employers": [
+      {
+        "slug": "lspd",
+        "name": "Los Santos Police",
+        "description": "Keeps the peace."
+      }
+    ],
+    "employer_departments": [
+      {
+        "employer": "lspd",
+        "slug": "patrol",
+        "name": "Patrol",
+        "description": ""
+      }
+    ],
+    "employer_jobs": [
+      {
+        "employer": "lspd",
+        "slug": "chief",
+        "name": "Chief of Police",
+        "description": ""
+      },
+      {
+        "employer": "lspd",
+        "slug": "officer",
+        "name": "Officer",
+        "department": "patrol",
+        "description": "Answers calls."
+      }
+    ]
   }
 }

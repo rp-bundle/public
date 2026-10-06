@@ -21,10 +21,15 @@
 ---that at most once per request, and answers a crash mid-apply `unknown`.
 ---
 ---**The snapshot's shape is `protocol::ConfigSnapshot`.** `settings` is an
----object keyed by setting name, every key present. `items` and `item_bases`
----(E3) are arrays of objects keyed by `slug`, as `employers` and `jobs`
----(E4, E5) will be, and `item_defaults` is one object. `config.SECTIONS`
----holds that in one place. The protocol decoder keeps the snapshot whole, so
+---object keyed by setting name, every key present. `items`, `item_bases`
+---(E3) and `employers` (E4) are arrays of objects keyed by `slug`;
+---`employer_departments` and `employer_jobs` (E4) are arrays of objects
+---keyed by `employer` and `slug` together, because their slugs are unique
+---only within their employer; and `item_defaults` is one object. There is
+---no `jobs` section: cores before E4 indexed one by `slug` alone and would
+---refuse a snapshot with two employers' `officer`, so the portal never
+---sends one. `config.SECTIONS` holds that
+---in one place. The protocol decoder keeps the snapshot whole, so
 ---a section not listed there is kept, compared and reported in
 ---`config.changed`, just not indexed, and a portal that adds one is never
 ---refused.
@@ -50,6 +55,7 @@ config.KEY = "rpf.config.applied"
 ---@class rpf.config.Section
 ---@field kind "map"|"list" `map`: an object, looked up by key. `list`: an array of objects, looked up by the `key` field of each.
 ---@field key string? For a list, the field that names each entry.
+---@field within string? For a list whose `key` is unique only inside a parent, the field naming the parent. Entries are then indexed by both, as `parent/key`.
 
 config.SECTIONS = {
   settings = { kind = "map" },
@@ -57,8 +63,21 @@ config.SECTIONS = {
   item_bases = { kind = "list", key = "slug" },
   item_defaults = { kind = "map" },
   employers = { kind = "list", key = "slug" },
-  jobs = { kind = "list", key = "slug" },
+  employer_departments = { kind = "list", key = "slug", within = "employer" },
+  employer_jobs = { kind = "list", key = "slug", within = "employer" },
 }
+
+---The index key of an entry named within a parent: both names, joined by a
+---character no slug contains.
+---@param parent any The parent's name.
+---@param key any The entry's own name.
+---@return string? composite The index key, or nil unless both are strings.
+local function composite(parent, key)
+  if type(parent) ~= "string" or type(key) ~= "string" then
+    return nil
+  end
+  return parent .. "/" .. key
+end
 
 ---What is applied now.
 ---@class rpf.config.Current
@@ -96,9 +115,17 @@ local function build_index(snapshot)
         return nil, name .. " must be an array"
       end
       for i, entry in ipairs(value) do
-        local key = json.is_object(entry) and entry[section.key]
-        if type(key) ~= "string" then
+        local named = json.is_object(entry) and entry[section.key]
+        if type(named) ~= "string" then
           return nil, name .. "[" .. i .. "] has no string " .. section.key
+        end
+        local key = named --[[@as string]]
+        if section.within then
+          local within = composite(entry[section.within], named)
+          if not within then
+            return nil, name .. "[" .. i .. "] has no string " .. section.within
+          end
+          key = within
         end
         if by_key[key] ~= nil then
           return nil, name .. " has two entries named " .. key
@@ -319,18 +346,30 @@ function config.item_defaults()
   return copy(defaults)
 end
 
----A job, by slug.
----@param slug string The job's slug.
----@return table? job A copy of the job, or nil.
-function config.job(slug)
-  return lookup("jobs", slug)
-end
-
----An employer, by slug.
+---An employer the server runs, by slug (E4). An employer a player runs is
+---not config, and is never here.
 ---@param slug string The employer's slug.
----@return table? employer A copy of the employer, or nil.
+---@return rpf.ConfigEmployer? employer A copy of the employer, or nil.
 function config.employer(slug)
   return lookup("employers", slug)
+end
+
+---A department, by its employer's slug and its own (E4). Its slug is unique
+---only within the employer, so it takes both.
+---@param employer string The employer's slug.
+---@param slug string The department's slug.
+---@return rpf.ConfigDepartment? department A copy of the department, or nil.
+function config.department(employer, slug)
+  return lookup("employer_departments", composite(employer, slug))
+end
+
+---A job, by its employer's slug and its own (E4). Two employers may each
+---offer a job of the same slug, so it takes both.
+---@param employer string The employer's slug.
+---@param slug string The job's slug.
+---@return rpf.ConfigJob? job A copy of the job, or nil.
+function config.job(employer, slug)
+  return lookup("employer_jobs", composite(employer, slug))
 end
 
 ---A setting's effective value, by key.

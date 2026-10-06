@@ -152,15 +152,25 @@ function Config.item_base(slug) end
 ---@return rpf.ConfigItemDefaults? defaults A copy, or nil before any config has arrived.
 function Config.item_defaults() end
 
----A job, by slug.
----@param slug string The job's slug.
----@return table? job A copy, or nil.
-function Config.job(slug) end
-
----An employer, by slug.
+---An employer the server runs, by slug (E4). An employer a player runs is
+---not config, and is never here.
 ---@param slug string The employer's slug.
----@return table? employer A copy, or nil.
+---@return rpf.ConfigEmployer? employer A copy, or nil if the config has none by that slug.
 function Config.employer(slug) end
+
+---A department, by its employer's slug and its own (E4). A department's
+---slug is unique only within its employer, so both are needed.
+---@param employer string The employer's slug.
+---@param slug string The department's slug.
+---@return rpf.ConfigDepartment? department A copy, or nil if the config has none.
+function Config.department(employer, slug) end
+
+---A job, by its employer's slug and its own (E4). Two employers may each
+---offer a job of the same slug, so both are needed.
+---@param employer string The employer's slug.
+---@param slug string The job's slug.
+---@return rpf.ConfigJob? job A copy, or nil if the config has none.
+function Config.job(employer, slug) end
 
 ---A setting's effective value, by key.
 ---@param key string The setting's key.
@@ -200,6 +210,27 @@ function Config.version() end
 ---@field weight number Weight of one unit.
 ---@field size rpf.ConfigSize Footprint in a grid container.
 ---@field stack_limit number The most that may sit in one stack.
+
+---An employer as the config snapshot carries it (E4).
+---@class rpf.ConfigEmployer
+---@field slug string What Lua, its departments and its jobs name it by.
+---@field name string Its display name.
+---@field description string Free text, possibly empty.
+
+---A department as the config snapshot carries it (E4).
+---@class rpf.ConfigDepartment
+---@field employer string The slug of the employer it belongs to.
+---@field slug string Its slug, unique within the employer.
+---@field name string Its display name.
+---@field description string Free text, possibly empty.
+
+---A job as the config snapshot carries it (E4).
+---@class rpf.ConfigJob
+---@field employer string The slug of the employer offering it.
+---@field slug string Its slug, unique within the employer.
+---@field name string Its display name.
+---@field department string? The slug of the employer's department it sits in, nil if none.
+---@field description string Free text, possibly empty.
 
 ---What `config.changed` carries.
 ---@class rpf.ConfigChange
