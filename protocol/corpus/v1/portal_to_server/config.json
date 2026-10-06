@@ -58,7 +58,7 @@
         "description": "Keeps the peace."
       }
     ],
-    "departments": [
+    "employer_departments": [
       {
         "employer": "lspd",
         "slug": "patrol",
@@ -66,7 +66,7 @@
         "description": ""
       }
     ],
-    "jobs": [
+    "employer_jobs": [
       {
         "employer": "lspd",
         "slug": "chief",

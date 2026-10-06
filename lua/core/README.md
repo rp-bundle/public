@@ -403,8 +403,9 @@ as live is this answer, never what it sent.
 
 The snapshot is `protocol::ConfigSnapshot`: `settings` an object by key,
 every key present; `items`, `item_bases` (E3) and `employers` (E4),
-arrays of objects keyed by `slug`; `departments` and `jobs` (E4), arrays of
-objects keyed by `employer` and `slug` together; `item_defaults` one
+arrays of objects keyed by `slug`; `employer_departments` and `employer_jobs` (E4), arrays of
+objects keyed by `employer` and `slug` together (never a `jobs` section,
+which cores before E4 indexed by `slug` alone); `item_defaults` one
 object. That is held in one place, `config.SECTIONS`. The protocol decoder
 keeps the snapshot whole rather than field by field, so a section not listed
 there is kept and reported in `config.changed`, just not indexed, and a

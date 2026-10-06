@@ -21,7 +21,7 @@ local FIRST = [[{
   "settings": { "starting_cash": 500, "motd": "hi", "unset": null },
   "items": [ { "slug": "water", "weight": 1 }, { "slug": "bread", "weight": 2 } ],
   "employers": [ { "slug": "lspd", "name": "LSPD" } ],
-  "jobs": [ { "slug": "officer", "employer": "lspd" } ]
+  "employer_jobs": [ { "slug": "officer", "employer": "lspd" } ]
 }]]
 
 describe("rpf.config", function()
@@ -108,10 +108,29 @@ describe("rpf.config", function()
     assert.is_nil(rpf.config.employer("patrol"))
   end)
 
+  -- Cores from before E4 reserved a `jobs` section indexed by `slug` alone,
+  -- and refuse a whole snapshot with two entries of one slug. The portal
+  -- sends jobs under another name, so such a core still applies a snapshot
+  -- in which two employers share a job slug.
+  it("is applied by a core that indexes jobs by slug alone, as before E4", function()
+    local sections = rpf.config.SECTIONS
+    local saved = { jobs = sections.jobs, employer_jobs = sections.employer_jobs }
+    sections.jobs = { kind = "list", key = "slug" }
+    sections.employer_jobs = nil
+    local frame = assert(rpf.json.decode(support.read("protocol/corpus/v1/portal_to_server/config.json")))
+    local extra = rpf.json.copy(frame.snapshot.employer_jobs[2])
+    extra.employer = "bcso"
+    table.insert(frame.snapshot.employer_jobs, extra)
+    local applied, err = rpf.config.apply(p, frame.version, frame.hash, frame.snapshot)
+    sections.jobs, sections.employer_jobs = saved.jobs, saved.employer_jobs
+    assert.is_true(applied, err)
+    assert.is_nil(frame.snapshot.jobs)
+  end)
+
   it("keeps two employers' jobs of the same slug apart", function()
     assert.is_true((rpf.config.apply(p, 3, "h3", snapshot([[{
       "employers": [ { "slug": "bcso", "name": "BCSO" }, { "slug": "lspd", "name": "LSPD" } ],
-      "jobs": [
+      "employer_jobs": [
         { "employer": "bcso", "slug": "officer", "name": "Deputy" },
         { "employer": "lspd", "slug": "officer", "name": "Officer" }
       ]
@@ -177,7 +196,7 @@ describe("rpf.config", function()
 
   it("announces every section on the first snapshot", function()
     rpf.config.apply(p, 3, "h3", snapshot(FIRST))
-    assert.are.same({ { version = 3, sections = { "employers", "items", "jobs", "settings" } } }, changes)
+    assert.are.same({ { version = 3, sections = { "employer_jobs", "employers", "items", "settings" } } }, changes)
   end)
 
   it("announces only the sections that changed, whatever the key order", function()
@@ -187,7 +206,7 @@ describe("rpf.config", function()
       4,
       "h4",
       snapshot([[{
-        "jobs": [ { "employer": "lspd", "slug": "officer" } ],
+        "employer_jobs": [ { "employer": "lspd", "slug": "officer" } ],
         "employers": [ { "name": "LSPD", "slug": "lspd" } ],
         "items": [ { "slug": "water", "weight": 1 }, { "slug": "bread", "weight": 3 } ],
         "settings": { "unset": null, "motd": "hi", "starting_cash": 500 }
@@ -204,7 +223,7 @@ describe("rpf.config", function()
       "employers": [ { "slug": "lspd", "name": "LSPD" } ],
       "shops": [ ]
     }]]))
-    assert.are.same({ "jobs", "shops" }, changes[2].sections)
+    assert.are.same({ "employer_jobs", "shops" }, changes[2].sections)
     assert.is_nil(rpf.config.job("lspd", "officer"))
   end)
 
@@ -222,10 +241,10 @@ describe("rpf.config", function()
     { "two entries with one slug", [[{ "employers": [ { "slug": "a" }, { "slug": "a" } ] }]] },
     {
       "two jobs with one slug at one employer",
-      [[{ "jobs": [ { "employer": "e", "slug": "a" }, { "employer": "e", "slug": "a" } ] }]],
+      [[{ "employer_jobs": [ { "employer": "e", "slug": "a" }, { "employer": "e", "slug": "a" } ] }]],
     },
-    { "a job without its employer", [[{ "jobs": [ { "slug": "a" } ] }]] },
-    { "a department without its employer", [[{ "departments": [ { "slug": "a", "employer": 1 } ] }]] },
+    { "a job without its employer", [[{ "employer_jobs": [ { "slug": "a" } ] }]] },
+    { "a department without its employer", [[{ "employer_departments": [ { "slug": "a", "employer": 1 } ] }]] },
   }) do
     it("refuses " .. case[1] .. " and keeps the config it had", function()
       rpf.config.apply(p, 3, "h3", snapshot(FIRST))

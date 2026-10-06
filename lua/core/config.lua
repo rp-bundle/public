@@ -23,9 +23,12 @@
 ---**The snapshot's shape is `protocol::ConfigSnapshot`.** `settings` is an
 ---object keyed by setting name, every key present. `items`, `item_bases`
 ---(E3) and `employers` (E4) are arrays of objects keyed by `slug`;
----`departments` and `jobs` (E4) are arrays of objects keyed by `employer`
----and `slug` together, because their slugs are unique only within their
----employer; and `item_defaults` is one object. `config.SECTIONS` holds that
+---`employer_departments` and `employer_jobs` (E4) are arrays of objects
+---keyed by `employer` and `slug` together, because their slugs are unique
+---only within their employer; and `item_defaults` is one object. There is
+---no `jobs` section: cores before E4 indexed one by `slug` alone and would
+---refuse a snapshot with two employers' `officer`, so the portal never
+---sends one. `config.SECTIONS` holds that
 ---in one place. The protocol decoder keeps the snapshot whole, so
 ---a section not listed there is kept, compared and reported in
 ---`config.changed`, just not indexed, and a portal that adds one is never
@@ -60,8 +63,8 @@ config.SECTIONS = {
   item_bases = { kind = "list", key = "slug" },
   item_defaults = { kind = "map" },
   employers = { kind = "list", key = "slug" },
-  departments = { kind = "list", key = "slug", within = "employer" },
-  jobs = { kind = "list", key = "slug", within = "employer" },
+  employer_departments = { kind = "list", key = "slug", within = "employer" },
+  employer_jobs = { kind = "list", key = "slug", within = "employer" },
 }
 
 ---The index key of an entry named within a parent: both names, joined by a
@@ -357,7 +360,7 @@ end
 ---@param slug string The department's slug.
 ---@return rpf.ConfigDepartment? department A copy of the department, or nil.
 function config.department(employer, slug)
-  return lookup("departments", composite(employer, slug))
+  return lookup("employer_departments", composite(employer, slug))
 end
 
 ---A job, by its employer's slug and its own (E4). Two employers may each
@@ -366,7 +369,7 @@ end
 ---@param slug string The job's slug.
 ---@return rpf.ConfigJob? job A copy of the job, or nil.
 function config.job(employer, slug)
-  return lookup("jobs", composite(employer, slug))
+  return lookup("employer_jobs", composite(employer, slug))
 end
 
 ---A setting's effective value, by key.
