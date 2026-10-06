@@ -472,6 +472,40 @@ describe("rpf.join", function()
       assert.are.equal("player_dropped", frames[#frames].type)
     end)
 
+    it("reports a player authenticated after a restart lost their login", function()
+      local store = {}
+      support.load_core()
+      local p = support.fake_platform({ store = store })
+      p.player_identifiers[7] = { "license:abc" }
+      rpf.start_server(p, { url = "wss://portal.example/ws", api_key = "k" })
+      p.open()
+      p.deliver(support.portal_frame("welcome", { re = p.last().id, protocol = 1, server_id = SERVER }))
+      rpf.players.connected(7)
+      p.from_client(7, READY, "{}")
+      challenge(p)
+      p.from_client(7, TICKET, '{"ticket":"rpf_jt_ticket"}')
+      local redeem = sent_of(p, "redeem_ticket")[1]
+
+      -- The process dies with the redemption unanswered; the new one resends
+      -- it from the outbox, and nobody here is waiting for its answer.
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 99 })
+      rpf.start_server(restarted, { url = "wss://portal.example/ws", api_key = "k" })
+      restarted.open()
+      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = 1, server_id = SERVER }))
+      assert.are.equal(redeem.id, sent_of(restarted, "redeem_ticket")[1].id)
+      restarted.deliver(support.portal_frame("player_authenticated", {
+        re = redeem.id,
+        player_id = PLAYER,
+        username = "sam",
+        created = false,
+      }))
+
+      local dropped = sent_of(restarted, "player_dropped")
+      assert.are.equal(1, #dropped)
+      assert.are.equal(PLAYER, dropped[1].player_id)
+    end)
+
     it("does not report an account that is playing here under another handle", function()
       local p = logged_in()
       rpf.players.connected(9)

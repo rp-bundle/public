@@ -596,7 +596,8 @@ player `registered` or later, by `player_id`, and nobody who is leaving. The
 portal weighs it against the joins and drops around it by when each was sent
 (the module docs of `rpf_backend::ws::presence`), so it waits for nothing. A
 `player_authenticated` the server does not act on, because the player left or
-was kicked while it was in flight, is answered with a `player_dropped` for
+was kicked while it was in flight, or because a restart lost the login
+whose `redeem_ticket` the outbox resent, is answered with a `player_dropped` for
 that account, unless the account is playing here under another handle, so
 the portal does not list a player who never arrived.
 

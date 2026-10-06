@@ -500,6 +500,26 @@ function join.start(p, client, settings)
     options[key] = value
   end
   portal_url = settings.portal_url or join.http_base(settings.url)
+  local orphan = client.on_orphan
+  ---Runs for an answer to a frame whose callback is gone, which after a
+  ---restart is every frame the old process queued: whatever was set before
+  ---(`rpf.sync`'s), then, for a `RedeemTicket` the portal answered with
+  ---`PlayerAuthenticated`, the drop `unlist` sends. The player that ticket
+  ---was for went with the old process, but the portal has listed them.
+  ---@param c rpf.Client The connection.
+  ---@param entry rpf.OutboxEntry The answered frame.
+  ---@param frame rpf.Frame Its answer.
+  ---@return boolean? again Whatever the earlier handler wants.
+  client.on_orphan = function(c, entry, frame)
+    local again = nil
+    if orphan then
+      again = orphan(c, entry, frame)
+    end
+    if entry.type == "redeem_ticket" and frame.type == "player_authenticated" then
+      unlist(frame, "the server restarted before they logged in")
+    end
+    return again
+  end
   local ready = client.on_ready
   ---Runs at every `Welcome`: whatever was set before (`rpf.sync`'s
   ---declaration), then the online list.
