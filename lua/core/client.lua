@@ -1187,11 +1187,15 @@ function Client:receive(text)
     end
     return
   end
-  if frame.re then
-    self:answer(frame)
-  end
+  -- Acked before it is acted on, so the ack goes out ahead of anything its
+  -- callback sends. The portal reads a `player_authenticated`'s ack as the
+  -- moment this server learned of the join (F2), and a drop the callback
+  -- reports must not look older than it.
   if answered_by == "ack" then
     self:ack(frame.id)
+  end
+  if frame.re then
+    self:answer(frame)
   end
 end
 

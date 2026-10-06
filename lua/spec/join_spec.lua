@@ -412,4 +412,75 @@ describe("rpf.join", function()
     assert.are.equal(PLAYER, dropped[1].player_id)
     assert.are.equal("quit", dropped[1].reason)
   end)
+
+  describe("the online list", function()
+    ---Drops the connection, waits out the backoff, and completes a new
+    ---handshake.
+    ---@param p spec.FakePlatform The platform.
+    local function reconnect(p)
+      p.drop()
+      p.advance(2 * MINUTE)
+      p.open()
+      local hellos = sent_of(p, "hello")
+      p.deliver(support.portal_frame("welcome", { re = hellos[#hellos].id, protocol = 1, server_id = SERVER }))
+    end
+
+    it("is sent after every Welcome, naming every logged-in player and nobody else", function()
+      local p = joining()
+      local lists = sent_of(p, "online_players")
+      assert.are.equal(1, #lists, "one for the first Welcome")
+      assert.are.same({}, lists[1].players, "nobody had logged in")
+
+      challenge(p)
+      p.from_client(7, TICKET, '{"ticket":"rpf_jt_ticket"}')
+      answer_redeem(p, "player_authenticated")
+      -- Still logging in, so not online yet.
+      rpf.players.connected(8)
+      reconnect(p)
+      lists = sent_of(p, "online_players")
+      -- The first, never acked, is resent in the flush, and the new one
+      -- follows it.
+      assert.are.equal(3, #lists)
+      assert.are.equal(lists[1].id, lists[2].id)
+      assert.are.same({ { player_id = PLAYER } }, lists[3].players)
+
+      -- After everything the flush resent, so the portal reads it last.
+      local frames = p.frames()
+      assert.are.equal("online_players", frames[#frames].type)
+
+      rpf.players.dropped(7, "quit")
+      reconnect(p)
+      lists = sent_of(p, "online_players")
+      assert.are.same({}, lists[#lists].players)
+    end)
+
+    it("reports a player the portal authenticated after they left, so it does not list them", function()
+      local p = joining()
+      challenge(p)
+      p.from_client(7, TICKET, '{"ticket":"rpf_jt_ticket"}')
+      rpf.players.dropped(7, "quit")
+      assert.are.same({}, sent_of(p, "player_dropped"), "nobody had logged in")
+
+      answer_redeem(p, "player_authenticated")
+      local dropped = sent_of(p, "player_dropped")
+      assert.are.equal(1, #dropped)
+      assert.are.equal(PLAYER, dropped[1].player_id)
+      -- The reply is acked before the drop goes out, so the portal sees the
+      -- join it undoes first.
+      local frames = p.frames()
+      assert.are.equal("ack", frames[#frames - 1].type)
+      assert.are.equal("player_dropped", frames[#frames].type)
+    end)
+
+    it("does not report an account that is playing here under another handle", function()
+      local p = logged_in()
+      rpf.players.connected(9)
+      p.from_client(9, READY, "{}")
+      challenge(p)
+      p.from_client(9, TICKET, '{"ticket":"rpf_jt_other"}')
+      answer_redeem(p, "player_authenticated")
+      assert.are.equal(1, #p.kicks)
+      assert.are.same({}, sent_of(p, "player_dropped"))
+    end)
+  end)
 end)

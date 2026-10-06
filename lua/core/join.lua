@@ -266,6 +266,26 @@ local function renew(session)
   end)
 end
 
+---Tells the portal a player it has just authenticated is not playing here
+---after all, unless the account is playing here under another handle.
+---
+---The portal puts a player on this server's online list when it answers
+---`RedeemTicket` (F2), so a `PlayerAuthenticated` the core does not act on
+---(the player left, or was kicked, while the redemption was in flight) would
+---leave them listed until the next reconnect. Nothing else would send their
+---drop: `on_dropping` only reports players who registered.
+---@param reply rpf.Frame The `player_authenticated`.
+---@param reason string Why, for the portal's log.
+local function unlist(reply, reason)
+  if players.by_player_id(reply.player_id) then
+    return
+  end
+  local _, err = connection:send("player_dropped", { player_id = reply.player_id, reason = reason })
+  if err then
+    log("warn", "could not report player " .. reply.player_id .. " as dropped (" .. err .. ")")
+  end
+end
+
 ---Handles the portal's answer to `RedeemTicket`.
 ---@param session rpf.join.Session The login.
 ---@param reply rpf.Frame? The answer.
@@ -279,6 +299,9 @@ local function redeemed(session, reply, err)
     end
   end
   if not live(session) then
+    if reply and reply.type == "player_authenticated" then
+      unlist(reply, "left before logging in")
+    end
     return
   end
   local handle = session.handle
@@ -305,6 +328,7 @@ local function redeemed(session, reply, err)
     else
       log("warn", tostring(move_err))
       kick(session, join.REASONS.already_online)
+      unlist(reply, "not registered")
     end
   elseif reply.type == "rejected" and reply.code == "forbidden" then
     -- A ban (F3): logging in again will not help.
@@ -432,6 +456,28 @@ local function on_dropping(player)
   end
 end
 
+---Tells the portal who is logged in here: `online_players`, the resync of
+---its online list (F2).
+---
+---Sent after every `Welcome`, once the outbox has been flushed, because the
+---portal forgets a server's whole list when its connection goes: the joins
+---that built it are gone after a reconnect or a portal restart, and only
+---this re-establishes it. Every player `registered` or later is on it
+---(`players.online`), a player who is leaving is not. The portal weighs it
+---against the joins and drops around it by when each was sent, so it does
+---not have to wait for them. An outbox too full to take it is logged, and
+---the list stays short until the next connect.
+function join.resync()
+  local online = {}
+  for _, player in ipairs(players.online()) do
+    online[#online + 1] = { player_id = player.player_id }
+  end
+  local _, err = connection:send("online_players", { players = rpf.json.array(online) })
+  if err then
+    log("warn", "could not send the online list to the portal (" .. err .. ")")
+  end
+end
+
 ---Settings for `join.start`, from the server's start options.
 ---@class rpf.join.Settings
 ---@field url string The portal's websocket url.
@@ -454,6 +500,16 @@ function join.start(p, client, settings)
     options[key] = value
   end
   portal_url = settings.portal_url or join.http_base(settings.url)
+  local ready = client.on_ready
+  ---Runs at every `Welcome`: whatever was set before (`rpf.sync`'s
+  ---declaration), then the online list.
+  ---@param c rpf.Client The connection, now ready.
+  client.on_ready = function(c)
+    if ready then
+      ready(c)
+    end
+    join.resync()
+  end
   events.on("players.connecting", on_connecting)
   events.on("players.dropping", on_dropping)
   p.on_client(handoff.CLIENT_READY, on_ready)

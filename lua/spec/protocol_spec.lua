@@ -260,6 +260,7 @@ describe("rpf.protocol against protocol/corpus/v1", function()
         redeem_ticket = "reply",
         create_character = "reply",
         player_dropped = "ack",
+        online_players = "ack",
         command_applied = "ack",
         config_applied = "ack",
         hold = "reply",

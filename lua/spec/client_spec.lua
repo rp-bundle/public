@@ -220,6 +220,33 @@ describe("rpf.client", function()
       assert.are.equal("ack", ack.type)
     end)
 
+    it("acks a reply before its callback runs, so what the callback sends follows the ack", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local reply_id
+      local id = connection:send("create_character", character(), function(reply)
+        reply_id = reply.id
+        connection:send("player_dropped", dropped())
+      end)
+
+      p.deliver(support.portal_frame("character_created", {
+        re = id,
+        character = {
+          id = "00000003-0000-4000-8000-000000000003",
+          server_id = "00000001-0000-4000-8000-000000000001",
+          owner = { kind = "player", id = PLAYER },
+          first_name = "Jane",
+          last_name = "Doe",
+          gender = "female",
+        },
+      }))
+
+      local frames = p.frames()
+      assert.are.equal("ack", frames[#frames - 1].type)
+      assert.are.equal(reply_id, frames[#frames - 1].re)
+      assert.are.equal("player_dropped", frames[#frames].type)
+    end)
+
     it("releases a notice on its Ack", function()
       local p = support.fake_platform()
       local connection = support.connected(p)
@@ -1063,8 +1090,11 @@ describe("rpf.client", function()
         end
         local frame = command()
         p.deliver(frame)
-        local raw = store[rpf.client.OUTBOX_PREFIX .. 1]
-        store[rpf.client.OUTBOX_PREFIX .. 1] = raw:sub(1, #raw - 1)
+        -- The journal is the only entry left: the frames sent at the
+        -- `Welcome` have been answered.
+        local key = rpf.client.OUTBOX_PREFIX .. stored_outbox(p)[1].slot
+        local raw = store[key]
+        store[key] = raw:sub(1, #raw - 1)
 
         support.load_core()
         local restarted = support.fake_platform({ store = store, seed = 4242 })
@@ -1084,8 +1114,9 @@ describe("rpf.client", function()
       support.connected(p):handle("apply_command", function() end)
       local frame = command()
       p.deliver(frame)
-      local raw = store[rpf.client.OUTBOX_PREFIX .. 1]
-      store[rpf.client.OUTBOX_PREFIX .. 1] = raw:gsub("\napply_command\n", "\nsomething_else\n"):sub(1, -2)
+      local key = rpf.client.OUTBOX_PREFIX .. stored_outbox(p)[1].slot
+      local raw = store[key]
+      store[key] = raw:gsub("\napply_command\n", "\nsomething_else\n"):sub(1, -2)
 
       support.load_core()
       local restarted = support.fake_platform({ store = store, seed = 4242 })
