@@ -79,6 +79,7 @@ characters.options = {}
 ---@field loading boolean Whether a hold of their session records is in flight.
 ---@field selected string? The character in play, from the moment its records are held.
 ---@field busy string? The request in flight for them: `"create"` or `"select"`.
+---@field recovering integer How many holds of the selected character's own records are in flight after the portal took some of them back (`on_lost`). The player counts as busy while any is, so the selection cannot change under one.
 
 ---Sessions by player id. Compared by identity in every callback, so an
 ---answer for a player who has left (or left and come back) does nothing.
@@ -114,6 +115,14 @@ end
 ---@return rpf.characters.Session? session The session, or nil.
 local function session_of(player_id)
   return sessions[player_id]
+end
+
+---Whether a request of the player's is in flight, a recovery included, so
+---another must wait.
+---@param session rpf.characters.Session The player.
+---@return boolean busy True while one is.
+local function is_busy(session)
+  return session.busy ~= nil or session.recovering > 0
 end
 
 ---Every character a player has here, as copies, by name and then id. Only
@@ -271,6 +280,7 @@ local function ensure(player_id)
     loading = true,
     selected = nil,
     busy = nil,
+    recovering = 0,
   }
   sessions[player_id] = session
   return session
@@ -345,7 +355,7 @@ function characters.deselect(handle)
   if not session or not session.loaded then
     return nil, "not_ready"
   end
-  if session.busy then
+  if is_busy(session) then
     return nil, "busy"
   end
   put_away(session)
@@ -368,7 +378,7 @@ function characters.select(handle, id, callback)
   if not session or not session.loaded then
     return nil, "not_ready"
   end
-  if session.busy then
+  if is_busy(session) then
     return nil, "busy"
   end
   local character = own_character(session.player_id, id)
@@ -441,7 +451,7 @@ function characters.create(handle, fields, callback)
   if not session or not session.loaded then
     return nil, "not_ready"
   end
-  if session.busy then
+  if is_busy(session) then
     return nil, "busy"
   end
   if type(fields) ~= "table" then
@@ -631,6 +641,46 @@ local function on_dropping(player)
   end
 end
 
+---Holds the character in play's own records again, after the portal took
+---some of them back while the character stayed selected (`on_lost`).
+---
+---The player counts as busy until it is answered, so they cannot switch or
+---put the character away meanwhile: a record this hold brings back was not
+---held when the character was put away, so nothing would give it back. The
+---character can still go with another loss, and then whatever the hold
+---brings back is released at once. If the portal refuses the hold (the
+---record cannot be held again), the character is put away and the player
+---goes back to choosing, from where selecting it again tries once more:
+---a character is never in play without its money.
+---@param session rpf.characters.Session The player.
+---@param id string The character in play.
+local function recover(session, id)
+  session.recovering = session.recovering + 1
+  rpf.sync.hold({ owners = { { kind = "character", id = id } } }, session.player_id, function(_, err)
+    if sessions[session.player_id] ~= session then
+      -- They left: `rpf.sync` releases everything held for their session.
+      return
+    end
+    session.recovering = session.recovering - 1
+    if session.selected ~= id then
+      local refs = owned_records(id)
+      if #refs > 0 then
+        local ok, why = rpf.sync.release(refs)
+        if not ok then
+          log("warn", "a character put away during its recovery keeps some records until the player leaves (" .. tostring(why) .. ")")
+        end
+      end
+      return
+    end
+    if err then
+      log("warn", "could not hold the character in play's records again (" .. tostring(err) .. "); back to choosing")
+      put_away(session)
+      send_result(session, "select", id, "unavailable")
+      send_list(session)
+    end
+  end)
+end
+
 ---The portal says this server no longer holds some records (force-released
 ---by staff, or purged). A player whose character in play went with them is
 ---put back to choosing, and every player's records are asked for again:
@@ -656,7 +706,7 @@ local function on_lost(_)
     if session.loaded then
       load(session)
       if session.selected then
-        rpf.sync.hold({ owners = { { kind = "character", id = session.selected } } }, player_id)
+        recover(session, session.selected)
       end
     end
   end

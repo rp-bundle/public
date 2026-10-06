@@ -735,7 +735,12 @@ records over would break "the core never keeps a record it does not hold".
 - **Lost records.** If the portal takes the character in play away
   (force-release, purge), the player goes back to `character_select`, and
   every player's session (and character in play) is held again, so whatever
-  is still theirs comes back.
+  is still theirs comes back. While a character in play's records are held
+  again the player counts as `busy`, so they cannot switch or put it away
+  under that hold; a character that goes away meanwhile has whatever the
+  hold brings back released at once. If the portal refuses to hand them
+  back, the character is put away (a `select` result with `unavailable`)
+  and the player chooses again, from where selecting it retries.
 
 Everything is held through the player, so it is all released when they
 leave, whatever is selected.

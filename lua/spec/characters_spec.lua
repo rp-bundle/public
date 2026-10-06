@@ -343,6 +343,65 @@ describe("rpf.characters", function()
       assert.are.equal(holds + 1, #sent_of(p, "hold"), "the session is held again")
       assert.are.same({ { kind = "player", id = PLAYER } }, last_of(p, "hold").owners)
     end)
+
+    ---Selects Jane with her wallet, has the portal take the wallet back, and
+    ---returns the hold that recovers it.
+    ---@return rpf.Frame hold The recovery hold.
+    local function wallet_lost()
+      loaded()
+      rpf.characters.select(7, JANE)
+      held(p, { account(JANE_WALLET, JANE, "Wallet", 250) })
+      rpf.records.lose({ { kind = "account", id = JANE_WALLET } }, "force-released")
+      local recovery
+      for _, frame in ipairs(sent_of(p, "hold")) do
+        if frame.owners[1] and frame.owners[1].kind == "character" then
+          recovery = frame
+        end
+      end
+      return assert(recovery)
+    end
+
+    it("holds the character in play's records again, busy until they are back", function()
+      local recovery = wallet_lost()
+      assert.are.same({ { kind = "character", id = JANE } }, recovery.owners)
+      assert.are.equal("active", rpf.players.get(7).state)
+      assert.are.same({ nil, "busy" }, { rpf.characters.deselect(7) })
+      assert.are.same({ nil, "busy" }, { rpf.characters.select(7, JOHN) })
+
+      p.deliver(support.portal_frame("held", { re = recovery.id, records = { account(JANE_WALLET, JANE, "Wallet", 250) } }))
+
+      assert.is_true(rpf.records.is_held("account", JANE_WALLET))
+      assert.are.equal(JANE, rpf.characters.selected(PLAYER).id)
+      assert.is_true(rpf.characters.deselect(7), "free again")
+    end)
+
+    it("gives back what a recovery brings if the character went away meanwhile", function()
+      local recovery = wallet_lost()
+      rpf.records.lose({ { kind = "character", id = JANE } }, "purged")
+      assert.is_nil(rpf.characters.selected(PLAYER))
+      local releases = #sent_of(p, "release")
+
+      p.deliver(support.portal_frame("held", { re = recovery.id, records = { account(JANE_WALLET, JANE, "Wallet", 250) } }))
+
+      assert.is_false(rpf.records.is_held("account", JANE_WALLET), "not left held until the player leaves")
+      assert.are.equal(releases + 1, #sent_of(p, "release"))
+      local released = last_of(p, "release").records
+      assert.are.equal(1, #released)
+      assert.are.equal(JANE_WALLET, released[1].id)
+    end)
+
+    it("goes back to choosing when the character in play's records cannot be held again", function()
+      local recovery = wallet_lost()
+      p.deliver(support.portal_frame("rejected", { re = recovery.id, code = "not_found", reason = "x" }))
+
+      assert.are.equal("character_select", rpf.players.get(7).state, "never in play without its money")
+      assert.is_nil(rpf.characters.selected(PLAYER))
+      assert.are.equal("characters.deselected", seen[#seen].name)
+      assert.are.same({ during = "select", ok = false, id = JANE, reason = "unavailable" }, last_to(p, RESULT))
+      assert.is_nil(last_to(p, CHARACTERS).selected)
+      assert.is_true(rpf.characters.select(7, JANE), "selecting it again tries once more")
+      assert.are.same({ { kind = "character", id = JANE } }, last_of(p, "hold").owners)
+    end)
   end)
 
   describe("creating", function()
