@@ -555,12 +555,16 @@ function characters.create(handle, fields, callback)
       return
     end
     rpf.sync.hold({ records = { { kind = "character", id = id } } }, session.player_id, function(_, hold_err)
+      if sessions[session.player_id] ~= session then
+        -- They left (and may be back on a new connection, whose own session
+        -- hold lists it): nothing of this request is theirs any more.
+        finish(nil, "gone")
+        return
+      end
       local character = own_character(session.player_id, id)
       if hold_err or not character then
-        if sessions[session.player_id] == session then
-          -- It exists, but is not in their list: hold the whole session again.
-          reload(session)
-        end
+        -- It exists, but is not in their list: hold the whole session again.
+        reload(session)
         finish(nil, hold_err or "unavailable")
         return
       end
@@ -755,6 +759,8 @@ local function on_lost(_)
       if view then
         events.emit("characters.deselected", view, id)
       end
+      -- Their client is told now, whether or not the session hold lands.
+      send_list(session)
       assert(platform).after(0, function()
         -- Unless the character came back and is in play, or being put in play.
         if sessions[player_id] == session and session.selected ~= id and session.selecting ~= id then

@@ -377,12 +377,15 @@ describe("rpf.characters", function()
       rpf.characters.select(7, JANE)
       held(p, { account(JANE_WALLET, JANE, "Wallet", 250) })
       local holds = #sent_of(p, "hold")
+      local lists = #p.messages_to(7, CHARACTERS)
       rpf.records.lose({ { kind = "character", id = JANE }, { kind = "account", id = JANE_WALLET } }, "purged")
       assert.are.equal("character_select", rpf.players.get(7).state)
       assert.is_nil(rpf.characters.selected(PLAYER))
       assert.are.equal("characters.deselected", seen[#seen].name)
       assert.are.equal(holds + 1, #sent_of(p, "hold"), "the session is held again")
       assert.are.same({ { kind = "player", id = PLAYER } }, last_of(p, "hold").owners)
+      assert.are.equal(lists + 1, #p.messages_to(7, CHARACTERS), "the client is told at once")
+      assert.is_nil(last_to(p, CHARACTERS).selected)
     end)
 
     it("gives back what a character taken away still owns here", function()
@@ -623,6 +626,27 @@ describe("rpf.characters", function()
       p.deliver(support.portal_frame("character_created", { re = create.id, character = character(NEW, "A").character }))
       assert.are.same({ nil, "gone" }, result)
       assert.are.equal(holds, #sent_of(p, "hold"))
+    end)
+
+    it("announces nothing for a creation whose player left while it was being held", function()
+      loaded()
+      local result
+      rpf.characters.create(7, { first_name = "A", last_name = "B", gender = "male" }, function(c, err)
+        result = { c, err }
+      end)
+      p.deliver(support.portal_frame("character_created", {
+        re = last_of(p, "create_character").id,
+        character = character(NEW, "A").character,
+      }))
+      local hold = last_of(p, "hold")
+      rpf.players.dropped(7, "quit")
+      register()
+      p.deliver(support.portal_frame("held", { re = hold.id, records = { character(NEW, "A") } }))
+
+      assert.are.same({ nil, "gone" }, result)
+      for _, event in ipairs(seen) do
+        assert.are_not.equal("characters.created", event.name, "not on their new connection")
+      end
     end)
   end)
 
