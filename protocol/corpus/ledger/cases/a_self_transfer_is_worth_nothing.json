@@ -1,0 +1,18 @@
+{
+  "description": "The shape a duplicated write takes: it must move nothing.",
+  "account": "00000000-0000-4000-8000-00000000000a",
+  "ledger": [
+    {
+      "from_account": "00000000-0000-4000-8000-00000000000a",
+      "to_account": "00000000-0000-4000-8000-00000000000a",
+      "amount": 1000
+    },
+    {
+      "from_account": "00000000-0000-4000-8000-00000000000b",
+      "to_account": "00000000-0000-4000-8000-00000000000a",
+      "amount": 1
+    }
+  ],
+  "balance": 1,
+  "error": null
+}

@@ -1,0 +1,18 @@
+{
+  "description": "2^53 is past what a game server can hold exactly.",
+  "account": "00000000-0000-4000-8000-00000000000a",
+  "ledger": [
+    {
+      "from_account": "00000000-0000-4000-8000-00000000000b",
+      "to_account": "00000000-0000-4000-8000-00000000000a",
+      "amount": 9007199254740991
+    },
+    {
+      "from_account": "00000000-0000-4000-8000-00000000000b",
+      "to_account": "00000000-0000-4000-8000-00000000000a",
+      "amount": 1
+    }
+  ],
+  "balance": null,
+  "error": "out_of_range"
+}

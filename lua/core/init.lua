@@ -29,6 +29,9 @@
 ---@field moderation rpf.moderation The staff actions on players that need them in game: kicks (F4).
 ---@field records rpf.records The records this server holds (C7), and nothing else.
 ---@field sync rpf.sync Holds, releases and state reports for those records.
+---@field accounts rpf.accounts Balances, transfers and payments on held accounts, and the ledger fold.
+---@field characters rpf.characters A logged-in player's characters: list, create, select and switch.
+---@field picker rpf.picker The client side of choosing a character.
 ---@field handoff rpf.handoff The login messages between server and client.
 ---@field join rpf.join The server side of a player's login.
 ---@field auth rpf.auth The client side of a player's login.
@@ -50,7 +53,7 @@ rpf.VERSION = "0.1.0"
 ---is last on both sides, because it fronts whichever modules the side loaded.
 ---@class rpf.LoadOrder
 ---@field server string[] The game server's files, relative to `lua/core/`.
----@field client string[] The player client's files, relative to `lua/core/`. The client never loads the portal connection, because it must never hold the server's API key, and never loads the server's player registry or join flow.
+---@field client string[] The player client's files, relative to `lua/core/`. The client never loads the portal connection, because it must never hold the server's API key, and never loads the server's player registry, join flow, records or characters.
 rpf.files = {
   server = {
     "json.lua",
@@ -66,8 +69,10 @@ rpf.files = {
     "inventory.lua",
     "records.lua",
     "sync.lua",
+    "accounts.lua",
     "handoff.lua",
     "join.lua",
+    "characters.lua",
     "api.lua",
   },
   client = {
@@ -77,6 +82,7 @@ rpf.files = {
     "time.lua",
     "handoff.lua",
     "auth.lua",
+    "picker.lua",
     "api.lua",
   },
 }
@@ -90,6 +96,7 @@ rpf.files = {
 ---@field client rpf.ClientOptions? Overrides for the connection's timings.
 ---@field join rpf.JoinOptions? Overrides for the login timings, such as how long a player may take to log in.
 ---@field sync rpf.SyncOptions? Overrides for how often held records are reported.
+---@field characters rpf.CharacterOptions? Overrides for the character bounds, such as how many characters one player may have.
 
 ---Starts the game-server half of the core on a platform.
 ---
@@ -122,6 +129,7 @@ function rpf.start_server(platform, options)
     portal_url = options.portal_url,
     options = options.join,
   })
+  rpf.characters.start(platform, rpf.connection, options.characters)
   rpf.config.restore(platform)
   rpf.config.serve(platform, rpf.connection)
   rpf.publish(platform)
@@ -146,6 +154,7 @@ function rpf.start_client(platform, options)
   rpf.events.bind(platform.log)
   rpf.publish(platform)
   rpf.auth.start(platform, options and options.auth)
+  rpf.picker.start(platform)
   return platform
 end
 

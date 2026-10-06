@@ -1,0 +1,18 @@
+{
+  "description": "The paying side of the same ledger is negative: the fold has no overdraft rule, which is the transfer's to keep.",
+  "account": "00000000-0000-4000-8000-00000000000b",
+  "ledger": [
+    {
+      "from_account": "00000000-0000-4000-8000-00000000000b",
+      "to_account": "00000000-0000-4000-8000-00000000000a",
+      "amount": 500
+    },
+    {
+      "from_account": "00000000-0000-4000-8000-00000000000a",
+      "to_account": "00000000-0000-4000-8000-00000000000b",
+      "amount": 200
+    }
+  ],
+  "balance": -300,
+  "error": null
+}

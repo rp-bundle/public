@@ -1,14 +1,17 @@
----The messages the two halves of the core exchange while a player logs in.
+---The messages the two halves of the core exchange: the login, and then the
+---choice of character.
 ---
----This is the in-game leg of the join flow (C6): the server hands the client
----the join nonce the portal issued for this connection, and the client hands
----back the join ticket the portal gave it. They travel over the engine's own
----client messaging, not the portal protocol, and both halves ship in the
----same addon, so they are not an external contract and have no corpus. They
----are still hostile input on the server, where any client can send anything,
----so every payload is decoded against a schema here and anything else is
----refused. Both sides load this file, which is what keeps the names and
----shapes in step.
+---The first six are the in-game leg of the join flow (C6): the server hands
+---the client the join nonce the portal issued for this connection, and the
+---client hands back the join ticket the portal gave it. The `character`
+---ones are D5's: the server lists a logged-in player's characters, and the
+---client asks to create, select or put one away (`rpf.characters`,
+---`rpf.picker`). They travel over the engine's own client messaging, not the
+---portal protocol, and both halves ship in the same addon, so they are not
+---an external contract and have no corpus. They are still hostile input on
+---the server, where any client can send anything, so every payload is
+---decoded against a schema here and anything else is refused. Both sides
+---load this file, which is what keeps the names and shapes in step.
 ---@class rpf.handoff
 ---@field CLIENT_READY string Client → server: the client's core has started and can receive messages. Moves the player to `authenticating`.
 ---@field NONCE string Server → client: a join nonce, and where to use it.
@@ -16,7 +19,14 @@
 ---@field TICKET string Client → server: a join ticket for the server to redeem.
 ---@field RESULT string Server → client: whether the ticket was redeemed.
 ---@field PORTAL_TROUBLE string Client → server: the client could not reach the portal (or the portal failed). Unverifiable, and only ever used to word this player's own timeout kick so an outage does not read as their fault.
----@field MAX_PAYLOAD integer The longest payload decoded, in bytes. Real ones are a few hundred.
+---@field CHARACTERS_REQUEST string Client → server: send the list of my characters again.
+---@field CHARACTERS string Server → client: the player's characters and which one is selected. Sent once they are loaded, and after every change.
+---@field CHARACTER_CREATE string Client → server: create a character with these names and gender.
+---@field CHARACTER_SELECT string Client → server: play this character, putting away the one in play first.
+---@field CHARACTER_DESELECT string Client → server: put the character in play away, back to choosing.
+---@field CHARACTER_RESULT string Server → client: how a create, select or deselect went.
+---@field MAX_PAYLOAD integer The longest payload decoded, in bytes, of every message but the list of characters. Real ones are a few hundred.
+---@field MAX_LIST_PAYLOAD integer The longest list of characters decoded, in bytes. Only the client decodes one, from its own server; the server registers no handler for it, so a client cannot make the server decode one.
 ---@field schemas table<string, table<string, rpf.handoff.FieldKind>> Each message's fields and their kinds.
 local handoff = {}
 
@@ -29,10 +39,19 @@ handoff.NONCE_REQUEST = "rpf:join_nonce_request"
 handoff.TICKET = "rpf:join_ticket"
 handoff.RESULT = "rpf:join_result"
 handoff.PORTAL_TROUBLE = "rpf:join_portal_trouble"
+handoff.CHARACTERS_REQUEST = "rpf:characters_request"
+handoff.CHARACTERS = "rpf:characters"
+handoff.CHARACTER_CREATE = "rpf:character_create"
+handoff.CHARACTER_SELECT = "rpf:character_select"
+handoff.CHARACTER_DESELECT = "rpf:character_deselect"
+handoff.CHARACTER_RESULT = "rpf:character_result"
 handoff.MAX_PAYLOAD = 4096
+handoff.MAX_LIST_PAYLOAD = 65536
 
----How one field is checked. A trailing `?` means it may be absent.
----@alias rpf.handoff.FieldKind "string"|"string?"|"number"|"boolean"|"boolean?"
+---How one field is checked. A trailing `?` means it may be absent. A
+---`table` is only checked to be one, so the module that reads it checks the
+---rest; only messages the server sends carry one.
+---@alias rpf.handoff.FieldKind "string"|"string?"|"number"|"boolean"|"boolean?"|"table"
 
 handoff.schemas = {
   [handoff.CLIENT_READY] = {},
@@ -52,6 +71,26 @@ handoff.schemas = {
     player_id = "string?",
     username = "string?",
     created = "boolean?",
+    reason = "string?",
+  },
+  [handoff.CHARACTERS_REQUEST] = {},
+  [handoff.CHARACTERS] = {
+    characters = "table",
+    selected = "string?",
+  },
+  [handoff.CHARACTER_CREATE] = {
+    first_name = "string",
+    last_name = "string",
+    gender = "string",
+  },
+  [handoff.CHARACTER_SELECT] = {
+    id = "string",
+  },
+  [handoff.CHARACTER_DESELECT] = {},
+  [handoff.CHARACTER_RESULT] = {
+    during = "string",
+    ok = "boolean",
+    id = "string?",
     reason = "string?",
   },
 }
@@ -114,7 +153,7 @@ function handoff.decode(name, payload)
   if type(payload) ~= "string" then
     return nil, "the payload is not a string"
   end
-  if #payload > handoff.MAX_PAYLOAD then
+  if #payload > (name == handoff.CHARACTERS and handoff.MAX_LIST_PAYLOAD or handoff.MAX_PAYLOAD) then
     return nil, "the payload is too long"
   end
   local value, err = json.decode(payload)
