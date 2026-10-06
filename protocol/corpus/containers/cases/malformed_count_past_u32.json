@@ -1,0 +1,16 @@
+{
+  "description": "A count is a u32, so 2^32 does not decode.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 4294967296
+      }
+    ]
+  },
+  "error": {
+    "error": "malformed"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "description": "A stack of nothing is an absence, not a stack.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 0
+      }
+    ]
+  },
+  "error": {
+    "error": "empty_stack",
+    "item": "water"
+  }
+}

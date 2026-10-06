@@ -1,0 +1,45 @@
+{
+  "item_defaults": {
+    "weight": 1,
+    "size": {
+      "x": 1,
+      "y": 1
+    },
+    "stack_limit": 10
+  },
+  "items": [
+    {
+      "slug": "crate",
+      "name": "Crate",
+      "weight": 10,
+      "size": {
+        "x": 2,
+        "y": 2
+      },
+      "stack_limit": 2
+    },
+    {
+      "slug": "rifle",
+      "name": "Rifle",
+      "base": "weapon",
+      "weight": 40,
+      "size": {
+        "x": 1,
+        "y": 3
+      },
+      "stack_limit": 1
+    },
+    {
+      "slug": "water",
+      "name": "Water",
+      "weight": 5,
+      "size": {
+        "x": 1,
+        "y": 1
+      },
+      "stack_limit": 4
+    }
+  ],
+  "max_data_bytes": 64,
+  "max_stacks": 3
+}

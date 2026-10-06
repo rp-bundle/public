@@ -1,0 +1,40 @@
+{
+  "description": "A grid's placements may come in any order; the 2x2 crate after the water it sits beside.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 3,
+        "y": 2
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "water",
+          "count": 4
+        },
+        "position": {
+          "x": 2,
+          "y": 0
+        },
+        "rotated": false
+      },
+      {
+        "stack": {
+          "item": "crate",
+          "count": 2
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "error": null
+}

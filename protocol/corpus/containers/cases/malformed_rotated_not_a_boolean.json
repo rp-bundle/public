@@ -1,0 +1,31 @@
+{
+  "description": "rotated is a boolean when present.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 5,
+        "y": 5
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "water",
+          "count": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotated": "yes"
+      }
+    ]
+  },
+  "error": {
+    "error": "malformed"
+  }
+}

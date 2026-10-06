@@ -1,0 +1,40 @@
+{
+  "description": "No coordinate is negative.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 5,
+        "y": 5
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "water",
+          "count": 1
+        },
+        "position": {
+          "x": -1,
+          "y": 0
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "error": {
+    "error": "out_of_bounds",
+    "item": "water",
+    "position": {
+      "x": -1,
+      "y": 0
+    },
+    "grid": {
+      "x": 5,
+      "y": 5
+    }
+  }
+}

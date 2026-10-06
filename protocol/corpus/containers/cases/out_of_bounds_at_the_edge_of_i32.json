@@ -1,0 +1,40 @@
+{
+  "description": "A 2x2 crate one cell from the edge of the widest grid there is runs past it. The sum is wider than an i32, which must not saturate into fitting.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 2147483647,
+        "y": 2
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "crate",
+          "count": 1
+        },
+        "position": {
+          "x": 2147483646,
+          "y": 0
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "error": {
+    "error": "out_of_bounds",
+    "item": "crate",
+    "position": {
+      "x": 2147483646,
+      "y": 0
+    },
+    "grid": {
+      "x": 2147483647,
+      "y": 2
+    }
+  }
+}

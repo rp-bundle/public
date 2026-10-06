@@ -1,0 +1,16 @@
+{
+  "description": "A count is a whole number.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 1.5
+      }
+    ]
+  },
+  "error": {
+    "error": "malformed"
+  }
+}

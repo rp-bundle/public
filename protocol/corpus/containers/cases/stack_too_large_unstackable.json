@@ -1,0 +1,24 @@
+{
+  "description": "Unstackable caps every stack at one, whatever the item allows.",
+  "flags": [
+    {
+      "flag": "unstackable",
+      "value": true
+    }
+  ],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 2
+      }
+    ]
+  },
+  "error": {
+    "error": "stack_too_large",
+    "item": "water",
+    "count": 2,
+    "limit": 1
+  }
+}

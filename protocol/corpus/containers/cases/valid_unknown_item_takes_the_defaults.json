@@ -1,0 +1,19 @@
+{
+  "description": "An item the catalog does not define stacks to the default limit (10) and weighs the default (1 each), so ten of it weigh exactly the limit.",
+  "flags": [
+    {
+      "flag": "max_weight",
+      "value": 10
+    }
+  ],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "brand_new_thing",
+        "count": 10
+      }
+    ]
+  },
+  "error": null
+}

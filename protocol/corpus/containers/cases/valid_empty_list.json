@@ -1,0 +1,14 @@
+{
+  "description": "Nothing at all is legal in any list container.",
+  "flags": [
+    {
+      "flag": "max_weight",
+      "value": 100
+    }
+  ],
+  "contents": {
+    "layout": "list",
+    "stacks": []
+  },
+  "error": null
+}

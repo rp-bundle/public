@@ -1,0 +1,17 @@
+{
+  "description": "Nothing at all is legal in any grid container.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 2,
+        "y": 2
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": []
+  },
+  "error": null
+}

@@ -1,0 +1,74 @@
+{
+  "description": "Data is measured as the portal writes it (serde_json): fractions in their shortest form with no exponent padding, DEL raw, other control characters escaped, and every fraction parsed exactly (h is one serde_json parses an ulp off without float_roundtrip). The bound is one byte so the case pins the exact size.",
+  "catalog": {
+    "item_defaults": {
+      "weight": 1,
+      "size": {
+        "x": 1,
+        "y": 1
+      },
+      "stack_limit": 10
+    },
+    "items": [
+      {
+        "slug": "crate",
+        "name": "Crate",
+        "weight": 10,
+        "size": {
+          "x": 2,
+          "y": 2
+        },
+        "stack_limit": 2
+      },
+      {
+        "slug": "rifle",
+        "name": "Rifle",
+        "base": "weapon",
+        "weight": 40,
+        "size": {
+          "x": 1,
+          "y": 3
+        },
+        "stack_limit": 1
+      },
+      {
+        "slug": "water",
+        "name": "Water",
+        "weight": 5,
+        "size": {
+          "x": 1,
+          "y": 1
+        },
+        "stack_limit": 4
+      }
+    ],
+    "max_data_bytes": 1,
+    "max_stacks": 3
+  },
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 1,
+        "data": {
+          "a": 1.234e-05,
+          "b": 1e-07,
+          "c": -2.5,
+          "d": "\u0001\n",
+          "e": 123456.789,
+          "f": 0.1,
+          "g": -1e-300,
+          "h": -2.587210604728764e-18
+        }
+      }
+    ]
+  },
+  "error": {
+    "error": "data_too_large",
+    "item": "water",
+    "bytes": 112,
+    "limit": 1
+  }
+}

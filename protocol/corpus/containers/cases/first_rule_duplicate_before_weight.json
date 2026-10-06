@@ -1,0 +1,30 @@
+{
+  "description": "Duplicates come before weight.",
+  "flags": [
+    {
+      "flag": "unstackable",
+      "value": false
+    },
+    {
+      "flag": "max_weight",
+      "value": 1
+    }
+  ],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 1
+      },
+      {
+        "item": "water",
+        "count": 1
+      }
+    ]
+  },
+  "error": {
+    "error": "duplicate",
+    "item": "water"
+  }
+}

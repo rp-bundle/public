@@ -1,0 +1,22 @@
+{
+  "description": "max_stacks is inclusive: three stacks in a catalog that allows three.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 1
+      },
+      {
+        "item": "water",
+        "count": 1
+      },
+      {
+        "item": "water",
+        "count": 1
+      }
+    ]
+  },
+  "error": null
+}

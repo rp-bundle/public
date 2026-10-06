@@ -1,0 +1,22 @@
+{
+  "description": "Measured serialised, so a quote costs two bytes: 27 of them is 54, plus 11.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 1,
+        "data": {
+          "note": "\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\""
+        }
+      }
+    ]
+  },
+  "error": {
+    "error": "data_too_large",
+    "item": "water",
+    "bytes": 65,
+    "limit": 64
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "description": "The weight limit is inclusive: four water at 5 each is exactly 20.",
+  "flags": [
+    {
+      "flag": "max_weight",
+      "value": 20
+    }
+  ],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 4
+      }
+    ]
+  },
+  "error": null
+}

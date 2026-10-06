@@ -1,0 +1,31 @@
+{
+  "description": "A position is an i32.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 5,
+        "y": 5
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "water",
+          "count": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 2147483648
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "error": {
+    "error": "malformed"
+  }
+}

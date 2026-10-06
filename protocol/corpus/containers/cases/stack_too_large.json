@@ -1,0 +1,19 @@
+{
+  "description": "Five water where the item stacks to four.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 5
+      }
+    ]
+  },
+  "error": {
+    "error": "stack_too_large",
+    "item": "water",
+    "count": 5,
+    "limit": 4
+  }
+}

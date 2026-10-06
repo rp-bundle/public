@@ -1,0 +1,23 @@
+{
+  "description": "Unstackable(true) caps each stack at one but allows several of an item.",
+  "flags": [
+    {
+      "flag": "unstackable",
+      "value": true
+    }
+  ],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 1
+      },
+      {
+        "item": "water",
+        "count": 1
+      }
+    ]
+  },
+  "error": null
+}

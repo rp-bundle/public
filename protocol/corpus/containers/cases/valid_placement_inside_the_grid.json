@@ -1,0 +1,29 @@
+{
+  "description": "A 1x3 rifle at (0, 2) in a 5x5 grid ends on the last row.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 5,
+        "y": 5
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "rifle",
+          "count": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 2
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "error": null
+}

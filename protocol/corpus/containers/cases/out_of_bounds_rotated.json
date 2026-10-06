@@ -1,0 +1,40 @@
+{
+  "description": "Rotated, the rifle is 3x1, and three columns from x=3 run off a 5-wide grid.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 5,
+        "y": 5
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "rifle",
+          "count": 1
+        },
+        "position": {
+          "x": 3,
+          "y": 0
+        },
+        "rotated": true
+      }
+    ]
+  },
+  "error": {
+    "error": "out_of_bounds",
+    "item": "rifle",
+    "position": {
+      "x": 3,
+      "y": 0
+    },
+    "grid": {
+      "x": 5,
+      "y": 5
+    }
+  }
+}

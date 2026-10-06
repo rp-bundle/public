@@ -1,0 +1,29 @@
+{
+  "description": "The same rifle that runs off a 5x4 grid upright fits lying down, as 3x1.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 5,
+        "y": 4
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "rifle",
+          "count": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 2
+        },
+        "rotated": true
+      }
+    ]
+  },
+  "error": null
+}

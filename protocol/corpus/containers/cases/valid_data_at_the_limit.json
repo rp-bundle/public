@@ -1,0 +1,17 @@
+{
+  "description": "{\"note\":\"...\"} is 11 bytes around the text, so 53 characters of text is exactly 64 bytes.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 1,
+        "data": {
+          "note": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      }
+    ]
+  },
+  "error": null
+}

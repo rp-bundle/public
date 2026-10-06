@@ -1,0 +1,17 @@
+{
+  "description": "Grid contents in a container with no grid flag.",
+  "flags": [
+    {
+      "flag": "max_weight",
+      "value": 10
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": []
+  },
+  "error": {
+    "error": "wrong_layout",
+    "grid_container": false
+  }
+}

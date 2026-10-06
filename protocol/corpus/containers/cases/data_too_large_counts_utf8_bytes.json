@@ -1,0 +1,22 @@
+{
+  "description": "Measured in UTF-8 bytes, not characters: 27 two-byte letters is 54 bytes, plus 11.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 1,
+        "data": {
+          "note": "ééééééééééééééééééééééééééé"
+        }
+      }
+    ]
+  },
+  "error": {
+    "error": "data_too_large",
+    "item": "water",
+    "bytes": 65,
+    "limit": 64
+  }
+}

@@ -48,8 +48,8 @@ files each side loads after it and in what order:
 
 ```lua
 rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, config.lua,
-                 -- client.lua, players.lua, records.lua, sync.lua, handoff.lua,
-                 -- join.lua, api.lua
+                 -- client.lua, players.lua, inventory.lua, records.lua, sync.lua,
+                 -- handoff.lua, join.lua, api.lua
 rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua, api.lua
 ```
 
@@ -68,7 +68,7 @@ core keeps working after the Gmod adapter replaces the global with the public
 API (see The public API).
 
 The client never loads `protocol.lua`, `client.lua`, `players.lua`,
-`records.lua`, `sync.lua` or `join.lua`, because the player's client must never hold the server's API key
+`inventory.lua`, `records.lua`, `sync.lua` or `join.lua`, because the player's client must never hold the server's API key
 and has no players to manage.
 
 Then the adapter starts one side:
@@ -513,9 +513,12 @@ anything not held, so a module keeps ids and reads through it every time.
   ledger entry's `client_id` here, refuses to overdraw an account without
   `unlimited_balance`, and keeps every balance within ±`MAX_AMOUNT`.
   A description is at most `records.MAX_DESCRIPTION_BYTES` (256).
-  Contents must have the protocol's `ContainerContents` shape, every array
-  and object JSON-marked, or they are refused as `"invalid"`: the portal
-  could not decode a frame carrying them, so a release would end nothing.
+  Contents are validated whole by `rpf.inventory` (below) against the
+  container's flags and the config's catalog, and refused as `"invalid"`
+  with the rule they break, so nothing the portal would refuse is ever
+  reported. Contents the portal could not even decode are `malformed`: a
+  frame carrying them would fail before the portal read it, so a release
+  would end nothing.
 - **Reporting.** A change marks its record, and `flush_interval_ms` (1 s)
   later (a minute while the portal is unreachable, so a long outage cannot
   fill the outbox) every marked record goes in one `state_changed`, each change naming
@@ -576,6 +579,81 @@ anything not held, so a module keeps ids and reads through it every time.
 
 Events, all reserved: `records.held(views)`, `records.released(refs)` and
 `records.lost(refs, reason)`.
+
+### `rpf.inventory`
+
+What a held container holds, and the moves a server makes on it (D6). Server
+only, and internal for now: the public inventory calls are K1's
+domain-neutral facade (`docs/architecture/framework-integration.md`), which
+routes to this module when RPF owns inventory.
+
+**One validator, on both sides.** `inventory.validate(contents, flags,
+catalog)` is a port of the portal's `ContainerContents::validate`: the same
+rules in the same order, so the two agree on the verdict and on the first
+rule broken, which comes back as the portal's `ContentsError` serialises
+(`{ error = "too_heavy", limit = 19, actual = 20 }`):
+
+1. `wrong_layout`: grid contents need a `grid` flag, and list contents must
+   not have one.
+2. `too_many_stacks`: at most `max_stacks` stacks or placements.
+3. `data_too_large`: no stack's `ItemData` over `max_data_bytes`, measured as
+   serde_json writes it (an absent one is `{}`, two bytes).
+4. Each stack in order: `empty_stack`, then `stack_too_large` past the
+   item's stack limit, or past one in an `unstackable` container.
+5. `duplicate`: one stack per item in an `unstackable = false` container.
+6. `too_heavy`: over `max_weight`, inclusive.
+7. Each placement in order: `out_of_bounds`, then `overlap`, naming the
+   first cell claimed twice, walking each placement column by column.
+
+Two refusals are Lua's own: `malformed`, contents the portal could not decode
+(a wrong shape, a count that is not a `u32`, text that is not UTF-8), and
+`unknown_flag`, a flag from a newer portal this core cannot enforce. The
+first flag of each kind counts, as on the portal, and `server_specific`
+flags are ignored.
+
+**The shared corpus.** Neither validator is tested against the other.
+Both are held to the cases in `protocol/corpus/containers/`
+(`spec/containers_spec.lua` here, `crates/rpf-domain/tests/containers.rs`
+there), each a container's flags, contents and the exact error expected,
+and every `ContentsError` variant needs an invalid case: both suites read
+the variants out of the Rust source.
+
+**The catalog** is the config's (`inventory.catalog()`): the items as the
+portal resolved them and `item_defaults` for anything else, so an item the
+config has not caught up with behaves as the portal assumes. The two size
+bounds are not in the snapshot; `MAX_DATA_BYTES` (4 KiB) and `MAX_STACKS`
+(500) mirror `ItemCatalog::default`, and so does `DEFAULTS`, used before any
+config has arrived. A spec reads the Rust default to keep them equal.
+
+**Data is measured exactly as the portal measures it.** The portal re-encodes
+`ItemData` with serde_json, which differs from `rpf.json`: it writes DEL raw,
+and a fraction in Ryu's shortest form (`0.00001234`, `1e-7`) where C's `%g`
+writes `1.234e-05`. So the size is computed for serde's form, not taken from
+what this side sends. The portal parses floats exactly (`float_roundtrip`), or
+a fraction could come back an ulp off and measure a byte longer there.
+
+**Moves.** Each reads the container from `rpf.records`, changes a copy,
+validates the result and hands it to `records.set_contents`, which
+validates it again and marks it for the next report. Refused, nothing
+changes, and a move between two containers validates both before writing
+either.
+
+| Call | What |
+|---|---|
+| `add(id, item, count, opts)` | Tops up stacks of the same item and identical data, then starts new ones within the stack limit. In a grid, new stacks take the first free spots, row by row, upright before turned; `opts.position` (and `rotated`) puts them in one placement there, or onto the matching placement already there. `opts.data` is the units' `ItemData` |
+| `remove(id, item, count, opts)` | Takes from the last stacks of the item whose data is identical to `opts.data` (none by default), so removing water never takes the bottle with a note in it |
+| `move(from, index, to, opts)` | Moves `opts.count` units (the whole stack by default) of the stack or placement at `index`, with its data, to where `add` would put them. `to` may be `from`: a new spot in a grid |
+| `split(id, index, count, opts)` | Splits units into a new stack with the same data: next to it in a list, at `opts.position` or the first free spot in a grid. Never merges |
+| `count(id, item)` | Units of an item across every stack |
+
+Each returns `true`, or `nil, err` with `err` one of `not_held`,
+`invalid_argument`, `no_stack`, `insufficient`, `no_space`, or `invalid` plus
+the refusal (and, for a move, which container broke the rule). A container
+this server does not hold, or no longer holds, is never changed.
+
+A stack's `data` is the server's own: nothing here reads it, a move or
+split carries it as it is, two stacks merge only when their data encodes
+identically, and it is reported byte for byte.
 
 ### The login (`rpf.join`, `rpf.handoff`, `rpf.auth`)
 

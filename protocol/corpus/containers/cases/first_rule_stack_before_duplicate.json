@@ -1,0 +1,32 @@
+{
+  "description": "Stack limits come before duplicates.",
+  "flags": [
+    {
+      "flag": "unstackable",
+      "value": false
+    }
+  ],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 1
+      },
+      {
+        "item": "water",
+        "count": 1
+      },
+      {
+        "item": "rifle",
+        "count": 2
+      }
+    ]
+  },
+  "error": {
+    "error": "stack_too_large",
+    "item": "rifle",
+    "count": 2,
+    "limit": 1
+  }
+}

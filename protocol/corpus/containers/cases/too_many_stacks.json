@@ -1,0 +1,30 @@
+{
+  "description": "Four stacks where the catalog allows three.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 1
+      },
+      {
+        "item": "water",
+        "count": 1
+      },
+      {
+        "item": "water",
+        "count": 1
+      },
+      {
+        "item": "water",
+        "count": 1
+      }
+    ]
+  },
+  "error": {
+    "error": "too_many_stacks",
+    "count": 4,
+    "limit": 3
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "description": "A negative limit refuses everything, even contents that weigh nothing.",
+  "flags": [
+    {
+      "flag": "max_weight",
+      "value": -1
+    }
+  ],
+  "contents": {
+    "layout": "list",
+    "stacks": []
+  },
+  "error": {
+    "error": "too_heavy",
+    "limit": -1,
+    "actual": 0
+  }
+}

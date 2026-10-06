@@ -442,8 +442,11 @@ local ACCOUNT = object({
 })
 
 ---A container as the portal hands it over. Its contents and flags are kept
----whole: D6 types them and runs the shared validation, and until then the
----core passes them through as the portal sent them.
+---whole, as the portal sent them, and `rpf.inventory` reads them. Contents
+---carry each stack's `ItemData`, which must come back byte for byte, and a
+---flag a newer portal adds must not make the whole `held` reply undecodable:
+---`rpf.inventory` refuses to change a container with a flag it does not know
+---(`unknown_flag`) instead.
 local CONTAINER = object({
   { "id", UUID },
   { "server_id", UUID },

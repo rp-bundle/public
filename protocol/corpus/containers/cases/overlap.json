@@ -1,0 +1,46 @@
+{
+  "description": "Two placements claiming one cell. The cell named is the first claimed twice, walking placements in order and each one's cells column by column.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 5,
+        "y": 5
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "rifle",
+          "count": 1
+        },
+        "position": {
+          "x": 1,
+          "y": 0
+        },
+        "rotated": false
+      },
+      {
+        "stack": {
+          "item": "water",
+          "count": 1
+        },
+        "position": {
+          "x": 1,
+          "y": 2
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "error": {
+    "error": "overlap",
+    "position": {
+      "x": 1,
+      "y": 2
+    }
+  }
+}

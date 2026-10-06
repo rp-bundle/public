@@ -59,6 +59,7 @@ rpf.files = {
     "config.lua",
     "client.lua",
     "players.lua",
+    "inventory.lua",
     "records.lua",
     "sync.lua",
     "handoff.lua",

@@ -292,90 +292,27 @@ function records.set_character(id, fields)
   return true
 end
 
----Whether a value is an integer within a range, as serde reads `u32`/`i32`.
----@param value any The value.
----@param min number The smallest allowed.
----@param max number The largest allowed.
----@return boolean ok True for an integer from `min` to `max`.
-local function integer_in(value, min, max)
-  return type(value) == "number" and value == math.floor(value) and value >= min and value <= max
-end
-
----Whether a value has the wire shape of an `ItemStack`.
----@param stack any The value.
----@return boolean ok True if the portal can decode it.
-local function stack_shape(stack)
-  return json.is_object(stack)
-    and type(stack.item) == "string"
-    and integer_in(stack.count, 0, 4294967295)
-    and (stack.data == nil or json.is_object(stack.data))
-end
-
----Whether a value has the wire shape of a `GridPlacement`.
----@param placement any The value.
----@return boolean ok True if the portal can decode it.
-local function placement_shape(placement)
-  if not json.is_object(placement) or not json.is_object(placement.position) then
-    return false
-  end
-  local position = placement.position
-  return stack_shape(placement.stack)
-    and integer_in(position.x, -2147483648, 2147483647)
-    and integer_in(position.y, -2147483648, 2147483647)
-    and (placement.rotated == nil or type(placement.rotated) == "boolean")
-end
-
----Whether contents have the wire shape of `ContainerContents`, so the portal
----can decode a report or release that carries them. This is the shape only;
----whether they fit the container is `ContainerContents::validate`'s. Contents
----the portal cannot decode would make every later frame carrying them fail
----before the portal reads it, so a release would end nothing there while this
----server forgot the container.
----@param contents any The proposed contents.
----@return boolean ok True if the portal can decode them.
-local function contents_shape(contents)
-  if not json.is_object(contents) then
-    return false
-  end
-  local items, check
-  if contents.layout == "list" then
-    items, check = contents.stacks, stack_shape
-  elseif contents.layout == "grid" then
-    items, check = contents.placements, placement_shape
-  else
-    return false
-  end
-  if not json.is_array(items) then
-    return false
-  end
-  local count = 0
-  for _ in pairs(items) do
-    count = count + 1
-  end
-  for i = 1, count do
-    if not check(items[i]) then
-      return false
-    end
-  end
-  return true
-end
-
 ---Replaces what a held container holds. Whole contents, never a diff, which
----is also what is reported. Only their wire shape is checked here; checking
----them against the container's flags and the item catalog is D6's
----(`ContainerContents::validate`'s Lua twin), and the portal checks every
----report regardless, and refuses one that does not fit.
+---is also what is reported. They are validated first, against the
+---container's flags and the config's item catalog, by `rpf.inventory`'s port
+---of the portal's own `ContainerContents::validate` (D6), so nothing the
+---portal would refuse is ever reported: a refused report lands nothing, and
+---contents the portal could not even decode would fail every later frame
+---carrying them, so a release would end nothing there while this server
+---forgot the container. `rpf.inventory`'s moves are built on this.
 ---@param id string The container's uuid.
 ---@param contents table The new contents, `{ layout = "list", stacks = … }` or `{ layout = "grid", placements = … }`, every array and object JSON-marked.
 ---@return boolean? ok True if changed.
----@return string? err `"not_held"`, or `"invalid"` for contents not shaped as the protocol's `ContainerContents`. Nothing changes on an error.
+---@return string? err `"not_held"`, or `"invalid"` for contents that break a rule. Nothing changes on an error.
+---@return rpf.inventory.Refusal? refusal For `"invalid"`, the first rule broken, as the portal's `ContentsError` names it.
 function records.set_contents(id, contents)
   local entry = records.entries[records.key("container", id)]
   if not entry then
     return nil, "not_held"
   end
-  if not contents_shape(contents) then
-    return nil, "invalid"
+  local ok, refusal = rpf.inventory.check(entry.data, contents)
+  if not ok then
+    return nil, "invalid", refusal
   end
   entry.data.contents = json.copy(contents)
   entry.changed.contents = true
