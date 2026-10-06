@@ -463,8 +463,16 @@ function support.declared(p)
     local waiting = connection and connection:find(frame.id)
     if waiting and frame.type == "declare_holds" then
       p.bookkeeping[p.sent[i]] = true
+      local before = #p.sent
       p.deliver(support.portal_frame("state_applied", { re = frame.id, revisions = frame.records }))
-      p.bookkeeping[p.sent[#p.sent]] = true
+      -- Only the ack of the answer: a hold that waited for the declaration
+      -- (the paying accounts', #169) goes out with it, and is no bookkeeping.
+      for j = before + 1, #p.sent do
+        local sent = support.core.protocol.decode(support.core.protocol.SERVER_TO_PORTAL, p.sent[j])
+        if sent and sent.type == "ack" then
+          p.bookkeeping[p.sent[j]] = true
+        end
+      end
     elseif waiting and frame.type == "online_players" then
       p.bookkeeping[p.sent[i]] = true
       p.deliver(support.portal_frame("ack", { re = frame.id }))

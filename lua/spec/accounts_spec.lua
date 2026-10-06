@@ -177,3 +177,167 @@ describe("rpf.accounts", function()
     end
   end)
 end)
+
+-- #169: the server's paying accounts are held for it, after every `Welcome`
+-- and whenever a config names one it does not hold, so `pay` has a source
+-- without a script holding one.
+describe("rpf.accounts holding the paying accounts", function()
+  local SECOND = "00000005-0000-4000-8000-000000000009"
+  local p
+
+  ---A config snapshot naming paying accounts.
+  ---@param accounts table[] Each `{ id, name }`.
+  ---@return table snapshot The snapshot, decoded as off the wire.
+  local function snapshot(accounts)
+    local text = assert(rpf.json.encode(rpf.json.object({
+      settings = rpf.json.object({}),
+      paying_accounts = rpf.json.array(accounts),
+    })))
+    return assert(rpf.json.decode(text))
+  end
+
+  ---Every frame of one type sent so far.
+  ---@param tag string The type.
+  ---@return rpf.Frame[] frames The frames.
+  local function sent_of(tag)
+    local out = {}
+    for _, frame in ipairs(p.frames()) do
+      if frame.type == tag then
+        out[#out + 1] = frame
+      end
+    end
+    return out
+  end
+
+  ---Answers a hold as the portal would, handing over the server's accounts it names.
+  ---@param hold rpf.Frame The hold.
+  local function answer(hold)
+    local held = {}
+    for _, ref in ipairs(hold.records) do
+      held[#held + 1] =
+        account(ref.id, { kind = "server", id = SERVER }, ref.id == TREASURY and "treasury" or "rewards", 0, { "unlimited_balance" })
+    end
+    p.deliver(support.portal_frame("held", { re = hold.id, records = held }))
+  end
+
+  before_each(function()
+    support.load_core()
+    p = support.fake_platform()
+    -- The config a previous run applied, restored at start.
+    rpf.config.apply(p, 4, "h4", snapshot({ { id = TREASURY, name = "treasury" } }))
+  end)
+
+  it("holds them after the Welcome, once the declaration is answered", function()
+    support.connected(p)
+    local holds = sent_of("hold")
+    assert.are.equal(1, #holds)
+    assert.are.same({ { kind = "account", id = TREASURY } }, holds[1].records)
+    assert.are.same({}, holds[1].owners)
+    assert.are.same({ nil, "not_held" }, { rpf.accounts.pay(TREASURY, TREASURY, 1, "x") })
+
+    answer(holds[1])
+    assert.is_true(rpf.records.is_held("account", TREASURY))
+    assert.are.equal("treasury", rpf.config.paying_account("treasury").name)
+    -- Held for no player: a departure never releases it.
+    assert.is_nil(rpf.records.entries[rpf.records.key("account", TREASURY)].through)
+  end)
+
+  it("waits for the declaration, so the declaration can never release it", function()
+    local connection = rpf.start_server(p, { url = "ws://portal", api_key = "rpf_test_secret" })
+    p.open()
+    p.deliver(support.portal_frame("welcome", { re = p.last().id, protocol = 1, server_id = SERVER }))
+    assert.are.equal(0, #sent_of("hold"), "the declaration is owed first")
+    assert.are.equal(1, #sent_of("declare_holds"))
+    support.declared(p)
+    assert.are.equal(1, #sent_of("hold"))
+    assert.are.equal("ready", connection.state)
+  end)
+
+  it("does not ask again for one it holds or is asking for", function()
+    support.connected(p)
+    -- The same config again, and a change that leaves them alone: nothing new to hold.
+    rpf.accounts.hold_paying()
+    assert.are.equal(1, #sent_of("hold"), "already in flight")
+    answer(sent_of("hold")[1])
+    rpf.accounts.hold_paying()
+    assert.are.equal(1, #sent_of("hold"), "already held")
+
+    -- A reconnect declares it, and holds nothing new.
+    p.drop()
+    p.advance(2 * 60 * 1000)
+    p.open()
+    local hellos = {}
+    for _, frame in ipairs(p.frames()) do
+      if frame.type == "hello" then
+        hellos[#hellos + 1] = frame
+      end
+    end
+    p.deliver(support.portal_frame("welcome", { re = hellos[#hellos].id, protocol = 1, server_id = SERVER }))
+    local declared = sent_of("declare_holds")
+    assert.are.same({ kind = "account", id = TREASURY, revision = 2 }, declared[#declared].records[1])
+    support.declared(p)
+    assert.are.equal(1, #sent_of("hold"))
+  end)
+
+  -- Staff force-released this server's holds while it was away: the
+  -- reconnect still holds the account here, so the Welcome asks for
+  -- nothing, but the declaration's answer says it is gone, and it is asked
+  -- for again once that answer has settled.
+  it("holds one again that the declaration says was released", function()
+    support.connected(p)
+    answer(sent_of("hold")[1])
+    p.drop()
+    p.advance(2 * 60 * 1000)
+    p.open()
+    local hellos = sent_of("hello")
+    p.deliver(support.portal_frame("welcome", { re = hellos[#hellos].id, protocol = 1, server_id = SERVER }))
+    assert.are.equal(1, #sent_of("hold"), "still held here, so nothing asked for yet")
+    local declared = sent_of("declare_holds")
+    p.deliver(support.portal_frame("resync_required", {
+      re = declared[#declared].id,
+      stale = {},
+      released = { { kind = "account", id = TREASURY } },
+    }))
+    local holds = sent_of("hold")
+    assert.are.equal(2, #holds)
+    assert.are.same({ { kind = "account", id = TREASURY } }, holds[2].records)
+    answer(holds[2])
+    assert.is_true(rpf.records.is_held("account", TREASURY))
+  end)
+
+  it("holds one a new config names, and only that one", function()
+    support.connected(p)
+    answer(sent_of("hold")[1])
+    p.deliver(support.portal_frame("config", {
+      version = 5,
+      hash = "h5",
+      snapshot = snapshot({ { id = SECOND, name = "rewards" }, { id = TREASURY, name = "treasury" } }),
+    }))
+    local holds = sent_of("hold")
+    assert.are.equal(2, #holds)
+    assert.are.same({ { kind = "account", id = SECOND } }, holds[2].records)
+    answer(holds[2])
+    assert.is_truthy(rpf.accounts.pay(SECOND, TREASURY, 5, "A reward"))
+  end)
+
+  it("holds nothing before the Welcome, and nothing for a config that names none", function()
+    rpf.config.apply(p, 5, "h5", snapshot({}))
+    support.connected(p)
+    assert.are.equal(0, #sent_of("hold"))
+  end)
+
+  it("logs a refused hold, and asks again at the next config", function()
+    support.connected(p)
+    local hold = sent_of("hold")[1]
+    p.deliver(support.portal_frame("rejected", { re = hold.id, code = "not_found", reason = "no such record" }))
+    assert.are.equal(1, #p.logged("warn", "could not hold this server's paying accounts"))
+    assert.is_false(rpf.records.is_held("account", TREASURY))
+
+    p.deliver(support.portal_frame("config", {
+      version = 5,
+      hash = "h5",
+      snapshot = snapshot({ { id = SECOND, name = "rewards" } }),
+    }))
+    assert.are.same({ { kind = "account", id = SECOND } }, sent_of("hold")[2].records)
+  end)
+end)

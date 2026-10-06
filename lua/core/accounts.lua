@@ -22,6 +22,17 @@
 ---decode rather than rounding it, and every function below refuses one
 ---passed in. A fold can pass 2^53 on the way to its answer, so it keeps its
 ---total in two exact parts (`BASE`), never as one double.
+---
+---**The server's paying accounts are held for it (#169).** `pay` needs a
+---source this server holds, so the core holds every account the config
+---lists in `paying_accounts` (`rpf.config.paying_account`) after each
+---`Welcome`, again whenever a new config names one it does not hold, and
+---again when the portal says one is no longer held here (staff
+---force-released the server's holds while it was away). A script never
+---holds one itself. They are held for no player's session,
+---so nothing releases them when a player leaves; a restart gives them back
+---with the declaration and holds them again. The starting funds are never
+---among them: they are the portal's, and no hold can take them.
 ---@class rpf.accounts
 ---@field BASE number 2^32: the fold keeps its running total as `high * BASE + low`, with `low` in `[0, BASE)`, so neither part ever leaves the integers a double holds exactly.
 ---@field ERRORS string[] Every reason `fold` refuses a ledger, as the shared ledger cases name it.
@@ -36,6 +47,19 @@ accounts.ERRORS = { "invalid_amount", "out_of_range" }
 ---The largest `high` part a foldable balance may have: 2^21 − 1, so the
 ---largest balance is `(2^21 − 1) * 2^32 + (2^32 − 1)`, which is 2^53 − 1.
 local HIGH = 2097151
+
+---The connection paying accounts are held over, once started.
+---@type rpf.Client?
+local connection
+
+---The platform, once started, to log through.
+---@type rpf.ServerPlatform?
+local platform
+
+---Paying accounts whose hold is in flight, by id, so a `Welcome` and a
+---config arriving together do not ask for the same account twice.
+---@type table<string, true>
+local holding = {}
 
 ---The owner kinds a `pay` source may have. An allowlist, so an owner kind
 ---added later is refused until someone decides it is the server's money.
@@ -158,6 +182,99 @@ function accounts.pay(from, to, amount, description)
     return nil, "not_a_source"
   end
   return records.transfer(from, to, amount, description)
+end
+
+---Holds every paying account the config lists that this server does not
+---hold and is not already asking for (#169), in one hold. Runs after each
+---`Welcome`, whenever `paying_accounts` changes, and when one is lost; does nothing while the
+---connection is not ready, since the next `Welcome` runs it.
+---
+---The hold waits, as every hold does, for the declaration and for the
+---reports queued before it, so it can never be released by the
+---declaration it follows. A hold the portal refuses (the config named an
+---account that is gone, which the push that follows corrects) or that never
+---reached it is logged and asked for again at the next `Welcome` or config
+---change; until then `pay` from that account is `not_held`.
+function accounts.hold_paying()
+  if not connection or connection.state ~= "ready" then
+    return
+  end
+  local refs = {}
+  for _, account in ipairs(rpf.config.paying_accounts()) do
+    local id = account.id
+    if type(id) == "string" and not records.is_held("account", id) and not holding[id] then
+      refs[#refs + 1] = { kind = "account", id = id }
+    end
+  end
+  if #refs == 0 then
+    return
+  end
+  for _, ref in ipairs(refs) do
+    holding[ref.id] = true
+  end
+  rpf.sync.hold({ records = refs }, nil, function(_, err)
+    for _, ref in ipairs(refs) do
+      holding[ref.id] = nil
+    end
+    if err then
+      if platform then
+        platform.log(
+          "warn",
+          "rpf.accounts: could not hold this server's paying accounts ("
+            .. tostring(err)
+            .. "); pay cannot draw on them until the next config or reconnect"
+        )
+      end
+    end
+  end)
+end
+
+---Starts holding the server's paying accounts on a connection: after every
+---`Welcome` (chained after whatever ran there before, so the declaration is
+---owed by then and the hold waits for it), whenever a config changes
+---`paying_accounts`, and whenever the portal says one is no longer held
+---here (`records.lost`: force-released while this server was away). Called by `rpf.start_server`, after `rpf.sync.start`.
+---@param server_platform rpf.ServerPlatform The platform, to log through.
+---@param client rpf.Client The connection to the portal.
+function accounts.start(server_platform, client)
+  platform = server_platform
+  connection = client
+  holding = {}
+  local ready = client.on_ready
+  ---Runs at every `Welcome`: whatever was set before, then the paying
+  ---accounts' hold.
+  ---@param c rpf.Client The connection, now ready.
+  client.on_ready = function(c)
+    if ready then
+      ready(c)
+    end
+    accounts.hold_paying()
+  end
+  -- A paying account the portal says is no longer held here (staff
+  -- force-released this server's holds while it was away, and the
+  -- declaration after the reconnect said so) is asked for again: the
+  -- config still names it. The hold waits behind that declaration's
+  -- settling, as every hold does.
+  rpf.events.on("records.lost", function(refs)
+    local listed = {}
+    for _, account in ipairs(rpf.config.paying_accounts()) do
+      listed[account.id] = true
+    end
+    for _, ref in ipairs(refs) do
+      if ref.kind == "account" and listed[ref.id] then
+        accounts.hold_paying()
+        return
+      end
+    end
+  end)
+  rpf.events.on("config.changed", function(change)
+    for _, section in ipairs(change.sections) do
+      if section == "paying_accounts" then
+        accounts.hold_paying()
+        return
+      end
+    end
+  end)
 end
 
 ---An account's balance, folded from a ledger: the money every entry brings

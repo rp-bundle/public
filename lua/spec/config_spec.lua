@@ -130,6 +130,31 @@ describe("rpf.config", function()
     assert.are.equal("officer", rpf.config.default_job().job)
   end)
 
+  -- The corpus assertion for #169's section: the accounts this server pays
+  -- out of, by name, each with the id `rpf.accounts.pay` takes.
+  it("reads the paying accounts of the corpus snapshot", function()
+    local frame = assert(rpf.json.decode(support.read("protocol/corpus/v1/portal_to_server/config.json")))
+    assert.is_true((rpf.config.apply(p, frame.version, frame.hash, frame.snapshot)))
+
+    assert.are.same(
+      { id = "0000000c-0000-4000-8000-00000000000c", name = "treasury" },
+      rpf.config.paying_account("treasury")
+    )
+    assert.are.same({ rpf.config.paying_account("treasury") }, rpf.config.paying_accounts())
+    assert.is_nil(rpf.config.paying_account("wallet"))
+
+    -- Copies: editing one changes nothing.
+    rpf.config.paying_account("treasury").id = "x"
+    rpf.config.paying_accounts()[1].id = "x"
+    assert.are.equal("0000000c-0000-4000-8000-00000000000c", rpf.config.paying_account("treasury").id)
+  end)
+
+  it("has no paying accounts from a portal older than #169", function()
+    assert.is_true((rpf.config.apply(p, 3, "h3", snapshot(FIRST))))
+    assert.are.same({}, rpf.config.paying_accounts())
+    assert.is_nil(rpf.config.paying_account("treasury"))
+  end)
+
   -- A default job the server does not have is sent as null, and the setting
   -- still names it: applying says so, and the server gets no default job.
   it("logs a default job the portal could not send, and gives none", function()
@@ -298,6 +323,13 @@ describe("rpf.config", function()
       [[{ "new_character": { "accounts": [ { "name": "w", "amount": 0.5 } ] } }]],
     },
     { "a default job without its employer", [[{ "new_character": { "job": { "job": "officer" } } }]] },
+    { "paying accounts that are not an array", [[{ "paying_accounts": {} }]] },
+    { "a paying account without a name", [[{ "paying_accounts": [ { "id": "a" } ] }]] },
+    { "a paying account without an id", [[{ "paying_accounts": [ { "name": "treasury" } ] }]] },
+    {
+      "two paying accounts of one name",
+      [[{ "paying_accounts": [ { "id": "a", "name": "t" }, { "id": "b", "name": "t" } ] }]],
+    },
   }) do
     it("refuses " .. case[1] .. " and keeps the config it had", function()
       rpf.config.apply(p, 3, "h3", snapshot(FIRST))
