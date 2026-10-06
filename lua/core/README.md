@@ -599,7 +599,12 @@ portal weighs it against the joins and drops around it by when each was sent
 was kicked while it was in flight, or because a restart lost the login
 whose `redeem_ticket` the outbox resent, is answered with a `player_dropped` for
 that account, unless the account is playing here under another handle, so
-the portal does not list a player who never arrived.
+the portal does not list a player who never arrived. A `player_dropped` the
+host clock would stamp below the newest presence event (a join acted on, the
+resync, a drop) sent on this connection, after the clock went back by less
+than the outbox notices, would look older than the join it ends, so the core
+sends it and then reconnects: the new connection's list starts from its
+resync, and the drop is resent there.
 
 `rpf.handoff` holds the handoff messages' schemas, loaded by both sides. They
 are not a portal contract, so they have no corpus, but the server decodes

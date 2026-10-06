@@ -94,6 +94,44 @@ local function log(level, message)
   platform.log(level, "rpf: " .. message)
 end
 
+---The highest clock reading at which this connection's online list learned
+---anything: a join the core acted on, the resync, a drop. The portal weighs
+---a drop against the join or resync it would undo by `sent_at` (F2), so a
+---drop stamped below this, after the host clock went back by less than the
+---outbox notices, would be taken for an older one and ignored.
+---@type number?
+local presence_mark
+
+---Notes a presence event at the current clock reading, and reports whether
+---the clock has gone back behind an earlier one.
+---@return boolean behind True if an event this connection sent is stamped later.
+local function observe_presence()
+  local now = platform.now()
+  if presence_mark and now < presence_mark then
+    return true
+  end
+  presence_mark = now
+  return false
+end
+
+---Sends a `player_dropped`, and if the host clock has gone back behind the
+---online list's newest event, makes the connection again: the portal starts
+---a new list for the new one, which the resync after `Welcome` builds, and
+---the drop, resent there, has nothing older to lose to.
+---@param player_id string The player's uuid.
+---@param reason string Why, for the portal's log.
+local function send_dropped(player_id, reason)
+  local behind = observe_presence()
+  local _, err = connection:send("player_dropped", { player_id = player_id, reason = reason })
+  if err then
+    log("warn", "could not report player " .. player_id .. " as dropped (" .. err .. ")")
+  end
+  if behind and connection.state == "ready" then
+    presence_mark = nil
+    connection:reconnect("the host clock went back behind the online list")
+  end
+end
+
 ---Works out the portal's HTTP address from its websocket url: `wss` becomes
 ---`https`, `ws` becomes `http`, and the path is dropped, because the player
 ---endpoints live at the root (`/api/v1/player/…`).
@@ -280,10 +318,7 @@ local function unlist(reply, reason)
   if players.by_player_id(reply.player_id) then
     return
   end
-  local _, err = connection:send("player_dropped", { player_id = reply.player_id, reason = reason })
-  if err then
-    log("warn", "could not report player " .. reply.player_id .. " as dropped (" .. err .. ")")
-  end
+  send_dropped(reply.player_id, reason)
 end
 
 ---Handles the portal's answer to `RedeemTicket`.
@@ -292,6 +327,11 @@ end
 ---@param err string? Why there was none.
 local function redeemed(session, reply, err)
   session.redeem_pending = false
+  if reply and reply.type == "player_authenticated" then
+    -- Its ack went out just before this ran: the portal weighs drops of
+    -- this player against that.
+    observe_presence()
+  end
   if session.renew_wanted then
     session.renew_wanted = false
     if current(session) then
@@ -449,10 +489,7 @@ end
 local function on_dropping(player)
   sessions[player.handle] = nil
   if player.player_id then
-    local _, err = connection:send("player_dropped", { player_id = player.player_id, reason = player.reason or "left" })
-    if err then
-      log("warn", "could not report player " .. player.player_id .. " as dropped (" .. err .. ")")
-    end
+    send_dropped(player.player_id, player.reason or "left")
   end
 end
 
@@ -472,6 +509,8 @@ function join.resync()
   for _, player in ipairs(players.online()) do
     online[#online + 1] = { player_id = player.player_id }
   end
+  -- A new connection's list starts here, so the mark does too.
+  presence_mark = platform.now()
   local _, err = connection:send("online_players", { players = rpf.json.array(online) })
   if err then
     log("warn", "could not send the online list to the portal (" .. err .. ")")
@@ -500,6 +539,7 @@ function join.start(p, client, settings)
     options[key] = value
   end
   portal_url = settings.portal_url or join.http_base(settings.url)
+  presence_mark = nil
   local orphan = client.on_orphan
   ---Runs for an answer to a frame whose callback is gone, which after a
   ---restart is every frame the old process queued: whatever was set before

@@ -411,6 +411,7 @@ describe("rpf.join", function()
     assert.are.equal(1, #dropped)
     assert.are.equal(PLAYER, dropped[1].player_id)
     assert.are.equal("quit", dropped[1].reason)
+    assert.is_not_nil(p.socket, "a drop in order keeps the connection")
   end)
 
   describe("the online list", function()
@@ -452,6 +453,34 @@ describe("rpf.join", function()
       reconnect(p)
       lists = sent_of(p, "online_players")
       assert.are.same({}, lists[#lists].players)
+    end)
+
+    it("connects again when the clock goes back behind the join a drop undoes", function()
+      local p = logged_in()
+      local connects = #p.connects
+      -- Less than the outbox's tolerance, so only the online list notices:
+      -- the drop would be stamped before the join's ack.
+      p.time = p.time - rpf.client.DEFAULTS.clock_step_tolerance_ms / 3
+      rpf.players.dropped(7, "quit")
+
+      local dropped = sent_of(p, "player_dropped")
+      assert.are.equal(1, #dropped)
+      assert.is_nil(p.socket, "the connection whose list is ahead is closed")
+      assert.are.equal(1, #p.logged("warn", "behind the online list"))
+
+      p.advance(2 * MINUTE)
+      assert.are.equal(connects + 1, #p.connects)
+      p.open()
+      local hellos = sent_of(p, "hello")
+      p.deliver(support.portal_frame("welcome", { re = hellos[#hellos].id, protocol = 1, server_id = SERVER }))
+      dropped = sent_of(p, "player_dropped")
+      assert.are.equal(dropped[1].id, dropped[#dropped].id, "the drop is resent on the new connection")
+      local lists = sent_of(p, "online_players")
+      assert.are.same({}, lists[#lists].players)
+      -- The new list starts from the resync, so a drop now is in order.
+      rpf.players.connected(8)
+      rpf.players.dropped(8, "left")
+      assert.is_not_nil(p.socket)
     end)
 
     it("reports a player the portal authenticated after they left, so it does not list them", function()
