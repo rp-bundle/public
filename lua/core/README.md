@@ -557,7 +557,10 @@ anything not held, so a module keeps ids and reads through it every time.
   ledger entry's `client_id` here, refuses to overdraw an account without
   `unlimited_balance`, and keeps every balance within ±`MAX_AMOUNT`.
   A description is at most `records.MAX_DESCRIPTION_BYTES` (256).
-  A character's names, trimmed, and a server-specific gender are at most
+  A character's names are trimmed of the portal's whitespace (Rust's
+  `str::trim`, the Unicode `White_Space` set, `records.WHITESPACE`, which a
+  spec holds equal to `characters::NAME_WHITESPACE`; Lua's `%s` would miss
+  U+00A0) and refused if then blank. Names, trimmed, and a server-specific gender are at most
   `records.MAX_NAME_BYTES` (64), the portal's
   `limits::MAX_CHARACTER_NAME_BYTES`, which it checks on every write of a
   character, so a rename here never becomes a report it refuses.
