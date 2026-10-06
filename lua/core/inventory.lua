@@ -105,52 +105,18 @@ local function string_bytes(s)
     local _, escaped = s:gsub('["\\]', "")
     return #s + 2 + escaped
   end
-  local bytes, i, n = 2, 1, #s
-  while i <= n do
+  if not json.is_utf8(s) then
+    return nil
+  end
+  -- Every byte of a multi-byte sequence is written raw, so only the ASCII
+  -- escapes change the count.
+  local bytes = #s + 2
+  for i = 1, #s do
     local c = s:byte(i)
-    if c < 0x80 then
-      if c == 0x22 or c == 0x5C or c == 0x08 or c == 0x0C or c == 0x0A or c == 0x0D or c == 0x09 then
-        bytes = bytes + 2
-      elseif c < 0x20 then
-        bytes = bytes + 6
-      else
-        bytes = bytes + 1
-      end
-      i = i + 1
-    else
-      -- A multi-byte sequence: its length, and the range its second byte
-      -- may take, which is what rules out overlong forms, surrogates and
-      -- code points past U+10FFFF.
-      local length, low, high
-      if c >= 0xC2 and c <= 0xDF then
-        length, low, high = 2, 0x80, 0xBF
-      elseif c == 0xE0 then
-        length, low, high = 3, 0xA0, 0xBF
-      elseif (c >= 0xE1 and c <= 0xEC) or c == 0xEE or c == 0xEF then
-        length, low, high = 3, 0x80, 0xBF
-      elseif c == 0xED then
-        length, low, high = 3, 0x80, 0x9F
-      elseif c == 0xF0 then
-        length, low, high = 4, 0x90, 0xBF
-      elseif c >= 0xF1 and c <= 0xF3 then
-        length, low, high = 4, 0x80, 0xBF
-      elseif c == 0xF4 then
-        length, low, high = 4, 0x80, 0x8F
-      else
-        return nil
-      end
-      local second = s:byte(i + 1)
-      if not second or second < low or second > high then
-        return nil
-      end
-      for j = i + 2, i + length - 1 do
-        local byte = s:byte(j)
-        if not byte or byte < 0x80 or byte > 0xBF then
-          return nil
-        end
-      end
-      bytes = bytes + length
-      i = i + length
+    if c == 0x22 or c == 0x5C or c == 0x08 or c == 0x0C or c == 0x0A or c == 0x0D or c == 0x09 then
+      bytes = bytes + 1
+    elseif c < 0x20 then
+      bytes = bytes + 5
     end
   end
   return bytes

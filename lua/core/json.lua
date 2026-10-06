@@ -6,7 +6,7 @@
 ---codec that reads it has to be the same one on every engine, and the corpus
 ---tests go through this one.
 ---
----Three rules make it stricter than a general-purpose codec:
+---Four rules make it stricter than a general-purpose codec:
 ---
 --- - **Empty tables are ambiguous, so they are refused** unless marked with
 ---   `json.array` or `json.object`. Decoded tables carry the mark, so what was
@@ -18,14 +18,23 @@
 ---   are doubles, so an integer beyond 2^53 − 1 would silently become a
 ---   different integer. The decoder refuses one instead of rounding it, and the
 ---   encoder refuses to produce one.
+--- - **Strings are UTF-8 text, both ways.** Lua strings are bytes, and game
+---   code can hand the core any bytes, but the portal reads frames with
+---   serde_json from websocket text frames, and both require UTF-8. A frame
+---   with one bad byte would be refused every time the outbox re-sent it, so
+---   the encoder refuses to produce one and the decoder refuses to accept
+---   one. `json.is_utf8` lets a caller refuse such text where it is written,
+---   and `json.repair_utf8` lets it keep text it only reports for display.
 ---@class rpf.json
 ---@field null table The JSON null. Compare with `==`; it is a unique table, never `nil`.
 ---@field MAX_SAFE_INTEGER number 2^53 − 1, the widest integer a double holds exactly, and so the widest the codec accepts.
 ---@field MAX_DEPTH integer How deeply arrays and objects may nest before decoding is refused, so hostile input cannot exhaust the stack.
+---@field REPLACEMENT string U+FFFD, the replacement character, as UTF-8: what `json.repair_utf8` puts in place of each bad sequence.
 local json = {}
 
 json.MAX_SAFE_INTEGER = 9007199254740991
 json.MAX_DEPTH = 100
+json.REPLACEMENT = "\239\191\189"
 
 ---Metatable marking a table as a JSON array.
 local ARRAY = { __name = "rpf.json.array" }
@@ -87,6 +96,121 @@ function json.copy(value)
   return setmetatable(out, getmetatable(value))
 end
 
+-- UTF-8 ------------------------------------------------------------------
+
+---The length of the UTF-8 sequence a lead byte starts, and the range its
+---second byte may take. The narrowed ranges after E0, ED, F0 and F4 are what
+---rule out overlong forms, the UTF-16 surrogates and code points past
+---U+10FFFF, exactly as Rust's `str` does. Nil for a byte that cannot start a
+---multi-byte sequence: a continuation byte, C0, C1, or F5 and above.
+---@param lead integer The first byte, 0x80 or above.
+---@return integer? length 2, 3 or 4.
+---@return integer? low The smallest second byte allowed.
+---@return integer? high The largest second byte allowed.
+local function sequence(lead)
+  if lead >= 0xC2 and lead <= 0xDF then
+    return 2, 0x80, 0xBF
+  elseif lead == 0xE0 then
+    return 3, 0xA0, 0xBF
+  elseif (lead >= 0xE1 and lead <= 0xEC) or lead == 0xEE or lead == 0xEF then
+    return 3, 0x80, 0xBF
+  elseif lead == 0xED then
+    return 3, 0x80, 0x9F
+  elseif lead == 0xF0 then
+    return 4, 0x90, 0xBF
+  elseif lead >= 0xF1 and lead <= 0xF3 then
+    return 4, 0x80, 0xBF
+  elseif lead == 0xF4 then
+    return 4, 0x80, 0x8F
+  end
+  return nil
+end
+
+---How many bytes of a well-formed sequence start at `i`, or nil if the bytes
+---there are not one. The second number is how many bytes from `i` are the
+---longest prefix of a sequence that is still valid, at least one, which is
+---what `json.repair_utf8` replaces as one bad sequence.
+---@param s string The string.
+---@param i integer Where a byte of 0x80 or above stands.
+---@return integer? length The sequence's length, or nil if it is malformed.
+---@return integer bad On a malformed one, how many bytes to replace.
+local function read_sequence(s, i)
+  local length, low, high = sequence(s:byte(i))
+  if not length then
+    return nil, 1
+  end
+  local second = s:byte(i + 1)
+  if not second or second < low or second > high then
+    return nil, 1
+  end
+  for j = i + 2, i + length - 1 do
+    local byte = s:byte(j)
+    if not byte or byte < 0x80 or byte > 0xBF then
+      return nil, j - i
+    end
+  end
+  return length, 0
+end
+
+---Whether a string is well-formed UTF-8, as the portal requires of every
+---string in a frame. Lua strings are bytes, so text from an engine or a
+---player (a name, a typed description) may not be, and one cut to a byte
+---limit may end inside a sequence. Use it to refuse such text where it is
+---written, so it never reaches a frame.
+---@param s string The string.
+---@return boolean ok True if every byte belongs to a well-formed sequence.
+function json.is_utf8(s)
+  if not s:find("[\128-\255]") then
+    return true
+  end
+  local i, n = 1, #s
+  while i <= n do
+    if s:byte(i) < 0x80 then
+      i = i + 1
+    else
+      local length = read_sequence(s, i)
+      if not length then
+        return false
+      end
+      i = i + length
+    end
+  end
+  return true
+end
+
+---A string with every malformed sequence replaced by U+FFFD, as Rust's
+---`String::from_utf8_lossy` does it (one replacement for each longest
+---invalid prefix), so the portal would show the same text had it been sent
+---the raw bytes. Only for text the core reports for display, an engine's
+---player name or a drop reason, where refusing it would lose a join or a
+---drop. Text that is data (a record's field, a password) is refused instead,
+---because a silent change to it is worse.
+---@param s string The string.
+---@return string text The string, unchanged if it was already UTF-8.
+function json.repair_utf8(s)
+  if json.is_utf8(s) then
+    return s
+  end
+  local parts, i, n, start = {}, 1, #s, 1
+  while i <= n do
+    if s:byte(i) < 0x80 then
+      i = i + 1
+    else
+      local length, bad = read_sequence(s, i)
+      if length then
+        i = i + length
+      else
+        parts[#parts + 1] = s:sub(start, i - 1)
+        parts[#parts + 1] = json.REPLACEMENT
+        i = i + bad
+        start = i
+      end
+    end
+  end
+  parts[#parts + 1] = s:sub(start)
+  return table.concat(parts)
+end
+
 -- Encoding ---------------------------------------------------------------
 
 ---The escape for each character a JSON string may not hold raw.
@@ -108,10 +232,15 @@ local function escape_char(char)
   return ESCAPES[char] or string.format("\\u%04x", string.byte(char))
 end
 
----Encodes a string, leaving UTF-8 as it is.
+---Encodes a string, leaving UTF-8 as it is. A string that is not UTF-8 is
+---refused, because the portal could not decode the frame. The error does not
+---quote it: it may be a secret, or bytes no log should carry.
 ---@param s string The string.
 ---@return string encoded The quoted JSON string.
 local function encode_string(s)
+  if not json.is_utf8(s) then
+    error("cannot encode a string that is not valid UTF-8 (" .. #s .. " bytes)", 0)
+  end
   return '"' .. s:gsub('[%c"\\]', escape_char) .. '"'
 end
 
@@ -330,6 +459,11 @@ local function read_string(r)
     local chunk = text:sub(r.pos, stop - 1)
     if chunk:find("[\1-\31]") or chunk:find("\0", 1, true) then
       fail(r, "a raw control character in a string")
+    end
+    -- Chunks end at `"` or `\`, which never fall inside a sequence, so
+    -- checking each one checks the whole string.
+    if not json.is_utf8(chunk) then
+      fail(r, "a string that is not valid UTF-8")
     end
     parts[#parts + 1] = chunk
     r.pos = stop + 1

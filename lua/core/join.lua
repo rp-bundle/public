@@ -122,7 +122,7 @@ end
 ---@param reason string Why, for the portal's log.
 local function send_dropped(player_id, reason)
   local behind = observe_presence()
-  local _, err = connection:send("player_dropped", { player_id = player_id, reason = reason })
+  local _, err = connection:send("player_dropped", { player_id = player_id, reason = rpf.json.repair_utf8(reason) })
   if err then
     log("warn", "could not report player " .. player_id .. " as dropped (" .. err .. ")")
   end
@@ -256,7 +256,7 @@ local function begin(session)
   session.last_begin = platform.now()
   connection:send("begin_join", {
     identifiers = identifiers(session.handle),
-    name = platform.name(session.handle),
+    name = rpf.json.repair_utf8(platform.name(session.handle)),
   }, function(reply, err)
     challenged(session, seq, reply, err)
   end)
