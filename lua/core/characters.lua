@@ -740,6 +740,66 @@ local function on_deselect(player, payload)
   send_result(session, "deselect", nil, not ok and err or nil)
 end
 
+-- Staff deletion ---------------------------------------------------------------
+
+---Lets a character go because staff are deleting it (F5), so the portal can
+---purge it as a record nobody holds.
+---
+---A player with it in play is put back to choosing first, as a switch does.
+---Then everything it owns still held here is released with its final state,
+---and only once that is queued is the character itself released, and its
+---player's client sent the list without it. The portal purges the character
+---and its records once this server has answered, and the releases are
+---queued ahead of that answer, so the portal has the final states first.
+---
+---Refused, the character stays held and nothing is deleted: while a request
+---of its player's is in flight (one at a time, as for the player), when an
+---account it owns has more ledger entries waiting than one report carries
+---(checked before anything moves), and when a release cannot be queued. A
+---release refused part-way leaves its records released, as putting the
+---character away would, and the character held.
+---@param id string The character's uuid.
+---@return boolean? ok True once it has been let go.
+---@return string? err `"not_held"`, `"busy"`, `"backlog"`, or the release's refusal (`"outbox_full"`, `"too_large"`).
+function characters.remove(id)
+  local character = records.get("character", id)
+  if not character then
+    return nil, "not_held"
+  end
+  local session = nil
+  if type(character.owner) == "table" and character.owner.kind == "player" then
+    session = sessions[character.owner.id]
+  end
+  if session and (is_busy(session) or session.selecting == id) then
+    return nil, "busy"
+  end
+  local owned = owned_records(id)
+  for _, ref in ipairs(owned) do
+    local entry = records.entries[records.key(ref.kind, ref.id)]
+    if entry and #entry.transactions > rpf.sync.options.max_transactions_per_report then
+      return nil, "backlog"
+    end
+  end
+  if session and session.selected == id then
+    put_away(session)
+  end
+  ---@type boolean?, string?
+  local ok, err = true, nil
+  if #owned > 0 then
+    ok, err = rpf.sync.release(owned)
+  end
+  if ok then
+    ok, err = rpf.sync.release({ { kind = "character", id = id } })
+  end
+  if session and session.loaded then
+    send_list(session)
+  end
+  if not ok then
+    return nil, err
+  end
+  return true
+end
+
 -- Lifecycle ------------------------------------------------------------------
 
 ---A player registered: their session records are being held (`rpf.sync`),

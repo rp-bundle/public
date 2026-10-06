@@ -846,6 +846,65 @@ describe("rpf.characters", function()
     end)
   end)
 
+  describe("staff deletion", function()
+    it("puts a character in play away, lets it and its records go, and sends the list without it", function()
+      loaded()
+      rpf.characters.select(7, JANE)
+      held(p, { account(JANE_WALLET, JANE, "Wallet", 250) })
+      assert.are.equal("active", rpf.players.get(7).state)
+
+      assert.is_true(rpf.characters.remove(JANE))
+
+      assert.are.equal("character_select", rpf.players.get(7).state)
+      assert.is_nil(rpf.characters.selected(PLAYER))
+      assert.is_false(rpf.records.is_held("character", JANE))
+      assert.is_false(rpf.records.is_held("account", JANE_WALLET))
+      local released = {}
+      for _, release in ipairs(sent_of(p, "release")) do
+        for _, record in ipairs(release.records) do
+          released[#released + 1] = record.kind .. ":" .. record.id
+        end
+      end
+      table.sort(released)
+      assert.are.same({ "account:" .. JANE_WALLET, "character:" .. JANE }, released)
+      local list = last_to(p, CHARACTERS)
+      assert.are.equal(1, #list.characters)
+      assert.are.equal(JOHN, list.characters[1].id)
+      assert.are.equal("characters.deselected", seen[#seen].name)
+    end)
+
+    it("refuses before anything moves when an account it owns has a backlog", function()
+      loaded()
+      rpf.characters.select(7, JANE)
+      held(p, { account(JANE_WALLET, JANE, "Wallet", 250) })
+      local entry = rpf.records.entries[rpf.records.key("account", JANE_WALLET)]
+      for i = 1, rpf.sync.options.max_transactions_per_report + 1 do
+        entry.transactions[i] = {
+          client_id = tostring(i),
+          from_account = JANE_WALLET,
+          to_account = JANE_BANK,
+          amount = 1,
+          description = "",
+          sent = true,
+        }
+      end
+
+      assert.are.same({ nil, "backlog" }, { rpf.characters.remove(JANE) })
+      assert.are.equal("active", rpf.players.get(7).state, "still in play")
+      assert.is_true(rpf.records.is_held("character", JANE))
+      assert.is_true(rpf.records.is_held("account", JANE_WALLET))
+      assert.are.equal(0, #sent_of(p, "release"))
+    end)
+
+    it("waits while the player has a request in flight, and refuses one it does not hold", function()
+      loaded()
+      rpf.characters.select(7, JANE)
+      assert.are.same({ nil, "busy" }, { rpf.characters.remove(JANE) })
+      assert.is_true(rpf.records.is_held("character", JANE))
+      assert.are.same({ nil, "not_held" }, { rpf.characters.remove(THEIRS) })
+    end)
+  end)
+
   describe("client messages", function()
     it("ignores a player who has not logged in", function()
       rpf.players.connected(7)

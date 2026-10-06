@@ -1,0 +1,55 @@
+{
+  "description": "Water given at the cell where water already sits joins that placement.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 4,
+        "y": 4
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "water",
+          "count": 1
+        },
+        "position": {
+          "x": 1,
+          "y": 1
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "edit": {
+    "op": "give",
+    "item": "water",
+    "count": 2,
+    "position": {
+      "x": 1,
+      "y": 1
+    }
+  },
+  "expect": {
+    "contents": {
+      "layout": "grid",
+      "placements": [
+        {
+          "stack": {
+            "item": "water",
+            "count": 3
+          },
+          "position": {
+            "x": 1,
+            "y": 1
+          },
+          "rotated": false
+        }
+      ]
+    }
+  }
+}

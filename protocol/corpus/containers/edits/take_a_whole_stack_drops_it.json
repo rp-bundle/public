@@ -1,0 +1,36 @@
+{
+  "description": "Taking every unit leaves no empty stack behind.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 3,
+        "data": {
+          "note": "x"
+        }
+      },
+      {
+        "item": "crate",
+        "count": 1
+      }
+    ]
+  },
+  "edit": {
+    "op": "take",
+    "index": 0,
+    "count": 3
+  },
+  "expect": {
+    "contents": {
+      "layout": "list",
+      "stacks": [
+        {
+          "item": "crate",
+          "count": 1
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "description": "A give of nothing is refused.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": []
+  },
+  "edit": {
+    "op": "give",
+    "item": "water",
+    "count": 0
+  },
+  "expect": {
+    "error": {
+      "error": "invalid_argument"
+    }
+  }
+}

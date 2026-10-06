@@ -31,6 +31,7 @@
 ---@field sync rpf.sync Holds, releases and state reports for those records.
 ---@field accounts rpf.accounts Balances, transfers and payments on held accounts, and the ledger fold.
 ---@field characters rpf.characters A logged-in player's characters: list, create, select and switch.
+---@field edits rpf.edits Staff edits of held records: the commands that change a character, an account or a container this server holds (F5).
 ---@field picker rpf.picker The client side of choosing a character.
 ---@field handoff rpf.handoff The login messages between server and client.
 ---@field join rpf.join The server side of a player's login.
@@ -73,6 +74,7 @@ rpf.files = {
     "handoff.lua",
     "join.lua",
     "characters.lua",
+    "edits.lua",
     "api.lua",
   },
   client = {
@@ -129,6 +131,7 @@ function rpf.start_server(platform, options)
     options = options.join,
   })
   rpf.characters.start(platform, rpf.connection)
+  rpf.edits.start()
   rpf.config.restore(platform)
   rpf.config.serve(platform, rpf.connection)
   rpf.publish(platform)

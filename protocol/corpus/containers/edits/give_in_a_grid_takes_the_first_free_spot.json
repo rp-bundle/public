@@ -1,0 +1,62 @@
+{
+  "description": "Row by row, then column by column: the rifle cannot start at (0, 0), where the crate is, either way up, and fits upright at (2, 0).",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 4,
+        "y": 4
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "crate",
+          "count": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "edit": {
+    "op": "give",
+    "item": "rifle",
+    "count": 1
+  },
+  "expect": {
+    "contents": {
+      "layout": "grid",
+      "placements": [
+        {
+          "stack": {
+            "item": "crate",
+            "count": 1
+          },
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotated": false
+        },
+        {
+          "stack": {
+            "item": "rifle",
+            "count": 1
+          },
+          "position": {
+            "x": 2,
+            "y": 0
+          },
+          "rotated": false
+        }
+      ]
+    }
+  }
+}

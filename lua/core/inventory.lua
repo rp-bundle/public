@@ -1057,6 +1057,124 @@ function inventory.split(id, index, count, opts)
   return apply(container, contents)
 end
 
+-- Staff edits (F5) ------------------------------------------------------------
+
+---One staff edit, as the portal's `ContentsEdit` serialises and the shared
+---cases state it. Indexes count from zero, as on the wire.
+---@class rpf.inventory.Edit
+---@field op "give"|"take"|"move" Which edit.
+---@field item string? `give`: the item.
+---@field count number? `give` and `take`: how many units.
+---@field index number? `take` and `move`: the stack or placement, from zero.
+---@field position { x: number, y: number }? `give` (optional) and `move`: the cell.
+---@field rotated boolean? With a position, whether the placement lies turned.
+
+---Works a staff edit out on contents and validates the result whole: the
+---twin of the portal's `ContentsEdit::apply`, which the portal runs on the
+---same contents before it sends the edit, so the two must put every unit in
+---the same place. Both are held to the cases in
+---`protocol/corpus/containers/edits/` (`spec/containers_spec.lua` here).
+---Pure: the contents given are not changed.
+---
+---`give` adds units with no data, as `add` does; `take` takes units off the
+---stack at an index, whatever its data; `move` moves a whole placement of a
+---grid to a new cell, as `move` within one container does.
+---@param contents any The contents.
+---@param flags any The container's flags.
+---@param catalog rpf.inventory.Catalog The catalog.
+---@param edit rpf.inventory.Edit The edit.
+---@return table? contents The new contents, or nil if refused.
+---@return rpf.inventory.Error? err Why not.
+---@return rpf.inventory.Refusal? refusal The broken rule, for `invalid`.
+function inventory.edit(contents, flags, catalog, edit)
+  if not well_formed(contents) then
+    return nil, "invalid", json.object({ error = "malformed" })
+  end
+  if type(edit) ~= "table" or not position_ok(edit.position) then
+    return nil, "invalid_argument"
+  end
+  local copy = json.copy(contents)
+  if edit.op == "give" then
+    if type(edit.item) ~= "string" or not integer_in(edit.count, 1, U32_MAX) then
+      return nil, "invalid_argument"
+    end
+    -- Without a position, a free spot is tried upright and then turned.
+    local opts = {}
+    if edit.position ~= nil then
+      opts.position, opts.rotated = edit.position, edit.rotated == true
+    end
+    local ok, err, refusal = put(copy, flags, catalog, edit.item, edit.count, nil, opts)
+    if not ok then
+      return nil, err, refusal
+    end
+  elseif edit.op == "take" then
+    local index = integer_in(edit.index, 0, U32_MAX) and edit.index + 1 or nil
+    local stack = stack_at(copy, index)
+    if not stack then
+      return nil, "no_stack"
+    end
+    if not integer_in(edit.count, 1, U32_MAX) then
+      return nil, "invalid_argument"
+    end
+    if edit.count > stack.count then
+      return nil, "insufficient"
+    end
+    stack.count = stack.count - edit.count
+    if stack.count == 0 then
+      drop(copy, index --[[@as number]])
+    end
+  elseif edit.op == "move" then
+    local index = integer_in(edit.index, 0, U32_MAX) and edit.index + 1 or nil
+    local stack = stack_at(copy, index)
+    if not stack then
+      return nil, "no_stack"
+    end
+    if edit.position == nil then
+      return nil, "invalid_argument"
+    end
+    drop(copy, index --[[@as number]])
+    local ok, err, refusal = put(
+      copy,
+      flags,
+      catalog,
+      stack.item,
+      stack.count,
+      stack.data,
+      { position = edit.position, rotated = edit.rotated == true }
+    )
+    if not ok then
+      return nil, err, refusal
+    end
+  else
+    return nil, "invalid_argument"
+  end
+  local valid, why = inventory.validate(copy, flags, catalog)
+  if not valid then
+    return nil, "invalid", why
+  end
+  return copy
+end
+
+---Makes a staff edit on a held container (F5): `inventory.edit` on its
+---contents and the live catalog, then `records.set_contents`, which marks it
+---for the next report. Refused, nothing changes.
+---@param id string The container's uuid.
+---@param edit rpf.inventory.Edit The edit.
+---@return boolean? ok True if made.
+---@return rpf.inventory.Error? err Why not, `not_held` included.
+---@return rpf.inventory.Refusal? refusal The broken rule, for `invalid`.
+function inventory.apply_edit(id, edit)
+  local container = held(id)
+  if not container then
+    return nil, "not_held"
+  end
+  local contents, err, refusal = inventory.edit(container.contents, container.flags, inventory.catalog(), edit)
+  if not contents then
+    return nil, err, refusal
+  end
+  return apply(container, contents)
+end
+
 ---How many units of an item a held container holds, across every stack and
 ---whatever their data.
 ---@param id string The container's uuid.

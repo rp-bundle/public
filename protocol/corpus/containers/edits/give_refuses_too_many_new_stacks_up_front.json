@@ -1,0 +1,32 @@
+{
+  "description": "Two full stacks and five more need two new ones: four stacks, past the three allowed, refused before any is built.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 4
+      },
+      {
+        "item": "water",
+        "count": 4
+      }
+    ]
+  },
+  "edit": {
+    "op": "give",
+    "item": "water",
+    "count": 5
+  },
+  "expect": {
+    "error": {
+      "error": "invalid",
+      "refusal": {
+        "error": "too_many_stacks",
+        "count": 4,
+        "limit": 3
+      }
+    }
+  }
+}

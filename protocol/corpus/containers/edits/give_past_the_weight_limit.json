@@ -1,0 +1,33 @@
+{
+  "description": "15 of water plus 10 more is 25, past the limit of 20. The 3 tops up to 4 and a new stack takes the last unit before the weight is checked.",
+  "flags": [
+    {
+      "flag": "max_weight",
+      "value": 20
+    }
+  ],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 3
+      }
+    ]
+  },
+  "edit": {
+    "op": "give",
+    "item": "water",
+    "count": 2
+  },
+  "expect": {
+    "error": {
+      "error": "invalid",
+      "refusal": {
+        "error": "too_heavy",
+        "limit": 20,
+        "actual": 25
+      }
+    }
+  }
+}

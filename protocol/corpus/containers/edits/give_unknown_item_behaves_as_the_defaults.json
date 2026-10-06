@@ -1,0 +1,28 @@
+{
+  "description": "An item the catalog does not define stacks to the default 10.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": []
+  },
+  "edit": {
+    "op": "give",
+    "item": "rope",
+    "count": 12
+  },
+  "expect": {
+    "contents": {
+      "layout": "list",
+      "stacks": [
+        {
+          "item": "rope",
+          "count": 10
+        },
+        {
+          "item": "rope",
+          "count": 2
+        }
+      ]
+    }
+  }
+}

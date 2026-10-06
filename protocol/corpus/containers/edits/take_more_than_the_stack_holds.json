@@ -1,0 +1,23 @@
+{
+  "description": "A stack of three cannot give four.",
+  "flags": [],
+  "contents": {
+    "layout": "list",
+    "stacks": [
+      {
+        "item": "water",
+        "count": 3
+      }
+    ]
+  },
+  "edit": {
+    "op": "take",
+    "index": 0,
+    "count": 4
+  },
+  "expect": {
+    "error": {
+      "error": "insufficient"
+    }
+  }
+}

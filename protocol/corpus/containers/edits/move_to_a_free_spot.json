@@ -1,0 +1,76 @@
+{
+  "description": "The crate leaves its slot and goes to the end of the placements at its new spot.",
+  "flags": [
+    {
+      "flag": "grid",
+      "value": {
+        "x": 4,
+        "y": 4
+      }
+    }
+  ],
+  "contents": {
+    "layout": "grid",
+    "placements": [
+      {
+        "stack": {
+          "item": "crate",
+          "count": 1
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotated": false
+      },
+      {
+        "stack": {
+          "item": "water",
+          "count": 1
+        },
+        "position": {
+          "x": 3,
+          "y": 3
+        },
+        "rotated": false
+      }
+    ]
+  },
+  "edit": {
+    "op": "move",
+    "index": 0,
+    "position": {
+      "x": 2,
+      "y": 0
+    }
+  },
+  "expect": {
+    "contents": {
+      "layout": "grid",
+      "placements": [
+        {
+          "stack": {
+            "item": "water",
+            "count": 1
+          },
+          "position": {
+            "x": 3,
+            "y": 3
+          },
+          "rotated": false
+        },
+        {
+          "stack": {
+            "item": "crate",
+            "count": 1
+          },
+          "position": {
+            "x": 2,
+            "y": 0
+          },
+          "rotated": false
+        }
+      ]
+    }
+  }
+}
