@@ -959,7 +959,12 @@ function inventory.move(from, index, to, opts)
   if not stack then
     return nil, "no_stack"
   end
-  local count = opts.count == nil and stack.count or opts.count
+  -- Defaulted by assignment, not `a and b or c`: LuaLS cannot see that the
+  -- `and` arm is never nil there, so it would type `count` as `number?`.
+  local count = opts.count
+  if count == nil then
+    count = stack.count
+  end
   if not integer_in(count, 1, stack.count) then
     return nil, "invalid_argument"
   end
