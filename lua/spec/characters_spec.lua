@@ -679,6 +679,76 @@ describe("rpf.characters", function()
     end)
   end)
 
+  describe("the list's size", function()
+    ---A character whose names and gender are each `MAX_NAME_BYTES` of a
+    ---byte JSON escapes six bytes long, the longest one can encode.
+    ---@param n integer Which one, for its id.
+    ---@return table record The `held` record.
+    local function longest(n)
+      local name = string.rep("\1", rpf.characters.MAX_NAME_BYTES)
+      local record = character(string.format("00000003-0000-4000-8000-%012d", n), name)
+      record.character.last_name = name
+      record.character.gender = { server_specific = name }
+      return record
+    end
+
+    ---The raw payload of the last list sent to player 7.
+    ---@return string payload The payload.
+    local function last_list()
+      local raw
+      for _, message in ipairs(p.to_clients) do
+        if message.name == CHARACTERS then
+          raw = message.payload
+        end
+      end
+      return assert(raw)
+    end
+
+    it("fits the most characters a server may allow, at their longest, in what the client reads", function()
+      register()
+      local all = {}
+      for n = 1, rpf.characters.MAX_CHARACTERS do
+        all[n] = longest(n)
+      end
+      held(p, all)
+      local raw = last_list()
+      assert.is_true(#raw <= rpf.handoff.MAX_LIST_PAYLOAD, "the client reads it")
+      local fields = assert(rpf.handoff.decode(CHARACTERS, raw))
+      assert.are.equal(rpf.characters.MAX_CHARACTERS, #fields.characters)
+      assert.is_nil(fields.truncated)
+    end)
+
+    it("cuts a longer list from the portal short, keeping the character in play", function()
+      register()
+      local all = {}
+      for n = 1, 3 * rpf.characters.MAX_CHARACTERS do
+        all[n] = longest(n)
+      end
+      held(p, all)
+      local last = all[#all].character.id
+      rpf.characters.select(7, last)
+      held(p, {})
+      p.from_client(7, REQUEST, "{}")
+
+      local raw = last_list()
+      assert.is_true(#raw <= rpf.handoff.MAX_LIST_PAYLOAD, "the client reads it")
+      local fields = assert(rpf.handoff.decode(CHARACTERS, raw))
+      assert.is_true(fields.truncated)
+      assert.is_true(#fields.characters < #all)
+      assert.are.equal(last, fields.selected)
+      assert.are.equal(last, fields.characters[#fields.characters].id, "the character in play is listed")
+    end)
+
+    it("refuses a character limit the list could not carry", function()
+      for _, max in ipairs({ 0, 1.5, rpf.characters.MAX_CHARACTERS + 1 }) do
+        support.load_core()
+        local q = support.fake_platform()
+        local ok = pcall(rpf.start_server, q, { url = "ws://portal", api_key = "k", characters = { max_characters = max } })
+        assert.is_false(ok, tostring(max))
+      end
+    end)
+  end)
+
   describe("client messages", function()
     it("ignores a player who has not logged in", function()
       rpf.players.connected(7)

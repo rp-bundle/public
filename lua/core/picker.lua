@@ -9,9 +9,11 @@
 ---adapter's (Milestone 2, like the login form), calls these functions and
 ---listens for:
 ---
---- - `characters.listed(list, selected)` whenever the server sends the list:
----   once the player's characters are loaded after login, and after every
----   change.
+--- - `characters.listed(list, selected, truncated)` whenever the server
+---   sends the list: once the player's characters are loaded after login,
+---   and after every change. `truncated` is true when the player has more
+---   characters than one list can carry, so the screen can say some are not
+---   shown.
 --- - `characters.result(result)` with how a request went:
 ---   `{ during, ok, id?, reason? }`, `during` being `"create"`, `"select"`,
 ---   `"deselect"` or `"load"` (the characters could not be loaded; `refresh`
@@ -159,7 +161,7 @@ local function on_list(payload)
     end
   end
   selected = fields.selected
-  events.emit("characters.listed", copy(), selected)
+  events.emit("characters.listed", copy(), selected, fields.truncated == true)
 end
 
 ---How a request went, from the server.

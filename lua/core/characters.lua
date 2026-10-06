@@ -49,6 +49,7 @@
 ---`character_select`.
 ---@class rpf.characters
 ---@field DEFAULTS rpf.CharacterOptions The production bounds.
+---@field MAX_CHARACTERS integer The highest `max_characters` may be set. A list of that many characters, each with names and gender at `MAX_NAME_BYTES` made only of bytes JSON escapes six bytes long, still fits in `handoff.MAX_LIST_PAYLOAD`, so no setting can make the list one the client refuses to read.
 ---@field MAX_NAME_BYTES integer The longest first or last name, or server-specific gender, a character may be created with, in bytes after trimming.
 ---@field options rpf.CharacterOptions The options in force.
 local characters = {}
@@ -62,10 +63,12 @@ local handoff = rpf.handoff
 
 ---Bounds on what one player may do.
 ---@class rpf.CharacterOptions
----@field max_characters integer? The most characters one player may have on this server. Creating another is refused as `limit`. A bound on what a client can make the server create, not a game rule: a server owner wanting more raises it.
+---@field max_characters integer? The most characters one player may have on this server, from 1 to `MAX_CHARACTERS`. Creating another is refused as `limit`. A bound on what a client can make the server create, not a game rule: a server owner wanting more raises it.
 characters.DEFAULTS = {
   max_characters = 5,
 }
+
+characters.MAX_CHARACTERS = 40
 
 characters.MAX_NAME_BYTES = 64
 
@@ -228,25 +231,58 @@ end
 
 -- Telling the client ---------------------------------------------------------
 
+---Room left in a list payload for everything but the characters: the
+---envelope, the selected id and the `truncated` flag, with a wide margin.
+local LIST_ENVELOPE_BYTES = 256
+
 ---Sends a player's client their characters and the selected one.
+---
+---The list always fits in `handoff.MAX_LIST_PAYLOAD`, which is all the
+---client reads. `MAX_CHARACTERS` keeps characters made here within it, but
+---the portal bounds neither names nor characters per player (#168), so a
+---list that would not fit is cut short, keeping the character in play, and
+---sent with `truncated`: a short list the player can still use, rather
+---than one their client drops.
 ---@param session rpf.characters.Session The player.
 local function send_list(session)
   if not platform then
     return
   end
-  local list = {}
-  for i, character in ipairs(characters.list(session.player_id)) do
-    list[i] = json.object({
+  local all, sizes = characters.list(session.player_id), {}
+  local list, size, truncated = {}, LIST_ENVELOPE_BYTES, false
+  for i, character in ipairs(all) do
+    all[i] = json.object({
       id = character.id,
       first_name = character.first_name,
       last_name = character.last_name,
       gender = character.gender,
     })
+    sizes[i] = #assert(json.encode(all[i])) + 1
+    if character.id == session.selected then
+      -- Room for the character in play is kept first.
+      size = size + sizes[i]
+    end
+  end
+  for i, entry in ipairs(all) do
+    if entry.id == session.selected then
+      list[#list + 1] = entry
+    elseif size + sizes[i] <= handoff.MAX_LIST_PAYLOAD then
+      list[#list + 1] = entry
+      size = size + sizes[i]
+    else
+      truncated = true
+    end
+  end
+  if truncated then
+    log("warn", "a player's character list was cut short to fit what their client reads")
   end
   platform.to_client(
     session.handle,
     handoff.CHARACTERS,
-    handoff.encode(handoff.CHARACTERS, { characters = json.array(list), selected = session.selected })
+    handoff.encode(
+      handoff.CHARACTERS,
+      { characters = json.array(list), selected = session.selected, truncated = truncated or nil }
+    )
   )
 end
 
@@ -800,6 +836,10 @@ function characters.start(p, client, options)
   end
   for key, value in pairs(options or {}) do
     characters.options[key] = value
+  end
+  local max = characters.options.max_characters
+  if type(max) ~= "number" or max % 1 ~= 0 or max < 1 or max > characters.MAX_CHARACTERS then
+    error("rpf: characters.max_characters must be a whole number from 1 to " .. characters.MAX_CHARACTERS, 2)
   end
   events.on("players.registered", on_registered)
   events.on("players.dropping", on_dropping)

@@ -753,7 +753,7 @@ leave, whatever is selected.
 | `list(player_id)` | The player's held characters, as copies, by name |
 | `loaded(player_id)` | Whether their session hold has landed, so `list` is complete |
 | `selected(player_id)` | The character in play, as a copy, or nil |
-| `create(handle, fields, callback)` | Names trimmed and at most `MAX_NAME_BYTES` (64), gender `"male"`, `"female"` or `{ server_specific = … }`. At most `max_characters` (5, an option) per player |
+| `create(handle, fields, callback)` | Names trimmed and at most `MAX_NAME_BYTES` (64), gender `"male"`, `"female"` or `{ server_specific = … }`. At most `max_characters` (5, an option from 1 to `MAX_CHARACTERS`, 40, so the list always fits in what the client reads) per player |
 | `select(handle, id, callback)` | One of the player's own held characters, switching from the one in play |
 | `deselect(handle)` | Back to `character_select` |
 
@@ -774,7 +774,7 @@ reaching the module only through `players.on_client`):
 | Message | Direction | Fields |
 |---|---|---|
 | `rpf:characters_request` | client → server | none: send the list again (and retry a failed load) |
-| `rpf:characters` | server → client | `characters` (each `id`, `first_name`, `last_name`, `gender`), `selected` |
+| `rpf:characters` | server → client | `characters` (each `id`, `first_name`, `last_name`, `gender`), `selected`, `truncated` (set when the list was cut short to fit `MAX_LIST_PAYLOAD`, keeping the character in play: only a portal that bounds neither names nor characters per player can make one that long, #168) |
 | `rpf:character_create` | client → server | `first_name`, `last_name`, `gender` (a string: `"male"`, `"female"`, or the server's own option) |
 | `rpf:character_select` | client → server | `id` |
 | `rpf:character_deselect` | client → server | none |
@@ -782,7 +782,7 @@ reaching the module only through `players.on_client`):
 
 On the client, `rpf.picker` keeps the last list (`list()`, `selected()`),
 sends `create`, `select`, `deselect` and `refresh`, and emits
-`characters.listed(list, selected)` and `characters.result(result)`.
+`characters.listed(list, selected, truncated)` and `characters.result(result)`.
 
 Events on the server, reserved: `characters.created(player, character)`,
 `characters.selected(player, character)` and

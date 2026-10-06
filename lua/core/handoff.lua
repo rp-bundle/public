@@ -77,6 +77,7 @@ handoff.schemas = {
   [handoff.CHARACTERS] = {
     characters = "table",
     selected = "string?",
+    truncated = "boolean?",
   },
   [handoff.CHARACTER_CREATE] = {
     first_name = "string",
