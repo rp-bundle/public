@@ -185,6 +185,36 @@ describe("rpf.records", function()
       assert.truthy(max, "MAX_CHARACTER_NAME_BYTES is no longer an integer literal")
       assert.are.equal(tonumber(max), rpf.records.MAX_NAME_BYTES)
     end)
+
+    it("trims the whitespace the portal trims", function()
+      local src = support.read("crates/rpf-domain/src/characters.rs")
+      local body = src:match("pub const NAME_WHITESPACE: &%[u32%] = &%[(.-)%];")
+      assert.truthy(body, "NAME_WHITESPACE is no longer a literal list")
+      local portal = {}
+      for hex in body:gmatch("0x(%x+)") do
+        portal[#portal + 1] = tonumber(hex, 16)
+      end
+      assert.are.same(portal, rpf.records.WHITESPACE)
+
+      local function utf8_of(cp)
+        if cp < 0x80 then
+          return string.char(cp)
+        elseif cp < 0x800 then
+          return string.char(0xC0 + math.floor(cp / 0x40), 0x80 + cp % 0x40)
+        end
+        return string.char(0xE0 + math.floor(cp / 0x1000), 0x80 + math.floor(cp / 0x40) % 0x40, 0x80 + cp % 0x40)
+      end
+      for _, cp in ipairs(portal) do
+        local ws = utf8_of(cp)
+        assert.are.equal("Ann", rpf.records.check_name(ws .. "Ann" .. ws), string.format("U+%04X", cp))
+        assert.is_nil(rpf.records.check_name(ws), string.format("U+%04X alone is blank", cp))
+        assert.are.equal("A" .. ws .. "n", rpf.records.check_name("A" .. ws .. "n"), "inside is kept")
+      end
+      for _, cp in ipairs({ 0x00A1, 0x180E, 0x200B, 0x2060, 0xFEFF }) do
+        local not_ws = utf8_of(cp)
+        assert.are.equal(not_ws, rpf.records.check_name(not_ws), string.format("U+%04X is not whitespace", cp))
+      end
+    end)
   end)
 
   describe("containers", function()

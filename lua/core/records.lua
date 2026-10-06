@@ -218,6 +218,72 @@ function records.lose(refs, reason)
   end
 end
 
+-- Trimming names ------------------------------------------------------------
+
+---The code points the portal trims from a character's name: Rust's
+---`str::trim`, the Unicode `White_Space` property. The Lua `%s` class is
+---ASCII only, so a name of just U+00A0 would pass here and be refused as
+---blank by the portal. A spec reads `NAME_WHITESPACE` in
+---`crates/rpf-domain/src/characters.rs` to keep the two lists equal.
+---@type integer[]
+records.WHITESPACE = {
+  0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x0020, 0x0085, 0x00A0, 0x1680, 0x2000, 0x2001, 0x2002,
+  0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200A, 0x2028, 0x2029, 0x202F, 0x205F,
+  0x3000,
+}
+
+---UTF-8 for a code point below U+10000, which is all the whitespace there is.
+---@param cp integer
+---@return string
+local function utf8_of(cp)
+  if cp < 0x80 then
+    return string.char(cp)
+  elseif cp < 0x800 then
+    return string.char(0xC0 + math.floor(cp / 0x40), 0x80 + cp % 0x40)
+  end
+  return string.char(0xE0 + math.floor(cp / 0x1000), 0x80 + math.floor(cp / 0x40) % 0x40, 0x80 + cp % 0x40)
+end
+
+---The whitespace as UTF-8 strings. None is a prefix of another, so the order
+---of matching does not matter.
+---@type string[]
+local whitespace = {}
+for i, cp in ipairs(records.WHITESPACE) do
+  whitespace[i] = utf8_of(cp)
+end
+
+---Trims the portal's whitespace from both ends of a string.
+---@param value string
+---@return string
+local function trim(value)
+  local first, last = 1, #value
+  local moved = true
+  while moved and first <= last do
+    moved = false
+    for _, ws in ipairs(whitespace) do
+      local n = #ws
+      if value:sub(first, first + n - 1) == ws then
+        first = first + n
+        moved = true
+        break
+      end
+    end
+  end
+  moved = true
+  while moved and first <= last do
+    moved = false
+    for _, ws in ipairs(whitespace) do
+      local n = #ws
+      if last - n + 1 >= first and value:sub(last - n + 1, last) == ws then
+        last = last - n
+        moved = true
+        break
+      end
+    end
+  end
+  return value:sub(first, last)
+end
+
 -- Changing held records -----------------------------------------------------
 
 ---Asks for a flush after a change, so changes made together go out in one
@@ -228,8 +294,8 @@ local function touched()
   end
 end
 
----Trims a character's name and checks it is one, as the portal does for
----every write of a character. Shared with `rpf.characters`, so a name it
+---Trims a character's name (the portal's whitespace, `records.WHITESPACE`)
+---and checks it is one, as the portal does for every write of a character. Shared with `rpf.characters`, so a name it
 ---creates and a name changed here follow one rule.
 ---@param value any The proposed name.
 ---@return string? name The trimmed name, or nil if it is not a non-empty string of at most `MAX_NAME_BYTES` once trimmed.
@@ -237,7 +303,7 @@ function records.check_name(value)
   if type(value) ~= "string" then
     return nil
   end
-  local trimmed = value:match("^%s*(.-)%s*$")
+  local trimmed = trim(value)
   if trimmed == "" or #trimmed > records.MAX_NAME_BYTES then
     return nil
   end
