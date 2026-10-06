@@ -159,6 +159,21 @@ through it.
   because LuaJIT numbers are doubles. Integer literals are checked digit by
   digit before conversion. Anything else whose magnitude reaches 2^53 is
   refused too. The encoder refuses to produce one.
+- **Strings are UTF-8 text, both ways.** The portal reads frames as UTF-8
+  (websocket text, serde_json), so the encoder refuses a string, or a key,
+  that is not UTF-8 (a lone continuation byte, a sequence cut short, an
+  overlong form, a surrogate, past U+10FFFF), and the decoder refuses one too.
+  The error gives the byte count, never the bytes. The refusal is where the
+  frame is built, so `connection:send` returns it at once instead of the
+  outbox resending an undecodable report for ever. Two helpers decide the
+  rest in one place: `json.is_utf8(s)` for an API that accepts text, which
+  refuses it (as `rpf.inventory` does with `malformed`), and
+  `json.repair_utf8(s)` for text the core only *reports for display*, which
+  becomes U+FFFD as `String::from_utf8_lossy` would write it. The core
+  repairs exactly two such strings: the in-game name in `BeginJoin` and the
+  reason in `PlayerDropped`, because refusing them would lose a join or a
+  drop. Text that is data is never repaired, since a silent change to it is
+  worse than a refusal.
 - Integers are written without a fraction on every Lua, object keys are
   sorted, duplicate keys and trailing data are refused, and nesting is capped
   at `json.MAX_DEPTH`. Decoding never throws.

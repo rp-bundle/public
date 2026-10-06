@@ -124,6 +124,55 @@ describe("rpf.json", function()
       assert.are.equal('"é€😀"', json.encode("é€😀"))
     end)
 
+    it("refuses to encode a string that is not UTF-8, without quoting it", function()
+      local bad = {
+        "\255", -- never a byte of UTF-8
+        "\128", -- a lone continuation byte
+        "caf\195", -- a sequence cut short
+        "\226\130", -- a three-byte sequence cut after two
+        "\192\128", -- overlong
+        "\237\160\128", -- a surrogate
+        "\244\144\128\128", -- past U+10FFFF
+      }
+      for _, text in ipairs(bad) do
+        local encoded, err = json.encode(text)
+        assert.is_nil(encoded)
+        assert.is_truthy(err:find("not valid UTF-8", 1, true))
+        assert.is_nil(err:find(text, 1, true), "the error must not quote the bytes")
+        assert.is_nil(json.encode(json.object({ [text] = 1 })), "keys too")
+        assert.is_nil(json.encode(json.array({ "ok", text })), "nested too")
+      end
+    end)
+
+    it("refuses to decode a string that is not UTF-8", function()
+      for _, text in ipairs({ '"\255"', '"caf\195"', '"a\128b"', '"\226\130 "', '{"k\255":1}' }) do
+        assert.is_nil(json.decode(text), text)
+      end
+      assert.are.equal("é€😀", json.decode('"é€😀"'))
+    end)
+
+    it("tells UTF-8 apart from other bytes", function()
+      assert.is_true(json.is_utf8(""))
+      assert.is_true(json.is_utf8("plain ascii"))
+      assert.is_true(json.is_utf8("é€😀"))
+      assert.is_false(json.is_utf8("\255"))
+      assert.is_false(json.is_utf8("caf\195"))
+      assert.is_false(json.is_utf8("\128"))
+      assert.is_false(json.is_utf8("a\237\160\128"))
+    end)
+
+    it("repairs bad sequences the way Rust's from_utf8_lossy does", function()
+      assert.are.equal("é€😀", json.repair_utf8("é€😀"))
+      assert.are.equal("a\239\191\189b", json.repair_utf8("a\255b"))
+      assert.are.equal("a\239\191\189\239\191\189", json.repair_utf8("a\128\128"))
+      -- A truncated sequence is one replacement, not one per byte.
+      assert.are.equal("caf\239\191\189", json.repair_utf8("caf\195"))
+      assert.are.equal("\239\191\189 x", json.repair_utf8("\226\130 x"))
+      -- A surrogate is three bad bytes, each its own replacement.
+      assert.are.equal(string.rep("\239\191\189", 3), json.repair_utf8("\237\160\128"))
+      assert.is_true(json.is_utf8(json.repair_utf8("\255\192\128\244\144\128\128 \226")))
+    end)
+
     it("refuses lone surrogates, bad escapes and raw control characters", function()
       for _, text in ipairs({ '"\\ud83d"', '"\\ude00"', '"\\x41"', '"\\u12"', '"a\nb"', '"a\0b"', '"open' }) do
         assert.is_nil(json.decode(text), text)
