@@ -873,6 +873,29 @@ describe("rpf.characters", function()
       assert.are.equal("characters.deselected", seen[#seen].name)
     end)
 
+    it("refuses before anything moves when an account it owns has a backlog", function()
+      loaded()
+      rpf.characters.select(7, JANE)
+      held(p, { account(JANE_WALLET, JANE, "Wallet", 250) })
+      local entry = rpf.records.entries[rpf.records.key("account", JANE_WALLET)]
+      for i = 1, rpf.sync.options.max_transactions_per_report + 1 do
+        entry.transactions[i] = {
+          client_id = tostring(i),
+          from_account = JANE_WALLET,
+          to_account = JANE_BANK,
+          amount = 1,
+          description = "",
+          sent = true,
+        }
+      end
+
+      assert.are.same({ nil, "backlog" }, { rpf.characters.remove(JANE) })
+      assert.are.equal("active", rpf.players.get(7).state, "still in play")
+      assert.is_true(rpf.records.is_held("character", JANE))
+      assert.is_true(rpf.records.is_held("account", JANE_WALLET))
+      assert.are.equal(0, #sent_of(p, "release"))
+    end)
+
     it("waits while the player has a request in flight, and refuses one it does not hold", function()
       loaded()
       rpf.characters.select(7, JANE)

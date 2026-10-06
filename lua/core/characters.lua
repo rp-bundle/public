@@ -745,18 +745,22 @@ end
 ---Lets a character go because staff are deleting it (F5), so the portal can
 ---purge it as a record nobody holds.
 ---
----A player with it in play is put back to choosing first, as a switch does,
----which releases what it owns with its final state. Then the character
----itself, and anything it owns still held here, is released, and its
----player's client is sent the list without it. The portal purges the
----character and its records once this server has answered, and the release
----is queued ahead of that answer, so the portal has the final state first.
----Refused while a request of its player's is in flight (one at a time, as
----for the player), and if the release cannot be queued: then the character
----stays held, and nothing is deleted.
+---A player with it in play is put back to choosing first, as a switch does.
+---Then everything it owns still held here is released with its final state,
+---and only once that is queued is the character itself released, and its
+---player's client sent the list without it. The portal purges the character
+---and its records once this server has answered, and the releases are
+---queued ahead of that answer, so the portal has the final states first.
+---
+---Refused, the character stays held and nothing is deleted: while a request
+---of its player's is in flight (one at a time, as for the player), when an
+---account it owns has more ledger entries waiting than one report carries
+---(checked before anything moves), and when a release cannot be queued. A
+---release refused part-way leaves its records released, as putting the
+---character away would, and the character held.
 ---@param id string The character's uuid.
 ---@return boolean? ok True once it has been let go.
----@return string? err `"not_held"`, `"busy"`, or the release's refusal (`"outbox_full"`, `"too_large"`, `"backlog"`).
+---@return string? err `"not_held"`, `"busy"`, `"backlog"`, or the release's refusal (`"outbox_full"`, `"too_large"`).
 function characters.remove(id)
   local character = records.get("character", id)
   if not character then
@@ -769,12 +773,24 @@ function characters.remove(id)
   if session and (is_busy(session) or session.selecting == id) then
     return nil, "busy"
   end
+  local owned = owned_records(id)
+  for _, ref in ipairs(owned) do
+    local entry = records.entries[records.key(ref.kind, ref.id)]
+    if entry and #entry.transactions > rpf.sync.options.max_transactions_per_report then
+      return nil, "backlog"
+    end
+  end
   if session and session.selected == id then
     put_away(session)
   end
-  local refs = owned_records(id)
-  refs[#refs + 1] = { kind = "character", id = id }
-  local ok, err = rpf.sync.release(refs)
+  ---@type boolean?, string?
+  local ok, err = true, nil
+  if #owned > 0 then
+    ok, err = rpf.sync.release(owned)
+  end
+  if ok then
+    ok, err = rpf.sync.release({ { kind = "character", id = id } })
+  end
   if session and session.loaded then
     send_list(session)
   end
