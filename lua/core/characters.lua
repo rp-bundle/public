@@ -77,6 +77,7 @@ characters.options = {}
 ---@field handle rpf.PlayerHandle The player's handle, for moving them and messaging their client.
 ---@field loaded boolean Whether their session records have been held, so their characters can be listed.
 ---@field loading boolean Whether a hold of their session records is in flight.
+---@field stale boolean Whether the last hold of their session records, asked for again after the portal took some back, was refused, so the list may be missing characters that are still theirs. A client's request for the list then holds them again rather than resending it.
 ---@field selected string? The character in play, from the moment its records are held.
 ---@field busy string? The request in flight for them: `"create"` or `"select"`.
 ---@field recovering integer How many holds of the selected character's own records are in flight after the portal took some of them back (`on_lost`). The player counts as busy while any is, so the selection cannot change under one.
@@ -278,6 +279,7 @@ local function ensure(player_id)
     handle = player.handle,
     loaded = false,
     loading = true,
+    stale = false,
     selected = nil,
     busy = nil,
     recovering = 0,
@@ -298,10 +300,12 @@ local function on_session(player_id, err)
   session.loading = false
   if err then
     log("warn", "could not load a player's characters (" .. tostring(err) .. ")")
+    session.stale = session.loaded
     send_result(session, "load", nil, "unavailable")
     return
   end
   session.loaded = true
+  session.stale = false
   local player = players.get(session.handle)
   if player and player.state == "registered" then
     players.advance(session.handle, "character_select")
@@ -551,7 +555,7 @@ local function on_request(player, payload)
   if not session or not decode(handoff.CHARACTERS_REQUEST, payload) then
     return
   end
-  if session.loaded then
+  if session.loaded and not session.stale then
     send_list(session)
   else
     load(session)

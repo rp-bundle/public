@@ -800,7 +800,7 @@ next report.
 | `balance(id)` | A held account's balance, or `nil, "not_held"` |
 | `get(id)`, `owned_by(kind, id)` | Held accounts, as copies, by name |
 | `transfer(from, to, amount, description)` | Between two held accounts. Refused (`insufficient_funds`) if it would overdraw the payer, unless it has `unlimited_balance` |
-| `pay(from, to, amount, description)` | Server-sourced money: a transfer whose payer must have `unlimited_balance` (a treasury or payroll account the server holds), refused `not_a_source` otherwise, so a script that means "the server pays" cannot drain a player's account. The server's starting funds are never held, so never a source |
+| `pay(from, to, amount, description)` | Server-sourced money: a transfer whose payer must have `unlimited_balance` and be owned by the server or an employer (a treasury or payroll account the server holds), refused `not_a_source` otherwise, the owner included because staff can set the flag on any account, so a script that means "the server pays" cannot drain a player's account. The server's starting funds are never held, so never a source |
 | `fold(account_id, ledger)` | The fold itself |
 
 **No floats, and no Lua 5.4 integers.** Every amount is a whole number from

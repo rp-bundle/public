@@ -37,6 +37,10 @@ accounts.ERRORS = { "invalid_amount", "out_of_range" }
 ---largest balance is `(2^21 − 1) * 2^32 + (2^32 − 1)`, which is 2^53 − 1.
 local HIGH = 2097151
 
+---The owner kinds a `pay` source may have. An allowlist, so an owner kind
+---added later is refused until someone decides it is the server's money.
+local SOURCE_OWNERS = { server = true, employer = true }
+
 ---Whether an account may go below zero.
 ---@param account table The account's data.
 ---@return boolean unlimited True if it has the `unlimited_balance` flag.
@@ -129,7 +133,10 @@ end
 ---`unlimited_balance` (a treasury or payroll account the server holds), so
 ---it never fails for want of funds, and its source can never be a player's
 ---own account: a script that means "the server pays" cannot drain a
----character by passing the wrong id.
+---character by passing the wrong id. The flag alone does not say that,
+---because the portal lets staff set it on any account, so the source must
+---also be owned by the server or an employer, never by a player or a
+---character.
 ---
 ---The money still comes from an account, as one ledger entry, so the
 ---source's derived balance shows exactly how much the server has paid out.
@@ -140,13 +147,14 @@ end
 ---@param amount number A whole number from 1 to `protocol.MAX_AMOUNT`.
 ---@param description string Why, for the statement and staff.
 ---@return string? client_id The ledger entry's id, or nil if refused.
----@return string? err `"not_held"`, `"not_a_source"` for a paying account without `unlimited_balance`, `"invalid"` or `"out_of_range"`. Nothing changes on an error.
+---@return string? err `"not_held"`, `"not_a_source"` for a paying account without `unlimited_balance` or not owned by the server or an employer, `"invalid"` or `"out_of_range"`. Nothing changes on an error.
 function accounts.pay(from, to, amount, description)
   local source = records.get("account", from)
   if not source then
     return nil, "not_held"
   end
-  if not unlimited(source) then
+  local owner = type(source.owner) == "table" and source.owner.kind
+  if not unlimited(source) or not SOURCE_OWNERS[owner] then
     return nil, "not_a_source"
   end
   return records.transfer(from, to, amount, description)

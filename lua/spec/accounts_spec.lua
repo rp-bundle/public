@@ -15,6 +15,10 @@ local WALLET = "00000004-0000-4000-8000-000000000004"
 local BANK = "00000004-0000-4000-8000-000000000044"
 local TREASURY = "00000005-0000-4000-8000-000000000005"
 local OTHER = "00000004-0000-4000-8000-0000000000ff"
+local PLAYER = "00000002-0000-4000-8000-000000000002"
+local FLAGGED = "00000004-0000-4000-8000-000000000006"
+local PAYROLL = "00000004-0000-4000-8000-000000000007"
+local EMPLOYER = "00000005-0000-4000-8000-000000000008"
 local UUID = "^%x%x%x%x%x%x%x%x%-%x%x%x%x%-4%x%x%x%-[89ab]%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$"
 
 ---An account as the portal hands one over.
@@ -124,6 +128,19 @@ describe("rpf.accounts", function()
     assert.are.equal(-1000, rpf.accounts.balance(TREASURY))
     assert.are.same({ nil, "not_a_source" }, { rpf.accounts.pay(WALLET, BANK, 1, "x") })
     assert.are.equal(1100, rpf.accounts.balance(WALLET))
+  end)
+
+  it("never pays from a player's or a character's account, whatever its flags", function()
+    rpf.records.take({
+      account(FLAGGED, { kind = "character", id = JANE }, "Flagged", 50, { "unlimited_balance" }),
+      account(PAYROLL, { kind = "player", id = PLAYER }, "Flagged", 50, { "unlimited_balance" }),
+      account(EMPLOYER, { kind = "employer", id = SERVER }, "Payroll", 0, { "unlimited_balance" }),
+    })
+    assert.are.same({ nil, "not_a_source" }, { rpf.accounts.pay(FLAGGED, WALLET, 1, "x") })
+    assert.are.same({ nil, "not_a_source" }, { rpf.accounts.pay(PAYROLL, WALLET, 1, "x") })
+    assert.are.equal(50, rpf.accounts.balance(FLAGGED))
+    assert.are.equal(100, rpf.accounts.balance(WALLET))
+    assert.is_truthy(rpf.accounts.pay(EMPLOYER, WALLET, 5, "Wage"), "an employer's payroll pays")
   end)
 
   it("keeps every balance within 2^53 - 1", function()
