@@ -25,6 +25,8 @@
 ---@field config rpf.config The applied config snapshot, its version, and typed lookups.
 ---@field client rpf.client The game server's connection to the portal.
 ---@field players rpf.players The players on this server and their lifecycle.
+---@field commands rpf.commands The portal's staff commands, each run by the module that registered it.
+---@field moderation rpf.moderation The staff actions on players that need them in game: kicks (F4).
 ---@field records rpf.records The records this server holds (C7), and nothing else.
 ---@field sync rpf.sync Holds, releases and state reports for those records.
 ---@field handoff rpf.handoff The login messages between server and client.
@@ -59,6 +61,8 @@ rpf.files = {
     "config.lua",
     "client.lua",
     "players.lua",
+    "commands.lua",
+    "moderation.lua",
     "inventory.lua",
     "records.lua",
     "sync.lua",
@@ -110,6 +114,8 @@ function rpf.start_server(platform, options)
     options = options.client,
   })
   rpf.players.start(platform)
+  rpf.commands.serve(rpf.connection)
+  rpf.moderation.start(platform)
   rpf.sync.start(platform, rpf.connection, options.sync)
   rpf.join.start(platform, rpf.connection, {
     url = options.url,

@@ -48,8 +48,8 @@ files each side loads after it and in what order:
 
 ```lua
 rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, config.lua,
-                 -- client.lua, players.lua, inventory.lua, records.lua, sync.lua,
-                 -- handoff.lua, join.lua, api.lua
+                 -- client.lua, players.lua, commands.lua, moderation.lua, inventory.lua,
+                 -- records.lua, sync.lua, handoff.lua, join.lua, api.lua
 rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua, api.lua
 ```
 
@@ -68,7 +68,7 @@ core keeps working after the Gmod adapter replaces the global with the public
 API (see The public API).
 
 The client never loads `protocol.lua`, `client.lua`, `players.lua`,
-`inventory.lua`, `records.lua`, `sync.lua` or `join.lua`, because the player's client must never hold the server's API key
+`commands.lua`, `moderation.lua`, `inventory.lua`, `records.lua`, `sync.lua` or `join.lua`, because the player's client must never hold the server's API key
 and has no players to manage.
 
 Then the adapter starts one side:
@@ -262,7 +262,8 @@ The game server's connection to the portal (`rpf.connection` once started).
   `player_authenticated`'s ack as the moment this server learned of the join
   (F2), and a drop the callback reports must not look older than it. Requests (`apply_command`) go to the
   handler registered with `connection:handle(type, handler)`, under the rules
-  in Portal requests, below. Until D5 registers one, a command is answered as
+  in Portal requests, below. `rpf.commands` is the `apply_command` handler
+  (Staff commands, below), and a command no module registered is answered as
   failed (truthfully: nothing ran), so the portal is never left waiting.
 
 #### Portal requests: the delivery guarantee
@@ -497,6 +498,26 @@ forget the check.
 `players.online()` is what F2's `online_players` resync is built from:
 registered players only, `{ player_id, username, name, state, connected_at }`,
 sorted by player id, nothing engine-specific. `rpf.join` sends it (below).
+
+### Staff commands (`rpf.commands`, `rpf.moderation`)
+
+Every staff command arrives as one request type, `apply_command`, so
+`rpf.commands` is its one handler: it looks the command's name up among the
+handlers modules registered with `commands.register(name, handler)` and
+replies `command_applied` with what the handler reports. A handler runs the
+command at once and returns `true`, or `false` and a reason for staff;
+throwing is answered `unknown` by the connection, because it may have done
+part of the work. A command nobody registered is `failed`. Adding a command
+is a decoder entry in `rpf.protocol` and a `register` call in the module
+that owns it, so no two modules compete for `apply_command`.
+
+`rpf.moderation` registers `kick` (F4): it disconnects the player logged in
+to the command's account on this server, with the portal's reason as the
+message their game shows, and answers `failed` (`moderation.NOT_ONLINE`) for
+anyone else, kicking nobody. The portal only sends a kick for a player its
+online list has, so that is a player who left while it was on its way.
+Warnings and bans need nothing here: a warning stays on the portal, and a
+ban arrives as a kick and as a refusal at the next login.
 
 ### Held records (`rpf.records`, `rpf.sync`)
 
