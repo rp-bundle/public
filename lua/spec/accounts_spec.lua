@@ -279,6 +279,32 @@ describe("rpf.accounts holding the paying accounts", function()
     assert.are.equal(1, #sent_of("hold"))
   end)
 
+  -- Staff force-released this server's holds while it was away: the
+  -- reconnect still holds the account here, so the Welcome asks for
+  -- nothing, but the declaration's answer says it is gone, and it is asked
+  -- for again once that answer has settled.
+  it("holds one again that the declaration says was released", function()
+    support.connected(p)
+    answer(sent_of("hold")[1])
+    p.drop()
+    p.advance(2 * 60 * 1000)
+    p.open()
+    local hellos = sent_of("hello")
+    p.deliver(support.portal_frame("welcome", { re = hellos[#hellos].id, protocol = 1, server_id = SERVER }))
+    assert.are.equal(1, #sent_of("hold"), "still held here, so nothing asked for yet")
+    local declared = sent_of("declare_holds")
+    p.deliver(support.portal_frame("resync_required", {
+      re = declared[#declared].id,
+      stale = {},
+      released = { { kind = "account", id = TREASURY } },
+    }))
+    local holds = sent_of("hold")
+    assert.are.equal(2, #holds)
+    assert.are.same({ { kind = "account", id = TREASURY } }, holds[2].records)
+    answer(holds[2])
+    assert.is_true(rpf.records.is_held("account", TREASURY))
+  end)
+
   it("holds one a new config names, and only that one", function()
     support.connected(p)
     answer(sent_of("hold")[1])

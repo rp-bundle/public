@@ -864,7 +864,7 @@ next report.
 | `get(id)`, `owned_by(kind, id)` | Held accounts, as copies, by name |
 | `transfer(from, to, amount, description)` | Between two held accounts. Refused (`insufficient_funds`) if it would overdraw the payer, unless it has `unlimited_balance` |
 | `pay(from, to, amount, description)` | Server-sourced money: a transfer whose payer must have `unlimited_balance` and be owned by the server or an employer (a treasury or payroll account the server holds), refused `not_a_source` otherwise, the owner included because staff can set the flag on any account, so a script that means "the server pays" cannot drain a player's account. The server's paying accounts are such sources, held for it (below); its starting funds are never held, so never a source |
-| `hold_paying()` | Holds every paying account the config lists that is not held or being asked for; run after each `Welcome` and on a config that changes `paying_accounts` |
+| `hold_paying()` | Holds every paying account the config lists that is not held or being asked for; run after each `Welcome`, on a config that changes `paying_accounts`, and when one is lost |
 | `fold(account_id, ledger)` | The fold itself |
 
 **The paying accounts are held for the server (#169).** Staff open them in
@@ -881,7 +881,9 @@ rpf.accounts.pay(treasury.id, wallet_id, 250, "Wage")
 ```
 
 They are held for no player, so no departure releases them; a restart gives
-them back with the declaration and holds them again. Until a hold lands,
+them back with the declaration and holds them again, and so does a
+declaration that says one was force-released while this server was away
+(`records.lost`). Until a hold lands,
 `pay` from one is `not_held`. A hold the portal refuses, or that never
 reaches it, is logged and asked for again at the next `Welcome` or config
 change.

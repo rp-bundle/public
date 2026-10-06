@@ -26,8 +26,10 @@
 ---**The server's paying accounts are held for it (#169).** `pay` needs a
 ---source this server holds, so the core holds every account the config
 ---lists in `paying_accounts` (`rpf.config.paying_account`) after each
----`Welcome`, and again whenever a new config names one it does not hold.
----A script never holds one itself. They are held for no player's session,
+---`Welcome`, again whenever a new config names one it does not hold, and
+---again when the portal says one is no longer held here (staff
+---force-released the server's holds while it was away). A script never
+---holds one itself. They are held for no player's session,
 ---so nothing releases them when a player leaves; a restart gives them back
 ---with the declaration and holds them again. The starting funds are never
 ---among them: they are the portal's, and no hold can take them.
@@ -184,7 +186,7 @@ end
 
 ---Holds every paying account the config lists that this server does not
 ---hold and is not already asking for (#169), in one hold. Runs after each
----`Welcome` and whenever `paying_accounts` changes; does nothing while the
+---`Welcome`, whenever `paying_accounts` changes, and when one is lost; does nothing while the
 ---connection is not ready, since the next `Welcome` runs it.
 ---
 ---The hold waits, as every hold does, for the declaration and for the
@@ -229,8 +231,9 @@ end
 
 ---Starts holding the server's paying accounts on a connection: after every
 ---`Welcome` (chained after whatever ran there before, so the declaration is
----owed by then and the hold waits for it), and whenever a config changes
----`paying_accounts`. Called by `rpf.start_server`, after `rpf.sync.start`.
+---owed by then and the hold waits for it), whenever a config changes
+---`paying_accounts`, and whenever the portal says one is no longer held
+---here (`records.lost`: force-released while this server was away). Called by `rpf.start_server`, after `rpf.sync.start`.
 ---@param server_platform rpf.ServerPlatform The platform, to log through.
 ---@param client rpf.Client The connection to the portal.
 function accounts.start(server_platform, client)
@@ -247,6 +250,23 @@ function accounts.start(server_platform, client)
     end
     accounts.hold_paying()
   end
+  -- A paying account the portal says is no longer held here (staff
+  -- force-released this server's holds while it was away, and the
+  -- declaration after the reconnect said so) is asked for again: the
+  -- config still names it. The hold waits behind that declaration's
+  -- settling, as every hold does.
+  rpf.events.on("records.lost", function(refs)
+    local listed = {}
+    for _, account in ipairs(rpf.config.paying_accounts()) do
+      listed[account.id] = true
+    end
+    for _, ref in ipairs(refs) do
+      if ref.kind == "account" and listed[ref.id] then
+        accounts.hold_paying()
+        return
+      end
+    end
+  end)
   rpf.events.on("config.changed", function(change)
     for _, section in ipairs(change.sections) do
       if section == "paying_accounts" then
