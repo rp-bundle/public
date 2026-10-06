@@ -40,6 +40,14 @@
 ---nothing here ever resolves one. `item_bases` is reference data for scripts
 ---that treat a category alike; `item_defaults` is what an item the config
 ---does not define behaves as.
+---
+---**`new_character` arrives checked (E5).** `accounts` are the accounts the
+---portal opens and funds when it creates a character: this side never
+---provisions money. `job` is the default job, `null` when none is configured
+---or when the one configured is not a job on this server; in the second case
+---the setting (`economy.default_job`) still names it, and applying the
+---snapshot logs that, so the server's console says why new characters get
+---no job.
 ---@class rpf.config
 ---@field KEY string The storage key. Namespaced, because the store is shared with whatever else the engine persists.
 ---@field SECTIONS table<string, rpf.config.Section> How each known section is indexed.
@@ -138,6 +146,46 @@ local function build_index(snapshot)
   return index, nil
 end
 
+---Whether a value is a whole number, the way JSON carries one.
+---@param value any The value.
+---@return boolean whole True for a number with no fractional part.
+local function is_whole(value)
+  return type(value) == "number" and value == math.floor(value)
+end
+
+---Checks the `new_character` section (E5), if there is one: an object whose
+---`accounts` is an array of `{ name, amount }` and whose `job` is null or an
+---`{ employer, job }` object. Fields it does not know are left alone, so a
+---newer portal may add some.
+---@param section any The section, as decoded.
+---@return string? err What is wrong, or nil if it is acceptable.
+local function check_new_character(section)
+  if section == nil or section == json.null then
+    return nil
+  end
+  if not json.is_object(section) then
+    return "new_character must be an object"
+  end
+  local accounts = section.accounts
+  if accounts ~= nil and accounts ~= json.null then
+    if not json.is_array(accounts) then
+      return "new_character.accounts must be an array"
+    end
+    for i, account in ipairs(accounts) do
+      if not json.is_object(account) or type(account.name) ~= "string" or not is_whole(account.amount) or account.amount < 0 then
+        return "new_character.accounts[" .. i .. "] must have a string name and a whole amount"
+      end
+    end
+  end
+  local job = section.job
+  if job ~= nil and job ~= json.null then
+    if not json.is_object(job) or type(job.employer) ~= "string" or type(job.job) ~= "string" then
+      return "new_character.job must be null or have a string employer and job"
+    end
+  end
+  return nil
+end
+
 ---Checks what `apply` and `load` accept: a non-negative integer version, a
 ---string hash, and a snapshot object whose known sections index.
 ---@param version any The version.
@@ -155,7 +203,37 @@ local function check(version, hash, snapshot)
   if not json.is_object(snapshot) then
     return nil, "the snapshot must be an object"
   end
+  local err = check_new_character(snapshot.new_character)
+  if err then
+    return nil, err
+  end
   return build_index(snapshot)
+end
+
+---Logs a default job the portal could not send (E5): the setting names a
+---job, but `new_character.job` is null because it is not a job on this
+---server. New characters then start with no job, and this says why.
+---@param platform rpf.ServerPlatform The platform to log through.
+---@param snapshot table The snapshot just made current.
+local function warn_broken_job(platform, snapshot)
+  local settings = snapshot.settings
+  if not json.is_object(settings) then
+    return
+  end
+  ---@type table?
+  local named = settings["economy.default_job"]
+  local section = snapshot.new_character
+  local sent = json.is_object(section) and section.job or nil
+  if type(named) == "table" and json.is_object(named) and not json.is_object(sent) then
+    platform.log(
+      "warn",
+      "rpf: the default job "
+        .. tostring(named.employer)
+        .. "/"
+        .. tostring(named.job)
+        .. " is not a job on this server; new characters start with no job"
+    )
+  end
 end
 
 ---Reads the stored entry: version, hash and snapshot, all or nothing.
@@ -245,6 +323,7 @@ function config.restore(platform)
   local stored, index = read(platform)
   if stored and index then
     install(stored.version, stored.hash, stored.snapshot, index)
+    warn_broken_job(platform, stored.snapshot)
   end
 end
 
@@ -276,6 +355,7 @@ function config.apply(platform, version, hash, snapshot)
   end
   platform.kv_set(config.KEY, text)
   install(version, hash, snapshot, index)
+  warn_broken_job(platform, snapshot)
   return true, nil
 end
 
@@ -370,6 +450,37 @@ end
 ---@return rpf.ConfigJob? job A copy of the job, or nil.
 function config.job(employer, slug)
   return lookup("employer_jobs", composite(employer, slug))
+end
+
+---The accounts the portal opens with every new character on this server,
+---and what each starts with (E5), in the order staff listed them. The portal
+---opens and funds them itself when it creates a character, so this is for
+---showing a player what they will start with, never for paying it.
+---@return rpf.ConfigStartingAccount[]? accounts A copy, or nil before any config has arrived or from a portal older than E5.
+function config.starting_accounts()
+  ---@type table?
+  local section = current.snapshot and current.snapshot.new_character or nil
+  if type(section) ~= "table" or not json.is_object(section) or not json.is_array(section.accounts) then
+    return nil
+  end
+  return copy(section.accounts)
+end
+
+---The job a new character on this server starts in (E5), checked by the
+---portal against this server's jobs, so it is always one `config.job` finds.
+---Assigning it is the character module's.
+---@return rpf.ConfigJobRef? job A copy, or nil if there is none: none configured, the configured one is not a job here (logged when the config was applied), or no config yet.
+function config.default_job()
+  ---@type table?
+  local section = current.snapshot and current.snapshot.new_character or nil
+  if type(section) ~= "table" or not json.is_object(section) then
+    return nil
+  end
+  local job = section.job
+  if not json.is_object(job) then
+    return nil
+  end
+  return copy(job)
 end
 
 ---A setting's effective value, by key.

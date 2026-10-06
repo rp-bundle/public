@@ -118,6 +118,12 @@ if config then
     job = function(employer, slug)
       return config.job(employer, slug)
     end,
+    starting_accounts = function()
+      return config.starting_accounts()
+    end,
+    default_job = function()
+      return config.default_job()
+    end,
     setting = function(key)
       return config.setting(key)
     end,

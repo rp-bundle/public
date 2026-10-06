@@ -172,6 +172,18 @@ function Config.department(employer, slug) end
 ---@return rpf.ConfigJob? job A copy, or nil if the config has none.
 function Config.job(employer, slug) end
 
+---The accounts every new character on this server is opened with, and what
+---each starts with (E5). The portal opens and funds them when it creates the
+---character; never pay them out yourself.
+---@return rpf.ConfigStartingAccount[]? accounts A copy, or nil before any config has arrived.
+function Config.starting_accounts() end
+
+---The job a new character on this server starts in (E5), always one
+---`job(employer, slug)` finds: the portal sends none rather than a job this
+---server does not have.
+---@return rpf.ConfigJobRef? job A copy, or nil if there is none.
+function Config.default_job() end
+
 ---A setting's effective value, by key.
 ---@param key string The setting's key.
 ---@return any value A copy, or nil if unset.
@@ -231,6 +243,16 @@ function Config.version() end
 ---@field name string Its display name.
 ---@field department string? The slug of the employer's department it sits in, nil if none.
 ---@field description string Free text, possibly empty.
+
+---An account every new character is opened with (E5).
+---@class rpf.ConfigStartingAccount
+---@field name string The account's name, which it is opened under (`wallet`, `bank`).
+---@field amount number What it starts with, in the server's smallest currency unit. Zero opens it empty.
+
+---A job, named by its employer's slug and its own (E5), as `job(employer, slug)` takes them.
+---@class rpf.ConfigJobRef
+---@field employer string The employer's slug.
+---@field job string The job's slug.
 
 ---What `config.changed` carries.
 ---@class rpf.ConfigChange

@@ -378,6 +378,7 @@ reached.
 Typed lookups return copies: `config.item(slug)`, `config.item_base(slug)`,
 `config.item_defaults()`, `config.employer(slug)`,
 `config.department(employer, slug)`, `config.job(employer, slug)`,
+`config.starting_accounts()`, `config.default_job()`,
 `config.setting(key)` and `config.version()`. A department's or a job's slug
 is unique only within its employer (E4), so they are looked up by both: two
 employers may each have an `officer`. Only employers the server runs are
@@ -392,6 +393,17 @@ the base as staff wrote it, for a script that treats every `weapon` alike.
 `item_defaults()` is what an item the config does not define behaves as, the
 same fallback the portal applies when it validates contents.
 
+`new_character` (E5) arrives **checked**. `config.starting_accounts()` is
+what the portal opens, and funds with ledger entries from the server's
+starting funds, when it creates a character; the core never pays a starting
+balance itself, so a resent `create_character` cannot create money twice.
+`config.default_job()` is `{ employer, job }`, always a job `config.job`
+finds: when the `economy.default_job` setting names a job this server does
+not have (deleted, or inherited from a parent whose employers it does not
+share), the portal sends no default job, and applying the snapshot logs a
+warning naming the setting's job. The starting funds account is the portal's
+alone and is never handed to a hold.
+
 The portal sends a `config` request (E2) after `Welcome` unless `Hello`
 named its current version and hash, and again whenever a change moves this
 server's version. `config.serve`, registered by `rpf.start_server`, applies
@@ -405,8 +417,9 @@ The snapshot is `protocol::ConfigSnapshot`: `settings` an object by key,
 every key present; `items`, `item_bases` (E3) and `employers` (E4),
 arrays of objects keyed by `slug`; `employer_departments` and `employer_jobs` (E4), arrays of
 objects keyed by `employer` and `slug` together (never a `jobs` section,
-which cores before E4 indexed by `slug` alone); `item_defaults` one
-object. That is held in one place, `config.SECTIONS`. The protocol decoder
+which cores before E4 indexed by `slug` alone); `item_defaults` and
+`new_character` (E5) one object each, `new_character` checked for shape but
+not indexed. That is held in one place, `config.SECTIONS`. The protocol decoder
 keeps the snapshot whole rather than field by field, so a section not listed
 there is kept and reported in `config.changed`, just not indexed, and a
 newer portal adding one is never a refusal.
@@ -640,7 +653,7 @@ internal.
 | `VERSION`, `engine` | both | The core's version, and the engine (`"fivem"`, `"gmod"` or `"mock"`) for owners' scripts. The core never branches on it |
 | `events` | both | `on`, `once`, `off`, `emit` (core names refused) |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
-| `config` | server | `item`, `item_base`, `item_defaults`, `employer`, `department`, `job`, `setting`, `version` |
+| `config` | server | `item`, `item_base`, `item_defaults`, `employer`, `department`, `job`, `starting_accounts`, `default_job`, `setting`, `version` |
 | `auth` | client | `login`, `register`, `change_password`, `logout`, `state`, `account`, `api_token`, `PASSWORD_REUSE_WARNING` |
 | `bridge` | — | Reserved for K2 (Milestone 2), nil now |
 

@@ -7,6 +7,20 @@
   "snapshot": {
     "settings": {
       "characters.max_per_player": 3,
+      "economy.default_job": {
+        "employer": "lspd",
+        "job": "officer"
+      },
+      "economy.starting_accounts": [
+        {
+          "amount": 500,
+          "name": "wallet"
+        },
+        {
+          "amount": 5000,
+          "name": "bank"
+        }
+      ],
       "server.welcome_message": "Welcome to the city."
     },
     "items": [
@@ -80,6 +94,22 @@
         "department": "patrol",
         "description": "Answers calls."
       }
-    ]
+    ],
+    "new_character": {
+      "accounts": [
+        {
+          "name": "wallet",
+          "amount": 500
+        },
+        {
+          "name": "bank",
+          "amount": 5000
+        }
+      ],
+      "job": {
+        "employer": "lspd",
+        "job": "officer"
+      }
+    }
   }
 }

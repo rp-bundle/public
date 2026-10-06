@@ -243,6 +243,8 @@ describe("rpf.api", function()
       assert.are.equal(2, rpf.api.config.version())
       assert.is_nil(rpf.api.config.item_base("none"))
       assert.is_nil(rpf.api.config.item_defaults())
+      assert.is_nil(rpf.api.config.starting_accounts())
+      assert.is_nil(rpf.api.config.default_job())
 
       rpf.config.apply(
         p,

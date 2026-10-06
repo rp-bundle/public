@@ -108,6 +108,51 @@ describe("rpf.config", function()
     assert.is_nil(rpf.config.employer("patrol"))
   end)
 
+  -- The corpus assertion for E5's section: the starting accounts and the
+  -- default job, which is always one `job` finds.
+  it("reads what a new character gets from the corpus snapshot", function()
+    local frame = assert(rpf.json.decode(support.read("protocol/corpus/v1/portal_to_server/config.json")))
+    assert.is_true((rpf.config.apply(p, frame.version, frame.hash, frame.snapshot)))
+
+    assert.are.same(
+      { { name = "wallet", amount = 500 }, { name = "bank", amount = 5000 } },
+      rpf.config.starting_accounts()
+    )
+    local job = assert(rpf.config.default_job())
+    assert.are.same({ employer = "lspd", job = "officer" }, job)
+    assert.are.equal("Officer", rpf.config.job(job.employer, job.job).name)
+    assert.are.equal(0, #p.logged("warn", "default job"))
+
+    -- Copies: editing one changes nothing.
+    rpf.config.starting_accounts()[1].amount = 1
+    rpf.config.default_job().job = "chief"
+    assert.are.equal(500, rpf.config.starting_accounts()[1].amount)
+    assert.are.equal("officer", rpf.config.default_job().job)
+  end)
+
+  -- A default job the server does not have is sent as null, and the setting
+  -- still names it: applying says so, and the server gets no default job.
+  it("logs a default job the portal could not send, and gives none", function()
+    local frame = assert(rpf.json.decode(support.read("protocol/corpus/v1/portal_to_server/config.json")))
+    frame.snapshot.new_character.job = rpf.json.null
+    assert.is_true((rpf.config.apply(p, frame.version, frame.hash, frame.snapshot)))
+
+    assert.is_nil(rpf.config.default_job())
+    assert.are.equal(1, #p.logged("warn", "default job lspd/officer is not a job on this server"))
+
+    -- Restored at start, it says so again.
+    local restarted = support.fake_platform({ store = p.store })
+    rpf.config.restore(restarted)
+    assert.is_nil(rpf.config.default_job())
+    assert.are.equal(1, #restarted.logged("warn", "default job lspd/officer"))
+  end)
+
+  it("has no starting accounts or default job from a portal older than E5", function()
+    assert.is_true((rpf.config.apply(p, 3, "h3", snapshot(FIRST))))
+    assert.is_nil(rpf.config.starting_accounts())
+    assert.is_nil(rpf.config.default_job())
+  end)
+
   -- Cores from before E4 reserved a `jobs` section indexed by `slug` alone,
   -- and refuse a whole snapshot with two entries of one slug. The portal
   -- sends jobs under another name, so such a core still applies a snapshot
@@ -245,6 +290,14 @@ describe("rpf.config", function()
     },
     { "a job without its employer", [[{ "employer_jobs": [ { "slug": "a" } ] }]] },
     { "a department without its employer", [[{ "employer_departments": [ { "slug": "a", "employer": 1 } ] }]] },
+    { "a new_character that is not an object", [[{ "new_character": [] }]] },
+    { "starting accounts that are not an array", [[{ "new_character": { "accounts": {} } }]] },
+    { "a starting account without a name", [[{ "new_character": { "accounts": [ { "amount": 5 } ] } }]] },
+    {
+      "a starting account with a fractional amount",
+      [[{ "new_character": { "accounts": [ { "name": "w", "amount": 0.5 } ] } }]],
+    },
+    { "a default job without its employer", [[{ "new_character": { "job": { "job": "officer" } } }]] },
   }) do
     it("refuses " .. case[1] .. " and keeps the config it had", function()
       rpf.config.apply(p, 3, "h3", snapshot(FIRST))
