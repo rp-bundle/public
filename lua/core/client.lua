@@ -1276,6 +1276,14 @@ function Client:answer(frame)
     elseif wanted then
       again = frame.type
     end
+    -- The handler may have sent, and a send that catches the clock stepped
+    -- back drops or reissues entries, this one among them. The saved index
+    -- would then name some other frame, so find this one again; if it is
+    -- gone, the step has released it already.
+    index = self:find(entry.id)
+    if not index then
+      return
+    end
   end
   if again then
     entry.retries = (entry.retries or 0) + 1
