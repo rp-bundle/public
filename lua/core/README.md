@@ -733,9 +733,11 @@ records over would break "the core never keeps a record it does not hold".
   stays held for the session and is released when the player leaves; the
   switch is not refused for it.
 - **Lost records.** If the portal takes the character in play away
-  (force-release, purge), the player goes back to `character_select`, and
-  every player's session (and character in play) is held again, so whatever
-  is still theirs comes back. While a character in play's records are held
+  (force-release, purge), the player goes back to `character_select` and
+  whatever the character owns that is still held here is released, as a
+  put-away does. Every player's session (and character in play) is held
+  again, so whatever is still theirs comes back; until it lands their list
+  counts as stale and `create` waits. While a character in play's records are held
   again the player counts as `busy`, so they cannot switch or put it away
   under that hold; a character that goes away meanwhile has whatever the
   hold brings back released at once. If the portal refuses to hand them

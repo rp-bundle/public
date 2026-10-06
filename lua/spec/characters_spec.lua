@@ -360,6 +360,42 @@ describe("rpf.characters", function()
       assert.are.same({ { kind = "player", id = PLAYER } }, last_of(p, "hold").owners)
     end)
 
+    it("gives back what a character taken away still owns here", function()
+      loaded()
+      rpf.characters.select(7, JANE)
+      held(p, { account(JANE_WALLET, JANE, "Wallet", 250) })
+      rpf.records.lose({ { kind = "character", id = JANE } }, "force-released")
+      assert.are.equal("character_select", rpf.players.get(7).state)
+      local releases = #sent_of(p, "release")
+
+      p.advance(0)
+
+      assert.is_false(rpf.records.is_held("account", JANE_WALLET), "not held until the player leaves")
+      assert.are.equal(releases + 1, #sent_of(p, "release"))
+      assert.are.equal(JANE_WALLET, last_of(p, "release").records[1].id)
+    end)
+
+    it("gives back what a selection brings if its character went meanwhile", function()
+      loaded()
+      rpf.characters.select(7, JANE)
+      local hold = last_of(p, "hold")
+      rpf.records.lose({ { kind = "character", id = JANE } }, "purged")
+      p.deliver(support.portal_frame("held", { re = hold.id, records = { account(JANE_WALLET, JANE, "Wallet", 250) } }))
+
+      assert.are.equal("character_select", rpf.players.get(7).state)
+      assert.is_false(rpf.records.is_held("account", JANE_WALLET))
+      assert.are.equal(JANE_WALLET, last_of(p, "release").records[1].id)
+    end)
+
+    it("waits for the whole list before creating after a character is taken away", function()
+      loaded()
+      local fields = { first_name = "A", last_name = "B", gender = "male" }
+      rpf.records.lose({ { kind = "character", id = JOHN } }, "force-released")
+      assert.are.same({ nil, "not_ready" }, { rpf.characters.create(7, fields) }, "the list is short")
+      held(p, { character(JANE, "Jane"), character(JOHN, "John") })
+      assert.is_true(rpf.characters.create(7, fields))
+    end)
+
     ---Selects Jane with her wallet, has the portal take the wallet back, and
     ---returns the hold that recovers it.
     ---@return rpf.Frame hold The recovery hold.
