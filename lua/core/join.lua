@@ -94,6 +94,44 @@ local function log(level, message)
   platform.log(level, "rpf: " .. message)
 end
 
+---The highest clock reading at which this connection's online list learned
+---anything: a join the core acted on, the resync, a drop. The portal weighs
+---a drop against the join or resync it would undo by `sent_at` (F2), so a
+---drop stamped below this, after the host clock went back by less than the
+---outbox notices, would be taken for an older one and ignored.
+---@type number?
+local presence_mark
+
+---Notes a presence event at the current clock reading, and reports whether
+---the clock has gone back behind an earlier one.
+---@return boolean behind True if an event this connection sent is stamped later.
+local function observe_presence()
+  local now = platform.now()
+  if presence_mark and now < presence_mark then
+    return true
+  end
+  presence_mark = now
+  return false
+end
+
+---Sends a `player_dropped`, and if the host clock has gone back behind the
+---online list's newest event, makes the connection again: the portal starts
+---a new list for the new one, which the resync after `Welcome` builds, and
+---the drop, resent there, has nothing older to lose to.
+---@param player_id string The player's uuid.
+---@param reason string Why, for the portal's log.
+local function send_dropped(player_id, reason)
+  local behind = observe_presence()
+  local _, err = connection:send("player_dropped", { player_id = player_id, reason = reason })
+  if err then
+    log("warn", "could not report player " .. player_id .. " as dropped (" .. err .. ")")
+  end
+  if behind and connection.state == "ready" then
+    presence_mark = nil
+    connection:reconnect("the host clock went back behind the online list")
+  end
+end
+
 ---Works out the portal's HTTP address from its websocket url: `wss` becomes
 ---`https`, `ws` becomes `http`, and the path is dropped, because the player
 ---endpoints live at the root (`/api/v1/player/…`).
@@ -266,12 +304,34 @@ local function renew(session)
   end)
 end
 
+---Tells the portal a player it has just authenticated is not playing here
+---after all, unless the account is playing here under another handle.
+---
+---The portal puts a player on this server's online list when it answers
+---`RedeemTicket` (F2), so a `PlayerAuthenticated` the core does not act on
+---(the player left, or was kicked, while the redemption was in flight) would
+---leave them listed until the next reconnect. Nothing else would send their
+---drop: `on_dropping` only reports players who registered.
+---@param reply rpf.Frame The `player_authenticated`.
+---@param reason string Why, for the portal's log.
+local function unlist(reply, reason)
+  if players.by_player_id(reply.player_id) then
+    return
+  end
+  send_dropped(reply.player_id, reason)
+end
+
 ---Handles the portal's answer to `RedeemTicket`.
 ---@param session rpf.join.Session The login.
 ---@param reply rpf.Frame? The answer.
 ---@param err string? Why there was none.
 local function redeemed(session, reply, err)
   session.redeem_pending = false
+  if reply and reply.type == "player_authenticated" then
+    -- Its ack went out just before this ran: the portal weighs drops of
+    -- this player against that.
+    observe_presence()
+  end
   if session.renew_wanted then
     session.renew_wanted = false
     if current(session) then
@@ -279,6 +339,9 @@ local function redeemed(session, reply, err)
     end
   end
   if not live(session) then
+    if reply and reply.type == "player_authenticated" then
+      unlist(reply, "left before logging in")
+    end
     return
   end
   local handle = session.handle
@@ -305,6 +368,7 @@ local function redeemed(session, reply, err)
     else
       log("warn", tostring(move_err))
       kick(session, join.REASONS.already_online)
+      unlist(reply, "not registered")
     end
   elseif reply.type == "rejected" and reply.code == "forbidden" then
     -- A ban (F3): logging in again will not help.
@@ -425,10 +489,31 @@ end
 local function on_dropping(player)
   sessions[player.handle] = nil
   if player.player_id then
-    local _, err = connection:send("player_dropped", { player_id = player.player_id, reason = player.reason or "left" })
-    if err then
-      log("warn", "could not report player " .. player.player_id .. " as dropped (" .. err .. ")")
-    end
+    send_dropped(player.player_id, player.reason or "left")
+  end
+end
+
+---Tells the portal who is logged in here: `online_players`, the resync of
+---its online list (F2).
+---
+---Sent after every `Welcome`, once the outbox has been flushed, because the
+---portal forgets a server's whole list when its connection goes: the joins
+---that built it are gone after a reconnect or a portal restart, and only
+---this re-establishes it. Every player `registered` or later is on it
+---(`players.online`), a player who is leaving is not. The portal weighs it
+---against the joins and drops around it by when each was sent, so it does
+---not have to wait for them. An outbox too full to take it is logged, and
+---the list stays short until the next connect.
+function join.resync()
+  local online = {}
+  for _, player in ipairs(players.online()) do
+    online[#online + 1] = { player_id = player.player_id }
+  end
+  -- A new connection's list starts here, so the mark does too.
+  presence_mark = platform.now()
+  local _, err = connection:send("online_players", { players = rpf.json.array(online) })
+  if err then
+    log("warn", "could not send the online list to the portal (" .. err .. ")")
   end
 end
 
@@ -454,6 +539,37 @@ function join.start(p, client, settings)
     options[key] = value
   end
   portal_url = settings.portal_url or join.http_base(settings.url)
+  presence_mark = nil
+  local orphan = client.on_orphan
+  ---Runs for an answer to a frame whose callback is gone, which after a
+  ---restart is every frame the old process queued: whatever was set before
+  ---(`rpf.sync`'s), then, for a `RedeemTicket` the portal answered with
+  ---`PlayerAuthenticated`, the drop `unlist` sends. The player that ticket
+  ---was for went with the old process, but the portal has listed them.
+  ---@param c rpf.Client The connection.
+  ---@param entry rpf.OutboxEntry The answered frame.
+  ---@param frame rpf.Frame Its answer.
+  ---@return boolean? again Whatever the earlier handler wants.
+  client.on_orphan = function(c, entry, frame)
+    local again = nil
+    if orphan then
+      again = orphan(c, entry, frame)
+    end
+    if entry.type == "redeem_ticket" and frame.type == "player_authenticated" then
+      unlist(frame, "the server restarted before they logged in")
+    end
+    return again
+  end
+  local ready = client.on_ready
+  ---Runs at every `Welcome`: whatever was set before (`rpf.sync`'s
+  ---declaration), then the online list.
+  ---@param c rpf.Client The connection, now ready.
+  client.on_ready = function(c)
+    if ready then
+      ready(c)
+    end
+    join.resync()
+  end
   events.on("players.connecting", on_connecting)
   events.on("players.dropping", on_dropping)
   p.on_client(handoff.CLIENT_READY, on_ready)

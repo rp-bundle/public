@@ -411,5 +411,178 @@ describe("rpf.join", function()
     assert.are.equal(1, #dropped)
     assert.are.equal(PLAYER, dropped[1].player_id)
     assert.are.equal("quit", dropped[1].reason)
+    assert.is_not_nil(p.socket, "a drop in order keeps the connection")
+  end)
+
+  describe("the online list", function()
+    ---Drops the connection, waits out the backoff, and completes a new
+    ---handshake.
+    ---@param p spec.FakePlatform The platform.
+    local function reconnect(p)
+      p.drop()
+      p.advance(2 * MINUTE)
+      p.open()
+      local hellos = sent_of(p, "hello")
+      p.deliver(support.portal_frame("welcome", { re = hellos[#hellos].id, protocol = 1, server_id = SERVER }))
+    end
+
+    it("is sent after every Welcome, naming every logged-in player and nobody else", function()
+      local p = joining()
+      local lists = sent_of(p, "online_players")
+      assert.are.equal(1, #lists, "one for the first Welcome")
+      assert.are.same({}, lists[1].players, "nobody had logged in")
+
+      challenge(p)
+      p.from_client(7, TICKET, '{"ticket":"rpf_jt_ticket"}')
+      answer_redeem(p, "player_authenticated")
+      -- Still logging in, so not online yet.
+      rpf.players.connected(8)
+      reconnect(p)
+      lists = sent_of(p, "online_players")
+      -- The first, never acked, is resent in the flush, and the new one
+      -- follows it.
+      assert.are.equal(3, #lists)
+      assert.are.equal(lists[1].id, lists[2].id)
+      assert.are.same({ { player_id = PLAYER } }, lists[3].players)
+
+      -- After everything the flush resent, so the portal reads it last.
+      local frames = p.frames()
+      assert.are.equal("online_players", frames[#frames].type)
+
+      rpf.players.dropped(7, "quit")
+      reconnect(p)
+      lists = sent_of(p, "online_players")
+      assert.are.same({}, lists[#lists].players)
+    end)
+
+    it("connects again when the clock goes back behind the join a drop undoes", function()
+      local p = logged_in()
+      local connects = #p.connects
+      -- Less than the outbox's tolerance, so only the online list notices:
+      -- the drop would be stamped before the join's ack.
+      p.time = p.time - rpf.client.DEFAULTS.clock_step_tolerance_ms / 3
+      rpf.players.dropped(7, "quit")
+
+      local dropped = sent_of(p, "player_dropped")
+      assert.are.equal(1, #dropped)
+      assert.is_nil(p.socket, "the connection whose list is ahead is closed")
+      assert.are.equal(1, #p.logged("warn", "behind the online list"))
+
+      p.advance(2 * MINUTE)
+      assert.are.equal(connects + 1, #p.connects)
+      p.open()
+      local hellos = sent_of(p, "hello")
+      p.deliver(support.portal_frame("welcome", { re = hellos[#hellos].id, protocol = 1, server_id = SERVER }))
+      dropped = sent_of(p, "player_dropped")
+      assert.are.equal(dropped[1].id, dropped[#dropped].id, "the drop is resent on the new connection")
+      local lists = sent_of(p, "online_players")
+      assert.are.same({}, lists[#lists].players)
+      -- The new list starts from the resync, so a drop now is in order.
+      rpf.players.connected(8)
+      rpf.players.dropped(8, "left")
+      assert.is_not_nil(p.socket)
+    end)
+
+    it("reports a player the portal authenticated after they left, so it does not list them", function()
+      local p = joining()
+      challenge(p)
+      p.from_client(7, TICKET, '{"ticket":"rpf_jt_ticket"}')
+      rpf.players.dropped(7, "quit")
+      assert.are.same({}, sent_of(p, "player_dropped"), "nobody had logged in")
+
+      answer_redeem(p, "player_authenticated")
+      local dropped = sent_of(p, "player_dropped")
+      assert.are.equal(1, #dropped)
+      assert.are.equal(PLAYER, dropped[1].player_id)
+      -- The reply is acked before the drop goes out, so the portal sees the
+      -- join it undoes first.
+      local frames = p.frames()
+      assert.are.equal("ack", frames[#frames - 1].type)
+      assert.are.equal("player_dropped", frames[#frames].type)
+    end)
+
+    it("reports a player authenticated after a restart lost their login", function()
+      local store = {}
+      support.load_core()
+      local p = support.fake_platform({ store = store })
+      p.player_identifiers[7] = { "license:abc" }
+      rpf.start_server(p, { url = "wss://portal.example/ws", api_key = "k" })
+      p.open()
+      p.deliver(support.portal_frame("welcome", { re = p.last().id, protocol = 1, server_id = SERVER }))
+      rpf.players.connected(7)
+      p.from_client(7, READY, "{}")
+      challenge(p)
+      p.from_client(7, TICKET, '{"ticket":"rpf_jt_ticket"}')
+      local redeem = sent_of(p, "redeem_ticket")[1]
+
+      -- The process dies with the redemption unanswered; the new one resends
+      -- it from the outbox, and nobody here is waiting for its answer.
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 99 })
+      rpf.start_server(restarted, { url = "wss://portal.example/ws", api_key = "k" })
+      restarted.open()
+      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = 1, server_id = SERVER }))
+      assert.are.equal(redeem.id, sent_of(restarted, "redeem_ticket")[1].id)
+      restarted.deliver(support.portal_frame("player_authenticated", {
+        re = redeem.id,
+        player_id = PLAYER,
+        username = "sam",
+        created = false,
+      }))
+
+      local dropped = sent_of(restarted, "player_dropped")
+      assert.are.equal(1, #dropped)
+      assert.are.equal(PLAYER, dropped[1].player_id)
+    end)
+
+    it("keeps the drop it queues when the clock goes back during the orphaned answer", function()
+      local store = {}
+      support.load_core()
+      local p = support.fake_platform({ store = store })
+      p.player_identifiers[7] = { "license:abc" }
+      rpf.start_server(p, { url = "wss://portal.example/ws", api_key = "k" })
+      p.open()
+      p.deliver(support.portal_frame("welcome", { re = p.last().id, protocol = 1, server_id = SERVER }))
+      rpf.players.connected(7)
+      p.from_client(7, READY, "{}")
+      challenge(p)
+      p.from_client(7, TICKET, '{"ticket":"rpf_jt_ticket"}')
+      local redeem = sent_of(p, "redeem_ticket")[1]
+
+      support.load_core()
+      local restarted = support.fake_platform({ store = store, seed = 99 })
+      rpf.start_server(restarted, { url = "wss://portal.example/ws", api_key = "k" })
+      restarted.open()
+      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = 1, server_id = SERVER }))
+
+      -- The drop's send catches the step and expires the redemption it
+      -- answers, so the index `answer` saved no longer names it (#157).
+      restarted.time = restarted.time - 8 * 24 * 60 * 60 * 1000
+      restarted.deliver(support.portal_frame("player_authenticated", {
+        re = redeem.id,
+        player_id = PLAYER,
+        username = "sam",
+        created = false,
+      }))
+
+      local queued = {}
+      for _, entry in ipairs(rpf.connection.outbox) do
+        queued[#queued + 1] = entry.type
+      end
+      assert.is_nil(rpf.connection:find(redeem.id))
+      assert.are.equal(1, #queued, table.concat(queued, ", "))
+      assert.are.equal("player_dropped", queued[1])
+    end)
+
+    it("does not report an account that is playing here under another handle", function()
+      local p = logged_in()
+      rpf.players.connected(9)
+      p.from_client(9, READY, "{}")
+      challenge(p)
+      p.from_client(9, TICKET, '{"ticket":"rpf_jt_other"}')
+      answer_redeem(p, "player_authenticated")
+      assert.are.equal(1, #p.kicks)
+      assert.are.same({}, sent_of(p, "player_dropped"))
+    end)
   end)
 end)

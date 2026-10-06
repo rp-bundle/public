@@ -415,6 +415,11 @@ local RECORD_REVISION = object({
   { "revision", U64 },
 })
 
+---`OnlinePlayer`: one logged-in player in an `online_players` resync (F2).
+local ONLINE_PLAYER = object({
+  { "player_id", UUID },
+})
+
 ---`AccountFlags`: `"unlimited_balance"`, or `{ "server_specific": "…" }`,
 ---externally tagged like `Gender` and held to one key the same way.
 local ACCOUNT_FLAG = same_both_ways(function(value, path)
@@ -571,6 +576,9 @@ protocol.messages = {
     player_dropped = message("ack", true, {
       { "player_id", UUID },
       { "reason", STRING },
+    }),
+    online_players = message("ack", false, {
+      { "players", array_of(ONLINE_PLAYER) },
     }),
     create_character = message("reply", false, {
       { "owner", OWNER_REF },

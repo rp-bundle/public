@@ -1187,11 +1187,15 @@ function Client:receive(text)
     end
     return
   end
-  if frame.re then
-    self:answer(frame)
-  end
+  -- Acked before it is acted on, so the ack goes out ahead of anything its
+  -- callback sends. The portal reads a `player_authenticated`'s ack as the
+  -- moment this server learned of the join (F2), and a drop the callback
+  -- reports must not look older than it.
   if answered_by == "ack" then
     self:ack(frame.id)
+  end
+  if frame.re then
+    self:answer(frame)
   end
 end
 
@@ -1271,6 +1275,14 @@ function Client:answer(frame)
       self:log("error", "on_orphan failed: " .. tostring(wanted))
     elseif wanted then
       again = frame.type
+    end
+    -- The handler may have sent, and a send that catches the clock stepped
+    -- back drops or reissues entries, this one among them. The saved index
+    -- would then name some other frame, so find this one again; if it is
+    -- gone, the step has released it already.
+    index = self:find(entry.id)
+    if not index then
+      return
     end
   end
   if again then

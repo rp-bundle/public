@@ -451,20 +451,23 @@ function support.portal_frame(tag, fields)
   return support.core.protocol.envelope(support.portal_rng, tag, fields)
 end
 
----Answers the declaration of held records that follows every `Welcome`
----(`rpf.sync`), if one is waiting, as a portal that agrees with it would,
----so a test that is not about records starts from an empty outbox.
+---Answers the declaration of held records (`rpf.sync`) and acks the online
+---list (`rpf.join`, F2) that follow every `Welcome`, if they are waiting, as
+---a portal that agrees with them would, so a test that is not about records
+---or presence starts from an empty outbox.
 ---@param p spec.FakePlatform The platform.
 function support.declared(p)
   for i, text in ipairs(p.sent) do
     local frame = assert(support.core.protocol.decode(support.core.protocol.SERVER_TO_PORTAL, text))
-    if frame.type == "declare_holds" then
-      local connection = support.core.connection
-      if connection and connection:find(frame.id) then
-        p.bookkeeping[p.sent[i]] = true
-        p.deliver(support.portal_frame("state_applied", { re = frame.id, revisions = frame.records }))
-        p.bookkeeping[p.sent[#p.sent]] = true
-      end
+    local connection = support.core.connection
+    local waiting = connection and connection:find(frame.id)
+    if waiting and frame.type == "declare_holds" then
+      p.bookkeeping[p.sent[i]] = true
+      p.deliver(support.portal_frame("state_applied", { re = frame.id, revisions = frame.records }))
+      p.bookkeeping[p.sent[#p.sent]] = true
+    elseif waiting and frame.type == "online_players" then
+      p.bookkeeping[p.sent[i]] = true
+      p.deliver(support.portal_frame("ack", { re = frame.id }))
     end
   end
 end
@@ -486,8 +489,8 @@ function support.connected(p, options)
   return connection
 end
 
----Every frame sent, as text, except the declaration `support.declared`
----answered and the ack of its answer, so a test about the connection can
+---Every frame sent, as text, except the declaration and the online list
+---`support.declared` answered and the ack of its answer, so a test about the connection can
 ---read what it sent by position.
 ---@param p spec.FakePlatform The platform.
 ---@return string[] texts The frames, in order.

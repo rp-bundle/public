@@ -242,7 +242,10 @@ The game server's connection to the portal (`rpf.connection` once started).
 - **`instance_id`** is minted once per process start and never persisted.
 - **Inbound frames** are decoded as hostile input: one that does not decode is
   logged and dropped. Replies and notices are acked, and a duplicate of one is
-  acked again and not handled again. Requests (`apply_command`) go to the
+  acked again and not handled again. The ack goes out before the frame is
+  acted on, so it precedes anything its callback sends: the portal reads a
+  `player_authenticated`'s ack as the moment this server learned of the join
+  (F2), and a drop the callback reports must not look older than it. Requests (`apply_command`) go to the
   handler registered with `connection:handle(type, handler)`, under the rules
   in Portal requests, below. Until D5 registers one, a command is answered as
   failed (truthfully: nothing ran), so the portal is never left waiting.
@@ -476,9 +479,9 @@ listens to clients registers through `players.on_client(name, handler)`,
 which drops every message from a player who has not logged in, so it cannot
 forget the check.
 
-`players.online()` is the shape F2's `OnlinePlayers` resync is built from:
+`players.online()` is what F2's `online_players` resync is built from:
 registered players only, `{ player_id, username, name, state, connected_at }`,
-sorted by player id, nothing engine-specific. F2 defines and sends the message.
+sorted by player id, nothing engine-specific. `rpf.join` sends it (below).
 
 ### Held records (`rpf.records`, `rpf.sync`)
 
@@ -675,6 +678,24 @@ spec holds to the portal's `PASSWORD_REUSE_WARNING` word for word.
 4. The client sends the grant's ticket in `rpf:join_ticket`. The server sends
    `RedeemTicket`, registers the player on `PlayerAuthenticated`, and answers
    `rpf:join_result`. The client emits `auth.succeeded`.
+
+**The online list (F2).** The portal lists a player as online on this server
+when it answers `RedeemTicket`, and unlists them on `player_dropped`. It
+forgets the whole list when the connection goes, so after every `Welcome`,
+once the outbox has been flushed, `join.resync` sends `online_players`: every
+player `registered` or later, by `player_id`, and nobody who is leaving. The
+portal weighs it against the joins and drops around it by when each was sent
+(the module docs of `rpf_backend::ws::presence`), so it waits for nothing. A
+`player_authenticated` the server does not act on, because the player left or
+was kicked while it was in flight, or because a restart lost the login
+whose `redeem_ticket` the outbox resent, is answered with a `player_dropped` for
+that account, unless the account is playing here under another handle, so
+the portal does not list a player who never arrived. A `player_dropped` the
+host clock would stamp below the newest presence event (a join acted on, the
+resync, a drop) sent on this connection, after the clock went back by less
+than the outbox notices, would look older than the join it ends, so the core
+sends it and then reconnects: the new connection's list starts from its
+resync, and the drop is resent there.
 
 `rpf.handoff` holds the handoff messages' schemas, loaded by both sides. They
 are not a portal contract, so they have no corpus, but the server decodes
