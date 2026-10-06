@@ -843,13 +843,18 @@ end
 ---by `rpf.characters` when the portal says this server no longer holds some
 ---of them. Records already held keep the state they have here.
 ---
----Its answer is announced with `records.session(player_id, err)`: `err` is
----nil once the records are held, or the portal's refusal. A hold the
----outbox cannot take yet is tried again as it drains, and announced then.
+---Its answer is announced with `records.session(player_id, err, serial)`:
+---`err` is nil once the records are held, or the portal's refusal, and
+---`serial` is the player's connection when it was sent, so a listener can
+---tell an answer meant for a connection they have since left and rejoined
+---from. A hold the outbox cannot take yet is tried again as it drains, and
+---announced then.
 ---@param player_id string The player.
 function sync.hold_session(player_id)
+  local player = rpf.players.by_player_id(player_id)
+  local serial = player and player.serial
   sync.hold({ owners = { { kind = "player", id = player_id } } }, player_id, function(_, err)
-    events.emit("records.session", player_id, err)
+    events.emit("records.session", player_id, err, serial)
   end)
 end
 

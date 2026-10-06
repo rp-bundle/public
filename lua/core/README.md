@@ -538,7 +538,7 @@ anything not held, so a module keeps ids and reads through it every time.
 
 - **Holding.** A registered player's records (everything their account owns
   on this server) are held for their session (`sync.hold_session`, announced
-  with `records.session(player_id, err)`), and released when they leave.
+  with `records.session(player_id, err, serial)`), and released when they leave.
   Anything else is held with `rpf.sync.hold({ owners = …, records = … })`:
   `owners` holds every live record an owner has here (not transitively: a
   character's own accounts are held through the character). The portal
@@ -622,7 +622,8 @@ anything not held, so a module keeps ids and reads through it every time.
   as above. New holds wait for its answer, so it can never release one.
 
 Events, all reserved: `records.held(views)`, `records.released(refs)`,
-`records.lost(refs, reason)` and `records.session(player_id, err)`.
+`records.lost(refs, reason)` and `records.session(player_id, err, serial)`,
+`serial` being the player's connection the hold was sent for.
 
 ### `rpf.inventory`
 

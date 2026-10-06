@@ -194,6 +194,31 @@ describe("rpf.characters", function()
       assert.are.equal(1, #last_to(p, CHARACTERS).characters)
     end)
 
+    it("ignores an answer meant for an earlier connection of the player's", function()
+      loaded()
+      rpf.records.lose({ { kind = "character", id = JOHN } }, "force-released")
+      local old = last_of(p, "hold")
+      rpf.players.dropped(7, "quit")
+      local release = last_of(p, "release")
+      register()
+
+      -- Answered in order: the old hold, then the release, then the new hold.
+      p.deliver(support.portal_frame("held", { re = old.id, records = {} }))
+      assert.are.equal("registered", rpf.players.get(7).state, "not listed from the old answer")
+      assert.are.same(
+        { nil, "not_ready" },
+        { rpf.characters.create(7, { first_name = "A", last_name = "B", gender = "male" }) }
+      )
+      p.deliver(support.portal_frame("ack", { re = release.id }))
+      local new = last_of(p, "hold")
+      assert.are_not.equal(old.id, new.id)
+      assert.are.same({ { kind = "player", id = PLAYER } }, new.owners)
+
+      p.deliver(support.portal_frame("held", { re = new.id, records = { character(JANE, "Jane"), character(JOHN, "John") } }))
+      assert.are.equal("character_select", rpf.players.get(7).state)
+      assert.are.equal(2, #rpf.characters.list(PLAYER))
+    end)
+
     it("holds the session again on request after holding it again failed", function()
       loaded()
       rpf.records.lose({ { kind = "character", id = JOHN } }, "force-released")

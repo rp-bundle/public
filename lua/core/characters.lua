@@ -75,6 +75,7 @@ characters.options = {}
 ---@class rpf.characters.Session
 ---@field player_id string The player's account.
 ---@field handle rpf.PlayerHandle The player's handle, for moving them and messaging their client.
+---@field serial integer The player's connection (`rpf.PlayerView.serial`), so an answer meant for an earlier connection of theirs never lands on this one, even on a reused handle.
 ---@field loaded boolean Whether their session records have been held, so their characters can be listed.
 ---@field loading boolean Whether a hold of their session records is in flight.
 ---@field again boolean? Whether the session must be held once more when the hold in flight is answered, because a character may have been created after it was sent.
@@ -299,17 +300,18 @@ end
 ---@param player_id string The player.
 ---@return rpf.characters.Session? session The session, or nil if the player is not here.
 local function ensure(player_id)
-  local session = sessions[player_id]
-  if session then
-    return session
-  end
   local player = players.by_player_id(player_id)
   if not player or player.state == "dropping" then
     return nil
   end
+  local session = sessions[player_id]
+  if session and session.serial == player.serial then
+    return session
+  end
   session = {
     player_id = player_id,
     handle = player.handle,
+    serial = player.serial,
     loaded = false,
     loading = true,
     stale = false,
@@ -325,7 +327,15 @@ end
 ---and a player who has just registered moves on to choosing a character.
 ---@param player_id string The player.
 ---@param err string? The refusal, or nil once the records are held.
-local function on_session(player_id, err)
+---@param serial integer? The connection the hold was sent for.
+local function on_session(player_id, err, serial)
+  local player = players.by_player_id(player_id)
+  if not player or player.serial ~= serial then
+    -- An answer for an earlier connection of theirs: what it held was
+    -- released when they left, so it says nothing about this connection's
+    -- list, whose own hold is still to come.
+    return
+  end
   local session = ensure(player_id)
   if not session then
     return
