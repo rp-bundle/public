@@ -1,0 +1,14 @@
+{
+  "id": "00000005-0000-4000-8000-000000000005",
+  "sent_at": "2026-01-01T00:00:00Z",
+  "type": "apply_command",
+  "command": {
+    "command": "adjust_balance",
+    "client_id": "00000008-0000-4000-8000-000000000008",
+    "account_id": "00000004-0000-4000-8000-000000000004",
+    "base_revision": 5,
+    "funds_account": "0000000a-0000-4000-8000-00000000000a",
+    "amount": -250,
+    "description": "Admin correction."
+  }
+}

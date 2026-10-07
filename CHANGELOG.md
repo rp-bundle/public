@@ -16,6 +16,35 @@ one-way door, a new environment variable. How to cut a release is in
 
 ## [Unreleased]
 
+**Protocol:** speaks protocol 2, and serves protocols 1 and 2. Protocol 2
+adds the `restarting` notice (below); a game server on protocol 1 is served
+unchanged, and is simply closed where a protocol 2 one is told first.
+
+### Added
+
+- The portal stops in order on `SIGTERM` (H1, #50): readiness answers
+  `503 draining` and new websocket upgrades are refused at once; after
+  `RPF_SHUTDOWN_NOTICE_SECS` every connected game server is sent
+  `restarting` with `RPF_SHUTDOWN_RETRY_AFTER_MS` and closed; the process
+  exits once its connections are done or after `RPF_SHUTDOWN_GRACE_SECS`.
+  Started beside a ready replacement, a deploy no longer leaves game
+  servers without a portal to reconnect to, and their reconnects are spread
+  over the delay plus jitter instead of landing together
+  ([Deployment](docs/deployment.md#deploys)).
+- The Lua core honours `restarting`: the reconnect after an announced close
+  waits `retry_after_ms` plus jitter, capped by `max_retry_after_ms`, without
+  advancing the backoff.
+- `rpf_ws_handshake_seconds`, the time from a game server's `Hello` to its
+  `Welcome`, and a reconnect-storm load test in the fake game server that
+  reads it, so the delay is chosen from data.
+
+### Deployment
+
+- New optional environment variables `RPF_SHUTDOWN_NOTICE_SECS`,
+  `RPF_SHUTDOWN_RETRY_AFTER_MS` and `RPF_SHUTDOWN_GRACE_SECS`; the defaults
+  suit a single process behind a proxy. The orchestrator's kill timeout must
+  exceed the first plus the third, or it ends the drain early.
+
 ## [0.1.0] - 2026-10-06
 
 Milestone 1 (#35): a game server can connect, authenticate, be configured and

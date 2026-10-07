@@ -1,0 +1,13 @@
+[
+  {
+    "outcome": "applied"
+  },
+  {
+    "outcome": "failed",
+    "reason": "no such account"
+  },
+  {
+    "outcome": "unknown",
+    "reason": "the game server restarted while applying it"
+  }
+]

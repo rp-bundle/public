@@ -505,7 +505,7 @@ function support.connected(p, options)
   local hello = p.last()
   p.deliver(support.portal_frame("welcome", {
     re = hello.id,
-    protocol = 1,
+    protocol = rpf.protocol.VERSION,
     server_id = "00000001-0000-4000-8000-000000000001",
   }))
   support.declared(p)

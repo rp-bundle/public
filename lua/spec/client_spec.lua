@@ -51,7 +51,7 @@ local function welcome(p)
   local hellos = sent_of(p, "hello")
   p.deliver(support.portal_frame("welcome", {
     re = hellos[#hellos].id,
-    protocol = 1,
+    protocol = rpf.protocol.VERSION,
     server_id = "00000001-0000-4000-8000-000000000001",
   }))
   support.declared(p)
@@ -97,7 +97,7 @@ describe("rpf.client", function()
 
       local hello = p.last()
       assert.are.equal("hello", hello.type)
-      assert.are.equal(1, hello.protocol)
+      assert.are.equal(rpf.protocol.VERSION, hello.protocol)
       assert.are.equal("rpf_test_secret", hello.api_key)
       assert.are.equal(rpf.instance_id, hello.instance_id)
       assert.are.equal("mock", hello.engine)
@@ -412,6 +412,54 @@ describe("rpf.client", function()
       p.open()
       welcome(p)
       assert.are.equal(0, connection.attempt)
+    end)
+
+    -- H1: the portal announces a deploy with `restarting`, and the delay it
+    -- names replaces the backoff for the reconnect that follows.
+    it("waits out an announced restart, plus jitter, without advancing the backoff", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local before = #p.sent
+      p.deliver(support.portal_frame("restarting", { retry_after_ms = 2000 }))
+      assert.are.equal(before, #p.sent, "a restart notice is not acked: the socket is closing")
+      assert.are.equal("ready", connection.state, "the portal closes the socket, not the core")
+
+      p.drop()
+      local dropped = p.now()
+      p.advance(1999)
+      assert.are.equal(1, #p.connects, "not before retry_after_ms")
+      p.advance(1001)
+      assert.are.equal(2, #p.connects)
+      local delay = p.connects[2] - dropped
+      assert.is_true(delay >= 2000 and delay < 3000, "waited " .. delay)
+      assert.are.equal(0, connection.attempt, "an announced restart is not a failed attempt")
+      assert.is_nil(connection.retry_after_ms, "used once")
+
+      -- Nothing listening yet: from here it is the ordinary backoff.
+      p.drop()
+      dropped = p.now()
+      p.advance(10 * 60 * 1000)
+      local o = rpf.client.DEFAULTS
+      delay = p.connects[3] - dropped
+      assert.is_true(delay >= o.backoff_base_ms and delay < o.backoff_base_ms * (1 + o.jitter), "waited " .. delay)
+    end)
+
+    it("clips an absurd retry_after_ms, and forgets one a Welcome follows", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      p.deliver(support.portal_frame("restarting", { retry_after_ms = 10 * HOUR }))
+      local o = rpf.client.DEFAULTS
+      assert.are.equal(o.max_retry_after_ms, connection.retry_after_ms)
+
+      p.deliver(support.portal_frame("restarting", { retry_after_ms = 500 }))
+      p.open()
+      welcome(p)
+      assert.is_nil(connection.retry_after_ms, "a Welcome means the portal is not going after all")
+      p.drop()
+      local dropped = p.now()
+      p.advance(10 * 60 * 1000)
+      local delay = p.connects[#p.connects] - dropped
+      assert.is_true(delay >= o.backoff_base_ms, "back to the backoff: waited " .. delay)
     end)
 
     it("ignores events from a connection it has replaced", function()

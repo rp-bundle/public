@@ -334,7 +334,7 @@ describe("rpf.api", function()
       p.open()
       p.deliver(support.portal_frame("welcome", {
         re = p.last().id,
-        protocol = 1,
+        protocol = core.protocol.VERSION,
         server_id = "00000001-0000-4000-8000-000000000001",
       }))
       core.players.connected(7)

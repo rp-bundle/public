@@ -1,0 +1,121 @@
+{
+  "id": "00000005-0000-4000-8000-000000000005",
+  "sent_at": "2026-01-01T00:00:00Z",
+  "type": "config",
+  "version": 7,
+  "hash": "sha256:sample",
+  "snapshot": {
+    "settings": {
+      "characters.max_per_player": 3,
+      "economy.default_job": {
+        "employer": "lspd",
+        "job": "officer"
+      },
+      "economy.starting_accounts": [
+        {
+          "amount": 500,
+          "name": "wallet"
+        },
+        {
+          "amount": 5000,
+          "name": "bank"
+        }
+      ],
+      "server.welcome_message": "Welcome to the city."
+    },
+    "items": [
+      {
+        "slug": "pistol",
+        "name": "Pistol",
+        "base": "weapon",
+        "weight": 12,
+        "size": {
+          "x": 2,
+          "y": 1
+        },
+        "stack_limit": 1
+      },
+      {
+        "slug": "water_bottle",
+        "name": "Water bottle",
+        "weight": 1,
+        "size": {
+          "x": 1,
+          "y": 1
+        },
+        "stack_limit": 10
+      }
+    ],
+    "item_bases": [
+      {
+        "slug": "weapon",
+        "name": "Weapon",
+        "weight": 30,
+        "size": {
+          "x": 2,
+          "y": 1
+        }
+      }
+    ],
+    "item_defaults": {
+      "weight": 1,
+      "size": {
+        "x": 1,
+        "y": 1
+      },
+      "stack_limit": 1
+    },
+    "employers": [
+      {
+        "slug": "lspd",
+        "name": "Los Santos Police",
+        "description": "Keeps the peace."
+      }
+    ],
+    "employer_departments": [
+      {
+        "employer": "lspd",
+        "slug": "patrol",
+        "name": "Patrol",
+        "description": ""
+      }
+    ],
+    "employer_jobs": [
+      {
+        "employer": "lspd",
+        "slug": "chief",
+        "name": "Chief of Police",
+        "description": ""
+      },
+      {
+        "employer": "lspd",
+        "slug": "officer",
+        "name": "Officer",
+        "department": "patrol",
+        "description": "Answers calls."
+      }
+    ],
+    "new_character": {
+      "accounts": [
+        {
+          "name": "wallet",
+          "amount": 500
+        },
+        {
+          "name": "bank",
+          "amount": 5000
+        }
+      ],
+      "job": {
+        "employer": "lspd",
+        "job": "officer"
+      }
+    },
+    "paying_accounts": [
+      {
+        "id": "0000000c-0000-4000-8000-00000000000c",
+        "name": "treasury"
+      }
+    ]
+  }
+}
