@@ -1202,7 +1202,8 @@ end
 ---Completes the handshake from the answer to `Hello`.
 ---
 ---`Welcome` makes the connection ready: the outbox is swept and then flushed
----under its original ids. A retryable refusal sends a fresh `Hello` after a
+---under its original ids. One naming a protocol other than the one this
+---core speaks stops the connection for good (`docs/compatibility.md`). A retryable refusal sends a fresh `Hello` after a
 ---backoff; any other refusal stops the connection for good, because the same
 ---key would be refused again, and retrying it forever is a loop.
 ---@param frame rpf.Frame A frame received before the handshake completed.
@@ -1213,6 +1214,18 @@ function Client:handshake_reply(frame)
   end
   if frame.type == "welcome" then
     self:ack(frame.id)
+    if frame.protocol ~= protocol.VERSION then
+      -- The portal speaks the version `Hello` named or refuses it, so any
+      -- other is a portal this core cannot follow: every frame after this
+      -- would be read against the wrong shapes.
+      self:stop(
+        "the portal answered Hello with protocol "
+          .. tostring(frame.protocol)
+          .. ", and this core speaks only protocol "
+          .. protocol.VERSION
+      )
+      return
+    end
     self:remember(frame.id)
     self.attempt = 0
     self.server_id = frame.server_id

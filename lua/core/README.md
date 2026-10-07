@@ -196,7 +196,8 @@ wire (`frame.type`, `frame.id`, `frame.re`, and the message's fields).
 - `redact` replaces the credentials (`api_key`, `ticket`, `nonce`) for logging.
 
 `spec/protocol_spec.lua` decodes and re-encodes every file in
-`protocol/corpus/v1/`, the same files `crates/rpf-protocol/tests/protocol.rs` reads. **This is the
+`protocol/corpus/v<VERSION>/`, the corpus of the protocol version this core
+speaks, the same files `crates/rpf-protocol/tests/protocol.rs` reads. **This is the
 Lua side's ratchet:** a corpus file with no decoder here fails, and so does a
 decoder with no corpus file. When a variant lands in Rust with its sample, the
 Lua suite stays red until `protocol.lua` learns it.
@@ -257,7 +258,11 @@ The game server's connection to the portal (`rpf.connection` once started).
   half that again in random jitter, so a portal restart does not bring every
   server back in the same second. A `Hello` refused with a code that may not be
   retried (`unauthorised`, `duplicate_instance`, …) stops the connection for
-  good.
+  good, and so does a `Welcome` naming a protocol version other than
+  `rpf.protocol.VERSION`. A portal that no longer serves this core's protocol
+  refuses `Hello` as `malformed` with a reason saying which side to upgrade,
+  which is logged as the connection stops
+  ([Compatibility](../../docs/compatibility.md)).
 - **`instance_id`** is minted once per process start and never persisted.
 - **Inbound frames** are decoded as hostile input: one that does not decode is
   logged and dropped. Replies and notices are acked, and a duplicate of one is

@@ -4,7 +4,7 @@
 ---@diagnostic disable: redundant-parameter
 
 -- The Lua half of the conformance corpus. These read the same files under
--- protocol/corpus/v1/ that crates/rpf-protocol/tests/protocol.rs does, so the Lua decoder and the
+-- protocol/corpus/v<VERSION>/ that crates/rpf-protocol/tests/protocol.rs does, so the Lua decoder and the
 -- Rust types are each held to the corpus, never to each other.
 --
 -- The Lua side's ratchet: when a variant is added in Rust and its sample
@@ -21,12 +21,12 @@ local DIRECTIONS = { "server_to_portal", "portal_to_server" }
 ---@param direction string The direction, which is also the directory.
 ---@return table<string, string> files Raw file contents by tag.
 local function corpus(direction)
-  local dir = support.path("protocol/corpus/v1/" .. direction)
+  local dir = support.path(support.corpus(direction))
   local files = {}
   for name in lfs.dir(dir) do
     local tag = name:match("^(.+)%.json$")
     if tag then
-      files[tag] = support.read("protocol/corpus/v1/" .. direction .. "/" .. name)
+      files[tag] = support.read(support.corpus(direction .. "/" .. name))
     end
   end
   return files
@@ -79,7 +79,7 @@ local function add_field_everywhere(value, json, path)
   end
 end
 
-describe("rpf.protocol against protocol/corpus/v1", function()
+describe("rpf.protocol against the corpus of the version it speaks", function()
   local rpf_, protocol, json
 
   before_each(function()
@@ -217,10 +217,10 @@ describe("rpf.protocol against protocol/corpus/v1", function()
     assert.is_nil(protocol.decode("portal_to_server", beyond))
   end)
 
-  -- `protocol/corpus/v1/command_outcomes.json` holds one sample of every
+  -- `command_outcomes.json` in the corpus holds one sample of every
   -- `CommandOutcome`, which `crates/rpf-protocol/tests/protocol.rs` checks against the Rust type.
   it("round-trips every command outcome in the corpus inside a command_applied", function()
-    local outcomes = assert(json.decode(support.read("protocol/corpus/v1/command_outcomes.json")))
+    local outcomes = assert(json.decode(support.read(support.corpus("command_outcomes.json"))))
     assert.is_true(#outcomes >= 3)
     local seen = {}
     for _, outcome in ipairs(outcomes) do
@@ -238,11 +238,11 @@ describe("rpf.protocol against protocol/corpus/v1", function()
     assert.is_nil(protocol.decode("server_to_portal", assert(json.encode(bad))))
   end)
 
-  -- `protocol/corpus/v1/commands.json` holds one sample of every `Command`,
+  -- `commands.json` in the corpus holds one sample of every `Command`,
   -- which `crates/rpf-protocol/tests/protocol.rs` checks against the Rust type. A
   -- command this decoder refuses is one the server can never answer.
   it("decodes every command in the corpus inside an apply_command", function()
-    local commands = assert(json.decode(support.read("protocol/corpus/v1/commands.json")))
+    local commands = assert(json.decode(support.read(support.corpus("commands.json"))))
     local seen = {}
     for _, command in ipairs(commands) do
       local frame = assert(json.decode(corpus("portal_to_server").apply_command))

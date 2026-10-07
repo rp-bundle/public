@@ -174,6 +174,26 @@ describe("rpf.client", function()
       end)
     end
 
+    it("stops for good when Welcome names a protocol this core does not speak", function()
+      local p = support.fake_platform()
+      local connection = rpf.start_server(p, { url = "ws://portal", api_key = "k" })
+      connection:send("player_dropped", dropped())
+      p.open()
+      p.deliver(support.portal_frame("welcome", {
+        re = p.last().id,
+        protocol = rpf.protocol.VERSION + 1,
+        server_id = "00000001-0000-4000-8000-000000000001",
+      }))
+
+      assert.are.equal("stopped", connection.state)
+      assert.are.equal(1, #p.logged("error", "speaks only protocol " .. rpf.protocol.VERSION))
+      -- Nothing was flushed onto a connection speaking other shapes.
+      assert.are.equal(0, #sent_of(p, "player_dropped"))
+      p.drop()
+      p.advance(DAY)
+      assert.are.equal(1, #p.connects)
+    end)
+
     it("sends a fresh Hello after a backoff when refused with retry", function()
       local p = support.fake_platform()
       local connection = rpf.start_server(p, { url = "ws://portal", api_key = "k" })
