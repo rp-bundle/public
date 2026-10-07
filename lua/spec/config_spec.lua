@@ -58,7 +58,7 @@ describe("rpf.config", function()
   -- The corpus assertion for E3's sections: the snapshot the Rust types
   -- serialize is one this side applies and can look every entry up in.
   it("indexes the items, bases and defaults of the corpus snapshot", function()
-    local frame = assert(rpf.json.decode(support.read("protocol/corpus/v1/portal_to_server/config.json")))
+    local frame = assert(rpf.json.decode(support.read(support.corpus("portal_to_server/config.json"))))
     assert.is_true((rpf.config.apply(p, frame.version, frame.hash, frame.snapshot)))
 
     -- Resolved by the portal: every field is there, and the base is named.
@@ -83,7 +83,7 @@ describe("rpf.config", function()
   -- The corpus assertion for E4's sections: employers by slug, departments
   -- and jobs by their employer's slug and their own.
   it("indexes the employers, departments and jobs of the corpus snapshot", function()
-    local frame = assert(rpf.json.decode(support.read("protocol/corpus/v1/portal_to_server/config.json")))
+    local frame = assert(rpf.json.decode(support.read(support.corpus("portal_to_server/config.json"))))
     assert.is_true((rpf.config.apply(p, frame.version, frame.hash, frame.snapshot)))
 
     assert.are.same(
@@ -111,7 +111,7 @@ describe("rpf.config", function()
   -- The corpus assertion for E5's section: the starting accounts and the
   -- default job, which is always one `job` finds.
   it("reads what a new character gets from the corpus snapshot", function()
-    local frame = assert(rpf.json.decode(support.read("protocol/corpus/v1/portal_to_server/config.json")))
+    local frame = assert(rpf.json.decode(support.read(support.corpus("portal_to_server/config.json"))))
     assert.is_true((rpf.config.apply(p, frame.version, frame.hash, frame.snapshot)))
 
     assert.are.same(
@@ -133,7 +133,7 @@ describe("rpf.config", function()
   -- The corpus assertion for #169's section: the accounts this server pays
   -- out of, by name, each with the id `rpf.accounts.pay` takes.
   it("reads the paying accounts of the corpus snapshot", function()
-    local frame = assert(rpf.json.decode(support.read("protocol/corpus/v1/portal_to_server/config.json")))
+    local frame = assert(rpf.json.decode(support.read(support.corpus("portal_to_server/config.json"))))
     assert.is_true((rpf.config.apply(p, frame.version, frame.hash, frame.snapshot)))
 
     assert.are.same(
@@ -158,7 +158,7 @@ describe("rpf.config", function()
   -- A default job the server does not have is sent as null, and the setting
   -- still names it: applying says so, and the server gets no default job.
   it("logs a default job the portal could not send, and gives none", function()
-    local frame = assert(rpf.json.decode(support.read("protocol/corpus/v1/portal_to_server/config.json")))
+    local frame = assert(rpf.json.decode(support.read(support.corpus("portal_to_server/config.json"))))
     frame.snapshot.new_character.job = rpf.json.null
     assert.is_true((rpf.config.apply(p, frame.version, frame.hash, frame.snapshot)))
 
@@ -187,7 +187,7 @@ describe("rpf.config", function()
     local saved = { jobs = sections.jobs, employer_jobs = sections.employer_jobs }
     sections.jobs = { kind = "list", key = "slug" }
     sections.employer_jobs = nil
-    local frame = assert(rpf.json.decode(support.read("protocol/corpus/v1/portal_to_server/config.json")))
+    local frame = assert(rpf.json.decode(support.read(support.corpus("portal_to_server/config.json"))))
     local extra = rpf.json.copy(frame.snapshot.employer_jobs[2])
     extra.employer = "bcso"
     table.insert(frame.snapshot.employer_jobs, extra)
@@ -218,7 +218,7 @@ describe("rpf.config", function()
   end)
 
   it("hands out copies of the item defaults and bases", function()
-    local frame = assert(rpf.json.decode(support.read("protocol/corpus/v1/portal_to_server/config.json")))
+    local frame = assert(rpf.json.decode(support.read(support.corpus("portal_to_server/config.json"))))
     rpf.config.apply(p, frame.version, frame.hash, frame.snapshot)
     rpf.config.item_defaults().size.x = 9
     rpf.config.item_base("weapon").weight = 9

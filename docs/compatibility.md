@@ -1,0 +1,270 @@
+# Compatibility
+
+The portal is hosted: one deployment, upgraded whenever a release is rolled
+out. The Lua core runs inside each community's game server, and its owner
+upgrades it when they choose to, which may be months later. So the day a new
+portal deploys, every game server still runs whatever core it ran the day
+before, and the portal is always the newest party on any connection. This
+page is the contract that makes that survivable: which versions talk to
+which, what changes are safe, and how the tests hold it.
+
+Two numbers are involved, and only one decides compatibility.
+
+- **The release version** (`0.1.0`) names a release of the whole project.
+  The portal image and the Lua core ship together under one tag: the
+  workspace `version` in `Cargo.toml` and `rpf.VERSION` in
+  `lua/core/init.lua` are always equal
+  (`the_lua_core_is_released_with_the_portal`). The core reports it in
+  `Hello` as `core_version`, for staff and logs only.
+- **The protocol version** (`protocol::VERSION`, mirrored by
+  `rpf.protocol.VERSION`) names one set of message shapes. The core sends it
+  in `Hello`, and it alone decides whether the portal can talk to a game
+  server.
+
+## Which portal serves which protocol
+
+| Protocol | First release | Served by portal releases | Status |
+|---|---|---|---|
+| 1 | 0.1.0 | 0.1.0 and later, until its support window closes | Current |
+
+A row is added when a release ships a new protocol version, and a version's
+last portal release is filled in when one drops it. `CHANGELOG.md` names the
+protocol versions each release speaks.
+
+## A server on an older protocol is served
+
+**The portal serves every protocol version from `protocol::MIN_VERSION` to
+`protocol::VERSION`**, and on each connection it speaks the version that
+connection's `Hello` named. Both constants are `1` in 0.1.0, so today this is
+the machinery rather than something exercised; it is in place before there
+are servers in the wild to strand.
+
+- A `Hello` naming a version in the range is answered with `Welcome`, whose
+  `protocol` is that same version (`rpf_backend::ws::auth`). The Lua core
+  stops for good if `Welcome` names any other version, because every frame
+  after it would be read against the wrong shapes.
+- A `Hello` naming a version **below** `MIN_VERSION` is refused, before its
+  key is even checked, as `Rejected` with code `malformed` and a reason that
+  is the upgrade message: *"unsupported protocol version 0: this portal
+  speaks protocol 1 to 1; upgrade the rpf core on this game server"*. The
+  core treats `malformed` as final, stops reconnecting, and logs the reason,
+  so the server's owner reads exactly what to do.
+- A version **above** `VERSION` (a core newer than the portal: a development
+  build, or a portal rolled back) is refused the same way, with a reason
+  saying the core is newer than the portal.
+
+The refusal uses an existing code on purpose. A game server too old to be
+served is exactly one that could not decode a `RejectCode` added for the
+occasion, so the message travels in `reason`, which every version decodes.
+
+Serving rather than refusing is the choice because the portal deploys on its
+own schedule: if a protocol bump refused every older server, every deploy
+that changed the wire would take every community that had not upgraded yet
+offline at once.
+
+## Support window
+
+A protocol version stays served for **at least 180 days after the first
+release whose portal speaks its successor**. Dropping it means raising
+`MIN_VERSION` in a release, which:
+
+- is announced under **Deprecated** in `CHANGELOG.md` in the release that
+  ships the successor, with the earliest date the old version may go;
+- happens only after the census (below) shows no connected server, or only
+  ones whose owners have been told, still on it;
+- is listed under **Removed** in the release that does it, and in the table
+  above.
+
+`MIN_VERSION` never goes above `VERSION` (a compile-time assertion in
+`rpf-protocol`), and every version from `MIN_VERSION` up to `VERSION` must
+have a frozen corpus (`released_corpora_are_frozen`).
+
+## Changing the wire
+
+### The freeze
+
+`protocol/corpus/v<N>/` is the spec of protocol `N`: one sample frame per
+message type in each direction, plus `commands.json` and
+`command_outcomes.json`. **Once a release ships version `N`, its corpus is
+frozen**: `protocol/corpus/frozen.json` lists every file with a digest, and
+`released_corpora_are_frozen` fails if any file is changed, added or removed.
+v1 is frozen as of 0.1.0.
+
+So the first change to the wire after a release, of any kind, compatible or
+not, **bumps `protocol::VERSION`** (and `rpf.protocol.VERSION`), and
+`UPDATE_CORPUS=1 cargo test -p rpf-protocol --test protocol` writes the new
+`v<N+1>/` while the frozen one stays as it was. Changes between two releases
+all land in the one unreleased version; it is frozen when its release is cut
+(`docs/deployment.md`, "Releasing"). The container and ledger corpora under
+`protocol/corpus/` are validation cases, not wire shapes, and are not
+versioned.
+
+A version bump that is a pure addition needs no other code: the portal
+serves the older version with the same handlers, because the older core
+ignores what it does not know and the portal defaults what the older core
+does not send. Only a breaking change needs a path of its own.
+
+### What is compatible
+
+The two directions are not symmetric, because only the portal is ever newer.
+
+| Change | In a frame the portal sends | In a frame a game server sends |
+|---|---|---|
+| Add a field | Compatible: an older core ignores unknown fields | Compatible **only if optional-with-default** (`#[serde(default)]`). A required one makes every older server's frame fail to decode |
+| Add a message type, or a variant of a nested enum (`Command`, `CommandOutcome`, `RejectCode`, a record kind, …) | **Not compatible**: an older core refuses an unknown type or variant. Send it only on connections whose protocol has it (below) | Compatible: an older server never sends it |
+| Add a config section to `ConfigSnapshot` | Compatible: the core keeps the snapshot whole, sections it does not know included | n/a |
+| Add a setting key | Compatible: settings are data, keyed by name ("Names that are schema" in `AGENTS.md`) | n/a |
+| Remove, rename or retype a field; make an optional field required; rename a type or variant | **Breaking** | **Breaking** |
+
+A breaking change keeps a path for each older version still in its support
+window: the portal decodes that version's frames and encodes its frames to
+that version's shapes, choosing by the connection's protocol, or the change
+waits until the old version is dropped.
+
+Nothing the portal sends today depends on the connection's version. The
+first portal message or nested variant added after 0.1.0 is the first that
+must: it is sent only to a connection whose `Hello` named a protocol that
+has it. The connection's version is already recorded where the registry
+holds the socket (`Socket::protocol`, today read only by the census), and
+the gate belongs where frames are queued for a connection, in
+`rpf_backend::ws::registry`, so no caller can forget it.
+
+### How the tests hold it
+
+All in `crates/rpf-protocol/tests/protocol.rs` unless named otherwise.
+
+| Test | What it proves |
+|---|---|
+| `released_corpora_are_frozen` | No released corpus has changed, and every served older version has one |
+| `every_supported_version_is_still_read_and_written` | For every version from `MIN_VERSION` to `VERSION`: each frame a game server on it sends still decodes, and each frame the portal sends it, decoded and written again, still carries every field it had, with the same value. A required field added to a server's frame, or a field removed, renamed or retyped anywhere, fails it |
+| `every_field_is_required_or_named_optional` | Every field in the corpus is required unless `OPTIONAL` names it. Making a field optional or required is a decision, not a side effect |
+| `server_to_portal_unknown_fields_are_ignored`, `portal_to_server_unknown_fields_are_ignored`, `unknown_fields_in_nested_samples_are_ignored` | An unknown field at any depth of any sample is ignored, and changes nothing |
+| `unknown_message_types_are_rejected`, `unknown_nested_variants_are_rejected` | An unknown message type, command, outcome or reject code is refused, not misread |
+| `missing_fields_are_rejected` | A required field left out is refused, nullable ones included |
+| `the_lua_core_is_released_with_the_portal` | The core's release and protocol versions match the portal's |
+| `lua/spec/protocol_spec.lua` | The Lua decoder reads the current corpus, ignores unknown fields at every depth, refuses unknown types and missing fields |
+| `protocol_versions_outside_the_supported_range_are_refused_with_directions` (`rpf_backend::ws::auth`), `handshake_and_duplicate_instance_are_scoped_and_bounded` (`tests/endpoints/ws.rs`) | The supported range is served, and a `Hello` outside it either way is refused with the upgrade message |
+| `lua/spec/client_spec.lua` | The core stops on a `Welcome` naming another protocol |
+
+## Required and optional fields
+
+**Every field is required unless listed below.** A frame without a required
+field is refused, on both sides. A nullable field is not an optional one: it
+must still be sent, as `null` (`Hello`'s `config_version` and `config_hash`,
+a command's or a state change's unchanged fields), because a sender that
+left it out is a bug, and defaulting it would hide the bug.
+
+These are **optional-with-default**: a sender may leave them out, and the
+receiver takes the default (empty, `false` or `None`).
+
+| Field | Where | Default | Why optional |
+|---|---|---|---|
+| `items`, `item_bases`, `item_defaults`, `employers`, `employer_departments`, `employer_jobs`, `new_character`, `paying_accounts` | `ConfigSnapshot` (`config`) | Empty | Sections added after `settings`, so a snapshot from before one still decodes |
+| `base` | An item in `items` | `None` | Omitted when the item has no base |
+| `weight`, `size`, `stack_limit` | An item base in `item_bases` | `None` | Omitted when the base leaves it to the item or the defaults |
+| `description` | An employer, department or job | Empty | Free text, possibly empty |
+| `department` | A job in `employer_jobs` | `None` | Omitted when the job has none |
+| `job` | `new_character` | `None` | No default job |
+| `data` | A stack in container contents | Empty | Omitted when empty, which is the common case |
+| `rotated` | A grid placement in container contents | `false` | Upright is the common case |
+
+Container contents travel both ways (a hold hands them to a game server, a
+state report brings them back); everything else in the table is in the
+config snapshot, which only the portal sends. `OPTIONAL` in the protocol
+tests is the same list as far as the corpus shows it: `stack_limit`, `data`
+and `rotated` are absent from every sample, so the test cannot see them, and
+this table is where they are recorded.
+
+The Lua core requires every field of the protocol version it speaks, apart
+from what it keeps whole (the config snapshot, container contents and
+flags). That is safe because a portal serving its version always sends
+every field that version has.
+
+### What is not a field
+
+Three shapes on the wire have keys that are not fields, and the unknown-field
+rules do not apply inside them:
+
+- **Maps**: the snapshot's `settings` are keyed by setting name. A new key is
+  a new setting the receiver keeps.
+- **Opaque values**: a setting's value is whatever its setting holds, carried
+  as JSON. The Lua core also keeps the whole snapshot, and container contents
+  and flags, as received.
+- **Variants**: `Gender` is externally tagged, and `{"server_specific": "…"}`
+  is exactly one key on both sides. A key beside it is a different value, not
+  an unknown field.
+
+## Seeing who is behind
+
+A protocol version can only be dropped once nobody runs it, so who is behind
+has to be visible beforehand. `Hello` carries `protocol`, `engine` and
+`core_version`, which the handshake validates to a short plain charset, and
+the portal reports them three ways, all from the live connections
+(`ConnectionRegistry::census`), so they never disagree:
+
+- **Every connection's log lines** carry them, in the `game_socket` span,
+  from `game server authenticated` on.
+- **The census log**, every 15 minutes (`observability::census`): a line
+  `connected game servers by version` per protocol, engine and core version
+  with its `servers` count, then a `version census` line with the total, the
+  `oldest_protocol` connected, and the `protocol` and `min_protocol` this
+  portal serves. Every deployment has it, with or without a scraper.
+- **The metric** `rpf_game_servers_connected_by_version{protocol,engine,core_version}`
+  ([Deployment](deployment.md#metrics)).
+
+## The database
+
+The portal migrates its database at startup and refuses to serve if that
+fails. sqlx's migrator also refuses a database that has applied a migration
+the binary does not carry, so **an older image never starts against a
+database a newer one has migrated**, additive or not. A rollback across a
+migration is a restore, never the previous tag ([Deployment](deployment.md#startup)).
+That refusal is kept deliberately: it is what stops an old binary running
+against a schema it was not compiled for.
+
+Additivity still matters, for what a migration does to data that is already
+there. From 0.1.0 on:
+
+- **A migration is additive by default**: new tables, columns that are
+  nullable or have a default, indexes, constraints existing rows already
+  satisfy.
+- **A one-way door** is a migration that drops, renames or retypes, rewrites
+  rows, or deletes them: undoing it needs the backup. It is said so in its
+  PR, and listed under its release's **Database** heading in
+  `CHANGELOG.md`, which tells the operator to take a restore point before
+  deploying. Where it can, it follows an additive release that stopped
+  reading the old shape (expand, then contract), so the contract step loses
+  nothing the running portal still needs.
+
+### Milestone 1's migrations
+
+Reviewed for 0.1.0. No database was deployed before this release, so a
+0.1.0 deployment applies all of them to an empty database, and none of the
+one-way doors below has any data to lose. They are recorded so that nobody
+mistakes them for a precedent.
+
+| Migration | Verdict | What it does |
+|---|---|---|
+| `0001_initial` | Baseline | The initial schema |
+| `20260925224154_oidc_identity` | **One-way door** | Renames `users.username` to `display_name`; drops and recreates `sessions` (every session ends) |
+| `20260925224522_player_accounts` | **One-way door** | Drops `players.primary_identifier` and its unique key; gives legacy rows an unusable password; re-keys `player_identifiers` |
+| `20260925225622_drop_password_auth` | **One-way door** | Deletes local (non-OIDC) users and the guilds they own, with everything under them; drops `users.password_hash` |
+| `20260925225623_oidc_logins` | **One-way door** | Deletes every session, then adds a required `id_token` |
+| `20260926040548_roles` | Additive | Roles and assignments |
+| `20260926150000_audit_log` | Additive | The audit log |
+| `20260927001829_server_keys` | Additive | Game-server API keys |
+| `20260927002209_server_settings` | Additive | Per-server settings |
+| `20261002120000_request_log` | Additive | The request log |
+| `20261002140000_connection_epoch` | Additive | `servers.connection_epoch`, defaulted |
+| `20261004004449_player_server_joins` | Additive | Which servers a player joined |
+| `20261004150000_config_versions` | Additive | `servers.config_version` (defaulted) and `config_hash` (nullable) |
+| `20261004170000_invites` | Additive | Staff invites |
+| `20261004230357_item_catalog` | Additive | Item bases and definitions |
+| `20261004230418_player_roster_search` | Additive | `pg_trgm`, a search function and indexes |
+| `20261005202804_record_holds` | **One-way door** | Adds revisions and holds (additive), backfills `transactions.client_id` with random ids, and rewrites stored grid flags from the internally tagged form to the adjacently tagged one |
+| `20261005211421_bans` | Additive | Bans and identifier blocks |
+| `20261006015905_employment_rules` | Additive, tightening | Check constraints on employers, departments and jobs, and the job-department key made composite. No data changes; a row the M1 portal could not write would now be refused |
+| `20261006035602_starting_funds` | Additive | `accounts.issuance`, defaulted, and its unique index |
+| `20261006063910_warnings` | Additive | Warnings |
+| `20261006190259_money_adjustments` | Additive | Money adjustments; two transaction indexes rebuilt with a second column |
+| `20261006200144_paying_accounts` | Additive | `accounts.paying`, defaulted, and its unique index |

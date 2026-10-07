@@ -32,6 +32,21 @@ function support.read(relative)
   return contents
 end
 
+---A path under the conformance corpus of the protocol version the loaded
+---core speaks, `protocol/corpus/v<N>/`, which is the one the Rust tests
+---regenerate. Older versions' corpora are frozen, and held to the current
+---Rust types by `crates/rpf-protocol/tests/protocol.rs` alone: this core
+---only ever decodes frames in the version it speaks.
+---@param relative string? Relative to the corpus, like `commands.json`.
+---@return string path The path, relative to the repository root.
+function support.corpus(relative)
+  local dir = "protocol/corpus/v" .. rpf.protocol.VERSION
+  if relative then
+    return dir .. "/" .. relative
+  end
+  return dir
+end
+
 ---Loads the core from scratch, as an adapter would: `init.lua` first, then
 ---each file in the order it declares, with no `require`.
 ---@param side "server"|"client"? Which side's files; the server by default.

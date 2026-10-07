@@ -1,0 +1,34 @@
+{
+  "v1": {
+    "released": "0.1.0",
+    "files": {
+      "command_outcomes.json": "fnv1a64:bacb4f339da88e5a",
+      "commands.json": "fnv1a64:cde404b497ca6920",
+      "portal_to_server/ack.json": "fnv1a64:4866949303030c1c",
+      "portal_to_server/apply_command.json": "fnv1a64:31e93ad048d500f5",
+      "portal_to_server/character_created.json": "fnv1a64:0c3e05bb6674ae2a",
+      "portal_to_server/config.json": "fnv1a64:53d7749c6dfeedec",
+      "portal_to_server/held.json": "fnv1a64:7fbc5e60e7caba45",
+      "portal_to_server/join_challenge.json": "fnv1a64:d489b60e85f821c8",
+      "portal_to_server/player_authenticated.json": "fnv1a64:a3911e7cfa16a6f3",
+      "portal_to_server/rejected.json": "fnv1a64:ee068525f78f90f9",
+      "portal_to_server/resync_required.json": "fnv1a64:8bea3f8b8a3a6f11",
+      "portal_to_server/state_applied.json": "fnv1a64:2481d2faef3b9e67",
+      "portal_to_server/welcome.json": "fnv1a64:6a65b24bbeac6d0f",
+      "server_to_portal/ack.json": "fnv1a64:4866949303030c1c",
+      "server_to_portal/begin_join.json": "fnv1a64:b33b7e605ba53221",
+      "server_to_portal/command_applied.json": "fnv1a64:d921cbe30300f3ab",
+      "server_to_portal/config_applied.json": "fnv1a64:d444195687ceeca4",
+      "server_to_portal/create_character.json": "fnv1a64:96226cd74f29a914",
+      "server_to_portal/declare_holds.json": "fnv1a64:c4ed3dbfcc87c7c8",
+      "server_to_portal/hello.json": "fnv1a64:ff10e9280d49955f",
+      "server_to_portal/hold.json": "fnv1a64:afcac85f05207513",
+      "server_to_portal/online_players.json": "fnv1a64:0314f81ecde561c4",
+      "server_to_portal/player_dropped.json": "fnv1a64:271c545fbd098a94",
+      "server_to_portal/redeem_ticket.json": "fnv1a64:f335ad8aba07bedc",
+      "server_to_portal/release.json": "fnv1a64:d41ef4c285471e13",
+      "server_to_portal/resync.json": "fnv1a64:32270dbd8862817b",
+      "server_to_portal/state_changed.json": "fnv1a64:318aac882bbc7811"
+    }
+  }
+}

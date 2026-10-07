@@ -1,7 +1,7 @@
 ---The wire protocol, as the game server speaks it.
 ---
 ---This mirrors `crates/rpf-protocol/src/lib.rs`, and the two are held together by the
----same corpus: `protocol/corpus/v1/` is decoded here and by the Rust tests,
+---same corpus: `protocol/corpus/v<VERSION>/` is decoded here and by the Rust tests,
 ---so neither side is tested against the other's reimplementation. Every
 ---frame is one flat JSON object, the envelope's `id` and `sent_at` beside the
 ---message's `type` and its own fields, and a decoded frame keeps that shape:
