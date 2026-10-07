@@ -1,0 +1,21 @@
+{
+  "id": "00000005-0000-4000-8000-000000000005",
+  "sent_at": "2026-01-01T00:00:00Z",
+  "type": "release",
+  "records": [
+    {
+      "kind": "container",
+      "id": "00000009-0000-4000-8000-000000000009",
+      "revision": 4,
+      "contents": {
+        "layout": "list",
+        "stacks": [
+          {
+            "item": "water_bottle",
+            "count": 2
+          }
+        ]
+      }
+    }
+  ]
+}

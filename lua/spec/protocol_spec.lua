@@ -304,6 +304,7 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
         held = "ack",
         state_applied = "ack",
         resync_required = "ack",
+        restarting = "nothing",
         ack = "nothing",
       },
     }
@@ -316,7 +317,7 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
       end)
 
       -- The same rules as answers_are_coherent in crates/rpf-protocol/tests/protocol.rs.
-      it(direction .. " is coherent: a request has no re, and only an ack goes unanswered", function()
+      it(direction .. " is coherent: a request has no re, and only an ack or a restart notice goes unanswered", function()
         for tag, spec in pairs(protocol.messages[direction]) do
           local has_re = false
           for _, field in ipairs(spec.fields) do
@@ -325,7 +326,10 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
           if spec.answered_by == "reply" then
             assert.is_false(has_re, tag .. ": a request carries no re")
           end
-          assert.are.equal(tag == "ack", spec.answered_by == "nothing", tag)
+          assert.are.equal(tag == "ack" or tag == "restarting", spec.answered_by == "nothing", tag)
+          if tag == "restarting" then
+            assert.is_false(has_re, "restarting: a notice names no frame")
+          end
           if tag == "ack" then
             assert.is_true(has_re, "ack: must name what it acknowledges")
             assert.is_false(spec.reissuable, "ack: never sits in an outbox")

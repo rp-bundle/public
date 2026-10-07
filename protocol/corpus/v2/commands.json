@@ -1,0 +1,61 @@
+[
+  {
+    "command": "adjust_balance",
+    "client_id": "00000008-0000-4000-8000-000000000008",
+    "account_id": "00000004-0000-4000-8000-000000000004",
+    "base_revision": 5,
+    "funds_account": "0000000a-0000-4000-8000-00000000000a",
+    "amount": -250,
+    "description": "Admin correction."
+  },
+  {
+    "command": "kick",
+    "player_id": "00000002-0000-4000-8000-000000000002",
+    "reason": "Kicked by staff: stop spawning cars."
+  },
+  {
+    "command": "give_item",
+    "container_id": "00000009-0000-4000-8000-000000000009",
+    "base_revision": 3,
+    "item": "water_bottle",
+    "count": 2,
+    "position": {
+      "x": 1,
+      "y": 0
+    },
+    "rotated": false
+  },
+  {
+    "command": "take_item",
+    "container_id": "00000009-0000-4000-8000-000000000009",
+    "base_revision": 4,
+    "index": 0,
+    "count": 1
+  },
+  {
+    "command": "move_item",
+    "container_id": "00000009-0000-4000-8000-000000000009",
+    "base_revision": 5,
+    "index": 1,
+    "position": {
+      "x": 2,
+      "y": 3
+    },
+    "rotated": true
+  },
+  {
+    "command": "edit_character",
+    "character_id": "00000003-0000-4000-8000-000000000003",
+    "base_revision": 2,
+    "first_name": "Janet",
+    "last_name": null,
+    "gender": {
+      "server_specific": "nonbinary"
+    }
+  },
+  {
+    "command": "delete_character",
+    "character_id": "00000003-0000-4000-8000-000000000003",
+    "base_revision": 2
+  }
+]

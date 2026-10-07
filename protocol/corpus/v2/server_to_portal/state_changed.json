@@ -1,0 +1,43 @@
+{
+  "id": "00000005-0000-4000-8000-000000000005",
+  "sent_at": "2026-01-01T00:00:00Z",
+  "type": "state_changed",
+  "changes": [
+    {
+      "kind": "character",
+      "id": "00000003-0000-4000-8000-000000000003",
+      "base_revision": 2,
+      "first_name": "Janet",
+      "last_name": null,
+      "gender": null
+    },
+    {
+      "kind": "account",
+      "id": "00000004-0000-4000-8000-000000000004",
+      "base_revision": 5,
+      "transactions": [
+        {
+          "client_id": "00000008-0000-4000-8000-000000000008",
+          "from_account": "00000004-0000-4000-8000-000000000004",
+          "to_account": "0000000a-0000-4000-8000-00000000000a",
+          "amount": 250,
+          "description": "Groceries."
+        }
+      ]
+    },
+    {
+      "kind": "container",
+      "id": "00000009-0000-4000-8000-000000000009",
+      "base_revision": 3,
+      "contents": {
+        "layout": "list",
+        "stacks": [
+          {
+            "item": "water_bottle",
+            "count": 2
+          }
+        ]
+      }
+    }
+  ]
+}

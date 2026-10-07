@@ -121,7 +121,7 @@ local function reconnect(p)
   p.advance(2 * 60 * 1000)
   p.open()
   local hellos = sent_of(p, "hello")
-  p.deliver(support.portal_frame("welcome", { re = hellos[#hellos].id, protocol = 1, server_id = SERVER }))
+  p.deliver(support.portal_frame("welcome", { re = hellos[#hellos].id, protocol = rpf.protocol.VERSION, server_id = SERVER }))
 end
 
 describe("rpf.sync", function()
@@ -736,7 +736,7 @@ describe("rpf.sync", function()
       local restarted = support.fake_platform({ store = store, seed = 99 })
       rpf.start_server(restarted, { url = "ws://portal", api_key = "rpf_test_secret" })
       restarted.open()
-      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = 1, server_id = SERVER }))
+      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = rpf.protocol.VERSION, server_id = SERVER }))
 
       assert.are.same({}, last_of(restarted, "declare_holds").records)
     end)
@@ -752,7 +752,7 @@ describe("rpf.sync", function()
       local restarted = support.fake_platform({ store = store, seed = 99 })
       rpf.start_server(restarted, { url = "ws://portal", api_key = "rpf_test_secret" })
       restarted.open()
-      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = 1, server_id = SERVER }))
+      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = rpf.protocol.VERSION, server_id = SERVER }))
       local reports = sent_of(restarted, "state_changed")
       assert.are.equal(2, #reports, "both replayed")
 
@@ -786,7 +786,7 @@ describe("rpf.sync", function()
       local restarted = support.fake_platform({ store = store, seed = 99 })
       rpf.start_server(restarted, { url = "ws://portal", api_key = "rpf_test_secret" })
       restarted.open()
-      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = 1, server_id = SERVER }))
+      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = rpf.protocol.VERSION, server_id = SERVER }))
       local reports = sent_of(restarted, "state_changed")
       local stale = {
         re = reports[2].id,
@@ -821,7 +821,7 @@ describe("rpf.sync", function()
       local restarted = support.fake_platform({ store = store, seed = 99 })
       rpf.start_server(restarted, { url = "ws://portal", api_key = "rpf_test_secret" })
       restarted.open()
-      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = 1, server_id = SERVER }))
+      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = rpf.protocol.VERSION, server_id = SERVER }))
       local report = last_of(restarted, "state_changed")
 
       for _ = 1, rpf.sync.options.orphan_retries + 1 do
@@ -847,7 +847,7 @@ describe("rpf.sync", function()
       local restarted = support.fake_platform({ store = store, seed = 99 })
       rpf.start_server(restarted, { url = "ws://portal", api_key = "rpf_test_secret" })
       restarted.open()
-      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = 1, server_id = SERVER }))
+      restarted.deliver(support.portal_frame("welcome", { re = restarted.last().id, protocol = rpf.protocol.VERSION, server_id = SERVER }))
 
       restarted.deliver(support.portal_frame("resync_required", {
         re = last_of(restarted, "state_changed").id,

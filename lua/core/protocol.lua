@@ -23,7 +23,7 @@ local protocol = {}
 
 local json = rpf.json
 
-protocol.VERSION = 1
+protocol.VERSION = 2
 protocol.MAX_AMOUNT = json.MAX_SAFE_INTEGER
 protocol.SERVER_TO_PORTAL = "server_to_portal"
 protocol.PORTAL_TO_SERVER = "portal_to_server"
@@ -708,6 +708,11 @@ protocol.messages = {
       { "re", UUID },
       { "stale", array_of(RECORD_REVISION) },
       { "released", array_of(RECORD_REF) },
+    }),
+    -- Never answered: the portal closes the socket right after sending it
+    -- (protocol 2, H1).
+    restarting = message("nothing", false, {
+      { "retry_after_ms", U64 },
     }),
     ack = message("nothing", false, {
       { "re", UUID },

@@ -32,7 +32,14 @@
 ---   outcome is answered `unknown`, never run again and never guessed at.
 ---   An unreadable slot count halts new work until the journal can be found.
 --- - **Reconnects back off exponentially, plus random jitter**, so a portal
----   restart does not bring every game server back in the same second.
+---   that went away without warning does not get every game server back in
+---   the same second.
+--- - **An announced restart is waited out, not backed off from.** The portal
+---   sends `restarting` with a `retry_after_ms` before it closes a socket for
+---   a deploy (H1). The next reconnect waits that long plus jitter, and the
+---   backoff is not advanced: the portal chose the delay from how many
+---   servers it is dropping, and a core that finds nothing listening yet
+---   falls back to its own backoff from there.
 ---
 ---Every timer goes through the platform clock, so all of this runs instantly
 ---and deterministically under the mock.
@@ -135,7 +142,8 @@ end
 ---@class rpf.ClientOptions
 ---@field backoff_base_ms number? The first reconnect delay, before jitter. Doubles on each failed attempt.
 ---@field backoff_max_ms number? The longest reconnect delay, before jitter.
----@field jitter number? The largest random extra, as a fraction of the delay: 0.5 adds up to half again.
+---@field jitter number? The largest random extra, as a fraction of the delay: 0.5 adds up to half again. Applied to an announced restart's `retry_after_ms` too, which is what spreads the servers the portal dropped together.
+---@field max_retry_after_ms number? The longest a `restarting` notice may hold the reconnect off. A longer `retry_after_ms` is clipped to it, so a portal cannot park a server for an hour by mistake.
 ---@field retry_window_ms number? The window the portal promises to remember a request id for (C3's `RETRY_WINDOW`; it keeps them longer), which is how old an entry may get before it is reissued or dropped.
 ---@field window_margin_ms number? How long before the window closes an entry is dealt with, to cover clock drift between the hosts and a frame still in flight.
 ---@field sweep_interval_ms number? How often the outbox is checked against the window, and running requests against their timeout.
@@ -153,6 +161,7 @@ client.DEFAULTS = {
   backoff_base_ms = 1000,
   backoff_max_ms = 60 * 1000,
   jitter = 0.5,
+  max_retry_after_ms = 5 * 60 * 1000,
   retry_window_ms = 7 * 24 * 60 * 60 * 1000,
   window_margin_ms = 12 * 60 * 60 * 1000,
   sweep_interval_ms = 60 * 1000,
@@ -222,6 +231,7 @@ client.DEFAULTS = {
 ---@field clock_mark number? The highest host clock reading seen, carried across restarts through `CLOCK_KEY`. A reading far enough below it is a step back. Nil until the outbox is loaded, and for good while recovery has failed.
 ---@field clock_stored number? The mark as last persisted, so it is written only when it has moved.
 ---@field attempt integer Reconnect attempts since the last `Welcome`, for the backoff.
+---@field retry_after_ms number? What the portal's `restarting` notice asked the next reconnect to wait, already clipped, in place of the backoff. Cleared once used, and on a `Welcome`.
 ---@field generation integer Bumped on every connect, so callbacks and timers from an older connection are ignored.
 ---@field hello_id string? The id of this connection's `Hello`, whose answer completes the handshake.
 ---@field callbacks table<string, rpf.ReplyCallback> Callbacks by frame id. In memory only, so they do not survive a restart; the entries do.
@@ -824,14 +834,24 @@ function Client:backoff(attempt)
   return delay + delay * o.jitter * self:random_fraction()
 end
 
----The connection ended. Unless stopped, try again after a backoff.
+---The connection ended. Unless stopped, try again: after the delay an
+---announced restart asked for, plus jitter, or else after a backoff.
 ---@param reason string What the platform said.
 function Client:closed(reason)
   if self.state == "stopped" then
     return
   end
-  local delay = self:backoff(self.attempt)
-  self.attempt = self.attempt + 1
+  local delay
+  if self.retry_after_ms then
+    -- The portal said it was going: not a failure, so the backoff stays
+    -- where it is for the attempts that follow if it is not back in time.
+    local asked = self.retry_after_ms
+    self.retry_after_ms = nil
+    delay = asked + asked * self.options.jitter * self:random_fraction()
+  else
+    delay = self:backoff(self.attempt)
+    self.attempt = self.attempt + 1
+  end
   self.state = "connecting"
   self.generation = self.generation + 1
   local generation = self.generation
@@ -1196,6 +1216,21 @@ function Client:receive(text)
   end
   if frame.re then
     self:answer(frame)
+  else
+    self:notice(frame)
+  end
+end
+
+---Handles a frame from the portal that answers nothing: the portal telling
+---this server something about the connection itself. Today that is only
+---`restarting`; a type the core does not know is refused by `decode` long
+---before it gets here.
+---@param frame rpf.Frame The decoded notice.
+function Client:notice(frame)
+  if frame.type == "restarting" then
+    local asked = math.min(frame.retry_after_ms, self.options.max_retry_after_ms)
+    self.retry_after_ms = asked
+    self:log("info", "the portal is restarting; reconnecting " .. math.floor(asked) .. " ms after it closes")
   end
 end
 
@@ -1228,6 +1263,7 @@ function Client:handshake_reply(frame)
     end
     self:remember(frame.id)
     self.attempt = 0
+    self.retry_after_ms = nil
     self.server_id = frame.server_id
     self:log("info", "connected as server " .. frame.server_id)
     -- Swept before the state changes, so nothing the sweep reissues is sent

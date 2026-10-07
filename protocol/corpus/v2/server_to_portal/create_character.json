@@ -1,0 +1,12 @@
+{
+  "id": "00000005-0000-4000-8000-000000000005",
+  "sent_at": "2026-01-01T00:00:00Z",
+  "type": "create_character",
+  "owner": {
+    "kind": "player",
+    "id": "00000002-0000-4000-8000-000000000002"
+  },
+  "first_name": "Jane",
+  "last_name": "Doe",
+  "gender": "female"
+}

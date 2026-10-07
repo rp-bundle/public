@@ -25,7 +25,8 @@ Two numbers are involved, and only one decides compatibility.
 
 | Protocol | First release | Served by portal releases | Status |
 |---|---|---|---|
-| 1 | 0.1.0 | 0.1.0 and later, until its support window closes | Current |
+| 1 | 0.1.0 | 0.1.0 and later, until its support window closes | Served |
+| 2 | Unreleased | The next release and later | Current, unreleased: adds `Restarting` (H1) |
 
 A row is added when a release ships a new protocol version, and a version's
 last portal release is filled in when one drops it. `CHANGELOG.md` names the
@@ -35,9 +36,10 @@ protocol versions each release speaks.
 
 **The portal serves every protocol version from `protocol::MIN_VERSION` to
 `protocol::VERSION`**, and on each connection it speaks the version that
-connection's `Hello` named. Both constants are `1` in 0.1.0, so today this is
-the machinery rather than something exercised; it is in place before there
-are servers in the wild to strand.
+connection's `Hello` named. Both constants were `1` in 0.1.0; the first
+change after it (H1's `Restarting`) made `VERSION` 2 with `MIN_VERSION`
+still 1, so a 0.1.0 core is served by the next portal exactly as this page
+says.
 
 - A `Hello` naming a version in the range is answered with `Welcome`, whose
   `protocol` is that same version (`rpf_backend::ws::auth`). The Lua core
@@ -121,13 +123,16 @@ window: the portal decodes that version's frames and encodes its frames to
 that version's shapes, choosing by the connection's protocol, or the change
 waits until the old version is dropped.
 
-Nothing the portal sends today depends on the connection's version. The
-first portal message or nested variant added after 0.1.0 is the first that
-must: it is sent only to a connection whose `Hello` named a protocol that
-has it. The connection's version is already recorded where the registry
-holds the socket (`Socket::protocol`, today read only by the census), and
-the gate belongs where frames are queued for a connection, in
-`rpf_backend::ws::registry`, so no caller can forget it.
+One thing the portal sends depends on the connection's version:
+`Restarting`, added in protocol 2 (`protocol::RESTARTING_PROTOCOL`), goes
+only to a connection whose `Hello` named protocol 2 or later; a protocol 1
+connection is closed without it, as a restart always closed it, and its core
+comes back on its own backoff. The gate is in `rpf_backend::ws::registry`'s
+drain, which holds the connections and their versions, so no caller can
+forget it, and `a_core_on_the_previous_protocol_is_cut_without_the_notice`
+(the fake game server) holds it. The next message or nested variant the
+portal gains follows the same pattern: a `<NAME>_PROTOCOL` constant beside
+the type, and the check where the registry queues the frame.
 
 ### How the tests hold it
 

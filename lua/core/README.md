@@ -255,8 +255,18 @@ The game server's connection to the portal (`rpf.connection` once started).
   expires requests that might still have been answered; they are joins and
   character creations a player can retry.
 - **Reconnects** back off exponentially from 1 s to a 60 s cap, plus up to
-  half that again in random jitter, so a portal restart does not bring every
-  server back in the same second. A `Hello` refused with a code that may not be
+  half that again in random jitter, so a portal that went away without
+  warning does not get every server back in the same second. **An announced
+  restart is waited out instead:** before a deploy closes a socket the portal
+  sends `restarting` with `retry_after_ms` (protocol 2, H1), and the
+  reconnect that follows the close waits that long plus the same jitter,
+  without advancing the backoff, because the portal chose the delay from how
+  many servers it was dropping. A core that then finds nothing listening
+  falls back to its backoff from the first step. The delay is clipped to
+  `max_retry_after_ms` (five minutes), so a portal cannot park a server for
+  an hour by mistake, and a `Welcome` forgets a notice that was not followed
+  by a close. The notice is never acked: the socket is closing.
+  A `Hello` refused with a code that may not be
   retried (`unauthorised`, `duplicate_instance`, …) stops the connection for
   good, and so does a `Welcome` naming a protocol version other than
   `rpf.protocol.VERSION`. A portal that no longer serves this core's protocol
