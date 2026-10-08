@@ -312,6 +312,30 @@ describe("the FiveM adapter", function()
       assert.is_false(lock.locked(7))
     end)
 
+    it("puts held players back in their own bucket when the resource stops", function()
+      local driver = started_server()
+      driver.add_player(7, "Sam", { "license:0123" })
+      rawget(_G, "SetPlayerRoutingBucket")("7", 5)
+      driver.connect_player(7)
+      assert.are.equal(rpf.fivem.lock.BUCKET_BASE + 7, driver.bucket(7))
+      driver.stop()
+      assert.are.equal(5, driver.bucket(7))
+    end)
+
+    it("sends a player found in their holding bucket back to the default one", function()
+      local driver = started_server()
+      local lock = rpf.fivem.lock
+      driver.add_player(7, "Sam", { "license:0123" })
+      -- A state that crashed without stopping left them held.
+      rawget(_G, "SetPlayerRoutingBucket")("7", lock.BUCKET_BASE + 7)
+      driver.connect_player(7)
+      rpf.players.authenticating(7)
+      rpf.players.register(7, { player_id = "00000000-0000-4000-8000-000000000007", username = "sam" })
+      rpf.players.advance(7, "character_select")
+      rpf.players.advance(7, "active")
+      assert.are.equal(0, driver.bucket(7))
+    end)
+
     it("reports identifiers verbatim, and the core sends them without ip:", function()
       local driver, record = started_server()
       local platform = rpf.connection.platform

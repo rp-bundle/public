@@ -74,7 +74,7 @@ most:
 | Event | Core call |
 |---|---|
 | `onResourceStart` (this resource) | Starts the core from the convars, then `players.connected` for everyone already on the server |
-| `onResourceStop` (this resource) | Closes every socket it has open in `rpf-ws`, which outlives a `restart rpf`: a socket left open would keep answering the portal's pings, and the portal would refuse the restarted core as a duplicate instance |
+| `onResourceStop` (this resource) | Closes every socket it has open in `rpf-ws`, which outlives a `restart rpf` (a socket left open would keep answering the portal's pings, and the portal would refuse the restarted core as a duplicate instance), and puts every held player back in their own routing bucket |
 | `playerJoining` | `players.connected(source)` |
 | `playerDropped` | `players.dropped(source, reason)` |
 | `chatMessage` (the `chat` resource) | Cancelled for a held player (`lock.lua`) |

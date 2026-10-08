@@ -169,6 +169,17 @@ function server.start(platform)
   return true
 end
 
+---Stops cleanly, because this resource is stopping and the engine and the
+---shim outlive it: every socket it opened in `rpf-ws` is closed, or it would
+---keep answering the portal's pings and the restarted core would be refused
+---as a duplicate instance (C1), and every held player goes back to their
+---own routing bucket.
+---@param transport rpf.fivem.Transport The socket's transport.
+function server.stop(transport)
+  transport.stop()
+  fivem.lock.release_all()
+end
+
 rpf.fivem.server = server
 
 local shim = exports["rpf-ws"] --[[@as rpf.fivem.WsShim]]
@@ -183,11 +194,8 @@ AddEventHandler("rpf-ws:close", function(id, code, reason) transport.closed(id, 
 AddEventHandler("onResourceStart", function(name)
   if name == GetCurrentResourceName() then server.start(platform) end
 end)
--- `rpf-ws` outlives a restart of this resource, and its socket would keep
--- answering the portal's pings, so the portal would refuse the restarted
--- core as a duplicate instance (C1).
 AddEventHandler("onResourceStop", function(name)
-  if name == GetCurrentResourceName() then transport.stop() end
+  if name == GetCurrentResourceName() then server.stop(transport) end
 end)
 -- `playerJoining`, not `playerConnecting`: a connecting player's `source`
 -- is a temporary id that changes once they join, and the core keeps the

@@ -47,11 +47,30 @@ function lock.follow(handle, state)
       SetPlayerRoutingBucket(tostring(handle), previous)
     end
   elseif held[handle] == nil then
-    held[handle] = tonumber(GetPlayerRoutingBucket(tostring(handle))) or 0
     local bucket = lock.BUCKET_BASE + handle
+    local previous = tonumber(GetPlayerRoutingBucket(tostring(handle))) or 0
+    -- Already in their holding bucket: a state before this one held them
+    -- and was lost without `release_all` (a crash). Their bucket before
+    -- that is unknown, so they go back to the default one.
+    if previous == bucket then
+      previous = 0
+    end
+    held[handle] = previous
     SetRoutingBucketEntityLockdownMode(bucket, "strict")
     SetPlayerRoutingBucket(tostring(handle), bucket)
   end
+end
+
+---Puts every held player back in the bucket they were in, because this
+---resource is stopping: the engine keeps a player's bucket across a
+---`restart rpf`, and the next state would not know where they came from.
+---The next state holds them again, from their own bucket, as it hands them
+---to the core.
+function lock.release_all()
+  for handle, previous in pairs(held) do
+    SetPlayerRoutingBucket(tostring(handle), previous)
+  end
+  held = {}
 end
 
 ---Refuses a held player's chat: the `chat` resource's `chatMessage` is
