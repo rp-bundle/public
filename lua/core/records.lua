@@ -71,7 +71,7 @@ local events = rpf.events
 ---@field revision number The revision this state is at, and so the base the next change names.
 ---@field data table The record: a character, an account with its `balance`, or a container, as the portal's `held` gave it and changes since have left it.
 ---@field through string? The player whose session it is held for, released when they leave. Nil for a record held on its own.
----@field changed table<string, true> What has changed since the last report: character field names, or `contents`.
+---@field changed table<string, true> What has changed since the last report: character field names (`job` is reported as `employment`), or `contents`.
 ---@field transactions rpf.records.Transaction[] On an account, the entries the portal has not acknowledged, oldest first.
 ---@field resync boolean Whether the portal needs the whole record, because a report on it was stale, refused or lost.
 ---@field more boolean? Whether the last report queued for it left ledger entries for the next. Only `rpf.sync` sets it.
@@ -393,6 +393,43 @@ function records.set_character(id, fields)
     entry.data[field] = value
     entry.changed[field] = true
   end
+  touched()
+  return true
+end
+
+---Changes a held character's job (D7), or clears it, and marks it for the
+---next report, which carries it as `employment`. Only the shape is checked
+---here: whether the job is one of this server's is `rpf.jobs`'s rule, which
+---is the only caller, because a job removed from config a moment ago must
+---still be clearable and a report naming it must still be made.
+---
+---The same job again changes nothing and marks nothing, so a no-op is never
+---reported.
+---@param id string The character's uuid.
+---@param ref { employer: string, job: string }? The job, by its employer's slug and its own, or nil for none.
+---@return boolean? ok True if it is the character's job now.
+---@return string? err `"not_held"`, or `"invalid"` for a ref that is not two strings. Nothing changes on an error.
+function records.set_job(id, ref)
+  local entry = records.entries[records.key("character", id)]
+  if not entry then
+    return nil, "not_held"
+  end
+  local new = nil
+  if ref ~= nil then
+    if type(ref) ~= "table" or type(ref.employer) ~= "string" or type(ref.job) ~= "string" then
+      return nil, "invalid"
+    end
+    new = { employer = ref.employer, job = ref.job }
+  end
+  local old = entry.data.job
+  if old == json.null then
+    old = nil
+  end
+  if (old == nil and new == nil) or (old and new and old.employer == new.employer and old.job == new.job) then
+    return true
+  end
+  entry.data.job = new
+  entry.changed.job = true
   touched()
   return true
 end

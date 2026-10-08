@@ -50,7 +50,7 @@ files each side loads after it and in what order:
 rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, config.lua,
                  -- client.lua, players.lua, commands.lua, moderation.lua, inventory.lua,
                  -- records.lua, sync.lua, accounts.lua, handoff.lua, join.lua,
-                 -- characters.lua, api.lua
+                 -- characters.lua, jobs.lua, edits.lua, api.lua
 rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua,
                  -- picker.lua, api.lua
 ```
@@ -71,7 +71,7 @@ API (see The public API).
 
 The client never loads `protocol.lua`, `client.lua`, `players.lua`,
 `commands.lua`, `moderation.lua`, `inventory.lua`, `records.lua`, `sync.lua`,
-`accounts.lua`, `join.lua` or `characters.lua`, because the player's client
+`accounts.lua`, `join.lua`, `characters.lua`, `jobs.lua` or `edits.lua`, because the player's client
 must never hold the server's API key and has no players or records to
 manage.
 
@@ -190,7 +190,10 @@ wire (`frame.type`, `frame.id`, `frame.re`, and the message's fields).
 
 - Unknown fields are ignored at every depth and do not appear in the decoded
   frame. Unknown `type`s are refused, and so is a missing field or one of the
-  wrong type. A nullable field must still be present.
+  wrong type. A nullable field must still be present, with one exception:
+  a character's `job` (D7), which the portal leaves out for none so that
+  frames recorded before it existed re-encode exactly. Absent and null both
+  decode as no job.
 - `answered_by` and `reissuable` mirror `Message::answered_by` and
   `Message::reissuable`, and `may_retry` mirrors `RejectCode::may_retry`.
 - `redact` replaces the credentials (`api_key`, `ticket`, `nonce`) for logging.
@@ -440,8 +443,15 @@ balance itself, so a resent `create_character` cannot create money twice.
 finds: when the `economy.default_job` setting names a job this server does
 not have (deleted, or inherited from a parent whose employers it does not
 share), the portal sends no default job, and applying the snapshot logs a
-warning naming the setting's job. The starting funds account is the portal's
+warning naming the setting's job. `rpf.jobs` gives a new character the
+default job (below). The starting funds account is the portal's
 alone and is never handed to a hold.
+
+Jobs carry what `rpf.jobs` (D7) needs: every job a `rank` (0 to 1000,
+compared only within its employer) and a paid one a `salary` per pay period,
+and an employer that pays salaries its `payroll`, the name of one of the
+server's `paying_accounts`. They are fields of the entries `config.job` and
+`config.employer` already return, so nothing indexes them separately.
 
 `paying_accounts` (#169) names the accounts this server pays out of, each
 `{ id, name }`, found by name with `config.paying_account(name)`: the
@@ -486,7 +496,7 @@ hears exactly what the core's own modules hear.
   `MAX_DEPTH` (32) deep are refused and logged, so a cycle is a log line, not
   a stack overflow.
 - **Core event names are reserved.** The public `emit` refuses anything under
-  `players.`, `config.`, `auth.`, `records.`, `characters.` or `rpf.`, so a
+  `players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.` or `rpf.`, so a
   script cannot forge a lifecycle event other scripts would believe.
 
 ### `rpf.players`
@@ -592,8 +602,13 @@ anything not held, so a module keeps ids and reads through it every time.
   that hold's reply arrives: it is given straight back. A player's hold the
   outbox refuses is tried again as the outbox drains.
 - **Changing.** `records.set_character(id, fields)`,
-  `records.set_contents(id, contents)` and `records.transfer(from, to,
-  amount, description)`. A transfer needs both accounts held, mints the
+  `records.set_job(id, ref)`, `records.set_contents(id, contents)` and
+  `records.transfer(from, to, amount, description)`. A character's job
+  (D7) is `{ employer, job }` or nil, checked here for shape only (whether
+  it is a job on this server is `rpf.jobs`'s rule), and reported as
+  `employment`: in a change, `null` when the job did not change and
+  `{ job = null }` when it changed to none, since a null field in a change
+  means unchanged; in a whole report, always `{ job = … }`. A transfer needs both accounts held, mints the
   ledger entry's `client_id` here, refuses to overdraw an account without
   `unlimited_balance`, and keeps every balance within ±`MAX_AMOUNT`.
   A description is at most `records.MAX_DESCRIPTION_BYTES` (256).
@@ -920,6 +935,75 @@ a ledger, and the balance or the error expected (`invalid_amount`,
 refused here before any fold, and expects `invalid_amount`. The spec also
 replays each case as transfers on held accounts, so the running balance is
 held to the same answers.
+
+### Jobs (`rpf.jobs`)
+
+Characters' jobs, duty and salaries (D7): the game side of the employers,
+departments and jobs staff define in the portal (E4) and of the default job
+(E5). Server only, and internal for now, like `rpf.characters`: the public
+jobs calls are K2's domain-neutral facade
+(`docs/architecture/framework-integration.md`, `jobs.current`), which will
+route here when RPF owns jobs. Until then the game server's own code calls
+it directly.
+
+**A job is part of the character**, a held record, so it changes only
+through `records.set_job` and goes to the portal with the character's next
+report, as `employment` (above). Nothing here keeps a copy: a character this
+server does not hold has no job here.
+
+| Call | What |
+|---|---|
+| `job_of(character_id)` | The job, `{ employer, job }`, and its definition from the config (`config.job`), as copies. Nil and nil for no job or a character not held; the definition is nil for a job the config no longer has |
+| `set_job(character_id, employer, job)` | Gives a job, or takes it away with both nil. `not_held`, `invalid` (not two strings, nor both nil), `not_found` (not a job in the applied config). The job it has already is a success that changes nothing. A change takes the character off duty first |
+| `on_duty(character_id)` | `not_in_play` unless some player has it selected, `no_job` without a job in the config. Already on duty is a success |
+| `off_duty(character_id)`, `is_on_duty(character_id)` | Off duty is always a success |
+| `rank_of(character_id)` | The job's configured `rank`, or nil with no job in the config |
+| `has_rank(character_id, employer, minimum)` | Whether its job is at that employer and at least `minimum`: a job slug there, whose rank is the bar, or a whole number. False for another employer, an unknown slug, or no job in the config |
+| `pay_period_ms()`, `salary_account()` | The settings below as they apply now. Internal |
+
+**Hiring is not staff-only.** A player can run a business (an employer a
+player owns), so `set_job` is a plain script call, and who may hire whom is
+the calling script's rule. What the core holds to is that the job is one of
+the server's in the applied config.
+
+**The default job.** When `rpf.characters` announces a new character
+(`characters.created`) with no job, it is given `config.default_job()`. With
+none to give while the `economy.default_job` setting names one, the setting
+names a job this server does not have: that is logged, as E5 logs it when
+the config is applied, and the character starts with no job.
+
+**Duty is memory only**, never stored or reported, because it is a fact
+about the character in play now. A character goes on duty only while a
+player has it selected, and goes off duty, with the event, when it is put
+away, when its player leaves, when its record is released or lost, when its
+job changes, and when the config drops its job.
+
+**Salaries.** While a character is on duty, each pay period
+(`economy.salary_interval_minutes`, 15 without a whole number from 1 to
+1440), measured from going on duty, pays the job's `salary` from the
+employer's `payroll` account (`config.paying_account(payroll)`, held for the
+server by `rpf.accounts`) into the character's held account named by
+`economy.salary_account` (`bank` without an identifier), through
+`accounts.pay(source, destination, salary, "Salary: <employer>/<job>")`: one
+ledger entry, appended once. The timers are `platform.after`, so the mock
+runs a shift in an `advance`. They cannot be cancelled, so each shift has a
+token, and a timer from an ended shift does nothing. The config and settings
+are read again at every payment, so a change mid-shift applies from the next
+one; a payment that cannot be made (no salary, no payroll, a payroll that is
+not a paying account or not held, no such account on the character) is
+skipped and logged at `warn` (an unpaid job at `debug`), and the shift goes
+on. Nobody is paid off duty or out of play.
+
+**A job removed from the config** stays on the character, since staff may
+restore it, but counts as no job meanwhile: no rank, no duty, no salary.
+Applying a config that drops a job a held character has logs it once, naming
+the job (again only if it comes back and goes again), and takes everyone on
+duty in it off duty. `set_job(id, nil, nil)` still clears it.
+
+Events, reserved: `jobs.changed(character_id, job, previous)` (each
+`{ employer, job }` or nil), `jobs.duty(character_id, on_duty)` and
+`jobs.paid(character_id, amount, client_id)`, `client_id` being the ledger
+entry's.
 
 ### The login (`rpf.join`, `rpf.handoff`, `rpf.auth`)
 

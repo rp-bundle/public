@@ -383,6 +383,39 @@ describe("rpf.sync", function()
       assert.are.equal(4, rpf.records.revision("character", CHARACTER))
     end)
 
+    -- D7: `employment` null says nothing, so a job changed to none is
+    -- `{ "job": null }`, and a whole report always says which job.
+    it("reports a job as employment, null when unchanged and { job = null } for none", function()
+      rpf.records.set_character(CHARACTER, { first_name = "Janet" })
+      flush(p)
+      assert.truthy(support.wire(p)[#support.wire(p)]:find('"employment":null', 1, true), "unchanged")
+
+      assert.is_true(rpf.records.set_job(CHARACTER, { employer = "lspd", job = "officer" }))
+      flush(p)
+      local change = last_of(p, "state_changed").changes[1]
+      assert.are.same(
+        { kind = "character", id = CHARACTER, base_revision = 4, employment = { job = { employer = "lspd", job = "officer" } } },
+        change
+      )
+
+      assert.is_true(rpf.records.set_job(CHARACTER, nil))
+      flush(p)
+      local text = support.wire(p)[#support.wire(p)]
+      assert.truthy(text:find('"employment":{"job":null}', 1, true), text)
+
+      local before = #sent_of(p, "state_changed")
+      assert.is_true(rpf.records.set_job(CHARACTER, nil), "no job again")
+      flush(p)
+      assert.are.equal(before, #sent_of(p, "state_changed"), "and nothing to report")
+    end)
+
+    it("names the job in a whole report", function()
+      assert.is_true(rpf.records.set_job(CHARACTER, { employer = "lspd", job = "chief" }))
+      assert.is_true(rpf.sync.release({ { kind = "character", id = CHARACTER } }))
+      local report = last_of(p, "release").records[1]
+      assert.are.same({ job = { employer = "lspd", job = "chief" } }, report.employment)
+    end)
+
     it("names consecutive revisions in reports queued behind each other", function()
       rpf.records.set_character(CHARACTER, { first_name = "A" })
       flush(p)
@@ -442,6 +475,7 @@ describe("rpf.sync", function()
         first_name = "Janet",
         last_name = "Doe",
         gender = "female",
+        employment = {},
       }, whole.records[2], "one past the portal's revision, which is ahead")
       assert.are.equal(10, rpf.records.revision("character", CHARACTER))
 

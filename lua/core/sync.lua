@@ -63,6 +63,7 @@
 local sync = {}
 
 local rpf = rpf
+local json = rpf.json
 local events = rpf.events
 local records = rpf.records
 
@@ -176,6 +177,17 @@ local function wire_transaction(tx)
   }
 end
 
+---A held character's job (D7), as `employment.job` carries it.
+---@param entry rpf.records.Entry The character.
+---@return table? job `{ employer, job }`, or nil for none.
+local function job_of(entry)
+  local job = entry.data.job
+  if job == nil or job == json.null then
+    return nil
+  end
+  return { employer = job.employer, job = job.job }
+end
+
 ---A record whole, as a `resync` or `release` reports it, at a revision of
 ---its own: one past the last this server used, so no two different whole
 ---states share a revision, and the portal can drop an older one that
@@ -196,6 +208,9 @@ local function full_report(entry)
     report.first_name = entry.data.first_name
     report.last_name = entry.data.last_name
     report.gender = entry.data.gender
+    -- Always sent, `{ job = null }` for none: a whole report left without
+    -- it would leave the portal's job as it was.
+    report.employment = { job = job_of(entry) }
   elseif entry.kind == "account" then
     report.transactions = {}
     for _, tx in ipairs(entry.transactions) do
@@ -222,7 +237,13 @@ local function change_of(entry)
       return nil
     end
     for field in pairs(entry.changed) do
-      change[field] = entry.data[field]
+      if field == "job" then
+        -- Null `employment` means unchanged, so a job changed to none must
+        -- be `{ job = null }`, never a bare null.
+        change.employment = { job = job_of(entry) }
+      else
+        change[field] = entry.data[field]
+      end
     end
   elseif entry.kind == "account" then
     change.transactions = {}

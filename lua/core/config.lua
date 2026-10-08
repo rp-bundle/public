@@ -47,6 +47,14 @@
 ---accounts: their balances are live state, and arrive when `rpf.accounts`
 ---holds them.
 ---
+---**Jobs carry what `rpf.jobs` needs (D7).** Every job has a `rank`, a
+---whole number from 0 to 1000 compared only within its employer, and a paid
+---one a `salary` per pay period; an employer that pays salaries names its
+---`payroll`, one of the `paying_accounts` by name. They are fields of the
+---entries already indexed, so `config.job` and `config.employer` return
+---them, and nothing here checks them: `rpf.jobs` reads them at each use and
+---skips, with a log line, what it cannot use.
+---
 ---**`new_character` arrives checked (E5).** `accounts` are the accounts the
 ---portal opens and funds when it creates a character: this side never
 ---provisions money. `job` is the default job, `null` when none is configured
@@ -492,7 +500,7 @@ end
 
 ---The job a new character on this server starts in (E5), checked by the
 ---portal against this server's jobs, so it is always one `config.job` finds.
----Assigning it is the character module's.
+---Assigning it is `rpf.jobs`'s (D7), when the character is created.
 ---@return rpf.ConfigJobRef? job A copy, or nil if there is none: none configured, the configured one is not a job here (logged when the config was applied), or no config yet.
 function config.default_job()
   ---@type table?

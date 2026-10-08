@@ -12,7 +12,8 @@
 ---config snapshot, which is data rather than fields, and is kept whole so a
 ---section a newer portal adds is not lost on the way. An unknown `type`, a
 ---missing field, or a field of the wrong type is refused. A field that may be
----null must still be present, sent as null.
+---null must still be present, sent as null, except a character's `job`,
+---which the portal leaves out for none (`optional`).
 ---@class rpf.protocol
 ---@field VERSION integer The protocol version this core speaks, sent in `Hello`. Mirrors `protocol::VERSION`.
 ---@field MAX_AMOUNT number 2^53 − 1, the widest money amount either side accepts. Mirrors `protocol::MAX_AMOUNT`.
@@ -44,7 +45,8 @@ protocol.PORTAL_TO_SERVER = "portal_to_server"
 ---@class rpf.protocol.Type
 ---@field decode fun(value: any, path: string): any Checks a decoded JSON value and returns it as Lua holds it. Throws the path and the problem.
 ---@field encode fun(value: any, path: string): any Checks a Lua value and returns it ready for `json.encode`. Throws the path and the problem.
----@field nullable boolean? True if the field may be null. It must still be present.
+---@field nullable boolean? True if the field may be null. It must still be present, unless `optional`.
+---@field optional boolean? True if the field may also be left out, which decodes as nil, and is left out when encoding nil. Only `optional` makes one.
 ---@field secret boolean? True if the value is a credential, which `redact` replaces.
 
 ---One message type in one direction.
@@ -201,6 +203,19 @@ local function nullable(inner)
   }
 end
 
+---A field the portal leaves out when it has no value, rather than sending
+---null: decoded as nil whether absent or null, and left out when encoding
+---nil. Only a character's `job` (D7) is one. It is the portal's
+---`skip_serializing_if`, there so that frames recorded before the field
+---existed still re-encode exactly; every other field must be present.
+---@param inner rpf.protocol.Type The type when present and not null.
+---@return rpf.protocol.Type type The type.
+local function optional(inner)
+  local t = nullable(inner)
+  t.optional = true
+  return t
+end
+
 ---An array of one type.
 ---@param inner rpf.protocol.Type The element type.
 ---@return rpf.protocol.Type type The type.
@@ -247,9 +262,12 @@ local function decode_fields(fields, value, path, out)
     local at = path == "" and name or path .. "." .. name
     local raw = value[name]
     if raw == nil then
-      fail(at, "missing")
+      if not t.optional then
+        fail(at, "missing")
+      end
+    else
+      out[name] = t.decode(raw, at)
     end
-    out[name] = t.decode(raw, at)
   end
 end
 
@@ -267,7 +285,9 @@ local function encode_fields(fields, value, path, out)
     if raw == nil and not t.nullable then
       fail(at, "missing")
     end
-    out[name] = t.encode(raw, at)
+    if raw ~= nil or not t.optional then
+      out[name] = t.encode(raw, at)
+    end
   end
 end
 
@@ -376,6 +396,25 @@ local OWNER_REF = object({
   { "id", UUID },
 })
 
+---`JobRef`: a job by its employer's slug and its own (E4, D7), since a job
+---slug is unique only within its employer. Checked for shape only: whether
+---it is one of this server's jobs is `rpf.jobs`'s business, as on the
+---portal's side.
+local JOB_REF = object({
+  { "employer", STRING },
+  { "job", STRING },
+})
+
+---`CharacterJob`: a character's job as its holder reports it (D7). A
+---wrapper, because the field it sits in has three states: the field null
+---says nothing about the job, `{ job = null }` says the character has none,
+---and `{ job = … }` names the one it has.
+local EMPLOYMENT = object({
+  { "job", nullable(JOB_REF) },
+})
+
+---A character as the portal hands it over. `job` (D7) is left out for none
+---(see `optional`).
 local CHARACTER = object({
   { "id", UUID },
   { "server_id", UUID },
@@ -383,6 +422,7 @@ local CHARACTER = object({
   { "first_name", STRING },
   { "last_name", STRING },
   { "gender", GENDER },
+  { "job", optional(JOB_REF) },
 })
 
 ---`IVector2`: a grid cell or a footprint.
@@ -537,7 +577,8 @@ local TRANSACTION = object({
 })
 
 ---`RecordReport`: a record's whole state as its holder has it, in a
----`resync` or a `release`.
+---`resync` or a `release`. This core always sends a character's
+---`employment`; the portal defaults it for a core from before D7.
 local RECORD_REPORT = tagged("kind", {
   character = {
     { "id", UUID },
@@ -545,6 +586,7 @@ local RECORD_REPORT = tagged("kind", {
     { "first_name", STRING },
     { "last_name", STRING },
     { "gender", GENDER },
+    { "employment", nullable(EMPLOYMENT) },
   },
   account = {
     { "id", UUID },
@@ -559,7 +601,8 @@ local RECORD_REPORT = tagged("kind", {
 })
 
 ---`StateChange`: what changed in one record since `base_revision`. A
----character field left null is unchanged.
+---character field left null is unchanged, `employment` included: no job is
+---`{ job = null }`.
 local STATE_CHANGE = tagged("kind", {
   character = {
     { "id", UUID },
@@ -567,6 +610,7 @@ local STATE_CHANGE = tagged("kind", {
     { "first_name", nullable(STRING) },
     { "last_name", nullable(STRING) },
     { "gender", nullable(GENDER) },
+    { "employment", nullable(EMPLOYMENT) },
   },
   account = {
     { "id", UUID },

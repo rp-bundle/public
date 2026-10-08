@@ -31,6 +31,7 @@
 ---@field sync rpf.sync Holds, releases and state reports for those records.
 ---@field accounts rpf.accounts Balances, transfers and payments on held accounts, and the ledger fold.
 ---@field characters rpf.characters A logged-in player's characters: list, create, select and switch.
+---@field jobs rpf.jobs Characters' jobs, duty and salaries (D7).
 ---@field edits rpf.edits Staff edits of held records: the commands that change a character, an account or a container this server holds (F5).
 ---@field picker rpf.picker The client side of choosing a character.
 ---@field handoff rpf.handoff The login messages between server and client.
@@ -54,7 +55,7 @@ rpf.VERSION = "0.1.0"
 ---is last on both sides, because it fronts whichever modules the side loaded.
 ---@class rpf.LoadOrder
 ---@field server string[] The game server's files, relative to `lua/core/`.
----@field client string[] The player client's files, relative to `lua/core/`. The client never loads the portal connection, because it must never hold the server's API key, and never loads the server's player registry, join flow, records or characters.
+---@field client string[] The player client's files, relative to `lua/core/`. The client never loads the portal connection, because it must never hold the server's API key, and never loads the server's player registry, join flow, records, characters or jobs.
 rpf.files = {
   server = {
     "json.lua",
@@ -74,6 +75,7 @@ rpf.files = {
     "handoff.lua",
     "join.lua",
     "characters.lua",
+    "jobs.lua",
     "edits.lua",
     "api.lua",
   },
@@ -132,6 +134,7 @@ function rpf.start_server(platform, options)
     options = options.join,
   })
   rpf.characters.start(platform, rpf.connection)
+  rpf.jobs.start(platform)
   rpf.edits.start()
   rpf.config.restore(platform)
   rpf.config.serve(platform, rpf.connection)

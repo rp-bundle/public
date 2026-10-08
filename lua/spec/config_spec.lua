@@ -87,7 +87,7 @@ describe("rpf.config", function()
     assert.is_true((rpf.config.apply(p, frame.version, frame.hash, frame.snapshot)))
 
     assert.are.same(
-      { slug = "lspd", name = "Los Santos Police", description = "Keeps the peace." },
+      { slug = "lspd", name = "Los Santos Police", description = "Keeps the peace.", payroll = "treasury" },
       rpf.config.employer("lspd")
     )
     assert.are.equal("Patrol", rpf.config.department("lspd", "patrol").name)
@@ -97,8 +97,13 @@ describe("rpf.config", function()
       name = "Officer",
       department = "patrol",
       description = "Answers calls.",
+      rank = 1,
+      salary = 250,
     }, rpf.config.job("lspd", "officer"))
     assert.is_nil(rpf.config.job("lspd", "chief").department)
+    -- D7: a rank on every job, a salary only on a paid one.
+    assert.are.equal(10, rpf.config.job("lspd", "chief").rank)
+    assert.is_nil(rpf.config.job("lspd", "chief").salary)
 
     -- Named by both slugs, never one alone.
     ---@diagnostic disable-next-line: missing-parameter

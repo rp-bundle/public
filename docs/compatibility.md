@@ -26,7 +26,7 @@ Two numbers are involved, and only one decides compatibility.
 | Protocol | First release | Served by portal releases | Status |
 |---|---|---|---|
 | 1 | 0.1.0 | 0.1.0 and later, until its support window closes | Served |
-| 2 | Unreleased | The next release and later | Current, unreleased: adds `Restarting` (H1) |
+| 2 | Unreleased | The next release and later | Current, unreleased: adds `Restarting` (H1), and a character's job (D7) |
 
 A row is added when a release ships a new protocol version, and a version's
 last portal release is filled in when one drops it. `CHANGELOG.md` names the
@@ -165,6 +165,10 @@ receiver takes the default (empty, `false` or `None`).
 | Field | Where | Default | Why optional |
 |---|---|---|---|
 | `items`, `item_bases`, `item_defaults`, `employers`, `employer_departments`, `employer_jobs`, `new_character`, `paying_accounts` | `ConfigSnapshot` (`config`) | Empty | Sections added after `settings`, so a snapshot from before one still decodes |
+| `payroll` | An employer in `employers` | `None` | Omitted when the employer pays no salaries; added by D7 |
+| `rank`, `salary` | A job in `employer_jobs` | `0`, `None` | Added by D7; `salary` is omitted for an unpaid job |
+| `job` | A character in `held` and `character_created` | `None` | Omitted when the character has no job, so a frame for one re-encodes as it did before D7 |
+| `employment` | A character's `StateChange` and `RecordReport` (`state_changed`, `resync`, `release`) | `None`: says nothing of the job | A field added by D7 to frames a game server sends, which a core from before it leaves out; `{"job": null}` is what clears a job |
 | `base` | An item in `items` | `None` | Omitted when the item has no base |
 | `weight`, `size`, `stack_limit` | An item base in `item_bases` | `None` | Omitted when the base leaves it to the item or the defaults |
 | `description` | An employer, department or job | Empty | Free text, possibly empty |
@@ -174,15 +178,17 @@ receiver takes the default (empty, `false` or `None`).
 | `rotated` | A grid placement in container contents | `false` | Upright is the common case |
 
 Container contents travel both ways (a hold hands them to a game server, a
-state report brings them back); everything else in the table is in the
-config snapshot, which only the portal sends. `OPTIONAL` in the protocol
+state report brings them back); `employment` is only ever sent by a game
+server, and a character's `job` only by the portal; everything else in the
+table is in the config snapshot, which only the portal sends. `OPTIONAL` in the protocol
 tests is the same list as far as the corpus shows it: `stack_limit`, `data`
 and `rotated` are absent from every sample, so the test cannot see them, and
 this table is where they are recorded.
 
 The Lua core requires every field of the protocol version it speaks, apart
 from what it keeps whole (the config snapshot, container contents and
-flags). That is safe because a portal serving its version always sends
+flags) and a character's `job`, which the portal leaves out for a character
+without one. That is safe because a portal serving its version always sends
 every field that version has.
 
 ### What is not a field
