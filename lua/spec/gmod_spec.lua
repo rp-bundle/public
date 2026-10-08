@@ -216,7 +216,6 @@ describe("the Gmod adapter's server", function()
     -- No engine event reaches a core that has not started.
     world:connect_player(1, "Alice", STEAMID)
     assert.are.same({}, world.core.players.list())
-    world:disconnect_player(1)
     -- Said once, after a while, and only once.
     for _ = 1, 30 do
       record.time = record.time + 1000
@@ -230,6 +229,11 @@ describe("the Gmod adapter's server", function()
     record.time = record.time + 1000
     world:run_due()
     assert.are.equal(1, #record.connects)
+    -- Whoever joined meanwhile is handed over, and locked, at the start.
+    local players = world.core.players.list()
+    assert.are.equal(1, #players)
+    assert.are.equal("Alice", players[1].name)
+    assert.is_true(world.players[1].locked)
   end)
 
   it("hands a joining player to the core, and reports them as steam:<SteamID64>", function()

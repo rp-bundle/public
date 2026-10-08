@@ -191,6 +191,12 @@ local function start()
   hook.Add("ShutDown", "rpf", function()
     transport.disconnect()
   end)
+  -- Anyone who joined before the convars were set (an admin setting them
+  -- from the console) is handed over now; their client asks to log in again
+  -- within `ready_retry_ms`.
+  for _, ply in ipairs(player.GetAll()) do
+    core.players.connected(ply)
+  end
   return true
 end
 
