@@ -371,12 +371,13 @@ The bounds, all in `client.DEFAULTS`:
 | `max_reply_bytes` / `max_reason_bytes` | 8 KiB / 1 KiB | A reply's `reason` is cut at a character boundary, so replies take at most 64 × 8 KiB beside `max_bytes` |
 
 The platform limits these are sized against are what the adapters must
-provide, because there is no adapter yet to measure: whatever store D2
-(FiveM's resource KVP) and D8 (Gmod's data store) use has to take one value
-of 1 MiB plus the header, and about 9 MiB in total (`max_bytes` plus the
-replies' share). Neither documents a smaller cap, and D2 and D8 each confirm
-theirs with a test at the bound. If one cannot, the adapter lowers
-`max_frame_bytes` and `max_bytes` through the client options.
+provide: whatever store an adapter uses has to take one value of 1 MiB plus
+the header, and about 9 MiB in total (`max_bytes` plus the replies' share).
+Each adapter confirms its store at the bound on the real engine. Gmod's
+(SQLite through `sql.QueryTyped`, D8) held nine values of 1 MiB plus 256
+bytes on a real server (`lua/platform/README.md`); D2 confirms FiveM's
+resource KVP. If one cannot, the adapter lowers `max_frame_bytes` and
+`max_bytes` through the client options.
 
 At capacity, behaviour follows the message type:
 
@@ -781,7 +782,8 @@ identically, and it is reported byte for byte.
 
 A logged-in player's characters (D5): list, create, select and switch. Server
 only for the decisions; `rpf.picker` is the client half the character select
-screen (the adapter's, Milestone 2, like the login form) calls. Both are
+screen (the adapter's, like the login form: `lua/platform/gmod/ui.lua` on
+Gmod) calls. Both are
 internal for now: the public character calls are K1's domain-neutral facade
 (`docs/architecture/framework-integration.md`), which routes here when RPF
 owns characters.
@@ -1086,8 +1088,8 @@ exactly as a logout after login does. A nonce the portal calls
 
 Events: `auth.required`, `auth.succeeded`, `auth.failed` (with `code`,
 `message`, `during`, and `retry_after` when rate limited) and
-`auth.password_change_required`. The form that calls this is the adapter's
-(Milestone 2).
+`auth.password_change_required`. The form that calls this is the adapter's:
+Gmod's is `lua/platform/gmod/ui.lua` (D8).
 
 ### The public API
 
@@ -1130,6 +1132,7 @@ CI builds an API reference from the annotations
 cd lua
 busted                                   # whichever Lua busted was installed for
 lua-language-server --check=. --checklevel=Warning
+../dev/glua-api && lua-language-server --check=platform/gmod --checklevel=Warning
 ```
 
 Run the suite under both LuaJIT and Lua 5.4. `docs/testing.md` has

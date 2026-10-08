@@ -48,6 +48,13 @@ protocol 2 one is told first. A protocol 1 core ignores a held character's
 - `rpf_ws_handshake_seconds`, the time from a game server's `Hello` to its
   `Welcome`, and a reconnect-storm load test in the fake game server that
   reads it, so the delay is chosen from data.
+- The Garry's Mod adapter (D8, #47): the core on a real Gmod server over
+  GWSockets, which it requires (it says so in one line and starts nothing
+  without it), configured by the `rpf_ws_url` and `rpf_api_key` convars.
+  Players are reported as `steam:<SteamID64>`, held still until they are
+  playing a character, and log in and choose a character through Derma
+  screens; the password goes from the client to the portal, never over
+  `net`. See `lua/platform/README.md`.
 
 ### Database
 
