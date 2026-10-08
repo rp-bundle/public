@@ -1,6 +1,7 @@
 ---Characters' jobs, duty and salaries (D7): the game side of the employers,
----departments and jobs staff define in the portal (E4), and of the default
----job a new character starts in (E5).
+---departments and jobs staff define in the portal (E4). The default job a
+---new character starts in (E5) is given by the portal when it creates the
+---character; this module only says why a character got none.
 ---
 ---**A character's job is part of the character**, a held record (C7), so it
 ---changes only through `records.set_job` and reaches the portal with the
@@ -404,22 +405,19 @@ end
 
 -- Reacting -------------------------------------------------------------------
 
----A new character starts in the server's default job (E5), unless it
----already has one. With none to give while the setting names one, the
----setting names a job this server does not have; that is logged, and the
----character starts with no job.
+---A new character arrived without a job while the `economy.default_job`
+---setting names one: the setting names a job this server does not have,
+---and that is logged here, where the server's owner sees the character
+---that got none.
+---
+---Giving the default job is not this module's: the portal creates every
+---character in it (D7), in the same transaction as its starting accounts,
+---so a character whose creation reply or first hold was lost (and which
+---`rpf.characters` recovers without `characters.created`) still has it.
 ---@param _ rpf.PlayerView The player who created it.
 ---@param character table A copy of the character.
 local function on_created(_, character)
   if type(character) ~= "table" or stored_job(character.id) then
-    return
-  end
-  local default = config.default_job()
-  if default then
-    local ok, err = jobs.set_job(character.id, default.employer, default.job)
-    if not ok then
-      log("warn", "could not give a new character the default job " .. tostring(default.employer) .. "/" .. tostring(default.job) .. " (" .. tostring(err) .. ")")
-    end
     return
   end
   local named = config.setting(jobs.DEFAULT_JOB_SETTING)

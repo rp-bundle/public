@@ -443,8 +443,8 @@ balance itself, so a resent `create_character` cannot create money twice.
 finds: when the `economy.default_job` setting names a job this server does
 not have (deleted, or inherited from a parent whose employers it does not
 share), the portal sends no default job, and applying the snapshot logs a
-warning naming the setting's job. `rpf.jobs` gives a new character the
-default job (below). The starting funds account is the portal's
+warning naming the setting's job. The portal creates every character in
+the default job (D7), so a new character arrives holding it. The starting funds account is the portal's
 alone and is never handed to a hold.
 
 Jobs carry what `rpf.jobs` (D7) needs: every job a `rank` (0 to 1000,
@@ -966,11 +966,13 @@ player owns), so `set_job` is a plain script call, and who may hire whom is
 the calling script's rule. What the core holds to is that the job is one of
 the server's in the applied config.
 
-**The default job.** When `rpf.characters` announces a new character
-(`characters.created`) with no job, it is given `config.default_job()`. With
-none to give while the `economy.default_job` setting names one, the setting
-names a job this server does not have: that is logged, as E5 logs it when
-the config is applied, and the character starts with no job.
+**The default job** is the portal's to give: it creates every character in
+the snapshot's `new_character.job`, in the same transaction as its starting
+accounts, so a character whose creation reply or first hold is lost still
+has it when it is held again. When `rpf.characters` announces a new
+character (`characters.created`) with no job while the `economy.default_job`
+setting names one, the setting names a job this server does not have: that
+is logged, as E5 logs it when the config is applied.
 
 **Duty is memory only**, never stored or reported, because it is a fact
 about the character in play now. A character goes on duty only while a

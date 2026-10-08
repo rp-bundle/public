@@ -310,22 +310,20 @@ describe("rpf.jobs", function()
       held(p, { record })
     end
 
-    it("is given to a new character", function()
+    it("is the portal's to give: a character created in it keeps it, and nothing is changed", function()
+      configure(p, { default_job = { employer = "lspd", job = "officer" } })
+      loaded()
+      create({ employer = "lspd", job = "officer" })
+      assert.are.same({ employer = "lspd", job = "officer" }, rpf.jobs.job_of(NEW))
+      assert.are.same({}, seen)
+      assert.are.same({}, p.logged("warn", "default job"))
+    end)
+
+    it("is not given by the core to a character the portal created without one", function()
       configure(p, { default_job = { employer = "lspd", job = "officer" } })
       loaded()
       create(nil)
-      assert.are.same({ employer = "lspd", job = "officer" }, rpf.jobs.job_of(NEW))
-      assert.are.same({ { "jobs.changed", NEW, { employer = "lspd", job = "officer" }, nil } }, seen)
-      p.advance(1000)
-      local change = last_of(p, "state_changed").changes[1]
-      assert.are.same({ job = { employer = "lspd", job = "officer" } }, change.employment, "and reported")
-    end)
-
-    it("is not given to a character created with a job", function()
-      configure(p, { default_job = { employer = "lspd", job = "officer" } })
-      loaded()
-      create({ employer = "ems", job = "medic" })
-      assert.are.same({ employer = "ems", job = "medic" }, rpf.jobs.job_of(NEW))
+      assert.is_nil(rpf.jobs.job_of(NEW))
       assert.are.same({}, seen)
     end)
 
