@@ -24,6 +24,15 @@ protocol 2 one is told first. A protocol 1 core ignores a held character's
 
 ### Added
 
+- The FiveM adapter (D2, #17): the `rpf` resource (the Lua core, the adapter
+  and its login and character screens) and the `rpf-ws` resource (the
+  portal websocket in FiveM's JS runtime, `ws` bundled in, no
+  `npm install`), assembled by `dev/fivem-resources` and configured with the
+  `rpf_url` and `rpf_api_key` convars. Other resources reach the public API
+  as `exports.rpf:api()`. The login page keeps the player's password out of
+  Lua, and the server holds a player in a routing bucket of their own until
+  they are `active` (OneSync)
+  ([the adapter's README](lua/platform/fivem/README.md)).
 - The portal stops in order on `SIGTERM` (H1, #50): readiness answers
   `503 draining` and new websocket upgrades are refused at once; after
   `RPF_SHUTDOWN_NOTICE_SECS` every connected game server is sent

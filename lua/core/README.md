@@ -8,9 +8,10 @@ The game side is three layers:
 
 1. **Core** (this directory). Protocol, the connection to the portal, config
    persistence, and, from D4 on, the framework modules.
-2. **Platform adapter**, one per engine (FiveM D2, Gmod D8, both Milestone 2).
-   It fills in a platform table and wires engine events to the core, two lines
-   per event. It is the only code that differs between engines.
+2. **Platform adapter**, one per engine (FiveM D2, `lua/platform/fivem/`;
+   Gmod D8). It fills in a platform table and wires engine events to the
+   core, two lines per event. It is the only code that differs between
+   engines. `lua/platform/README.md` is what a new one must implement.
 3. **Mock platform** (D3, `lua/platform/mock/`), which implements the same
    interface for the fake game server in `crates/fake-server/`: the real core,
    against the real portal, with faults injected at the socket.
@@ -375,9 +376,9 @@ provide: whatever store an adapter uses has to take one value of 1 MiB plus
 the header, and about 9 MiB in total (`max_bytes` plus the replies' share).
 Each adapter confirms its store at the bound on the real engine. Gmod's
 (SQLite through `sql.QueryTyped`, D8) held nine values of 1 MiB plus 256
-bytes on a real server (`lua/platform/README.md`); D2 confirms FiveM's
-resource KVP. If one cannot, the adapter lowers `max_frame_bytes` and
-`max_bytes` through the client options.
+bytes on a real server (`lua/platform/README.md`); FiveM's resource KVP
+(D2) is still to confirm on a real server (#186). If one cannot, the adapter
+lowers `max_frame_bytes` and `max_bytes` through the client options.
 
 At capacity, behaviour follows the message type:
 
@@ -783,7 +784,7 @@ identically, and it is reported byte for byte.
 A logged-in player's characters (D5): list, create, select and switch. Server
 only for the decisions; `rpf.picker` is the client half the character select
 screen (the adapter's, like the login form: `lua/platform/gmod/ui.lua` on
-Gmod) calls. Both are
+Gmod, `lua/platform/fivem/nui/` on FiveM) calls. Both are
 internal for now: the public character calls are K1's domain-neutral facade
 (`docs/architecture/framework-integration.md`), which routes here when RPF
 owns characters.
@@ -1089,7 +1090,8 @@ exactly as a logout after login does. A nonce the portal calls
 Events: `auth.required`, `auth.succeeded`, `auth.failed` (with `code`,
 `message`, `during`, and `retry_after` when rate limited) and
 `auth.password_change_required`. The form that calls this is the adapter's:
-Gmod's is `lua/platform/gmod/ui.lua` (D8).
+Gmod's is `lua/platform/gmod/ui.lua` (D8). FiveM's is an NUI page that keeps
+the password out of Lua altogether (`lua/platform/fivem/README.md`).
 
 ### The public API
 

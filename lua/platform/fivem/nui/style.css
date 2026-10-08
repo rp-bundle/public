@@ -1,0 +1,64 @@
+/* Function over form: styling is out of scope until a later milestone. */
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  color: #eee;
+  background: transparent;
+}
+#panel {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 0.6);
+}
+#panel[hidden],
+.screen[hidden],
+.error[hidden] {
+  display: none;
+}
+.screen {
+  width: min(28rem, 90vw);
+  padding: 1.5rem;
+  background: #1c1c1f;
+  border-radius: 0.5rem;
+}
+label {
+  display: grid;
+  gap: 0.25rem;
+  margin-block: 0.75rem;
+}
+label.check {
+  display: flex;
+  gap: 0.5rem;
+}
+input,
+select,
+button {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+}
+.actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.warning {
+  font-size: 0.85rem;
+  color: #f5c46b;
+}
+.error {
+  position: fixed;
+  bottom: 2rem;
+  padding: 0.75rem 1rem;
+  background: #7a1f1f;
+  border-radius: 0.5rem;
+}
+#character-list {
+  list-style: none;
+  padding: 0;
+}
+#character-list button {
+  width: 100%;
+  margin-block: 0.25rem;
+  text-align: start;
+}
