@@ -1,0 +1,26 @@
+{
+  "name": "rpf-ws",
+  "private": true,
+  "description": "The FiveM websocket shim (D2): owns the portal socket in FiveM's JS runtime and moves frames to the Lua adapter as strings.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node build.ts",
+    "typecheck": "tsc --project tsconfig.json && tsc --project tsconfig.nui.json",
+    "test": "node build.ts && node --test --test-reporter=spec test/*.test.ts",
+    "bench": "node build.ts && node bench/bench.ts"
+  },
+  "dependencies": {
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@msgpack/msgpack": "3.1.3",
+    "@types/node": "24.19.1",
+    "@types/ws": "8.18.2",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2",
+    "wasmoon": "1.16.0"
+  }
+}

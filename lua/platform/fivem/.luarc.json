@@ -1,0 +1,27 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting/schema.json",
+  "runtime.version": "Lua 5.4",
+  "workspace.library": [
+    "../../core",
+    ".lls/fivem-lls-addon/library/runtime",
+    ".lls/fivem-lls-addon/library/natives/CFX-NATIVE",
+    ".lls/fivem-lls-addon/library/natives/GTAV"
+  ],
+  "workspace.ignoreDir": [".lls", "ws-shim", "nui"],
+  "workspace.checkThirdParty": false,
+  "diagnostics.globals": [],
+  "diagnostics.neededFileStatus": {
+    "missing-global-doc": "Any!",
+    "missing-local-export-doc": "Any!",
+    "incomplete-signature-doc": "Any!",
+    "undefined-doc-param": "Any!",
+    "undefined-global": "Any!"
+  },
+  "diagnostics.severity": {
+    "missing-global-doc": "Error!",
+    "missing-local-export-doc": "Error!",
+    "incomplete-signature-doc": "Error!",
+    "undefined-doc-param": "Error!",
+    "undefined-global": "Error!"
+  }
+}

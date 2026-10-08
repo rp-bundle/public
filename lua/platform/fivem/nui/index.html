@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>rpf</title>
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="app.js"></script>
+  </head>
+  <body>
+    <main id="panel" hidden>
+      <section id="connecting" class="screen" hidden>
+        <h1>Connecting</h1>
+        <p>Reaching the login service…</p>
+      </section>
+
+      <section id="login" class="screen" hidden>
+        <h1>Log in</h1>
+        <form id="login-form">
+          <label>Username <input name="username" autocomplete="username" required /></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
+          <label class="check"><input name="remember" type="checkbox" checked /> Keep me logged in on this computer</label>
+          <p class="warning" data-warning></p>
+          <div class="actions">
+            <button type="submit" name="action" value="login">Log in</button>
+            <button type="submit" name="action" value="register">Create account</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="password" class="screen" hidden>
+        <h1>Choose a new password</h1>
+        <p data-message></p>
+        <form id="password-form">
+          <input name="username" type="hidden" />
+          <label>Current password <input name="password" type="password" autocomplete="current-password" required /></label>
+          <label>New password <input name="new_password" type="password" autocomplete="new-password" required /></label>
+          <label class="check"><input name="remember" type="checkbox" checked /> Keep me logged in on this computer</label>
+          <p class="warning" data-warning></p>
+          <div class="actions"><button type="submit">Change password</button></div>
+        </form>
+      </section>
+
+      <section id="characters" class="screen" hidden>
+        <h1>Characters</h1>
+        <ul id="character-list"></ul>
+        <button id="refresh" type="button">Reload the list</button>
+        <form id="create-form">
+          <h2>New character</h2>
+          <label>First name <input name="first_name" maxlength="64" required /></label>
+          <label>Last name <input name="last_name" maxlength="64" required /></label>
+          <label
+            >Gender
+            <select name="gender">
+              <option value="female">Female</option>
+              <option value="male">Male</option>
+            </select>
+          </label>
+          <div class="actions"><button type="submit">Create</button></div>
+        </form>
+      </section>
+
+      <p id="error" class="error" role="alert" hidden></p>
+    </main>
+  </body>
+</html>

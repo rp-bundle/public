@@ -10,8 +10,9 @@ function.
 
 | Directory | What |
 |---|---|
-| `mock/` | The mock platform (D3), standing in for an adapter in the fake game server (`crates/fake-server/`), and `mock/gmod.lua`, fake Gmod globals the real Gmod adapter runs on unmodified |
+| `mock/` | The mock platform (D3), standing in for an adapter in the fake game server (`crates/fake-server/`); `mock/gmod.lua` and `mock/fivem.lua`, fake engine globals the real adapters run on unmodified |
 | `gmod/` | Garry's Mod (D8), over GWSockets |
+| `fivem/` | FiveM (D2), over a TypeScript websocket shim in FiveM's JS runtime; [`fivem/README.md`](fivem/README.md) |
 
 ## A new platform, as a checklist
 
@@ -21,8 +22,12 @@ function.
    `---@type rpf.ServerPlatform` so the language server checks it.
    `rpf.start_server` refuses a table missing any member, naming each.
    - `connect` / `disconnect` / `send`: `open` once or `close` once per
-     `connect`, never both for a failed attempt, nothing after `close`, one
-     connection at a time. Text frames, byte for byte.
+     `connect`, never both for a failed attempt, nothing after `close`, never
+     synchronously inside `connect`, one connection at a time. Text frames,
+     byte for byte. If the engine's Lua has no websocket, a shim in another
+     runtime owns it and frames cross as strings, with the contract written
+     in both languages and a test holding them together (FiveM's
+     `ws-shim/`).
    - `kv_get` / `kv_set`: atomic per key and durable when `kv_set` returns
      (raise rather than return on a failed write), values of 1 MiB plus a
      header and about 9 MiB in all. Confirm both bounds on the real engine.
@@ -35,20 +40,26 @@ function.
    - `to_client` / `on_client` carry strings byte for byte, whatever the
      engine's message size limit; the platform supplies the sender.
    - `expose` publishes `rpf.api` the way scripts on this engine share code.
+     Where each resource has its own Lua state, that is an export of a plain
+     copy: read-only views do not survive serialisation, and neither does a
+     function's identity (FiveM's `shared.lua`).
 2. **The client platform table**, every member of `rpf.ClientPlatform`
    (`meta/platform_client.lua`), with the same rules where they overlap.
 3. **The engine events**, two lines each: a player handed over calls
    `core.players.connected(handle)`, a player gone calls
-   `core.players.dropped(handle, reason)`. Start the client core when the
-   player is in the game and can send to the server.
+   `core.players.dropped(handle, reason)`. Use the handle the engine keeps
+   for the whole session (FiveM's `playerConnecting` hands over a temporary
+   id, so its adapter listens for `playerJoining`). Start the client core
+   when the player is in the game and can send to the server.
 4. **The input lock.** Until a player is `active`, they cannot act on the
    world, held server-side by the adapter. Bridges to existing frameworks
    (K2) rely on it.
 5. **The login form and the character screen**, calling `rpf.auth` and
    `rpf.picker`. The password goes from the client straight to the portal,
-   never through the game server; every form where a player chooses a
-   password shows `PASSWORD_REUSE_WARNING`; nothing claims the server cannot
-   see the password.
+   never through the game server, and where the form is not Lua it keeps
+   the password out of Lua too (FiveM's `nui/seal.js`); every form where a
+   player chooses a password shows `PASSWORD_REUSE_WARNING`; nothing claims
+   the server cannot see the password.
 6. **Refuse to start clearly** when something the platform needs is missing:
    one log line naming it and how to fix it.
 7. **Tests.** Fake engine globals the adapter runs on unmodified, a busted
@@ -128,3 +139,13 @@ for the clients' `HTTP`.
 The language-server check for this directory runs on its own
 (`lua/platform/gmod/.luarc.json`) with the GLua annotations
 `dev/glua-api` fetches, because the main check runs with no game globals.
+
+## FiveM (`fivem/`)
+
+Two resources: `rpf` (the core, the adapter and its NUI screens) and
+`rpf-ws` (the websocket shim, bundled with `ws`), assembled by
+`dev/fivem-resources`. [`fivem/README.md`](fivem/README.md) has the
+install, the convars, how each platform member is done, the shim's
+contract, the screens and the input lock, and the tests. Its
+language-server check runs on its own (`lua/platform/fivem/.luarc.json`)
+with the FiveM natives `dev/fivem-natives` fetches.

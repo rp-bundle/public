@@ -56,19 +56,19 @@ local Events = {}
 ---Registers a handler, called on every later emit of the name.
 ---@param name string The event name, namespaced like `players.active`. Scripts use their own prefix for their own events.
 ---@param handler function Called with whatever the emit passes.
----@return function handler The same handler, for `off`.
+---@return function|string handler The same handler, for `off`. Through FiveM's export, a subscription id instead, since a function does not keep its identity across that boundary (`lua/platform/fivem/README.md`).
 function Events.on(name, handler) end
 
 ---Registers a handler for the next emit of the name only.
 ---@param name string The event name.
 ---@param handler function Called once.
----@return function handler The same handler, so it can be removed with `off` before it fires.
+---@return function|string handler The same handler, so it can be removed with `off` before it fires. A subscription id through FiveM's export.
 function Events.once(name, handler) end
 
 ---Removes every registration of a handler for a name. The function is the
 ---key, so a script can only remove handlers it holds.
 ---@param name string The event name.
----@param handler function The handler `on` or `once` was given.
+---@param handler function|string The handler `on` or `once` was given, or the id they returned through FiveM's export.
 ---@return boolean removed Whether anything was registered.
 function Events.off(name, handler) end
 
