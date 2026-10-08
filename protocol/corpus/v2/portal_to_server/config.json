@@ -69,7 +69,8 @@
       {
         "slug": "lspd",
         "name": "Los Santos Police",
-        "description": "Keeps the peace."
+        "description": "Keeps the peace.",
+        "payroll": "treasury"
       }
     ],
     "employer_departments": [
@@ -85,14 +86,17 @@
         "employer": "lspd",
         "slug": "chief",
         "name": "Chief of Police",
-        "description": ""
+        "description": "",
+        "rank": 10
       },
       {
         "employer": "lspd",
         "slug": "officer",
         "name": "Officer",
         "department": "patrol",
-        "description": "Answers calls."
+        "description": "Answers calls.",
+        "rank": 1,
+        "salary": 250
       }
     ],
     "new_character": {

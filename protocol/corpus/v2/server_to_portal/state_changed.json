@@ -9,7 +9,13 @@
       "base_revision": 2,
       "first_name": "Janet",
       "last_name": null,
-      "gender": null
+      "gender": null,
+      "employment": {
+        "job": {
+          "employer": "lspd",
+          "job": "officer"
+        }
+      }
     },
     {
       "kind": "account",

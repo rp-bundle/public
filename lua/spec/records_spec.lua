@@ -156,6 +156,22 @@ describe("rpf.records", function()
       assert.is_nil(next(rpf.records.entries["character:" .. CHARACTER].changed))
     end)
 
+    it("changes the job, marking it for the report, and clears it", function()
+      assert.is_true(rpf.records.set_job(CHARACTER, { employer = "lspd", job = "officer" }))
+      assert.are.same({ employer = "lspd", job = "officer" }, rpf.records.get("character", CHARACTER).job)
+      assert.is_true(rpf.records.entries["character:" .. CHARACTER].changed.job)
+      assert.is_true(rpf.records.set_job(CHARACTER, nil))
+      assert.is_nil(rpf.records.get("character", CHARACTER).job)
+    end)
+
+    it("refuses a job that is not two strings, or a character not held, and changes nothing", function()
+      for _, ref in ipairs({ { employer = "lspd" }, { employer = 1, job = "x" }, "lspd/officer" }) do
+        assert.are.same({ nil, "invalid" }, { rpf.records.set_job(CHARACTER, ref) })
+      end
+      assert.is_nil(next(rpf.records.entries["character:" .. CHARACTER].changed))
+      assert.are.same({ nil, "not_held" }, { rpf.records.set_job(WALLET, nil) })
+    end)
+
     it("takes a server-specific gender", function()
       assert.is_true(rpf.records.set_character(CHARACTER, { gender = { server_specific = "nonbinary" } }))
       assert.are.equal("nonbinary", rpf.records.get("character", CHARACTER).gender.server_specific)

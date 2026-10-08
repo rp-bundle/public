@@ -272,6 +272,31 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
     assert.is_nil(protocol.decode("portal_to_server", bad))
   end)
 
+  -- D7's corpus assertion: a character's job, and the three states of a
+  -- reported `employment`.
+  it("decodes a character's job, and refuses one that is not two strings", function()
+    local held = assert(protocol.decode("portal_to_server", corpus("portal_to_server").held))
+    assert.are.same({ employer = "lspd", job = "officer" }, held.records[1].character.job)
+    local raw = corpus("portal_to_server").character_created
+    assert.is_nil(raw:find('"job"', 1, true), "left out for none")
+    local created = assert(protocol.decode("portal_to_server", raw))
+    assert.is_nil(created.character.job, "absent is no job")
+    local with = function(job)
+      return (raw:gsub('"gender": "female"', '"gender": "female", "job": ' .. job))
+    end
+    assert.is_nil(assert(protocol.decode("portal_to_server", with("null"))).character.job, "and so is null")
+    assert.is_nil(protocol.decode("portal_to_server", with('{ "employer": "lspd" }')))
+    assert.is_nil(protocol.decode("portal_to_server", with('"lspd/officer"')))
+    -- Encoded back without one, so a recorded frame re-encodes exactly.
+    local text = assert(protocol.encode("portal_to_server", created))
+    assert.is_nil(text:find('"job"', 1, true))
+
+    local changed = assert(protocol.decode("server_to_portal", corpus("server_to_portal").state_changed))
+    assert.are.same({ job = { employer = "lspd", job = "officer" } }, changed.changes[1].employment)
+    local resync = assert(protocol.decode("server_to_portal", corpus("server_to_portal").resync))
+    assert.are.same({}, resync.records[1].employment, "{ job = null }: no job")
+  end)
+
   describe("classification, mirroring Message::answered_by and Message::reissuable", function()
     -- These are the values crates/rpf-protocol/src/lib.rs gives. Nothing but review
     -- keeps the two in step, so they are pinned here, where a change has to

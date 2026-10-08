@@ -9,7 +9,10 @@
       "revision": 3,
       "first_name": "Janet",
       "last_name": "Doe",
-      "gender": "female"
+      "gender": "female",
+      "employment": {
+        "job": null
+      }
     },
     {
       "kind": "account",

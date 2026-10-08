@@ -73,7 +73,7 @@ function Events.once(name, handler) end
 function Events.off(name, handler) end
 
 ---Calls every handler for a name with the given arguments. Names under the
----core's prefixes (`players.`, `config.`, `auth.`, `records.`, `rpf.`) are refused with an
+---core's prefixes (`players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `rpf.`) are refused with an
 ---error, so no script can forge a lifecycle event other scripts would believe.
 ---@param name string The event name.
 ---@param ... any Passed to every handler as is.
@@ -193,6 +193,12 @@ function Config.setting(key) end
 ---@return number? version The version, or nil before any config has arrived.
 function Config.version() end
 
+---A job by its employer's slug and its own, as a character holds one (D7) and
+---the config's default job names one.
+---@class rpf.JobRef
+---@field employer string The employer's slug.
+---@field job string The job's slug, unique within the employer.
+
 ---A grid footprint, in cells.
 ---@class rpf.ConfigSize
 ---@field x number Columns.
@@ -228,6 +234,7 @@ function Config.version() end
 ---@field slug string What Lua, its departments and its jobs name it by.
 ---@field name string Its display name.
 ---@field description string Free text, possibly empty.
+---@field payroll string? The name of the server's paying account its salaries come from (D7), as `rpf.config.paying_account` finds it; nil when it pays none.
 
 ---A department as the config snapshot carries it (E4).
 ---@class rpf.ConfigDepartment
@@ -243,6 +250,8 @@ function Config.version() end
 ---@field name string Its display name.
 ---@field department string? The slug of the employer's department it sits in, nil if none.
 ---@field description string Free text, possibly empty.
+---@field rank number Its seniority at its employer (D7), a whole number from 0 to 1000: higher is more senior, and ranks compare only within one employer.
+---@field salary number? What one pay period on duty earns (D7), a whole amount from 1; nil for an unpaid job.
 
 ---An account every new character is opened with (E5).
 ---@class rpf.ConfigStartingAccount

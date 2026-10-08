@@ -17,8 +17,10 @@ one-way door, a new environment variable. How to cut a release is in
 ## [Unreleased]
 
 **Protocol:** speaks protocol 2, and serves protocols 1 and 2. Protocol 2
-adds the `restarting` notice (below); a game server on protocol 1 is served
-unchanged, and is simply closed where a protocol 2 one is told first.
+adds the `restarting` notice (below) and a character's job (D7); a game
+server on protocol 1 is served unchanged, and is simply closed where a
+protocol 2 one is told first. A protocol 1 core ignores a held character's
+`job`, and its reports, which carry none, keep the job the portal has.
 
 ### Added
 
@@ -34,9 +36,24 @@ unchanged, and is simply closed where a protocol 2 one is told first.
 - The Lua core honours `restarting`: the reconnect after an announced close
   waits `retry_after_ms` plus jitter, capped by `max_retry_after_ms`, without
   advancing the backoff.
+- Jobs in game (D7, #40): `rpf.jobs` in the Lua core gives a new character
+  the server's default job, sets and clears jobs, puts characters on and off
+  duty, checks ranks, and pays a job's salary each pay period on duty from
+  its employer's payroll account. A character's job is live state, reported
+  with the character and shown on its page. Staff give jobs a rank and a
+  salary, and employers a payroll account (one of the server's paying
+  accounts), on the jobs page; two settings, `economy.salary_interval_minutes`
+  and `economy.salary_account`, set the pay period and the account salaries
+  go into.
 - `rpf_ws_handshake_seconds`, the time from a game server's `Hello` to its
   `Welcome`, and a reconnect-storm load test in the fake game server that
   reads it, so the delay is chosen from data.
+
+### Database
+
+- `20261008222809_character_jobs` is additive: a character's job, a job's
+  rank and salary, and an employer's payroll account, all nullable or
+  defaulted.
 
 ### Deployment
 
