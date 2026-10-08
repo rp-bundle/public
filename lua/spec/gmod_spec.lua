@@ -513,6 +513,26 @@ describe("the Gmod adapter's client", function()
     assert.are.same({}, gmod.shown(world, "DFrame"))
   end)
 
+  it("keeps a refusal on show when the server sends the list again after it", function()
+    local gmod, world = at_login()
+    local list = world.core.handoff.encode("rpf:characters", {
+      characters = world.core.json.array({
+        { id = "00000000-0000-4000-8000-0000000000c1", first_name = "Ada", last_name = "Byron", gender = "female" },
+      }),
+    })
+    world:from_server("rpf:characters", list)
+    button(gmod, world, "Play Ada Byron"):DoClick()
+    world:from_server("rpf:character_result", world.core.handoff.encode("rpf:character_result", {
+      during = "select",
+      ok = false,
+      id = "00000000-0000-4000-8000-0000000000c1",
+      reason = "unavailable",
+    }))
+    world:from_server("rpf:characters", list)
+    assert.truthy(labels(gmod, world):find("Could not select: unavailable.", 1, true))
+    assert.is_true(button(gmod, world, "Play Ada Byron").enabled)
+  end)
+
   it("creates a character from the form", function()
     local gmod, world, record = at_login()
     world:from_server("rpf:characters", world.core.handoff.encode("rpf:characters", {

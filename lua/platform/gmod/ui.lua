@@ -324,7 +324,13 @@ function ui.install(internal)
     elseif result.during == "load" and not result.ok then
       load_failed(result.reason)
     elseif not result.ok then
-      say("Could not " .. tostring(result.during) .. ": " .. tostring(result.reason or "refused") .. ".", false)
+      local text = "Could not " .. tostring(result.during) .. ": " .. tostring(result.reason or "refused") .. "."
+      say(text, false)
+      -- The server follows a refusal with a fresh list, which rebuilds the
+      -- screen: the next status line shows the refusal again.
+      pending_message = text
+    else
+      pending_message = nil
     end
   end)
   concommand.Add("rpf_characters", open_characters, nil, "Choose, switch or put away your character.")
