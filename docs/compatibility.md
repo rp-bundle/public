@@ -26,7 +26,7 @@ Two numbers are involved, and only one decides compatibility.
 | Protocol | First release | Served by portal releases | Status |
 |---|---|---|---|
 | 1 | 0.1.0 | 0.1.0 and later, until its support window closes | Served |
-| 2 | Unreleased | The next release and later | Current, unreleased: adds `Restarting` (H1), and a character's job (D7) |
+| 2 | Unreleased | The next release and later | Current, unreleased: adds `Restarting` (H1), a character's job (D7), and in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`) |
 
 A row is added when a release ships a new protocol version, and a version's
 last portal release is filled in when one drops it. `CHANGELOG.md` names the
@@ -191,14 +191,21 @@ window: the portal decodes that version's frames and encodes its frames to
 that version's shapes, choosing by the connection's protocol, or the change
 waits until the old version is dropped.
 
-One thing the portal sends depends on the connection's version:
+Two things the portal sends depend on the connection's version.
 `Restarting`, added in protocol 2 (`protocol::RESTARTING_PROTOCOL`), goes
 only to a connection whose `Hello` named protocol 2 or later; a protocol 1
 connection is closed without it, as a restart always closed it, and its core
 comes back on its own backoff. The gate is in `rpf_backend::ws::registry`'s
 drain, which holds the connections and their versions, so no caller can
 forget it, and `a_core_on_the_previous_protocol_is_cut_without_the_notice`
-(the fake game server) holds it. The next message or nested variant the
+(the fake game server) holds it. `StaffPermissions` (F9, protocol 2,
+`protocol::STAFF_PROTOCOL`) is the second: the registry hands out no staff
+ticket for an older connection (`ConnectionRegistry::staff_ticket`), so
+nothing is ever built or sent for it, and a protocol 1 core has no
+`rpf.staff` to give the list to anyway (`staff_lists_are_pushed_after_each_change`
+in `rpf-backend`'s store suite holds it). F9's other frames need no gate: a
+game server sends `link_player` and `staff_action` only if its core has them,
+and `player_linked` only answers one. The next message or nested variant the
 portal gains follows the same pattern: a `<NAME>_PROTOCOL` constant beside
 the type, and the check where the registry queues the frame.
 

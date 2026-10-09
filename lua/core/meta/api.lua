@@ -19,14 +19,15 @@
 
 ---The public API table.
 ---
----What is present follows the side: `players` and `config` on the game
----server, `auth` on the player's client, and `VERSION`, `engine` and `events`
----on both. Every table in it is read-only.
+---What is present follows the side: `players`, `staff` and `config` on the
+---game server, `auth` on the player's client, and `VERSION`, `engine` and
+---`events` on both. Every table in it is read-only.
 ---@class rpf.Api
 ---@field VERSION string The core's version. Informational: compatibility with the portal is the protocol version's business, not this.
 ---@field engine string Which engine is running: `"fivem"`, `"gmod"` or `"mock"`. Read-only, for server owners' scripts that must differ per engine; the core itself never branches on it.
 ---@field events rpf.api.Events The event bus. The only way scripts hear what the core does.
 ---@field players rpf.api.Players? The players on this game server. Server only.
+---@field staff rpf.api.Staff? In-game staff: what a linked staff member may do here, account linking, and staff actions for the audit log. Server only.
 ---@field config rpf.api.Config? Lookups over the config the portal pushed. Server only.
 ---@field auth rpf.api.Auth? The player's own login. Client only.
 ---@field bridge rpf.api.Bridge? **Reserved for Milestone 2 (K2, #92).** Always nil in 0.1. It will register the one bridge to an existing RP framework on a companion server (see `docs/architecture/framework-integration.md`). The name is reserved now so no script claims it first.
@@ -46,6 +47,13 @@
 ---   left (nil for `connecting`). Server only.
 --- - `config.changed(change)`, an `rpf.ConfigChange`, when an applied
 ---   snapshot differs from the one before. Server only.
+--- - `staff.changed(change)`, an `rpf.StaffChange`, once for each player
+---   whose staff permissions here changed: a push from the portal gave them
+---   new ones or took some away, or they left. Server only.
+--- - `staff.linked(link)`, an `rpf.StaffLinked`, when a player's account was
+---   linked to a staff account, and `staff.link_failed(failure)`, an
+---   `rpf.StaffLinkFailure`, when it was not. The player has been told
+---   either way. Server only.
 --- - `auth.required(prompt)`, an `rpf.AuthPrompt`: show the login form.
 ---   `auth.succeeded(result)`, an `rpf.AuthResult`. `auth.failed(failure)`, an
 ---   `rpf.AuthFailure`. `auth.password_change_required(change)`, an
@@ -73,7 +81,7 @@ function Events.once(name, handler) end
 function Events.off(name, handler) end
 
 ---Calls every handler for a name with the given arguments. Names under the
----core's prefixes (`players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `rpf.`) are refused with an
+---core's prefixes (`players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `rpf.`) are refused with an
 ---error, so no script can forge a lifecycle event other scripts would believe.
 ---@param name string The event name.
 ---@param ... any Passed to every handler as is.
@@ -129,6 +137,81 @@ function Players.authenticated(handle) end
 ---@field connected_at number When they connected, in milliseconds since the Unix epoch.
 ---@field since number When they entered the current state, in milliseconds since the Unix epoch.
 ---@field reason string? Why they are leaving, once `dropping`.
+
+---In-game staff (F9). A staff member links their player account to their
+---portal account once, with a code the portal gives them, and from then on
+---may do here what their portal roles allow on this server, under the same
+---permission names (`player.kick`). The portal pushes every change, so `can`
+---answers from memory, at once, even while the portal is unreachable.
+---
+---The core has no chat command of its own: a server's script calls `link`
+---from whatever command it offers. Nothing here acts on a player either;
+---the script that kicks or teleports checks `can` first, and reports what
+---it did with `record`.
+---@class rpf.api.Staff
+local Staff = {}
+
+---Whether a player may do something on this server: logged in, and the
+---portal's last push gave them exactly that permission.
+---@param handle any The engine's player handle.
+---@param permission string The permission, by its portal name, like `player.kick`.
+---@return boolean allowed False for anyone not logged in, not linked, or without it here.
+function Staff.can(handle, permission) end
+
+---Every permission a player has on this server.
+---@param handle any The engine's player handle.
+---@return string[] permissions Sorted names, a copy. Empty for anyone not logged in or not linked.
+function Staff.permissions(handle) end
+
+---Links a player's account to the staff account that issued a code, for the
+---command a player types it into. The code is sent exactly as typed, and
+---never logged. The answer comes later: the player is told, and
+---`staff.linked` or `staff.link_failed` is announced; their permissions
+---follow in the portal's next push. One link per player at a time, because
+---each wrong code counts against the player and the guild.
+---@param handle any The engine's handle of the player who typed it.
+---@param code string The code, at most 32 bytes.
+---@return boolean sent True once it is on its way.
+---@return rpf.StaffRefusal? err Why not. For `outbox_full` and `outbox_unavailable` the player has already been told.
+function Staff.link(handle, code) end
+
+---Reports a staff action your script carried out, for the guild's audit log
+---on the portal. Sent only if `can(handle, permission)`; the portal checks
+---the permission again and refuses the entry otherwise.
+---@param handle any The engine's handle of the staff member.
+---@param permission string The permission the action needed, like `player.kick`.
+---@param action string What they did: an identifier, `[a-z][a-z0-9_]*`, at most 64 bytes, like `kick` or `teleport_to`. It is all the detail the log keeps.
+---@param target any? The engine's handle of the player it was done to, if any. Must be logged in.
+---@return boolean sent True once it is on its way.
+---@return rpf.StaffRefusal? err Why not.
+function Staff.record(handle, permission, action, target) end
+
+---Why `staff.link` or `staff.record` refused before sending anything.
+---@alias rpf.StaffRefusal
+---| "not_logged_in" # The player has not logged in to their account here, or is leaving.
+---| "invalid_code" # The code is not a non-empty UTF-8 string of at most 32 bytes.
+---| "busy" # This player already has a link on its way to the portal.
+---| "forbidden" # The player may not do this: not linked, or no such permission here.
+---| "invalid_action" # The action is not an identifier (`[a-z][a-z0-9_]*`) of at most 64 bytes.
+---| "invalid_target" # A target was given that is not a logged-in player.
+---| "outbox_full" # Too much is waiting for the portal; try again later.
+---| "outbox_unavailable" # The game server's stored outbox needs repair.
+
+---What `staff.changed` carries.
+---@class rpf.StaffChange
+---@field player_id string The player's account.
+---@field permissions string[] What they may do here now, sorted. Empty when they lost everything.
+
+---What `staff.linked` carries.
+---@class rpf.StaffLinked
+---@field player_id string The player's account.
+---@field staff_name string The staff account's display name, for display only.
+
+---What `staff.link_failed` carries.
+---@class rpf.StaffLinkFailure
+---@field player_id string The player's account.
+---@field code string The portal's refusal (`forbidden` for a code that does not link or too many tries, `not_found` for a player the portal does not have online here), or why it never answered: `expired`, `outbox_full`, `outbox_unavailable`.
+---@field reason string What the player was told.
 
 ---Lookups over the config the portal pushed (E2). Config is portal-
 ---authoritative, so these are read-only, and each returns a copy.

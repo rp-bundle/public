@@ -12,7 +12,7 @@
 --- - **A handler that throws is logged and skipped.** The handlers after it
 ---   still run, so one broken script cannot stop a player's join.
 --- - **Core event names are reserved.** Anything under `players.`, `config.`,
----   `auth.`, `records.`, `characters.`, `jobs.` or `rpf.` is emitted only by the core, so a
+---   `auth.`, `records.`, `characters.`, `jobs.`, `staff.` or `rpf.` is emitted only by the core, so a
 ---   script cannot forge a lifecycle event that other scripts would believe.
 ---@class rpf.events
 ---@field RESERVED string[] Name prefixes only the core may emit. The public `emit` refuses them.
@@ -21,7 +21,7 @@ local events = {}
 
 local rpf = rpf
 
-events.RESERVED = { "players.", "config.", "auth.", "records.", "characters.", "jobs.", "rpf." }
+events.RESERVED = { "players.", "config.", "auth.", "records.", "characters.", "jobs.", "staff.", "rpf." }
 events.MAX_DEPTH = 32
 
 ---One registered handler.
@@ -95,7 +95,7 @@ end
 
 ---Whether a name is one only the core may emit.
 ---@param name string The event name.
----@return boolean reserved True for `players.…`, `config.…`, `auth.…`, `records.…`, `characters.…`, `jobs.…` and `rpf.…`.
+---@return boolean reserved True for `players.…`, `config.…`, `auth.…`, `records.…`, `characters.…`, `jobs.…`, `staff.…` and `rpf.…`.
 function events.reserved(name)
   for _, prefix in ipairs(events.RESERVED) do
     if name:sub(1, #prefix) == prefix then

@@ -1451,6 +1451,78 @@ describe("rpf.client", function()
     end)
   end)
 
+  describe("notices from the portal", function()
+    ---A `staff_permissions` notice (F9), the model notice a module listens for.
+    ---@return rpf.Frame frame The frame.
+    local function grants()
+      return support.portal_frame("staff_permissions", {
+        staff = { { player_id = PLAYER, permissions = { "player.kick" } } },
+      })
+    end
+
+    it("hands a notice to its listeners in order, after its ack, and a duplicate to nobody", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local heard = {}
+      local frame = grants()
+      connection:listen("staff_permissions", function(got)
+        -- The ack is already out, so it precedes anything a listener sends.
+        local last = p.last()
+        heard[#heard + 1] = { "first", got.id, last.type, last.re }
+      end)
+      connection:listen("staff_permissions", function(got)
+        heard[#heard + 1] = { "second", got.id }
+      end)
+
+      p.deliver(frame)
+      assert.are.same({ { "first", frame.id, "ack", frame.id }, { "second", frame.id } }, heard)
+
+      p.deliver(frame)
+      assert.are.equal(2, #heard, "a duplicate is not handed over again")
+      local acks = sent_of(p, "ack")
+      assert.are.equal(frame.id, acks[#acks].re, "but it is acked again")
+    end)
+
+    it("isolates a listener that throws: the rest still run, and the connection carries on", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      local after = 0
+      connection:listen("staff_permissions", function()
+        error("boom")
+      end)
+      connection:listen("staff_permissions", function()
+        after = after + 1
+      end)
+
+      p.deliver(grants())
+      assert.are.equal(1, after)
+      assert.are.equal(1, #p.logged("error", "a listener for staff_permissions failed"))
+
+      p.deliver(grants())
+      assert.are.equal(2, after)
+      assert.are.equal("ready", connection.state)
+    end)
+
+    it("acks a notice nobody listens for, and ignores it", function()
+      local p = support.fake_platform()
+      local connection = support.connected(p)
+      connection.listeners.staff_permissions = nil
+      local frame = grants()
+      p.deliver(frame)
+      assert.are.equal(frame.id, p.last().re)
+      assert.are.equal(1, #p.logged("debug", "nothing listens for staff_permissions"))
+    end)
+
+    it("refuses to listen for anything that cannot arrive as a notice", function()
+      local connection = support.connected(support.fake_platform())
+      for _, tag in ipairs({ "apply_command", "config", "player_linked", "held", "teleport_everyone" }) do
+        assert.is_false(pcall(connection.listen, connection, tag, function() end), tag)
+      end
+      ---@diagnostic disable-next-line: param-type-mismatch
+      assert.is_false(pcall(connection.listen, connection, "staff_permissions", "not a function"))
+    end)
+  end)
+
   describe("the bounded outbox", function()
     ---Every kv_set the core makes from here on, with the size written.
     ---@param p spec.FakePlatform The platform.

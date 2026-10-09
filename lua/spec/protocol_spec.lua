@@ -168,6 +168,30 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
     assert.are.equal(json.null, json.decode(text).config_hash)
   end)
 
+  it("holds a staff action's target to being sent as null, not left out", function()
+    local frame = json.decode(corpus("server_to_portal").staff_action)
+    frame.target_player_id = json.null
+    local decoded = assert(protocol.decode("server_to_portal", assert(json.encode(frame))))
+    assert.is_nil(decoded.target_player_id)
+    local text = assert(protocol.encode("server_to_portal", decoded))
+    assert.are.equal(json.null, json.decode(text).target_player_id)
+  end)
+
+  it("keeps permission names it does not know, and refuses a grant that is not strings", function()
+    local frame = json.decode(corpus("portal_to_server").staff_permissions)
+    frame.staff[1].permissions = json.array({ "player.kick", "addon.radio.broadcast" })
+    local decoded = assert(protocol.decode("portal_to_server", assert(json.encode(frame))))
+    assert.are.same({ "player.kick", "addon.radio.broadcast" }, decoded.staff[1].permissions)
+
+    frame.staff[1].permissions = json.array({ "player.kick", 7 })
+    assert.is_nil(protocol.decode("portal_to_server", assert(json.encode(frame))))
+    frame.staff[1].permissions = json.object({ kick = true })
+    assert.is_nil(protocol.decode("portal_to_server", assert(json.encode(frame))))
+    frame.staff[1].permissions = json.array()
+    frame.staff[1].player_id = "sam"
+    assert.is_nil(protocol.decode("portal_to_server", assert(json.encode(frame))))
+  end)
+
   it("keeps a config snapshot whole, sections it does not know included", function()
     local frame = json.decode(corpus("portal_to_server").config)
     frame.snapshot.items = json.array({ json.object({ slug = "water", weight = 500 }) })
@@ -316,6 +340,8 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
         state_changed = "reply",
         resync = "reply",
         declare_holds = "reply",
+        link_player = "reply",
+        staff_action = "ack",
         ack = "nothing",
       },
       portal_to_server = {
@@ -329,6 +355,8 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
         held = "ack",
         state_applied = "ack",
         resync_required = "ack",
+        player_linked = "ack",
+        staff_permissions = "ack",
         restarting = "nothing",
         ack = "nothing",
       },
@@ -428,6 +456,12 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
       assert.are.equal("<redacted>", redacted.api_key)
       assert.are.equal(hello.instance_id, redacted.instance_id)
       assert.are.equal("rpf_sample_0000000000000000", hello.api_key)
+
+      -- A staff link code is a credential until it is redeemed (F9).
+      local link = assert(protocol.decode("server_to_portal", corpus("server_to_portal").link_player))
+      local hidden = protocol.redact("server_to_portal", link)
+      assert.are.equal("<redacted>", hidden.link_code)
+      assert.are.equal(link.player_id, hidden.player_id)
     end)
   end)
 end)
