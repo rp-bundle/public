@@ -116,6 +116,15 @@ keep the job the portal has.
   report in-game staff actions with `rpf.api.staff.record`, and the audit
   log names the staff account each was taken under
   ([Players](docs/architecture/players.md#staff-links)).
+- Staff email and account recovery (H3, #52). Rauthy's deployment config
+  (`deploy/rauthy/config.toml`): open signup verified by mail, every mail
+  carrying the product's name, TLS-only SMTP. The dashboard asks every
+  staff member to keep a second passkey and links to their Rauthy account
+  page (`/auth/account`). The portal keeps a staff member's address only
+  when Rauthy says it is verified, so an operator naming an account by
+  address finds only someone who proved they hold it. Support's
+  owner-recovery procedure and its identity checks are in
+  [Operations](docs/operations.md#staff-account-recovery).
 
 ### Database
 
@@ -131,6 +140,13 @@ keep the job the portal has.
   `RPF_SHUTDOWN_RETRY_AFTER_MS` and `RPF_SHUTDOWN_GRACE_SECS`; the defaults
   suit a single process behind a proxy. The orchestrator's kill timeout must
   exceed the first plus the third, or it ends the drain early.
+- Rauthy needs a mail provider: the `SMTP_*` variables and the sending
+  domain's SPF, DKIM and DMARC records, and it exits at startup without
+  one ([Deployment](docs/deployment.md#the-identity-provider)). The
+  portal's client gets its client URI, `${PORTAL_BASE_URL}`. A staff
+  member's address is cleared at their next sign-in unless Rauthy marks it
+  verified, which it does for every account that signed up or used its
+  setup mail.
 
 ## [0.1.0] - 2026-10-06
 
