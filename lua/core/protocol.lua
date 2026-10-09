@@ -859,6 +859,12 @@ protocol.messages = {
       { "base_version", U64 },
       { "changes", array_of(CONFIG_CHANGE) },
     }),
+    -- Not reissuable: it says which addons are loaded when it is sent, and
+    -- every `Welcome` sends a fresh one (J2).
+    declare_addons = message("ack", false, {
+      { "loaded", array_of(STRING) },
+      { "manifests", array_of(OPAQUE_OBJECT) },
+    }),
     ack = message("nothing", false, {
       { "re", UUID },
     }),

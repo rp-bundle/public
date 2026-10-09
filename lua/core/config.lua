@@ -23,7 +23,8 @@
 ---**The snapshot's shape is `protocol::ConfigSnapshot`.** `settings` is an
 ---object keyed by setting name, every key present. `items`, `item_bases`
 ---(E3) and `employers` (E4) are arrays of objects keyed by `slug`, and
----`paying_accounts` (#169) one keyed by `name`;
+---`paying_accounts` (#169) one keyed by `name`, and `addons` (J2) one keyed
+---by `namespace`;
 ---`employer_departments` and `employer_jobs` (E4) are arrays of objects
 ---keyed by `employer` and `slug` together, because their slugs are unique
 ---only within their employer; and `item_defaults` is one object. There is
@@ -132,6 +133,7 @@ config.SECTIONS = {
   employer_departments = { kind = "list", key = "slug", within = "employer" },
   employer_jobs = { kind = "list", key = "slug", within = "employer" },
   paying_accounts = { kind = "list", key = "name" },
+  addons = { kind = "list", key = "namespace" },
 }
 
 ---The index key of an entry named within a parent: both names, joined by a
@@ -745,6 +747,16 @@ function config.paying_accounts()
     return {}
   end
   return copy(section)
+end
+
+---One addon installed on this server (J2), as the config's `addons` section
+---carries it: `namespace`, `version`, `hash`, `enabled`, its `manifest`, the
+---installed `types` that differ from the manifest's, and the `records` of
+---its config types. `rpf.addons` decides from it whether the addon runs.
+---@param namespace string The addon's namespace.
+---@return table? addon A copy, or nil if the config does not install it.
+function config.addon(namespace)
+  return lookup("addons", namespace)
 end
 
 ---A setting's effective value, by key.

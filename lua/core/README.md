@@ -50,7 +50,7 @@ files each side loads after it and in what order:
 ```lua
 rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, config.lua,
                  -- client.lua, players.lua, commands.lua, moderation.lua, staff.lua,
-                 -- inventory.lua, manifest.lua, records.lua, sync.lua, accounts.lua,
+                 -- inventory.lua, manifest.lua, addons.lua, records.lua, sync.lua, accounts.lua,
                  -- handoff.lua, join.lua, characters.lua, jobs.lua, edits.lua, api.lua
 rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua,
                  -- picker.lua, api.lua
@@ -71,7 +71,7 @@ core keeps working after the Gmod adapter replaces the global with the public
 API (see The public API).
 
 The client never loads `protocol.lua`, `client.lua`, `players.lua`,
-`commands.lua`, `moderation.lua`, `staff.lua`, `inventory.lua`, `manifest.lua`, `records.lua`, `sync.lua`,
+`commands.lua`, `moderation.lua`, `staff.lua`, `inventory.lua`, `manifest.lua`, `addons.lua`, `records.lua`, `sync.lua`,
 `accounts.lua`, `join.lua`, `characters.lua`, `jobs.lua` or `edits.lua`, because the player's client
 must never hold the server's API key and has no players, staff or records to
 manage.
@@ -880,8 +880,8 @@ identically, and it is reported byte for byte.
 
 Addon manifests and the records of their types (J2,
 `docs/architecture/addons.md`): the pure rules, server only. Registration,
-proposals and activation, and the public `rpf.api.addons` and record calls,
-build on it (J2's wire half and J3).
+declaration and activation (`rpf.addons`, below) build on it, and so will
+the public `rpf.api.addons` and record calls (J3).
 
 **One rule set, on both sides.** `manifest.check(m)` is a port of the
 portal's `Manifest::parse` and `manifest.check_fields(def, fields)` of
@@ -914,6 +914,40 @@ expects; a table mixing string and number keys is refused where it stands.
 exactly as the portal reads it, and never change the caller's table. A
 `json` field is judged by what it encodes to, so one holding an empty table
 it cannot tell the shape of is refused.
+
+### `rpf.addons`
+
+The addons loaded on this server, and whether each may run (J2). Server
+only, and internal until J3 publishes `rpf.api.addons` over it.
+
+| Call | Does |
+|---|---|
+| `register(manifest, handlers)` | Checks the manifest with `rpf.manifest.check`, keeps it, and declares it if connected. `handlers` may hold `start()`, `stop(reason)` and `state(state, reason)`. Returns true, or nil and `{ error, path }`; one addon past `MAX_ADDONS_PER_SERVER` is `too_many` |
+| `state(namespace)` | The addon's state and why: `active`, `not_installed`, `pending`, `mismatch`, `disabled`, `api`, `requires` or `failed` |
+| `definition(type)` | A type's installed definition: the config's own for a kept or ahead type, else the manifest's |
+| `config_records(type)` | The records of a config type, as the config carries them, while their addon is active |
+| `declare()` | Sends `declare_addons`; run after each `Welcome` and on each registration |
+
+**Declaring.** After every `Welcome` (chained on the connection's
+`on_ready` after `rpf.sync`'s declaration) the core sends `declare_addons`:
+every loaded namespace, and their manifests split across frames of at most
+`MAX_MANIFESTS_PER_DECLARE` (8, `limits::MAX_MANIFESTS_PER_DECLARE`). With
+nothing loaded it still sends one, empty, so the portal forgets the
+proposals of addons that are gone. It is a notice, logged by the portal and
+not reissuable; the next `Welcome` declares again. Once one is acked, its
+addons are `pending` until staff install them.
+
+**Running.** An addon runs only when the config's `addons` section
+(`config.addon(namespace)`) has it installed and enabled with exactly the
+manifest it registered, compared value for value by `addons.same` (the
+portal's hash is over the same content, and Lua has no SHA-256), for an API
+major in `API_MAJORS`, and with everything it `requires` active. States are
+recomputed on every `config.changed` naming `addons` and every
+registration. Moving into `active` runs `start`, out of it `stop`; every
+move runs `state` and emits `addons.state` (`{ namespace, state, reason }`).
+Handlers run under `pcall`: one that throws is logged, and a `start` that
+throws leaves the addon `failed`, retried on the next config change or
+registration. Addons start in dependency order and stop in reverse.
 
 ### Characters (`rpf.characters`, `rpf.picker`)
 

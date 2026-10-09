@@ -801,7 +801,9 @@ describe("rpf.sync", function()
       restarted.advance(3000)
       local again = sent_of(restarted, "state_changed")
       assert.are.equal(4, #again, "each sent again, under its own id")
-      assert.are.equal(reports[2].id, again[4].id)
+      -- In whichever order their retries came due.
+      local resent = { [again[3].id] = true, [again[4].id] = true }
+      assert.are.same({ [reports[1].id] = true, [reports[2].id] = true }, resent)
       assert.are.equal(0, #sent_of(restarted, "declare_holds"), "which would release the record")
 
       apply(restarted, reports[1])

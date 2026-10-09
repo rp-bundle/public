@@ -1,0 +1,40 @@
+{
+  "id": "00000005-0000-4000-8000-000000000005",
+  "sent_at": "2026-01-01T00:00:00Z",
+  "type": "declare_addons",
+  "loaded": [
+    "acme_garden",
+    "acme_tags"
+  ],
+  "manifests": [
+    {
+      "api": 1,
+      "namespace": "acme_garden",
+      "permissions": {
+        "tend": "Tend plants."
+      },
+      "title": "Garden",
+      "types": {
+        "species": {
+          "authority": "config",
+          "fields": {
+            "minutes": {
+              "default": 10,
+              "min": 1,
+              "type": "integer"
+            },
+            "name": {
+              "required": true,
+              "type": "string"
+            }
+          },
+          "list": [
+            "name"
+          ],
+          "schema": 2
+        }
+      },
+      "version": "1.2.0"
+    }
+  ]
+}
