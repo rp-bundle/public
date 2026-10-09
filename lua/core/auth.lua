@@ -335,7 +335,12 @@ local function schedule_refresh(expires_at)
         platform.after(options.retry_ms, refresh)
       else
         log("warn", "the session ended; the API token can no longer be refreshed")
-        drop_session()
+        -- Only the tokens, not `drop_session`: without a session token no
+        -- refresh runs again, and bumping the generation would also discard
+        -- the answer of a request in flight (a deletion, whose portal call
+        -- is what ended the session).
+        session_token = nil
+        api_token = nil
         events.emit("auth.failed", failure_from(status, body, "refresh"))
       end
     end)
