@@ -10,7 +10,8 @@
     "build": "node build.ts",
     "typecheck": "tsc --project tsconfig.json && tsc --project tsconfig.nui.json",
     "test": "node build.ts && node --test --test-reporter=spec test/*.test.ts",
-    "bench": "node build.ts && node bench/bench.ts"
+    "bench": "node build.ts && node bench/bench.ts",
+    "echo": "node bench/echo.ts"
   },
   "dependencies": {
     "ws": "8.22.0"

@@ -16,7 +16,8 @@ character screens. What any adapter must do is in
 uploads them as the `fivem-resources` artifact. A server owner needs no
 `npm install`: the shim is one bundled file. `rpf` declares
 `dependency "rpf-ws"`, so FiveM starts the shim first and stops `rpf` with
-it.
+it. `dev/fivem-resources --dev` also adds `dev.lua`, the smoke test's
+console commands (Testing, below); a release never has it.
 
 ## Installing
 
@@ -31,7 +32,13 @@ ensure rpf
 
 Use `set`, never `setr` or `sets`: those publish a convar to every client or
 to the server list, and the API key is a secret. Without both convars the
-adapter logs an error and does not connect. Optional:
+adapter logs an error and does not connect. The server needs OneSync (the
+input lock's routing buckets, below), which is on by default on a current
+FXServer.
+
+`restart rpf` reconnects at once. `restart rpf-ws` stops `rpf` with it and
+leaves it stopped, because FiveM stops a resource with its dependency but
+does not start it again, so follow it with `ensure rpf`. Optional:
 `set rpf_portal_url "https://portal.example"` when the portal's HTTP address
 is not the websocket's host, and `set rpf_debug "true"` for the core's debug
 lines.
@@ -157,6 +164,7 @@ The bundle targets Node 16, the oldest an FXServer that runs this ships.
 | Annotations, and every native name, against overextended's `fivem-lls-addon` (pinned in `dev/fivem-natives`) | `.luarc.json` | `dev/fivem-natives && lua-language-server --check=lua/platform/fivem` |
 | The shim: `tsc --strict` (and the NUI page's JS, `tsconfig.nui.json`), its unit tests against a local websocket server, and the contract test | `ws-shim/` | `npm ci && npm run typecheck && npm test` |
 | Frames per second through the shim | `ws-shim/bench/` | `npm run bench` |
+| On a real FXServer (layer 5): resource KVP at the outbox's bounds, the benchmark under FXServer, the connection and the players | `dev.lua`, in a `dev/fivem-resources --dev` build | `rpf_dev_kv_bound`, `rpf_dev_bench`, `rpf_dev_status` at the server console |
 
 The contract test (`ws-shim/test/contract.test.ts`) fails when the two
 copies of the contract disagree on a name, a parameter or a type, and drives
@@ -166,14 +174,50 @@ a local websocket server: connect, send, receive, close codes, a close in the
 middle of a burst of sends, and a reconnect.
 
 **The benchmark** sends frames from Lua through the shim to a local echo
-server and back to Lua, so each crosses the boundary twice. On a developer
-machine (Node 26, wasmoon's Lua) it does about 17,000 round trips a second
-at 512 bytes (about 60 µs each) and about 8,000 at 4 KiB. The portal sends
-tens of frames a second per server at most, so the boundary is noise, as
-expected. The number on a stock FXServer is layer 5's.
+server and back to Lua, so each crosses the boundary twice and the socket
+twice. `npm run bench` does it in plain Node, through the emulated msgpack
+boundary into wasmoon's Lua; `rpf_dev_bench` does it on a real FXServer,
+through FiveM's own Lua 5.4, JS runtime and marshalling. On FXServer 35245
+(the recommended artifact in October 2026, which ships Node 22.22.0), on a
+16-core x86_64 Linux machine that was building other work at the same time,
+it did 11,000 to 17,000 round trips a second at 512 bytes (60 to 90 µs each)
+and 4,700 to 6,300 at 4 KiB (160 to 210 µs); `npm run bench` beside it did
+13,000 to 19,000 and 6,500 to 9,700, so the emulation is a fair stand-in. Of
+each round trip, the `send` export is about 50 µs. No echo arrived inside a
+`send` export (an instrumented run counted them), so the shim's events do
+not re-enter the core. An idle FXServer ticks every 50 ms, which is why the
+benchmark sends 2,000 frames a tick: at 500 it measured the tick rate (exactly
+10,000 a second, whatever the frame size) rather than the boundary. The portal
+sends tens of frames a second per server at most, so the boundary is noise.
 
-**Layer 5**, on a real FiveM server, is still to run (#186): a join reaching
-the portal with the identifiers in the expected shape, the KVP bounds the
-outbox needs (one value of 1 MiB plus a header, about 9 MiB in all;
-`lua/core/README.md`, The outbox), and the benchmark under FXServer. An
-FXServer will not start without a Cfx.re licence key.
+**Layer 5** runs on a real FXServer, which will not start without a Cfx.re
+licence key (`sv_licenseKey`). Install a `dev/fivem-resources --dev` build,
+point the convars at a portal with a server and an API key, and add
+`set rpf_dev "true"`; the commands run only from the server console.
+
+- `rpf_dev_kv_bound` writes nine values of 1 MiB plus 257 bytes through the
+  adapter's `kv_set` (the outbox's largest entry, and its total plus the
+  replies' share; `lua/core/README.md`, The outbox), reads each back through
+  `kv_get` byte for byte, and deletes them.
+- `rpf_dev_bench <ws://url> [frames] [bytes]` is the benchmark, against
+  `npm run echo` in `ws-shim/` (`ws://127.0.0.1:30121`), on a socket of its
+  own beside the core's.
+- `rpf_dev_status` prints the connection's state and the players the core
+  knows, with their lifecycle state.
+
+Run for #186 on FXServer 35245 under OneSync, against a local portal:
+
+- Both resources load on the artifact's Node (22.22.0; the bundle targets
+  16), and the core connects and takes its config. `restart rpf` reconnects
+  at once, and the portal does not refuse the new instance as a duplicate.
+- Resource KVP holds the bound: `rpf_dev_kv_bound` read the nine values back
+  byte for byte, in 200 to 300 ms. A separate probe also held 64 values of
+  1 MiB, and nine values written with `SetResourceKvp` survived the server
+  being killed (`SIGKILL`) straight after the write. So the outbox's
+  defaults stand, and the adapter lowers no bound.
+- The benchmark is above.
+- A real client's join is still to run: the login screen, the sealed
+  password, silent resume on a second join, the character screen reaching
+  `active` on a fresh install, and the identifiers the portal stores (the
+  account `license:` and the allowlisted kinds verbatim, with no `ip:`).
+  It needs the game, and waits on the repository owner (#186).

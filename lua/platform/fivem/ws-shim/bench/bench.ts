@@ -8,8 +8,9 @@
  * with every crossing through msgpack as on FiveM (`test/boundary.ts`). So
  * each frame crosses the boundary twice and the socket twice. It runs in
  * plain Node, not FXServer, and wasmoon's Lua is slower than FiveM's native
- * one, so the number is a floor for the shape, not a measurement of a stock
- * server; that one is taken on a real server (layer 5, `docs/testing.md`).
+ * one, so the number is a stand-in for the shape, not a measurement of a
+ * stock server; that one is `rpf_dev_bench` (`../../dev.lua`) on a real
+ * FXServer, against `npm run echo` (layer 5, `docs/testing.md`).
  *
  *   npm run bench            # 20 000 frames of 512 bytes
  *   FRAMES=100000 BYTES=4096 npm run bench
