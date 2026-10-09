@@ -39,6 +39,13 @@ keep the job the portal has.
   new owner who has lost every sign-in factor. Everything an operator does
   is in the guild's own audit log with their reason
   ([Deployment](docs/deployment.md#the-platform-operator)).
+- Removing staff (F9 follow-up, #197). Staff holding `member.remove` get a
+  Staff page for the guild and for each server they hold it on, listing who
+  holds a role there and removing them: from the guild (every role they
+  hold) or from one server (only that server's roles). The change reaches
+  their linked player in game at once, and is audited as `member.remove`
+  ([Staff](docs/architecture/staff-auth.md#removing-staff)). A removed staff
+  member keeps their player link.
 - The Lua core waits out a `suspended` refusal of its `Hello`: it tries
   again every `suspended_retry_ms` (five minutes) plus jitter, so a server
   comes back on its own once its community's suspension is lifted.
