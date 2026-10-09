@@ -63,7 +63,9 @@
 --- - `auth.required(prompt)`, an `rpf.AuthPrompt`: show the login form.
 ---   `auth.succeeded(result)`, an `rpf.AuthResult`. `auth.failed(failure)`, an
 ---   `rpf.AuthFailure`. `auth.password_change_required(change)`, an
----   `rpf.AuthPasswordChange`. Client only.
+---   `rpf.AuthPasswordChange`. `auth.account_deleted(deleted)`, an
+---   `rpf.AuthDeleted`, once `delete_account` has deleted the account.
+---   Client only.
 ---@class rpf.api.Events
 local Events = {}
 
@@ -481,6 +483,19 @@ function Auth.change_password(username, password, new_password, opts) end
 ---player stays in the game; the next join asks for a password.
 function Auth.logout() end
 
+---Deletes the player's account at the portal, for good (H6): nobody can log
+---in to it again, and its names, identifiers and logins are gone. Needs the
+---account's own password; an account linked to a staff account is refused
+---`account_linked` until the link is removed on the portal. Ends in
+---`auth.account_deleted` or `auth.failed`. Once deleted the state is
+---`deleted` and nothing more can be started on this connection: the player
+---is still in the game until they leave, so tell them to reconnect.
+---@param username string The username.
+---@param password string The account's password. Kept in memory for this attempt only, never stored or logged.
+---@return boolean started False if refused at once.
+---@return string? err Why.
+function Auth.delete_account(username, password) end
+
 ---Where the login is.
 ---@return rpf.AuthState state The state.
 function Auth.state() end
@@ -502,9 +517,10 @@ function Auth.api_token() end
 ---| "working" # A login, registration or password change is in flight.
 ---| "redeeming" # The portal accepted the login; the server is redeeming the ticket.
 ---| "authenticated" # Logged in.
+---| "deleted" # The account was deleted on this connection; nothing more can be started until the player reconnects.
 
 ---Which request an `rpf.AuthFailure` came from.
----@alias rpf.AuthStep "login"|"register"|"resume"|"change_password"|"redeem"|"refresh"|"logout"
+---@alias rpf.AuthStep "login"|"register"|"resume"|"change_password"|"redeem"|"refresh"|"logout"|"delete_account"
 
 ---Options for `login`, `register` and `change_password`.
 ---@class rpf.AuthLoginOptions
@@ -528,6 +544,10 @@ function Auth.api_token() end
 ---@field message string Written for the player.
 ---@field during rpf.AuthStep Which request failed.
 ---@field retry_after number? Seconds to wait, when rate limited.
+
+---What `auth.account_deleted` carries.
+---@class rpf.AuthDeleted
+---@field username string The username the account had.
 
 ---What `auth.password_change_required` carries: staff reset the password,
 ---and the player must choose a new one through `change_password`.

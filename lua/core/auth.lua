@@ -335,7 +335,12 @@ local function schedule_refresh(expires_at)
         platform.after(options.retry_ms, refresh)
       else
         log("warn", "the session ended; the API token can no longer be refreshed")
-        drop_session()
+        -- Only the tokens, not `drop_session`: without a session token no
+        -- refresh runs again, and bumping the generation would also discard
+        -- the answer of a request in flight (a deletion, whose portal call
+        -- is what ended the session).
+        session_token = nil
+        api_token = nil
         events.emit("auth.failed", failure_from(status, body, "refresh"))
       end
     end)
@@ -444,6 +449,9 @@ local function can_start()
   end
   if state == "authenticated" then
     return false, "already logged in"
+  end
+  if state == "deleted" then
+    return false, "the account was deleted; reconnect to log in to another"
   end
   return true, nil
 end
@@ -573,6 +581,78 @@ function auth.logout()
   with_nonce(function(n)
     post("logout", { nonce = n.value, remember_token = token }, function() end)
   end, "logout")
+end
+
+---Deletes the player's account at the portal (H6), for good: what is left
+---is a tombstone nobody can log in to, and its names, identifiers and
+---logins are gone. It needs the account's own password (a staff reset's
+---temporary one is not enough), and an account linked to a staff account is
+---refused `account_linked` until the link is removed on the portal.
+---
+---Ends in `auth.account_deleted` or `auth.failed`. Once deleted, this
+---device's saved login and the session are forgotten, the state is
+---`deleted`, and nothing more can be started on this connection: the player
+---is still in the game, as the account that no longer exists, until they
+---leave, and the adapter should tell them to reconnect.
+---@param username string The username.
+---@param password string The account's password. Kept in memory for this attempt only (it may be resent once with a fresh nonce), never stored or logged.
+---@return boolean started False if refused at once.
+---@return string? err Why.
+function auth.delete_account(username, password)
+  strings({ "username", "password" }, username, password)
+  if not where then
+    return false, "the server has not started the login yet"
+  end
+  if state == "working" or state == "resuming" or state == "redeeming" then
+    return false, "a login is already in progress"
+  end
+  if state == "deleted" then
+    return false, "the account was deleted"
+  end
+  state = "working"
+  local retried = false
+  ---Sends the deletion with a nonce. Unlike `send_with_nonce`, its success
+  ---is not tied to `generation`: once the request has gone, the portal may
+  ---have deleted the account whatever happened here meanwhile (a logout, a
+  ---refused refresh), and a deletion that happened must be reported. A
+  ---refusal is, like any abandoned request's: it changed nothing, and the
+  ---flow that replaced it must not be disturbed.
+  ---@param n rpf.auth.Nonce The nonce.
+  local function attempt(n)
+    local mine = generation
+    n.in_use = true
+    post("delete_account", { nonce = n.value, username = username, password = password }, function(status, body)
+      -- The portal does not consume the nonce, whatever it answers.
+      n.in_use = false
+      if status ~= 204 and mine ~= generation then
+        -- Abandoned (a logout, and maybe a newer login since): nothing
+        -- was deleted, so the flow that replaced this one is left alone.
+        return
+      end
+      if status == 401 and body and body.error == "invalid_nonce" and not retried then
+        retried = true
+        nonce = nil
+        with_nonce(attempt, "delete_account")
+        return
+      end
+      if status ~= 204 then
+        fail(failure_from(status == 200 and 502 or status, body, "delete_account"))
+        return
+      end
+      -- The portal deleted every remember and session token the account
+      -- had, so there is nothing left to revoke, only to forget.
+      save_token(nil)
+      unsaved_token = nil
+      drop_session()
+      waiting, pending, account = nil, nil, nil
+      state = "deleted"
+      ---@type rpf.AuthDeleted
+      local deleted = { username = username }
+      events.emit("auth.account_deleted", deleted)
+    end)
+  end
+  with_nonce(attempt, "delete_account")
+  return true, nil
 end
 
 ---Tries the saved remember token, or asks for a login if there is none.
