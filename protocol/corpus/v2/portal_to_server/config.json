@@ -120,6 +120,65 @@
         "id": "0000000c-0000-4000-8000-00000000000c",
         "name": "treasury"
       }
+    ],
+    "addons": [
+      {
+        "namespace": "acme_garden",
+        "version": "1.2.0",
+        "hash": "sha256:sample",
+        "enabled": true,
+        "manifest": {
+          "api": 1,
+          "namespace": "acme_garden",
+          "permissions": {
+            "tend": "Tend plants."
+          },
+          "title": "Garden",
+          "types": {
+            "species": {
+              "authority": "config",
+              "fields": {
+                "minutes": {
+                  "default": 10,
+                  "min": 1,
+                  "type": "integer"
+                },
+                "name": {
+                  "required": true,
+                  "type": "string"
+                }
+              },
+              "list": [
+                "name"
+              ],
+              "schema": 2
+            }
+          },
+          "version": "1.2.0"
+        },
+        "types": {
+          "acme_garden.seed": {
+            "authority": "config",
+            "fields": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "schema": 1
+          }
+        },
+        "records": [
+          {
+            "id": "0000000d-0000-4000-8000-00000000000d",
+            "type": "acme_garden.species",
+            "revision": 3,
+            "fields": {
+              "minutes": 10,
+              "name": "Fern"
+            }
+          }
+        ]
+      }
     ]
   }
 }

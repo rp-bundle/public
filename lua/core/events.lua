@@ -21,7 +21,7 @@ local events = {}
 
 local rpf = rpf
 
-events.RESERVED = { "players.", "config.", "auth.", "records.", "characters.", "jobs.", "staff.", "rpf." }
+events.RESERVED = { "players.", "config.", "auth.", "records.", "characters.", "jobs.", "staff.", "addons.", "rpf." }
 events.MAX_DEPTH = 32
 
 ---One registered handler.

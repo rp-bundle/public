@@ -89,7 +89,7 @@ function Events.once(name, handler) end
 function Events.off(name, handler) end
 
 ---Calls every handler for a name with the given arguments. Names under the
----core's prefixes (`players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `rpf.`) are refused with an
+---core's prefixes (`players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `addons.`, `rpf.`) are refused with an
 ---error, so no script can forge a lifecycle event other scripts would believe.
 ---@param name string The event name.
 ---@param ... any Passed to every handler as is.

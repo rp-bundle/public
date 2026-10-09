@@ -37,6 +37,7 @@ server_scripts({
   "core/staff.lua",
   "core/inventory.lua",
   "core/manifest.lua",
+  "core/addons.lua",
   "core/records.lua",
   "core/sync.lua",
   "core/accounts.lua",

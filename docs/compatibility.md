@@ -257,7 +257,7 @@ receiver takes the default (empty, `false` or `None`).
 
 | Field | Where | Default | Why optional |
 |---|---|---|---|
-| `items`, `item_bases`, `item_defaults`, `employers`, `employer_departments`, `employer_jobs`, `new_character`, `paying_accounts` | `ConfigSnapshot` (`config`) | Empty | Sections added after `settings`, so a snapshot from before one still decodes |
+| `items`, `item_bases`, `item_defaults`, `employers`, `employer_departments`, `employer_jobs`, `new_character`, `paying_accounts`, `addons` | `ConfigSnapshot` (`config`) | Empty | Sections added after `settings`, so a snapshot from before one still decodes |
 | `payroll` | An employer in `employers` | `None` | Omitted when the employer pays no salaries; added by D7 |
 | `rank`, `salary` | A job in `employer_jobs` | `0`, `None` | Added by D7; `salary` is omitted for an unpaid job |
 | `job` | A character in `held` and `character_created` | `None` | Omitted when the character has no job, so a frame for one re-encodes as it did before D7 |

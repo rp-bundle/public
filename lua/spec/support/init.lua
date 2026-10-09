@@ -467,7 +467,8 @@ function support.portal_frame(tag, fields)
 end
 
 ---Answers the declaration of held records (`rpf.sync`) and acks the online
----list (`rpf.join`, F2) that follow every `Welcome`, if they are waiting, as
+---list (`rpf.join`, F2) and the addon declaration (`rpf.addons`, J2) that
+---follow every `Welcome`, if they are waiting, as
 ---a portal that agrees with them would, so a test that is not about records
 ---or presence starts from an empty outbox.
 ---@param p spec.FakePlatform The platform.
@@ -488,7 +489,7 @@ function support.declared(p)
           p.bookkeeping[p.sent[j]] = true
         end
       end
-    elseif waiting and frame.type == "online_players" then
+    elseif waiting and (frame.type == "online_players" or frame.type == "declare_addons") then
       p.bookkeeping[p.sent[i]] = true
       p.deliver(support.portal_frame("ack", { re = frame.id }))
     end

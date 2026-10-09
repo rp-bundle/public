@@ -29,6 +29,7 @@
 ---@field moderation rpf.moderation The staff actions on players that need them in game: kicks (F4).
 ---@field staff rpf.staff In-game staff (F9): linked staff members' permissions here, as the portal last pushed them, account linking, and staff actions reported for the audit log.
 ---@field manifest rpf.manifest Addon manifests and their types' records: the rules both sides hold them to (J2).
+---@field addons rpf.addons The addons loaded here, their declaration to the portal, and whether each may run (J2).
 ---@field records rpf.records The records this server holds (C7), and nothing else.
 ---@field sync rpf.sync Holds, releases and state reports for those records.
 ---@field accounts rpf.accounts Balances, transfers and payments on held accounts, and the ledger fold.
@@ -73,6 +74,7 @@ rpf.files = {
     "staff.lua",
     "inventory.lua",
     "manifest.lua",
+    "addons.lua",
     "records.lua",
     "sync.lua",
     "accounts.lua",
@@ -132,6 +134,9 @@ function rpf.start_server(platform, options)
   rpf.moderation.start(platform)
   rpf.staff.start(platform, rpf.connection)
   rpf.sync.start(platform, rpf.connection, options.sync)
+  -- After `rpf.sync`, which sets the connection's `on_ready` outright, and
+  -- before the config is restored, whose `config.changed` it reads.
+  rpf.addons.start(platform, rpf.connection)
   rpf.accounts.start(platform, rpf.connection)
   rpf.join.start(platform, rpf.connection, {
     url = options.url,
