@@ -199,6 +199,27 @@ describe("rpf.manifest.check_fields against protocol/corpus/addons/records", fun
     assert.is_nil(given.count)
   end)
 
+  it("refuses a JSON field holding a number the codec cannot carry", function()
+    -- The corpus cannot hold one: this side would fail to read the case.
+    local _, refusal = rpf.manifest.check_fields(kit.types.widget, { label = "Pot", blob = { n = 1e99 } })
+    assert.are.same({ error = "wrong_type", field = "blob" }, refusal)
+  end)
+
+  it("refuses a table that contains itself instead of overflowing the stack", function()
+    local cyclic = { label = "Pot" }
+    cyclic.blob = { again = cyclic }
+    local ok, fields, refusal = pcall(rpf.manifest.check_fields, kit.types.widget, cyclic)
+    assert.is_true(ok, tostring(fields))
+    assert.is_nil(fields)
+    assert.are.same({ error = "wrong_type", field = "blob" }, refusal)
+
+    local looped = { namespace = "acme_garden", version = "1.0.0", api = 1 }
+    looped.title = looped
+    local checked, manifest, why = pcall(rpf.manifest.check, looped)
+    assert.is_true(checked, tostring(manifest))
+    assert.are.same({ error = "wrong_type", path = "title" }, why)
+  end)
+
   it("refuses a JSON field holding an empty table it cannot tell the shape of", function()
     local _, refusal = rpf.manifest.check_fields(kit.types.widget, { label = "Pot", meta = { a = {} } })
     assert.are.same({ error = "wrong_type", field = "meta" }, refusal)

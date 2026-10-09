@@ -207,21 +207,37 @@ local function is_array(value)
   return json.is_array(value) or is_blank(value)
 end
 
+---What `mark` puts in place of a table that contains itself or nests past
+---`json.MAX_DEPTH`: a table no rule reads as JSON (its key is neither a
+---string nor an index), so it is refused where it stands rather than
+---overflowing the stack.
+---@return table not_json A fresh table with a boolean key.
+local function not_json()
+  return { [true] = true }
+end
+
 ---A deep copy with every table a script wrote marked as JSON would decode
 ---it: string keys an object, keys 1 to n an array. A blank table stays blank
 ---(the rule that reads it marks it), and a table that is neither is copied
 ---unmarked, so any rule that reads it refuses it.
 ---@param value any Anything.
+---@param depth integer? How deeply it is nested; 0 at the top.
+---@param seen table<table, true>? Tables on the current path, to refuse cycles.
 ---@return any marked The copy.
-local function mark(value)
+local function mark(value, depth, seen)
   if type(value) ~= "table" or value == json.null then
     return value
   end
+  depth, seen = depth or 0, seen or {}
+  if seen[value] or depth > json.MAX_DEPTH then
+    return not_json()
+  end
+  seen[value] = true
   local meta = getmetatable(value)
   local out = {}
   local strings, count, max = 0, 0, 0
   for k, v in pairs(value) do
-    out[k] = mark(v)
+    out[k] = mark(v, depth + 1, seen)
     count = count + 1
     if type(k) == "string" then
       strings = strings + 1
@@ -229,6 +245,7 @@ local function mark(value)
       max = k
     end
   end
+  seen[value] = nil
   if meta ~= nil then
     return setmetatable(out, meta)
   elseif count == 0 then
@@ -1081,6 +1098,27 @@ end
 
 -- Records ----------------------------------------------------------------
 
+---How deeply a `json` field may nest, the object itself counting as one:
+---`records::MAX_JSON_DEPTH`.
+local MAX_JSON_DEPTH = 16
+
+---How deeply a value nests: 0 for a scalar, 1 for a table of scalars.
+---@param value any The value, already marked.
+---@return integer depth The depth.
+local function json_depth(value)
+  if type(value) ~= "table" or value == json.null then
+    return 0
+  end
+  local deepest = 0
+  for _, v in pairs(value) do
+    local d = json_depth(v)
+    if d > deepest then
+      deepest = d
+    end
+  end
+  return deepest + 1
+end
+
 ---A field's refusal.
 ---@param rule string One of `FIELD_RULES`.
 ---@param field string The field, or `""` for the record.
@@ -1188,7 +1226,7 @@ local function scalar(def, kind, value)
     end
     return json.copy(value)
   elseif kind == "json" then
-    if not is_object(value) then
+    if not is_object(value) or json_depth(value) > MAX_JSON_DEPTH then
       return nil, "wrong_type"
     end
     local normalized

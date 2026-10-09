@@ -91,6 +91,9 @@
           "type": "integer",
           "nullable": true,
           "default": null
+        },
+        "blob": {
+          "type": "json"
         }
       }
     },

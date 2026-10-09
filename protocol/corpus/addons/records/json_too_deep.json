@@ -1,0 +1,48 @@
+{
+  "description": "A JSON field nested 17 deep is refused: the whole record travels inside a frame the Lua codec decodes with a depth bound.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "blob": {
+      "a": {
+        "a": {
+          "a": {
+            "a": {
+              "a": {
+                "a": {
+                  "a": {
+                    "a": {
+                      "a": {
+                        "a": {
+                          "a": {
+                            "a": {
+                              "a": {
+                                "a": {
+                                  "a": {
+                                    "a": {
+                                      "leaf": 1
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "blob"
+    }
+  }
+}

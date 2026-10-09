@@ -1,0 +1,80 @@
+{
+  "description": "A JSON field may nest 16 deep, the object itself counting as one.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "blob": {
+      "a": {
+        "a": {
+          "a": {
+            "a": {
+              "a": {
+                "a": {
+                  "a": {
+                    "a": {
+                      "a": {
+                        "a": {
+                          "a": {
+                            "a": {
+                              "a": {
+                                "a": {
+                                  "a": {
+                                    "leaf": 1
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "expect": {
+    "fields": {
+      "label": "Pot",
+      "blob": {
+        "a": {
+          "a": {
+            "a": {
+              "a": {
+                "a": {
+                  "a": {
+                    "a": {
+                      "a": {
+                        "a": {
+                          "a": {
+                            "a": {
+                              "a": {
+                                "a": {
+                                  "a": {
+                                    "a": {
+                                      "leaf": 1
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "count": 1,
+      "maybe": null
+    }
+  }
+}
