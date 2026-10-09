@@ -5,9 +5,12 @@
 ---`set rpf_dev "true"` is in `server.cfg`, and none runs but from the server
 ---console.
 ---
---- - `rpf_dev_kv_bound` checks resource KVP at the core's bounds: one value of
----   the frame limit plus an entry header, and nine of them at once (the
----   outbox's total plus the replies' share), each read back byte for byte.
+--- - `rpf_dev_kv_bound [write|read]` checks resource KVP at the core's bounds:
+---   one value of the frame limit plus an entry header, and nine of them at
+---   once (the outbox's total plus the replies' share), each read back byte
+---   for byte. `write` leaves them stored, and `read` checks them after the
+---   server has been restarted or killed, which is what shows `kv_set` is
+---   durable when it returns.
 --- - `rpf_dev_bench <url> [frames] [bytes]` sends frames from this Lua state
 ---   through `rpf-ws` to a websocket echo server (`npm run echo` in
 ---   `ws-shim/`) and back, and prints the round trips a second: the shim
@@ -38,6 +41,11 @@ dev.KV_VALUES = 9
 ---at 40,000.
 dev.BENCH_BATCH = 2000
 
+---How long a benchmark may run before it is given up and its socket closed,
+---so an echo server that accepts and never answers cannot leave every later
+---run refused. A run of 100,000 frames takes about ten seconds.
+dev.BENCH_TIMEOUT_MS = 60000
+
 ---Whether the dev commands may run, saying why not if they may not.
 ---@param source integer FiveM's `source` for the command: 0 for the server console.
 ---@return boolean allowed True from the console with `rpf_dev` set to `true`.
@@ -54,13 +62,25 @@ end
 
 ---Writes the outbox's bound into resource KVP through the adapter's own
 ---`kv_set`, reads it back through its `kv_get`, and deletes it again.
----@return boolean held Whether every value came back byte for byte.
-function dev.kv_bound()
+---@param mode string? `"write"` stores the values and stops, `"read"` checks values an earlier `"write"` stored; nil does both.
+---@return boolean held Whether every value came back byte for byte, or were written.
+function dev.kv_bound(mode)
   local one = string.rep("x", dev.KV_VALUE_BYTES)
   local held = true
   local started = GetGameTimer()
-  for i = 1, dev.KV_VALUES do
-    shared.kv_set("rpf.dev.bound." .. i, one .. i)
+  if mode ~= "read" then
+    for i = 1, dev.KV_VALUES do
+      shared.kv_set("rpf.dev.bound." .. i, one .. i)
+    end
+  end
+  if mode == "write" then
+    print(
+      ("rpf: kv bound written: %d values of %d bytes each; restart or kill the server, then rpf_dev_kv_bound read"):format(
+        dev.KV_VALUES,
+        #one + 1
+      )
+    )
+    return true
   end
   for i = 1, dev.KV_VALUES do
     local back = shared.kv_get("rpf.dev.bound." .. i)
@@ -83,25 +103,28 @@ end
 ---apart from the core's, so a run never touches the portal connection.
 dev.transport = fivem.ws.new(exports["rpf-ws"] --[[@as rpf.fivem.WsShim]], shared.after, shared.logger(true))
 
----Whether a benchmark is running, so a second is refused rather than
----sharing its socket.
-local running = false
+---The benchmark running now, if one is, so a second is refused rather than
+---sharing its socket, and a deadline knows whether its run is still going.
+---@type table?
+local running = nil
 
 ---Runs the benchmark: `frames` frames of about `bytes` bytes, Lua → shim →
 ---echo → shim → Lua, counted when the last echo arrives.
 ---@param url string? The echo server's `ws://` url.
----@param frames integer How many frames to send.
----@param bytes integer Each frame's size in bytes.
+---@param frames integer? How many frames to send, at least one.
+---@param bytes integer? Each frame's size in bytes, at least 40.
 function dev.bench(url, frames, bytes)
-  if type(url) ~= "string" then
-    print("rpf: usage: rpf_dev_bench <ws://echo url> [frames] [bytes]")
+  if type(url) ~= "string" or not frames or frames < 1 or not bytes or bytes < 40 then
+    print("rpf: usage: rpf_dev_bench <ws://echo url> [frames >= 1] [bytes >= 40]")
     return
   end
   if running then
     print("rpf: a benchmark is already running")
     return
   end
-  running = true
+  local run = {}
+  running = run
+  frames, bytes = math.floor(frames), math.floor(bytes)
   local frame = '{"type":"state_changed","padding":"' .. string.rep("x", math.max(0, bytes - 40)) .. '"}'
   local transport = dev.transport
   local received, started = 0, 0
@@ -140,12 +163,18 @@ function dev.bench(url, frames, bytes)
       end
     end,
     close = function(reason)
-      running = false
+      running = nil
       if received < frames then
         print("rpf: bench: " .. reason .. " after " .. received .. " of " .. frames .. " echoes")
       end
     end,
   })
+  shared.after(dev.BENCH_TIMEOUT_MS, function()
+    if running == run then
+      print(("rpf: bench: no result after %d s; closing"):format(math.floor(dev.BENCH_TIMEOUT_MS / 1000)))
+      transport.disconnect()
+    end
+  end)
 end
 
 ---Prints the connection's state and every player the core knows.
@@ -157,13 +186,18 @@ function dev.status()
 end
 
 -- The benchmark socket's events. The core's transport ignores an id it did
--- not open, and this one ignores the core's, so both hear every event.
+-- not open, and this one ignores the core's, so both hear every event. The
+-- shim outlives this resource, so a run cut short by a restart closes its
+-- socket, as `server.lua` does the core's.
 AddEventHandler("rpf-ws:open", function(id) dev.transport.opened(id) end)
 AddEventHandler("rpf-ws:message", function(id, text) dev.transport.received(id, text) end)
 AddEventHandler("rpf-ws:close", function(id, code, reason) dev.transport.closed(id, code, reason) end)
+AddEventHandler("onResourceStop", function(name)
+  if name == GetCurrentResourceName() then dev.transport.stop() end
+end)
 
-RegisterCommand("rpf_dev_kv_bound", function(source)
-  if dev.allowed(source) then dev.kv_bound() end
+RegisterCommand("rpf_dev_kv_bound", function(source, args)
+  if dev.allowed(source) then dev.kv_bound(args[1]) end
 end, true)
 RegisterCommand("rpf_dev_bench", function(source, args)
   if dev.allowed(source) then dev.bench(args[1], tonumber(args[2]) or 20000, tonumber(args[3]) or 512) end

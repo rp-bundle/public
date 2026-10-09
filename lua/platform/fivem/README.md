@@ -198,23 +198,32 @@ point the convars at a portal with a server and an API key, and add
 - `rpf_dev_kv_bound` writes nine values of 1 MiB plus 257 bytes through the
   adapter's `kv_set` (the outbox's largest entry, and its total plus the
   replies' share; `lua/core/README.md`, The outbox), reads each back through
-  `kv_get` byte for byte, and deletes them.
+  `kv_get` byte for byte, and deletes them. `rpf_dev_kv_bound write` stores
+  them and stops; kill the server (`kill -9`) and start it again, and
+  `rpf_dev_kv_bound read` checks them and deletes them, which shows a write
+  is durable when `kv_set` returns.
 - `rpf_dev_bench <ws://url> [frames] [bytes]` is the benchmark, against
   `npm run echo` in `ws-shim/` (`ws://127.0.0.1:30121`), on a socket of its
-  own beside the core's.
+  own beside the core's. It holds the server thread for a moment each tick
+  (FXServer logs hitch warnings), so run it on a server nobody is playing on.
+  A run that has no answer in 60 seconds is given up.
 - `rpf_dev_status` prints the connection's state and the players the core
   knows, with their lifecycle state.
 
 Run for #186 on FXServer 35245 under OneSync, against a local portal:
 
-- Both resources load on the artifact's Node (22.22.0; the bundle targets
-  16), and the core connects and takes its config. `restart rpf` reconnects
-  at once, and the portal does not refuse the new instance as a duplicate.
+- Both resources load on the artifact's Node, and the core connects and
+  takes its config. The Linux artifact ships only Node 22 (22.22.0): a
+  resource that asks for `node_version "16"` gets it too. The bundle targets
+  16, for a server still on it, and loaded as FXServer loads it (the
+  `exports` and `emit` globals) it opened, echoed and closed a socket on
+  Node 16.20.2. `restart rpf` reconnects at once, and the portal does not
+  refuse the new instance as a duplicate.
 - Resource KVP holds the bound: `rpf_dev_kv_bound` read the nine values back
-  byte for byte, in 200 to 300 ms. A separate probe also held 64 values of
-  1 MiB, and nine values written with `SetResourceKvp` survived the server
-  being killed (`SIGKILL`) straight after the write. So the outbox's
-  defaults stand, and the adapter lowers no bound.
+  byte for byte, in 100 to 300 ms, and after `rpf_dev_kv_bound write`, a
+  `kill -9` and a restart, `rpf_dev_kv_bound read` found all nine. A
+  separate probe also held 64 values of 1 MiB. So the outbox's defaults
+  stand, and the adapter lowers no bound.
 - The benchmark is above.
 - A real client's join is still to run: the login screen, the sealed
   password, silent resume on a second join, the character screen reaching
