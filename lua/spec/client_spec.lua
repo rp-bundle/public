@@ -194,6 +194,38 @@ describe("rpf.client", function()
       assert.are.equal(1, #p.connects)
     end)
 
+    -- H5: a suspension is lifted by a person, so the core neither stops nor
+    -- hammers the portal: it waits `suspended_retry_ms` plus jitter, and
+    -- keeps doing so until it is welcomed.
+    it("waits and tries again when Hello is refused as suspended", function()
+      local p = support.fake_platform()
+      local connection = rpf.start_server(p, { url = "ws://portal", api_key = "k" })
+      connection:send("player_dropped", dropped())
+      p.open()
+      local o = rpf.client.DEFAULTS
+      for attempt = 1, 2 do
+        p.deliver(support.portal_frame("rejected", {
+          re = p.last().id,
+          code = "suspended",
+          reason = "this community is suspended",
+        }))
+        assert.are_not.equal("stopped", connection.state)
+        assert.are.equal(attempt, #p.logged("error", "this community is suspended"))
+        local refused = p.now()
+        p.advance(o.suspended_retry_ms - 1)
+        assert.are.equal(attempt, #p.connects, "not before suspended_retry_ms")
+        p.advance(o.suspended_retry_ms * o.jitter + 1)
+        assert.are.equal(attempt + 1, #p.connects)
+        assert.is_true(p.connects[attempt + 1] - refused >= o.suspended_retry_ms)
+        assert.are.equal(0, connection.attempt, "a suspension is not a failed attempt")
+        p.open()
+      end
+
+      welcome(p)
+      assert.are.equal("ready", connection.state)
+      assert.are.equal(1, #sent_of(p, "player_dropped"), "the outbox waited it out")
+    end)
+
     it("sends a fresh Hello after a backoff when refused with retry", function()
       local p = support.fake_platform()
       local connection = rpf.start_server(p, { url = "ws://portal", api_key = "k" })

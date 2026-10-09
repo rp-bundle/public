@@ -17,14 +17,31 @@ one-way door, a new environment variable. How to cut a release is in
 ## [Unreleased]
 
 **Protocol:** speaks protocol 2, and serves protocols 1 and 2. Protocol 2
-adds the `restarting` notice (below), a character's job (D7), and in-game
+adds the `restarting` notice (below), a character's job (D7), in-game
 staff (F9: `link_player`, `staff_action`, `player_linked` and
-`staff_permissions`); a game server on protocol 1 is served unchanged, and
-is simply closed where a protocol 2 one is told first, and is never sent
-`staff_permissions`. A protocol 1 core ignores a held character's `job`,
-and its reports, which carry none, keep the job the portal has.
+`staff_permissions`) and the `suspended` reject code (H5); a game server on
+protocol 1 is served unchanged, and is simply closed where a protocol 2 one
+is told first, is never sent `staff_permissions`, and is refused
+`forbidden` where a protocol 2 one is refused `suspended`. A protocol 1
+core ignores a held character's `job`, and its reports, which carry none,
+keep the job the portal has.
 
 ### Added
+
+- The platform operator (H5, #54). Platform admins, made only with
+  `rpf-portal platform-admin grant <account>` and separate from every guild
+  role, get a console at `/platform` to suspend a guild (its game servers
+  are disconnected and refused `suspended`, its players cannot register or
+  log in, its portal is read-only for its staff), set its plan (servers,
+  player accounts and its game servers' frame rate, which replace the fixed
+  limits; billing stays off-platform), open read-only support access for a
+  few hours, announced on every page of the guild, and hand a guild to a
+  new owner who has lost every sign-in factor. Everything an operator does
+  is in the guild's own audit log with their reason
+  ([Deployment](docs/deployment.md#the-platform-operator)).
+- The Lua core waits out a `suspended` refusal of its `Hello`: it tries
+  again every `suspended_retry_ms` (five minutes) plus jitter, so a server
+  comes back on its own once its community's suspension is lifted.
 
 - The FiveM adapter (D2, #17): the `rpf` resource (the Lua core, the adapter
   and its login and character screens) and the `rpf-ws` resource (the

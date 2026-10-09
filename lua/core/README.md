@@ -277,7 +277,13 @@ The game server's connection to the portal (`rpf.connection` once started).
   `max_retry_after_ms` (five minutes), so a portal cannot park a server for
   an hour by mistake, and a `Welcome` forgets a notice that was not followed
   by a close. The notice is never acked: the socket is closing.
-  A `Hello` refused with a code that may not be
+  A `Hello` refused `suspended` (protocol 2, H5) means the platform operator
+  has suspended this server's community: the reason is logged, the
+  connection is dropped, and it is made again after `suspended_retry_ms`
+  (five minutes) plus the same jitter, for as long as the suspension lasts,
+  so the server comes back on its own once it is lifted. The outbox keeps
+  everything meanwhile.
+  A `Hello` refused with any other code that may not be
   retried (`unauthorised`, `duplicate_instance`, …) stops the connection for
   good, and so does a `Welcome` naming a protocol version other than
   `rpf.protocol.VERSION`. A portal that no longer serves this core's protocol
