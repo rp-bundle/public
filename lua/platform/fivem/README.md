@@ -24,7 +24,7 @@ Copy both folders into the server's `resources/`, then in `server.cfg`:
 
 ```
 set rpf_url "wss://portal.example/ws"
-set rpf_api_key "rpf_sk_…"
+set rpf_api_key "rpf_<prefix>_…"
 ensure rpf-ws
 ensure rpf
 ```
