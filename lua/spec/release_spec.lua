@@ -20,7 +20,7 @@ local DIR = os.getenv("RPF_RELEASE_DIR")
 local VERSION = os.getenv("RPF_RELEASE_VERSION")
 
 if not DIR or not VERSION then
-  pending("a release's zips (dev/verify-addon-release sets RPF_RELEASE_DIR and RPF_RELEASE_VERSION)")
+  pending("a release's zips (dev/verify-addon-release sets RPF_RELEASE_DIR and RPF_RELEASE_VERSION)", function() end)
   return
 end
 
@@ -269,8 +269,8 @@ describe("the Gmod zip", function()
 
   it("ships exactly the files the two sides load, and the licence", function()
     local loaded = {}
-    boot("server", loaded)
-    installed:uninstall()
+    local server = boot("server", loaded)
+    server:uninstall()
     installed = nil
     boot("client", loaded)
     local files = shipped("gmod")
