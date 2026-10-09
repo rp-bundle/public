@@ -1,0 +1,11 @@
+{
+  "description": "The fields are an object.",
+  "type": "widget",
+  "fields": [],
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": ""
+    }
+  }
+}

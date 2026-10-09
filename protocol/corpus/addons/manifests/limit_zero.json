@@ -1,0 +1,25 @@
+{
+  "description": "A type allows at least one record.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        },
+        "limit": 0
+      }
+    }
+  },
+  "error": {
+    "error": "bound",
+    "path": "types.plant.limit"
+  }
+}

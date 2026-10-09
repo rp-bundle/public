@@ -1,0 +1,17 @@
+{
+  "description": "A nullable field takes null.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "line": null,
+    "maybe": null
+  },
+  "expect": {
+    "fields": {
+      "label": "Pot",
+      "line": null,
+      "count": 1,
+      "maybe": null
+    }
+  }
+}

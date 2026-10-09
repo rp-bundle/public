@@ -1,0 +1,27 @@
+{
+  "description": "The actions are view, create, edit and delete.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        },
+        "actions": {
+          "approve": "edit"
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_key",
+    "path": "types.plant.actions.approve"
+  }
+}

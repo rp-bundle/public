@@ -1,0 +1,19 @@
+{
+  "description": "requires is checked before permissions.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "permissions": {
+      "tend": ""
+    },
+    "requires": {
+      "acme_core": "x"
+    }
+  },
+  "error": {
+    "error": "range",
+    "path": "requires.acme_core"
+  }
+}

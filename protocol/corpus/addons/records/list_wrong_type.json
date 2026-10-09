@@ -1,0 +1,14 @@
+{
+  "description": "A list is an array.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "tags": "a"
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "tags"
+    }
+  }
+}

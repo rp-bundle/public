@@ -1,0 +1,16 @@
+{
+  "description": "requires is keyed by namespace.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "requires": {
+      "Acme": "^1"
+    }
+  },
+  "error": {
+    "error": "name",
+    "path": "requires.Acme"
+  }
+}

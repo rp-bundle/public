@@ -1,0 +1,14 @@
+{
+  "description": "An identifier starts with a letter.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "code": "1pot"
+  },
+  "expect": {
+    "error": {
+      "error": "charset",
+      "field": "code"
+    }
+  }
+}

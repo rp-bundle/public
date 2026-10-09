@@ -1,0 +1,14 @@
+{
+  "description": "Null only where the field is nullable.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "enabled": null
+  },
+  "expect": {
+    "error": {
+      "error": "not_nullable",
+      "field": "enabled"
+    }
+  }
+}

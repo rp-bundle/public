@@ -1,0 +1,14 @@
+{
+  "description": "Under min.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "count": -1
+  },
+  "expect": {
+    "error": {
+      "error": "below_min",
+      "field": "count"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "description": "A config type's records are the server's: it has no owners.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        },
+        "owners": [
+          "player"
+        ]
+      }
+    }
+  },
+  "error": {
+    "error": "authority",
+    "path": "types.plant.owners"
+  }
+}

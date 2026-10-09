@@ -1,0 +1,13 @@
+{
+  "description": "A title's length is in bytes: 33 two-byte characters are 66.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "ééééééééééééééééééééééééééééééééé"
+  },
+  "error": {
+    "error": "bound",
+    "path": "title"
+  }
+}

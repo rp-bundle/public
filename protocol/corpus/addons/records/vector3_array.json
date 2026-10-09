@@ -1,0 +1,18 @@
+{
+  "description": "A vector is an object, not an array.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "spot": [
+      1,
+      2,
+      3
+    ]
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "spot"
+    }
+  }
+}

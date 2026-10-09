@@ -1,0 +1,16 @@
+{
+  "description": "An empty list is a list.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "tags": []
+  },
+  "expect": {
+    "fields": {
+      "label": "Pot",
+      "tags": [],
+      "count": 1,
+      "maybe": null
+    }
+  }
+}

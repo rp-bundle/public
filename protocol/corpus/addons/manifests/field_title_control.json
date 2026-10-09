@@ -1,0 +1,25 @@
+{
+  "description": "A field's title has no control character.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean",
+            "title": "a\nb"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "charset",
+    "path": "types.plant.fields.x.title"
+  }
+}

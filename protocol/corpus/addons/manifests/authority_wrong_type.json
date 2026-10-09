@@ -1,0 +1,24 @@
+{
+  "description": "authority is a string.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": 1,
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "wrong_type",
+    "path": "types.plant.authority"
+  }
+}

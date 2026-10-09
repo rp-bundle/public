@@ -1,0 +1,10 @@
+{
+  "description": "Namespace, version, api and title are all a manifest needs: an addon may declare no types.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden"
+  },
+  "error": null
+}

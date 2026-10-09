@@ -1,0 +1,14 @@
+{
+  "description": "A field the type does not declare.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "colour": "red"
+  },
+  "expect": {
+    "error": {
+      "error": "unknown_field",
+      "field": "colour"
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "description": "id, type, owner, schema and revision name a record's own properties.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "owner": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "reserved",
+    "path": "types.plant.fields.owner"
+  }
+}

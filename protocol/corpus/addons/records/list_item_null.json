@@ -1,0 +1,18 @@
+{
+  "description": "A list item is never null.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "levels": [
+      1,
+      null
+    ]
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "levels",
+      "item": 1
+    }
+  }
+}

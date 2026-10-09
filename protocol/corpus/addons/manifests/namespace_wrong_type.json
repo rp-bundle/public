@@ -1,0 +1,13 @@
+{
+  "description": "A namespace is a string.",
+  "manifest": {
+    "namespace": 5,
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden"
+  },
+  "error": {
+    "error": "wrong_type",
+    "path": "namespace"
+  }
+}

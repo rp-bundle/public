@@ -1,0 +1,18 @@
+{
+  "description": "Each item is held to the list's bounds, and named from zero.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "tags": [
+      "a",
+      "abcde"
+    ]
+  },
+  "expect": {
+    "error": {
+      "error": "too_long",
+      "field": "tags",
+      "item": 1
+    }
+  }
+}

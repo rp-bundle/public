@@ -1,0 +1,25 @@
+{
+  "description": "Only a live type is held.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        },
+        "hold": "server"
+      }
+    }
+  },
+  "error": {
+    "error": "authority",
+    "path": "types.plant.hold"
+  }
+}

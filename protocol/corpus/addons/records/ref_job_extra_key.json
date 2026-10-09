@@ -1,0 +1,18 @@
+{
+  "description": "A job has no other key.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "job": {
+      "employer": "lspd",
+      "job": "officer",
+      "rank": 1
+    }
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "job"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "description": "A type's fields are checked before its list.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "nope"
+          }
+        },
+        "list": [
+          "y"
+        ]
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_value",
+    "path": "types.plant.fields.x.type"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "description": "An empty object is JSON.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "meta": {}
+  },
+  "expect": {
+    "fields": {
+      "label": "Pot",
+      "meta": {},
+      "count": 1,
+      "maybe": null
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "description": "Length is checked before the charset.",
+  "type": "widget",
+  "fields": {
+    "label": "\u0007\u0007\u0007\u0007\u0007\u0007\u0007\u0007\u0007"
+  },
+  "expect": {
+    "error": {
+      "error": "too_long",
+      "field": "label"
+    }
+  }
+}

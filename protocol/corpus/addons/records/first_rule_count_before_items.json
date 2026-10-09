@@ -1,0 +1,18 @@
+{
+  "description": "The count is checked before the items.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "tags": [
+      "abcde",
+      "b",
+      "c"
+    ]
+  },
+  "expect": {
+    "error": {
+      "error": "too_many_items",
+      "field": "tags"
+    }
+  }
+}

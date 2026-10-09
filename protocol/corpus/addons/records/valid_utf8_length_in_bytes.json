@@ -1,0 +1,14 @@
+{
+  "description": "Lengths are in bytes: four two-byte characters are eight.",
+  "type": "widget",
+  "fields": {
+    "label": "éééé"
+  },
+  "expect": {
+    "fields": {
+      "label": "éééé",
+      "count": 1,
+      "maybe": null
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "description": "An absent field with a default reads as the default; a null default is a null.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot"
+  },
+  "expect": {
+    "fields": {
+      "label": "Pot",
+      "count": 1,
+      "maybe": null
+    }
+  }
+}

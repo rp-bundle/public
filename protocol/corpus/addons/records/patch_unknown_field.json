@@ -1,0 +1,19 @@
+{
+  "description": "A patch names only declared fields.",
+  "type": "widget",
+  "current": {
+    "label": "Pot",
+    "line": "a",
+    "count": 3,
+    "maybe": 2
+  },
+  "patch": {
+    "colour": "red"
+  },
+  "expect": {
+    "error": {
+      "error": "unknown_field",
+      "field": "colour"
+    }
+  }
+}

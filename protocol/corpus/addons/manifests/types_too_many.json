@@ -1,0 +1,168 @@
+{
+  "description": "An addon declares at most 16 types.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "t0": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      },
+      "t1": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      },
+      "t2": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      },
+      "t3": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      },
+      "t4": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      },
+      "t5": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      },
+      "t6": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      },
+      "t7": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      },
+      "t8": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      },
+      "t9": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      },
+      "t10": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      },
+      "t11": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      },
+      "t12": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      },
+      "t13": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      },
+      "t14": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      },
+      "t15": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      },
+      "t16": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "too_many",
+    "path": "types"
+  }
+}

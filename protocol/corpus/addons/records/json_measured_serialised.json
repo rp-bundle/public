@@ -1,0 +1,17 @@
+{
+  "description": "JSON is measured as serde_json writes it: 0.00001 is 7 bytes, \"\\n\" 4, so {\"a\":0.00001,\"b\":\"\\n\"} is 22.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "meta": {
+      "a": 1e-05,
+      "b": "\n"
+    }
+  },
+  "expect": {
+    "error": {
+      "error": "too_large",
+      "field": "meta"
+    }
+  }
+}

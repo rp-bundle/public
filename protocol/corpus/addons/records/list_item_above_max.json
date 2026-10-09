@@ -1,0 +1,17 @@
+{
+  "description": "A list of integers holds each to max.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "levels": [
+      6
+    ]
+  },
+  "expect": {
+    "error": {
+      "error": "above_max",
+      "field": "levels",
+      "item": 0
+    }
+  }
+}

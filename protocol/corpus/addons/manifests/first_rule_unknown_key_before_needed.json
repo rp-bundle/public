@@ -1,0 +1,25 @@
+{
+  "description": "A key the kind may not have is named before a key it needs.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "enum",
+            "max": 1
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_key",
+    "path": "types.plant.fields.x.max"
+  }
+}

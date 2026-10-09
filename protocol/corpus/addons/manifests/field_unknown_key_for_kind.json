@@ -1,0 +1,25 @@
+{
+  "description": "A bound belongs to its kind: a string has no min.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "string",
+            "min": 1
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_key",
+    "path": "types.plant.fields.x.min"
+  }
+}

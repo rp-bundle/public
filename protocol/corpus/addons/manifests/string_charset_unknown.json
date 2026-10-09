@@ -1,0 +1,25 @@
+{
+  "description": "A charset is identifier, printable or any.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "string",
+            "charset": "ascii"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_value",
+    "path": "types.plant.fields.x.charset"
+  }
+}

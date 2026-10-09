@@ -1,0 +1,50 @@
+{
+  "description": "The spray tag manifest from the worked example in docs/architecture/addons.md.",
+  "manifest": {
+    "namespace": "acme_tags",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Tags",
+    "permissions": {
+      "moderate": "Remove any tag"
+    },
+    "types": {
+      "tag": {
+        "schema": 1,
+        "authority": "live",
+        "owners": [
+          "player"
+        ],
+        "hold": "server",
+        "fields": {
+          "text": {
+            "type": "string",
+            "max_len": 24,
+            "charset": "printable",
+            "required": true
+          },
+          "spot": {
+            "type": "vector3",
+            "required": true
+          },
+          "fades_at": {
+            "type": "timestamp",
+            "required": true,
+            "index": true
+          }
+        },
+        "list": [
+          "text",
+          "fades_at"
+        ],
+        "actions": {
+          "create": false,
+          "edit": false,
+          "delete": "moderate"
+        },
+        "limit": 500
+      }
+    }
+  },
+  "error": null
+}

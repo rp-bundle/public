@@ -1,0 +1,14 @@
+{
+  "description": "A timestamp is whole milliseconds.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "at": 1.5
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "at"
+    }
+  }
+}

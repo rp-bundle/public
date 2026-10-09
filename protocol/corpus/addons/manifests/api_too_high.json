@@ -1,0 +1,13 @@
+{
+  "description": "api is at most 1000.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1001,
+    "title": "Garden"
+  },
+  "error": {
+    "error": "bound",
+    "path": "api"
+  }
+}

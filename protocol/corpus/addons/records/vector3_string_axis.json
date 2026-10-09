@@ -1,0 +1,18 @@
+{
+  "description": "Each axis is a number.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "spot": {
+      "x": 1,
+      "y": 2,
+      "z": "3"
+    }
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "spot"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "description": "A null in a patch clears a nullable field.",
+  "type": "widget",
+  "current": {
+    "label": "Pot",
+    "line": "a",
+    "count": 3,
+    "maybe": 2
+  },
+  "patch": {
+    "line": null
+  },
+  "expect": {
+    "fields": {
+      "label": "Pot",
+      "line": null,
+      "count": 3,
+      "maybe": 2
+    }
+  }
+}

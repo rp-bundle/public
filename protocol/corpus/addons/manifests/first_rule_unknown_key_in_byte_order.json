@@ -1,0 +1,15 @@
+{
+  "description": "The first unknown key in byte order is named: uppercase sorts first.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "zeta": 1,
+    "Alpha": 1
+  },
+  "error": {
+    "error": "unknown_key",
+    "path": "Alpha"
+  }
+}

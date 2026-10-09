@@ -1,0 +1,17 @@
+{
+  "description": "Requirements are checked in byte order of namespace.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "requires": {
+      "zzz_core": "x",
+      "acme_core": "y"
+    }
+  },
+  "error": {
+    "error": "range",
+    "path": "requires.acme_core"
+  }
+}

@@ -165,8 +165,8 @@ not, **bumps `protocol::VERSION`** (and `rpf.protocol.VERSION`), and
 `UPDATE_CORPUS=1 cargo test -p rpf-protocol --test protocol` writes the new
 `v<N+1>/` while the frozen one stays as it was. Changes between two releases
 all land in the one unreleased version; it is frozen when its release is cut
-(`docs/deployment.md`, "Releasing"). The container and ledger corpora under
-`protocol/corpus/` are validation cases, not wire shapes, and are not
+(`docs/deployment.md`, "Releasing"). The container, ledger and addon corpora
+under `protocol/corpus/` are validation cases, not wire shapes, and are not
 versioned.
 
 A version bump that is a pure addition needs no other code: the portal

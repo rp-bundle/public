@@ -1,0 +1,14 @@
+{
+  "description": "A record or owner id is a lowercase hyphenated uuid.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "species": "67E55044-10B1-426F-9247-BB680E5FE0C8"
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "species"
+    }
+  }
+}

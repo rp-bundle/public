@@ -1,0 +1,16 @@
+{
+  "description": "A job is exactly an employer and a job.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "job": {
+      "employer": "lspd"
+    }
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "job"
+    }
+  }
+}

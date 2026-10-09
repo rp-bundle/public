@@ -1,0 +1,14 @@
+{
+  "description": "A number is a number.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "ratio": true
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "ratio"
+    }
+  }
+}

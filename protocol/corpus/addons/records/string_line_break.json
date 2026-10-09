@@ -1,0 +1,14 @@
+{
+  "description": "A string is one line, whatever its charset.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "line": "a\nb"
+  },
+  "expect": {
+    "error": {
+      "error": "charset",
+      "field": "line"
+    }
+  }
+}

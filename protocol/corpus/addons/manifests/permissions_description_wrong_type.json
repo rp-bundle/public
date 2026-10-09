@@ -1,0 +1,16 @@
+{
+  "description": "A permission's description is a string.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "permissions": {
+      "tend": true
+    }
+  },
+  "error": {
+    "error": "wrong_type",
+    "path": "permissions.tend"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "description": "An unknown key is named before a missing one.",
+  "manifest": {
+    "extra": 1
+  },
+  "error": {
+    "error": "unknown_key",
+    "path": "extra"
+  }
+}

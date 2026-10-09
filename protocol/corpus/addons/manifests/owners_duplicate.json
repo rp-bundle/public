@@ -1,0 +1,28 @@
+{
+  "description": "An owner kind appears once; items are numbered from zero.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "live",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        },
+        "owners": [
+          "player",
+          "player"
+        ]
+      }
+    }
+  },
+  "error": {
+    "error": "duplicate",
+    "path": "types.plant.owners.1"
+  }
+}

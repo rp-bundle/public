@@ -1,0 +1,16 @@
+{
+  "description": "A range is a string.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "requires": {
+      "acme_core": 1
+    }
+  },
+  "error": {
+    "error": "wrong_type",
+    "path": "requires.acme_core"
+  }
+}

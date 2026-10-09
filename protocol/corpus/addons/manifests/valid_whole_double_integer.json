@@ -1,0 +1,10 @@
+{
+  "description": "An integer written as a whole double is an integer on both sides.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1.0,
+    "title": "Garden"
+  },
+  "error": null
+}

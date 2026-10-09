@@ -1,0 +1,31 @@
+{
+  "description": "There are four owner kinds.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "live",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        },
+        "owners": [
+          "player",
+          "character",
+          "employer",
+          "server",
+          "player"
+        ]
+      }
+    }
+  },
+  "error": {
+    "error": "too_many",
+    "path": "types.plant.owners"
+  }
+}

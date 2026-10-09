@@ -1,0 +1,13 @@
+{
+  "description": "The core's areas are reserved.",
+  "manifest": {
+    "namespace": "players",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden"
+  },
+  "error": {
+    "error": "reserved",
+    "path": "namespace"
+  }
+}

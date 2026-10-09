@@ -1,0 +1,14 @@
+{
+  "description": "An integer is a number.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "count": "1"
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "count"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "description": "A number over max.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "ratio": 2
+  },
+  "expect": {
+    "error": {
+      "error": "above_max",
+      "field": "ratio"
+    }
+  }
+}

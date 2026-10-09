@@ -1,0 +1,13 @@
+{
+  "description": "A title has no control character.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Gar\u0007den"
+  },
+  "error": {
+    "error": "charset",
+    "path": "title"
+  }
+}
