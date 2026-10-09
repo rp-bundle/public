@@ -245,7 +245,7 @@ describe("rpf.manifest.check_fields against protocol/corpus/addons/records", fun
       { spot = { x = 1, y = 2, z = 3, [1] = 4 } },
     }
     for i, extra in ipairs(cases) do
-      local fields = { label = "Pot" }
+      local fields = { label = "Pot" } ---@type table<string, any>
       local name = assert(next(extra))
       fields[name] = extra[name]
       local ok, checked, refusal = pcall(rpf.manifest.check_fields, def, fields)
