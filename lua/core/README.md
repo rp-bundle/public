@@ -376,9 +376,10 @@ provide: whatever store an adapter uses has to take one value of 1 MiB plus
 the header, and about 9 MiB in total (`max_bytes` plus the replies' share).
 Each adapter confirms its store at the bound on the real engine. Gmod's
 (SQLite through `sql.QueryTyped`, D8) held nine values of 1 MiB plus 256
-bytes on a real server (`lua/platform/README.md`); FiveM's resource KVP
-(D2) is still to confirm on a real server (#186). If one cannot, the adapter
-lowers `max_frame_bytes` and `max_bytes` through the client options.
+bytes on a real server (`lua/platform/README.md`), and FiveM's resource KVP
+(D2) held them on FXServer 35245, surviving a `SIGKILL` straight after the
+write (`lua/platform/fivem/README.md`, Testing). An adapter whose store
+cannot lowers `max_frame_bytes` and `max_bytes` through the client options.
 
 At capacity, behaviour follows the message type:
 

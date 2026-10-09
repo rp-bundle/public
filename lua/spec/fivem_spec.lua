@@ -513,6 +513,21 @@ describe("the FiveM adapter", function()
       assert.is_false(rpf.connection.platform.send("x"))
     end)
 
+    it("logs a close the shim fails, rather than dropping it", function()
+      local driver, record = started_server()
+      local first = record.connects[1].id
+      driver.socket_open(first)
+      rawget(_G, "exports")["rpf-ws"].close = function()
+        error("no such export")
+      end
+      driver.stop()
+      local said = false
+      for _, line in ipairs(record.logs) do
+        said = said or (line.level == "error" and line.message:find("could not close socket " .. first, 1, true) ~= nil)
+      end
+      assert.is_true(said)
+    end)
+
     it("owes the core a close, later, when the shim cannot connect", function()
       local driver, record = load_side("server", CONVARS)
       local attempts = 0

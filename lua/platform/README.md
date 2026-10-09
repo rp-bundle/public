@@ -146,6 +146,7 @@ Two resources: `rpf` (the core, the adapter and its NUI screens) and
 `rpf-ws` (the websocket shim, bundled with `ws`), assembled by
 `dev/fivem-resources`. [`fivem/README.md`](fivem/README.md) has the
 install, the convars, how each platform member is done, the shim's
-contract, the screens and the input lock, and the tests. Its
+contract, the screens and the input lock, the tests, and the layer-5 run on
+a real FXServer (resource KVP held the outbox's bounds). Its
 language-server check runs on its own (`lua/platform/fivem/.luarc.json`)
 with the FiveM natives `dev/fivem-natives` fetches.

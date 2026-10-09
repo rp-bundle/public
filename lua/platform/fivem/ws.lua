@@ -64,13 +64,23 @@ function ws.new(shim, after, log)
     current = id
   end
 
+  -- A close the shim fails is logged, not retried: the socket may still be
+  -- open in `rpf-ws`, and the log is what says why a restarted core is
+  -- refused as a duplicate instance.
+  local function close(id)
+    local ok, err = pcall(shim.close, shim, id)
+    if not ok then
+      log("error", "rpf: the rpf-ws resource could not close socket " .. tostring(id) .. ": " .. tostring(err))
+    end
+  end
+
   -- The handlers stay until the shim reports the close, so `close` is still
   -- called once for this connect.
   local function disconnect()
     local id = current
     if id then
       current = nil
-      pcall(shim.close, shim, id)
+      close(id)
     end
   end
 
@@ -111,7 +121,7 @@ function ws.new(shim, after, log)
   local function stop()
     current = nil
     for id in pairs(sockets) do
-      pcall(shim.close, shim, id)
+      close(id)
     end
   end
 
