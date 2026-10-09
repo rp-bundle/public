@@ -246,7 +246,7 @@ describe("rpf.manifest.check_fields against protocol/corpus/addons/records", fun
     }
     for i, extra in ipairs(cases) do
       local fields = { label = "Pot" }
-      local name = next(extra)
+      local name = assert(next(extra))
       fields[name] = extra[name]
       local ok, checked, refusal = pcall(rpf.manifest.check_fields, def, fields)
       assert.is_true(ok, tostring(checked))
