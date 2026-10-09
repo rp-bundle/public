@@ -218,8 +218,9 @@ end
 
 ---A deep copy with every table a script wrote marked as JSON would decode
 ---it: string keys an object, keys 1 to n an array. A blank table stays blank
----(the rule that reads it marks it), and a table that is neither is copied
----unmarked, so any rule that reads it refuses it.
+---(the rule that reads it marks it). A table that is neither, or whose mark
+---its keys contradict, becomes `not_json()`, so any rule that reads it
+---refuses it rather than reading part of it.
 ---@param value any Anything.
 ---@param depth integer? How deeply it is nested; 0 at the top.
 ---@param seen table<table, true>? Tables on the current path, to refuse cycles.
@@ -233,29 +234,35 @@ local function mark(value, depth, seen)
     return not_json()
   end
   seen[value] = true
-  local meta = getmetatable(value)
   local out = {}
-  local strings, count, max = 0, 0, 0
+  local strings, indexes, count, max = 0, 0, 0, 0
   for k, v in pairs(value) do
     out[k] = mark(v, depth + 1, seen)
     count = count + 1
     if type(k) == "string" then
       strings = strings + 1
-    elseif type(k) == "number" and k >= 1 and k == math.floor(k) and k > max then
-      max = k
+    elseif type(k) == "number" and k >= 1 and k == math.floor(k) then
+      indexes = indexes + 1
+      if k > max then
+        max = k
+      end
     end
   end
   seen[value] = nil
-  if meta ~= nil then
-    return setmetatable(out, meta)
-  elseif count == 0 then
+  -- An object has only string keys; an array only the indexes 1 to n. A
+  -- mark is believed only if the keys bear it out, so a marked array with
+  -- a stray key, or a table with a hole, is refused rather than read with
+  -- part of it silently dropped.
+  local object_shape = strings == count
+  local array_shape = indexes == count and max == count
+  if count == 0 and not json.is_object(value) and not json.is_array(value) then
     return out
-  elseif strings == count then
-    return json.object(out)
-  elseif strings == 0 and max == count then
-    return json.array(out)
+  elseif json.is_object(value) or (object_shape and not json.is_array(value)) then
+    return object_shape and json.object(out) or not_json()
+  elseif json.is_array(value) or array_shape then
+    return array_shape and json.array(out) or not_json()
   end
-  return out
+  return not_json()
 end
 
 ---An object's keys in byte order.

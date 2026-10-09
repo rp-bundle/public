@@ -235,6 +235,26 @@ describe("rpf.manifest.check_fields against protocol/corpus/addons/records", fun
     assert.are.same({ error = "wrong_type", path = "title" }, why)
   end)
 
+  it("refuses a table whose keys are not an array's or an object's, marked or not", function()
+    local def = kit.types.widget
+    local cases = {
+      { levels = { [0] = 1, [2] = 2 } },
+      { levels = { 1, nil, 3 } },
+      { levels = rpf.json.array({ 1, extra = 2 }) },
+      { meta = rpf.json.object({ 1, a = 2 }) },
+      { spot = { x = 1, y = 2, z = 3, [1] = 4 } },
+    }
+    for i, extra in ipairs(cases) do
+      local fields = { label = "Pot" }
+      local name = next(extra)
+      fields[name] = extra[name]
+      local ok, checked, refusal = pcall(rpf.manifest.check_fields, def, fields)
+      assert.is_true(ok, tostring(checked))
+      assert.is_nil(checked, "case " .. i)
+      assert.are.same({ error = "wrong_type", field = name }, refusal, "case " .. i)
+    end
+  end)
+
   it("refuses a JSON field holding an empty table it cannot tell the shape of", function()
     local _, refusal = rpf.manifest.check_fields(kit.types.widget, { label = "Pot", meta = { a = {} } })
     assert.are.same({ error = "wrong_type", field = "meta" }, refusal)
