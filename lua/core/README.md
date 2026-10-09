@@ -1223,9 +1223,20 @@ honoured, leaving the player logged in for this session with nothing saved,
 exactly as a logout after login does. A nonce the portal calls
 `invalid_nonce` is replaced once with a fresh one.
 
+`auth.delete_account(username, password)` deletes the account at the portal
+(H6): it posts `{ nonce, username, password }` to `/delete_account` with a
+fresh nonce, which the portal does not consume, and on `204` forgets the
+saved login and the session and moves to `deleted`, in which nothing more
+can be started on this connection. The player is still in the game, as an
+account that no longer exists, until they leave; the adapter tells them to
+reconnect. A refusal (`account_linked` for an account linked to a staff
+account, a wrong password) is `auth.failed` with `during = "delete_account"`,
+and the login stands. The password goes in the body as a login's does, so
+FiveM's sealed handles work for it unchanged.
+
 Events: `auth.required`, `auth.succeeded`, `auth.failed` (with `code`,
-`message`, `during`, and `retry_after` when rate limited) and
-`auth.password_change_required`. The form that calls this is the adapter's:
+`message`, `during`, and `retry_after` when rate limited),
+`auth.password_change_required` and `auth.account_deleted`. The form that calls this is the adapter's:
 Gmod's is `lua/platform/gmod/ui.lua` (D8). FiveM's is an NUI page that keeps
 the password out of Lua altogether (`lua/platform/fivem/README.md`).
 
@@ -1243,7 +1254,7 @@ internal.
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
 | `staff` | server | `can`, `permissions`, `link`, `record` (F9, `rpf.staff` above) |
 | `config` | server | `item`, `item_base`, `item_defaults`, `employer`, `department`, `job`, `starting_accounts`, `default_job`, `setting`, `version`, and `edit` (E6, above) |
-| `auth` | client | `login`, `register`, `change_password`, `logout`, `state`, `account`, `api_token`, `PASSWORD_REUSE_WARNING` |
+| `auth` | client | `login`, `register`, `change_password`, `delete_account`, `logout`, `state`, `account`, `api_token`, `PASSWORD_REUSE_WARNING` |
 | `bridge` | — | Reserved for K2 (Milestone 2), nil now |
 
 Every member is a closure over its module or a plain value, never a module

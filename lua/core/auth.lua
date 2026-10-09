@@ -445,6 +445,9 @@ local function can_start()
   if state == "authenticated" then
     return false, "already logged in"
   end
+  if state == "deleted" then
+    return false, "the account was deleted; reconnect to log in to another"
+  end
   return true, nil
 end
 
@@ -573,6 +576,54 @@ function auth.logout()
   with_nonce(function(n)
     post("logout", { nonce = n.value, remember_token = token }, function() end)
   end, "logout")
+end
+
+---Deletes the player's account at the portal (H6), for good: what is left
+---is a tombstone nobody can log in to, and its names, identifiers and
+---logins are gone. It needs the account's own password (a staff reset's
+---temporary one is not enough), and an account linked to a staff account is
+---refused `account_linked` until the link is removed on the portal.
+---
+---Ends in `auth.account_deleted` or `auth.failed`. Once deleted, this
+---device's saved login and the session are forgotten, the state is
+---`deleted`, and nothing more can be started on this connection: the player
+---is still in the game, as the account that no longer exists, until they
+---leave, and the adapter should tell them to reconnect.
+---@param username string The username.
+---@param password string The account's password. Kept in memory for this attempt only (it may be resent once with a fresh nonce), never stored or logged.
+---@return boolean started False if refused at once.
+---@return string? err Why.
+function auth.delete_account(username, password)
+  strings({ "username", "password" }, username, password)
+  if not where then
+    return false, "the server has not started the login yet"
+  end
+  if state == "working" or state == "resuming" or state == "redeeming" then
+    return false, "a login is already in progress"
+  end
+  if state == "deleted" then
+    return false, "the account was deleted"
+  end
+  state = "working"
+  send_with_nonce("delete_account", function(n)
+    return { nonce = n, username = username, password = password }
+  end, function(status, body)
+    if status ~= 204 then
+      fail(failure_from(status == 200 and 502 or status, body, "delete_account"))
+      return
+    end
+    -- The portal deleted every remember and session token the account had,
+    -- so there is nothing left to revoke, only to forget.
+    save_token(nil)
+    unsaved_token = nil
+    drop_session()
+    waiting, pending, account = nil, nil, nil
+    state = "deleted"
+    ---@type rpf.AuthDeleted
+    local deleted = { username = username }
+    events.emit("auth.account_deleted", deleted)
+  end)
+  return true, nil
 end
 
 ---Tries the saved remember token, or asks for a login if there is none.

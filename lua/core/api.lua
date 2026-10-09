@@ -167,6 +167,9 @@ if auth then
     change_password = function(username, password, new_password, opts)
       return auth.change_password(username, password, new_password, opts)
     end,
+    delete_account = function(username, password)
+      return auth.delete_account(username, password)
+    end,
     logout = function()
       auth.logout()
     end,
