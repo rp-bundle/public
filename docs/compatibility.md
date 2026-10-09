@@ -71,7 +71,9 @@ release whose portal speaks its successor**. Dropping it means raising
 `MIN_VERSION` in a release, which:
 
 - is announced under **Deprecated** in `CHANGELOG.md` in the release that
-  ships the successor, with the earliest date the old version may go;
+  ships the successor, with the earliest date the old version may go, and
+  added to `rpf_protocol::SUNSETS` with that date, so the portal tells the
+  staff of every server still on it (Seeing who is behind, below);
 - happens only after the census (below) shows no connected server, or only
   ones whose owners have been told, still on it;
 - is listed under **Removed** in the release that does it, and in the table
@@ -325,6 +327,27 @@ the portal reports them three ways, all from the live connections
   portal serves. Every deployment has it, with or without a scraper.
 - **The metric** `rpf_game_servers_connected_by_version{protocol,engine,core_version}`
   ([Deployment](deployment.md#metrics)).
+
+The people who can do something about it see it too. A connected server's
+page in the portal (its **Game server** card) says when it should upgrade
+(`rpf_domain::portal::updates`, H7):
+
+- **Update available**, when the core it reports is an older release than
+  this portal's own (`PORTAL_RELEASE`, the workspace version, which a game
+  server installs as the release of the same number). It keeps working; the
+  notice links the release to install when its owner chooses. A version
+  that is not a release (a development build) is left alone.
+- **Upgrade needed**, with a date, when the protocol it speaks is in
+  `rpf_protocol::SUNSETS`: the versions announced under **Deprecated**,
+  each with the earliest day a portal may stop serving it. This is said
+  whatever version the core reports, because the protocol is what decides
+  whether it is served.
+
+A release that deprecates a protocol adds it to `SUNSETS` with the date
+`CHANGELOG.md` announces, and the release that drops it removes it as it
+raises `MIN_VERSION`; a compile-time assertion keeps every entry served and
+older than `VERSION`. The notice is advice for staff: the core's version is
+its own word, and nothing is decided by it.
 
 ## The database
 

@@ -39,6 +39,13 @@ keep the job the portal has.
   serve it. A tag whose version, changelog section, compatibility row,
   frozen corpus or licence is missing is refused before anything is
   published ([Deployment](docs/deployment.md#the-game-server-release)).
+- The portal tells staff when a game server should upgrade (H7, #56). A
+  connected server's **Game server** card says **Update available** when
+  its core is an older release than the portal's, linking the release to
+  install, and **Upgrade needed**, with the date, when the protocol it
+  speaks has been announced as going (`rpf_protocol::SUNSETS`, empty
+  until a release deprecates one)
+  ([Compatibility](docs/compatibility.md#seeing-who-is-behind)).
 - In-game config editing (E6, #48). A linked staff member changes their
   server's settings, items, item bases, employers, departments and jobs in
   game with `rpf.api.config.edit(handle, base_version, changes)`, with the
