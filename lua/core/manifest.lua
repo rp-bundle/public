@@ -121,6 +121,10 @@ local RESERVED_NAMESPACES = {
   records = true,
   characters = true,
   jobs = true,
+  staff = true,
+  character = true,
+  inventory = true,
+  money = true,
 }
 ---Field names a type may not declare: `manifest::RESERVED_FIELDS`.
 local RESERVED_FIELDS = { id = true, type = true, owner = true, schema = true, revision = true }
