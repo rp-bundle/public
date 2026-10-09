@@ -81,6 +81,74 @@ release whose portal speaks its successor**. Dropping it means raising
 `rpf-protocol`), and every version from `MIN_VERSION` up to `VERSION` must
 have a frozen corpus (`released_corpora_are_frozen`).
 
+## Compatibility is kept clean, or not kept
+
+Compatibility is worth exactly as much as the people it keeps running. A
+path for an older version is code everyone reads for as long as the version
+is served, so it has a shape, and a path that cannot take that shape is a
+question for the repository owner, not a decision for whoever is writing it.
+
+**The clean shape.** An older version is handled at the edge and nowhere
+else: a version's own decode and encode at the frame boundary, a
+`<NAME>_PROTOCOL` gate where the registry queues a frame, a defaulted field.
+Handlers, the store and the Lua core work in the current shapes only and
+never ask which version they are serving.
+
+**Ask before going further.** If keeping an older version working would
+mean any of these, stop before writing it:
+
+- a check of the connection's protocol, the addon `api` major or the core
+  version anywhere past the edge: in a handler, the store, the config
+  builder, or `lua/core/`;
+- a second copy of a handler, a query or a Lua module kept alive for one
+  version;
+- a type, field or table kept only so an older version still decodes,
+  where it costs more than a defaulted field;
+- anything a reviewer would call a hack, or that would need a paragraph in
+  this page to explain.
+
+Ask the repository owner, with the census (below) and the release history
+in front of them: **does anyone actually run the version this keeps
+working?** Give them the two options, the compatibility path as it would
+look and the breaking change with what it costs a server still on the old
+version. Never assume nobody does, and never assume someone does.
+
+- **Somebody does, or the owner wants the window kept:** write the path, in
+  the cleanest shape it can take, with the reason in its doc comment and a
+  note under **Deprecated** in `CHANGELOG.md` so it goes when the window
+  closes.
+- **Nobody does:** make the breaking change. Drop the version from the
+  served range in the same release (raise `MIN_VERSION`, or the oldest
+  addon `api` major), list it under **Removed** in `CHANGELOG.md` saying the
+  owner confirmed it had no users and when, and fix the table above. The
+  support window is a promise to users; with none, it promises nothing.
+
+An agent working unattended (`next-task`) asks by commenting on the issue
+with both options and the census, leaves the PR as a draft, and stops on
+that issue. A decision recorded on the issue is not taken again for the
+same version.
+
+## What a server owner touches
+
+A server owner's setup is a contract too: they upgrade by replacing the
+resource folders and restarting, and expect it to come back up. From the
+first published release, these follow the rules for names in `AGENTS.md`
+("Names that are schema"): a shipped one is never renamed or retyped, and
+one that goes is deprecated a release ahead, with the replacement named in
+`CHANGELOG.md` and the release's upgrade notes.
+
+- The resource and addon names (`rpf`, `rpf-ws`), and the folder layout an
+  owner installs.
+- Convars (`rpf_url`, `rpf_api_key`, …) and their Gmod equivalents.
+- Exports and globals other resources call (`exports.rpf:api()`, the
+  `rpf` global on Gmod), and the public Lua API behind them, whose majors
+  are the addon `api` ([Addons](architecture/addons.md#versions-and-schema-evolution)).
+- What the resource requires of the server: OneSync, GWSockets, the
+  artifact or Node version.
+
+The same "ask before going further" rule applies when keeping one of these
+would be ugly.
+
 ## Changing the wire
 
 ### The freeze
