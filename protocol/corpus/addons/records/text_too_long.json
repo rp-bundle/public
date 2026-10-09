@@ -1,0 +1,14 @@
+{
+  "description": "Seventeen bytes is over max_len 16.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "notes": "xxxxxxxxxxxxxxxxx"
+  },
+  "expect": {
+    "error": {
+      "error": "too_long",
+      "field": "notes"
+    }
+  }
+}

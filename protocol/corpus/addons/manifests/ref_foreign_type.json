@@ -1,0 +1,25 @@
+{
+  "description": "A reference to another addon's type needs that addon in requires.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "ref",
+            "to": "acme_core.tree"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "foreign_type",
+    "path": "types.plant.fields.x.to"
+  }
+}

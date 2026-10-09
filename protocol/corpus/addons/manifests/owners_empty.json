@@ -1,0 +1,25 @@
+{
+  "description": "A live type has at least one owner kind.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "live",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        },
+        "owners": []
+      }
+    }
+  },
+  "error": {
+    "error": "bound",
+    "path": "types.plant.owners"
+  }
+}

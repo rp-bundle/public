@@ -1,0 +1,27 @@
+{
+  "description": "owners is a list.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "live",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        },
+        "owners": {
+          "a": "player"
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "wrong_type",
+    "path": "types.plant.owners"
+  }
+}

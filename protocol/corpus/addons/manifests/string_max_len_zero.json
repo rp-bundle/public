@@ -1,0 +1,25 @@
+{
+  "description": "A string's max_len is at least 1.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "string",
+            "max_len": 0
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "bound",
+    "path": "types.plant.fields.x.max_len"
+  }
+}

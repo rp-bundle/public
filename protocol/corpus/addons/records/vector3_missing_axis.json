@@ -1,0 +1,17 @@
+{
+  "description": "A vector has all three axes.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "spot": {
+      "x": 1,
+      "y": 2
+    }
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "spot"
+    }
+  }
+}

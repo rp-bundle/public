@@ -1,0 +1,48 @@
+{
+  "description": "requires names at most 32 addons.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "requires": {
+      "dep_00": "*",
+      "dep_01": "*",
+      "dep_02": "*",
+      "dep_03": "*",
+      "dep_04": "*",
+      "dep_05": "*",
+      "dep_06": "*",
+      "dep_07": "*",
+      "dep_08": "*",
+      "dep_09": "*",
+      "dep_10": "*",
+      "dep_11": "*",
+      "dep_12": "*",
+      "dep_13": "*",
+      "dep_14": "*",
+      "dep_15": "*",
+      "dep_16": "*",
+      "dep_17": "*",
+      "dep_18": "*",
+      "dep_19": "*",
+      "dep_20": "*",
+      "dep_21": "*",
+      "dep_22": "*",
+      "dep_23": "*",
+      "dep_24": "*",
+      "dep_25": "*",
+      "dep_26": "*",
+      "dep_27": "*",
+      "dep_28": "*",
+      "dep_29": "*",
+      "dep_30": "*",
+      "dep_31": "*",
+      "dep_32": "*"
+    }
+  },
+  "error": {
+    "error": "too_many",
+    "path": "requires"
+  }
+}

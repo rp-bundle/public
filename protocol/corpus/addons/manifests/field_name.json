@@ -1,0 +1,24 @@
+{
+  "description": "A field name is lowercase.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "Water": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "name",
+    "path": "types.plant.fields.Water"
+  }
+}

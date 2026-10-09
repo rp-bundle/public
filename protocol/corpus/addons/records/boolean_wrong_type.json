@@ -1,0 +1,14 @@
+{
+  "description": "A boolean is true or false.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "enabled": 1
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "enabled"
+    }
+  }
+}

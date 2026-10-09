@@ -1,0 +1,16 @@
+{
+  "description": "{\"key\":\"0123456\"} is 17 bytes, over max_bytes 16.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "meta": {
+      "key": "0123456"
+    }
+  },
+  "expect": {
+    "error": {
+      "error": "too_large",
+      "field": "meta"
+    }
+  }
+}

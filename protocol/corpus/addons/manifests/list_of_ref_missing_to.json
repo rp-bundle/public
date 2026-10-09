@@ -1,0 +1,25 @@
+{
+  "description": "A list of references says what they point at.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "list",
+            "of": "ref"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "missing",
+    "path": "types.plant.fields.x.to"
+  }
+}

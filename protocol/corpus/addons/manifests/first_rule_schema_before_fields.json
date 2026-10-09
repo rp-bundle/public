@@ -1,0 +1,25 @@
+{
+  "description": "A type's schema is checked before its fields.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 0,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "nope"
+          }
+        },
+        "limit": 0
+      }
+    }
+  },
+  "error": {
+    "error": "bound",
+    "path": "types.plant.schema"
+  }
+}

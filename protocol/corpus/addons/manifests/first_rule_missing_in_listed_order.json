@@ -1,0 +1,11 @@
+{
+  "description": "Missing keys are named in the order namespace, version, api, title.",
+  "manifest": {
+    "title": "Garden",
+    "api": 1
+  },
+  "error": {
+    "error": "missing",
+    "path": "namespace"
+  }
+}

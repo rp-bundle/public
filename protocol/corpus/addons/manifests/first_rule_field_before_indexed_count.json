@@ -1,0 +1,61 @@
+{
+  "description": "Each field is checked before the count of indexed fields.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "f0": {
+            "type": "boolean",
+            "index": true
+          },
+          "f1": {
+            "type": "boolean",
+            "index": true
+          },
+          "f2": {
+            "type": "boolean",
+            "index": true
+          },
+          "f3": {
+            "type": "boolean",
+            "index": true
+          },
+          "f4": {
+            "type": "boolean",
+            "index": true
+          },
+          "f5": {
+            "type": "boolean",
+            "index": true
+          },
+          "f6": {
+            "type": "boolean",
+            "index": true
+          },
+          "f7": {
+            "type": "boolean",
+            "index": true
+          },
+          "f8": {
+            "type": "boolean",
+            "index": true
+          },
+          "z": {
+            "type": "text",
+            "index": true
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "not_indexable",
+    "path": "types.plant.fields.z.index"
+  }
+}

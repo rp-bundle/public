@@ -1,0 +1,14 @@
+{
+  "description": "An item is named by its slug.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "item": "Water Bottle"
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "item"
+    }
+  }
+}

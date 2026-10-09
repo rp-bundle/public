@@ -1,0 +1,23 @@
+{
+  "description": "An integer written as a whole double is stored as an integer.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "count": 4.0,
+    "at": 5.0,
+    "levels": [
+      1.0
+    ]
+  },
+  "expect": {
+    "fields": {
+      "label": "Pot",
+      "count": 4,
+      "at": 5,
+      "levels": [
+        1
+      ],
+      "maybe": null
+    }
+  }
+}

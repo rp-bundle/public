@@ -1,0 +1,25 @@
+{
+  "description": "A reference to a required addon's type is checked at install, not here.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "ref",
+            "to": "acme_core.tree"
+          }
+        }
+      }
+    },
+    "requires": {
+      "acme_core": "^1"
+    }
+  },
+  "error": null
+}

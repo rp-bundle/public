@@ -1,0 +1,15 @@
+{
+  "description": "Fields are checked in byte order of name: at before count.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "count": -1,
+    "at": -1
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "at"
+    }
+  }
+}

@@ -376,6 +376,136 @@ function json.encode(value)
   return nil, tostring(result)
 end
 
+-- Measuring as the portal does -------------------------------------------
+
+---The number of bytes serde_json writes for a string, quotes included, or
+---nil if it is not valid UTF-8, which the portal cannot decode at all.
+---
+---serde escapes `"` and `\` and the control characters below 0x20: `\b`,
+---`\f`, `\n`, `\r` and `\t` in two bytes, the rest as `\u00XX` in six. It
+---writes everything else raw, DEL and non-ASCII included. That differs from
+---`rpf.json`, which escapes DEL, so this counts what the portal will count
+---rather than what this side sends.
+---@param s string The string.
+---@return number? bytes Its serialised length, or nil if it is not UTF-8.
+local function string_bytes(s)
+  if not s:find("[^\32-\126]") then
+    -- Printable ASCII, the usual case: only quotes and backslashes grow.
+    local _, escaped = s:gsub('["\\]', "")
+    return #s + 2 + escaped
+  end
+  if not json.is_utf8(s) then
+    return nil
+  end
+  -- Every byte of a multi-byte sequence is written raw, so only the ASCII
+  -- escapes change the count.
+  local bytes = #s + 2
+  for i = 1, #s do
+    local c = s:byte(i)
+    if c == 0x22 or c == 0x5C or c == 0x08 or c == 0x0C or c == 0x0A or c == 0x0D or c == 0x09 then
+      bytes = bytes + 1
+    elseif c < 0x20 then
+      bytes = bytes + 5
+    end
+  end
+  return bytes
+end
+
+---The number of decimal digits in a non-negative integer.
+---@param n number The integer.
+---@return number digits How many.
+local function digits(n)
+  return #string.format("%.0f", n)
+end
+
+---The number of bytes serde_json writes for a number that `rpf.json`
+---encoded and the portal decoded.
+---
+---An integer is written as an integer on both sides. Anything else the
+---portal reads as an `f64` and writes in Ryu's shortest form, which differs
+---from C's `%g`: `0.00001234` rather than `1.234e-05`, `1e-7` rather than
+---`1e-07`. So this finds the shortest digits that read back as the same
+---double and lays them out as Ryu does.
+---@param n number A finite number, as `rpf.json` would encode it.
+---@return number bytes Its serialised length.
+local function number_bytes(n)
+  if n == math.floor(n) then
+    return n == 0 and 1 or #string.format("%.0f", n)
+  end
+  local sign = n < 0 and 1 or 0
+  local magnitude = math.abs(n)
+  local text
+  for precision = 0, 16 do
+    text = string.format("%." .. precision .. "e", magnitude)
+    if tonumber(text) == magnitude then
+      break
+    end
+  end
+  local mantissa, exponent = text:match("^([%d%.]+)e([-+]%d+)$")
+  local significant = mantissa:gsub("%.", ""):gsub("0+$", "")
+  local length = #significant
+  -- `kk` as Ryu names it: the value is 0.<digits> × 10^kk.
+  local kk = tonumber(exponent) + 1
+  if kk > 0 and kk <= 16 then
+    return sign + length + 1 -- 12.34
+  elseif kk > -5 and kk <= 0 then
+    return sign + 2 - kk + length -- 0.001234
+  end
+  local e = kk - 1
+  local e_bytes = (e < 0 and 1 or 0) + digits(math.abs(e))
+  if length == 1 then
+    return sign + 1 + 1 + e_bytes -- 1e30
+  end
+  return sign + length + 2 + e_bytes -- 1.234e30
+end
+
+---The number of bytes serde_json writes for a decoded JSON value, compact,
+---or nil if a string in it is not valid UTF-8. Every byte bound the portal
+---applies to something a game server sends (a stack's `ItemData`, an addon
+---manifest, a record's fields) is measured this way, as the portal stores
+---it, so this side refuses exactly what the portal would.
+---@param value any A value as `rpf.json.decode` returns it: marked tables, `json.null` and scalars.
+---@return number? bytes Its serialised length, or nil for anything no frame could carry.
+function json.serde_bytes(value)
+  local kind = type(value)
+  if value == json.null then
+    return 4
+  elseif kind == "boolean" then
+    return value and 4 or 5
+  elseif kind == "number" then
+    if value ~= value or value == math.huge or value == -math.huge then
+      return nil
+    end
+    return number_bytes(value)
+  elseif kind == "string" then
+    return string_bytes(value)
+  elseif kind ~= "table" then
+    return nil
+  end
+  local bytes, count = 2, 0
+  if json.is_array(value) then
+    for _, item in ipairs(value) do
+      local size = json.serde_bytes(item)
+      if not size then
+        return nil
+      end
+      bytes, count = bytes + size, count + 1
+    end
+  else
+    for key, item in pairs(value) do
+      if type(key) ~= "string" then
+        return nil
+      end
+      local key_size, size = string_bytes(key), json.serde_bytes(item)
+      if not key_size or not size then
+        return nil
+      end
+      bytes, count = bytes + key_size + 1 + size, count + 1
+    end
+  end
+  return bytes + math.max(count - 1, 0)
+end
+
 -- Decoding ---------------------------------------------------------------
 
 ---Parser state for one decode.

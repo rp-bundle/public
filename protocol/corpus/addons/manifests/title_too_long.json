@@ -1,0 +1,13 @@
+{
+  "description": "A title is at most 64 bytes.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  "error": {
+    "error": "bound",
+    "path": "title"
+  }
+}

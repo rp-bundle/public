@@ -50,8 +50,8 @@ files each side loads after it and in what order:
 ```lua
 rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, config.lua,
                  -- client.lua, players.lua, commands.lua, moderation.lua, staff.lua,
-                 -- inventory.lua, records.lua, sync.lua, accounts.lua, handoff.lua,
-                 -- join.lua, characters.lua, jobs.lua, edits.lua, api.lua
+                 -- inventory.lua, manifest.lua, records.lua, sync.lua, accounts.lua,
+                 -- handoff.lua, join.lua, characters.lua, jobs.lua, edits.lua, api.lua
 rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua,
                  -- picker.lua, api.lua
 ```
@@ -71,7 +71,7 @@ core keeps working after the Gmod adapter replaces the global with the public
 API (see The public API).
 
 The client never loads `protocol.lua`, `client.lua`, `players.lua`,
-`commands.lua`, `moderation.lua`, `staff.lua`, `inventory.lua`, `records.lua`, `sync.lua`,
+`commands.lua`, `moderation.lua`, `staff.lua`, `inventory.lua`, `manifest.lua`, `records.lua`, `sync.lua`,
 `accounts.lua`, `join.lua`, `characters.lua`, `jobs.lua` or `edits.lua`, because the player's client
 must never hold the server's API key and has no players, staff or records to
 manage.
@@ -182,6 +182,12 @@ through it.
 - Integers are written without a fraction on every Lua, object keys are
   sorted, duplicate keys and trailing data are refused, and nesting is capped
   at `json.MAX_DEPTH`. Decoding never throws.
+- `json.serde_bytes(value)` is a decoded value's size as the portal's
+  serde_json writes it, which is how the portal measures every byte bound
+  on what a game server sends (a stack's `ItemData`, an addon manifest, a
+  record's fields): serde writes DEL raw and fractions in Ryu's shortest
+  form (`0.00001234`, `1e-7`) where `rpf.json` and C's `%g` do not, so the
+  size is computed for serde's form, not taken from what this side sends.
 
 ### `rpf.protocol`
 
@@ -808,11 +814,8 @@ bounds are not in the snapshot; `MAX_DATA_BYTES` (4 KiB) and `MAX_STACKS`
 (500) mirror `ItemCatalog::default`, and so does `DEFAULTS`, used before any
 config has arrived. A spec reads the Rust default to keep them equal.
 
-**Data is measured exactly as the portal measures it.** The portal re-encodes
-`ItemData` with serde_json, which differs from `rpf.json`: it writes DEL raw,
-and a fraction in Ryu's shortest form (`0.00001234`, `1e-7`) where C's `%g`
-writes `1.234e-05`. So the size is computed for serde's form, not taken from
-what this side sends. The portal parses floats exactly (`float_roundtrip`), or
+**Data is measured exactly as the portal measures it**, by
+`json.serde_bytes`. The portal parses floats exactly (`float_roundtrip`), or
 a fraction could come back an ulp off and measure a byte longer there.
 
 **Moves.** Each reads the container from `rpf.records`, changes a copy,
@@ -846,6 +849,45 @@ this server does not hold, or no longer holds, is never changed.
 A stack's `data` is the server's own: nothing here reads it, a move or
 split carries it as it is, two stacks merge only when their data encodes
 identically, and it is reported byte for byte.
+
+### `rpf.manifest`
+
+Addon manifests and the records of their types (J2,
+`docs/architecture/addons.md`): the pure rules, server only. Registration,
+proposals and activation, and the public `rpf.api.addons` and record calls,
+build on it (J2's wire half and J3).
+
+**One rule set, on both sides.** `manifest.check(m)` is a port of the
+portal's `Manifest::parse` and `manifest.check_fields(def, fields)` of
+`TypeDef::check_fields`: the same rules in the same order, so the two agree
+on the verdict and on the first rule broken, which comes back as the portal
+serialises it, `{ error = "bound", path = "types.plant.fields.water.max" }`
+for a manifest and `{ error = "too_long", field = "tags", item = 1 }` for a
+record. The order is documented once, in `crates/rpf-domain/src/addons/`.
+`manifest.apply_patch(def, current, patch)` is `TypeDef::apply_patch` (a
+write names only what it changes, and a null clears a nullable field), and
+`manifest.with_defaults(def, fields)` is what a record reads as.
+`manifest.is_version` and `manifest.is_range` check the shape of a release
+and of a `requires` range; matching one against the other is the portal's,
+at install.
+
+**The shared corpus.** Both sides are held to `protocol/corpus/addons/`
+(`spec/manifest_spec.lua` here, `crates/rpf-domain/tests/addons.rs` there):
+`manifests/`, each a manifest and the exact error expected, and `records/`,
+each a type of the shared `manifest.json`, the fields (or a record and a
+patch) and the fields as stored or the exact error. Both suites read the
+rules out of the Rust source and need a case for every one, and the spec
+reads the limits (`MAX_MANIFEST_BYTES` and the rest) from
+`crates/rpf-domain/src/limits.rs`.
+
+**Tables an author wrote are read as JSON.** A manifest written in Lua has
+unmarked tables, and its empty ones (`requires = {}`, `list = {}`) could be
+either shape, so an empty unmarked table is read as whichever the rule
+expects; a table mixing string and number keys is refused where it stands.
+`check` and `check_fields` return a marked copy, which `rpf.json` encodes
+exactly as the portal reads it, and never change the caller's table. A
+`json` field is judged by what it encodes to, so one holding an empty table
+it cannot tell the shape of is refused.
 
 ### Characters (`rpf.characters`, `rpf.picker`)
 

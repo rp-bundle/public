@@ -1,0 +1,14 @@
+{
+  "description": "Text takes tabs and line breaks but no other control character.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "notes": "a\u0000b"
+  },
+  "expect": {
+    "error": {
+      "error": "charset",
+      "field": "notes"
+    }
+  }
+}

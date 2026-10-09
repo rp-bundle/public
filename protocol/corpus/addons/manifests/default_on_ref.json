@@ -1,0 +1,26 @@
+{
+  "description": "A reference has no default: it would have to resolve.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "ref",
+            "to": "player",
+            "default": "67e55044-10b1-426f-9247-bb680e5fe0c8"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "default",
+    "path": "types.plant.fields.x.default"
+  }
+}

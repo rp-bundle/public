@@ -1,0 +1,13 @@
+{
+  "description": "A required field is never null.",
+  "type": "widget",
+  "fields": {
+    "label": null
+  },
+  "expect": {
+    "error": {
+      "error": "required",
+      "field": "label"
+    }
+  }
+}

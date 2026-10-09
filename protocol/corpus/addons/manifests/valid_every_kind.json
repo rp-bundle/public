@@ -1,0 +1,122 @@
+{
+  "description": "Every field kind with every bound it may set.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "s": {
+            "type": "string",
+            "min_len": 0,
+            "max_len": 1024,
+            "charset": "any",
+            "title": "S",
+            "help": "Some help.",
+            "hidden": true,
+            "read_only": true,
+            "engine": true,
+            "index": true,
+            "unique": true
+          },
+          "t": {
+            "type": "text",
+            "max_len": 16384
+          },
+          "i": {
+            "type": "integer",
+            "min": -9007199254740991,
+            "max": 9007199254740991
+          },
+          "n": {
+            "type": "number",
+            "min": -1.5,
+            "max": 2.25
+          },
+          "b": {
+            "type": "boolean",
+            "default": false
+          },
+          "e": {
+            "type": "enum",
+            "values": [
+              "a",
+              "b_2"
+            ]
+          },
+          "ts": {
+            "type": "timestamp",
+            "default": 0
+          },
+          "v": {
+            "type": "vector3",
+            "default": {
+              "x": 1,
+              "y": 2.5,
+              "z": -3
+            }
+          },
+          "r": {
+            "type": "ref",
+            "to": "player"
+          },
+          "r2": {
+            "type": "ref",
+            "to": "acme_garden.plant",
+            "index": true
+          },
+          "it": {
+            "type": "ref",
+            "to": "item"
+          },
+          "jb": {
+            "type": "ref",
+            "to": "job",
+            "index": true
+          },
+          "l": {
+            "type": "list",
+            "of": "enum",
+            "values": [
+              "a",
+              "b"
+            ],
+            "max_items": 64,
+            "default": [
+              "a",
+              "a"
+            ]
+          },
+          "ls": {
+            "type": "list",
+            "of": "string",
+            "max_len": 4,
+            "min_len": 1,
+            "charset": "identifier"
+          },
+          "lr": {
+            "type": "list",
+            "of": "ref",
+            "to": "character",
+            "max_items": 3
+          },
+          "j": {
+            "type": "json",
+            "max_bytes": 4096,
+            "default": {
+              "k": [
+                1,
+                "two"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "error": null
+}

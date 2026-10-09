@@ -1,0 +1,16 @@
+{
+  "description": "A number may be whole.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "ratio": 1
+  },
+  "expect": {
+    "fields": {
+      "label": "Pot",
+      "ratio": 1,
+      "count": 1,
+      "maybe": null
+    }
+  }
+}

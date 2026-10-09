@@ -1,0 +1,48 @@
+{
+  "description": "An addon declares at most 32 permissions.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "permissions": {
+      "p0": "Do it.",
+      "p1": "Do it.",
+      "p2": "Do it.",
+      "p3": "Do it.",
+      "p4": "Do it.",
+      "p5": "Do it.",
+      "p6": "Do it.",
+      "p7": "Do it.",
+      "p8": "Do it.",
+      "p9": "Do it.",
+      "p10": "Do it.",
+      "p11": "Do it.",
+      "p12": "Do it.",
+      "p13": "Do it.",
+      "p14": "Do it.",
+      "p15": "Do it.",
+      "p16": "Do it.",
+      "p17": "Do it.",
+      "p18": "Do it.",
+      "p19": "Do it.",
+      "p20": "Do it.",
+      "p21": "Do it.",
+      "p22": "Do it.",
+      "p23": "Do it.",
+      "p24": "Do it.",
+      "p25": "Do it.",
+      "p26": "Do it.",
+      "p27": "Do it.",
+      "p28": "Do it.",
+      "p29": "Do it.",
+      "p30": "Do it.",
+      "p31": "Do it.",
+      "p32": "Do it."
+    }
+  },
+  "error": {
+    "error": "too_many",
+    "path": "permissions"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "description": "A title is not empty.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": ""
+  },
+  "error": {
+    "error": "bound",
+    "path": "title"
+  }
+}

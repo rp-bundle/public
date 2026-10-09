@@ -1,0 +1,19 @@
+{
+  "description": "A null in a patch cannot clear a required field.",
+  "type": "widget",
+  "current": {
+    "label": "Pot",
+    "line": "a",
+    "count": 3,
+    "maybe": 2
+  },
+  "patch": {
+    "label": null
+  },
+  "expect": {
+    "error": {
+      "error": "required",
+      "field": "label"
+    }
+  }
+}

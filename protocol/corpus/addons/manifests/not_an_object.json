@@ -1,0 +1,8 @@
+{
+  "description": "A manifest is an object.",
+  "manifest": [],
+  "error": {
+    "error": "wrong_type",
+    "path": ""
+  }
+}

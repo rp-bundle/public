@@ -1,0 +1,26 @@
+{
+  "description": "A list takes its item kind's bounds and no other: a list of integers has no max_len.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "list",
+            "of": "integer",
+            "max_len": 1
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_key",
+    "path": "types.plant.fields.x.max_len"
+  }
+}

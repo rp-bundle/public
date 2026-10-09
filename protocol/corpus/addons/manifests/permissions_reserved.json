@@ -1,0 +1,16 @@
+{
+  "description": "view and edit every addon has already.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "permissions": {
+      "view": "See it."
+    }
+  },
+  "error": {
+    "error": "reserved",
+    "path": "permissions.view"
+  }
+}

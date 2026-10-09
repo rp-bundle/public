@@ -1,0 +1,12 @@
+{
+  "description": "api is required.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "title": "Garden"
+  },
+  "error": {
+    "error": "missing",
+    "path": "api"
+  }
+}

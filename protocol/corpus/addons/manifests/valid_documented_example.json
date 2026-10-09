@@ -1,0 +1,97 @@
+{
+  "description": "The garden manifest from docs/architecture/addons.md.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.2.0",
+    "api": 1,
+    "requires": {
+      "acme_core": "^1.0"
+    },
+    "title": "Garden",
+    "permissions": {
+      "tend": "Water and harvest plants for any player"
+    },
+    "types": {
+      "plant": {
+        "schema": 3,
+        "authority": "live",
+        "owners": [
+          "character",
+          "player"
+        ],
+        "title": "Plant",
+        "fields": {
+          "species": {
+            "type": "ref",
+            "to": "acme_garden.species",
+            "required": true,
+            "index": true
+          },
+          "planted_at": {
+            "type": "timestamp",
+            "required": true
+          },
+          "water": {
+            "type": "integer",
+            "min": 0,
+            "max": 100,
+            "default": 50
+          },
+          "spot": {
+            "type": "vector3",
+            "required": true
+          },
+          "stage": {
+            "type": "enum",
+            "values": [
+              "seed",
+              "sprout",
+              "grown"
+            ],
+            "default": "seed",
+            "index": true
+          },
+          "model": {
+            "type": "json",
+            "max_bytes": 256,
+            "engine": true
+          }
+        },
+        "list": [
+          "species",
+          "stage",
+          "planted_at"
+        ],
+        "actions": {
+          "view": "view",
+          "edit": "tend",
+          "create": false,
+          "delete": "tend"
+        },
+        "limit": 5000
+      },
+      "species": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "label": {
+            "type": "string",
+            "max_len": 48,
+            "required": true
+          },
+          "grow_minutes": {
+            "type": "integer",
+            "min": 1,
+            "max": 10080,
+            "required": true
+          }
+        },
+        "list": [
+          "label",
+          "grow_minutes"
+        ]
+      }
+    }
+  },
+  "error": null
+}

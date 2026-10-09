@@ -1,0 +1,14 @@
+{
+  "description": "An enum holds one of its values.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "stage": "grown"
+  },
+  "expect": {
+    "error": {
+      "error": "not_in_enum",
+      "field": "stage"
+    }
+  }
+}

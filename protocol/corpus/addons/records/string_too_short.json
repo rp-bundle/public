@@ -1,0 +1,13 @@
+{
+  "description": "One byte is under min_len 2.",
+  "type": "widget",
+  "fields": {
+    "label": "a"
+  },
+  "expect": {
+    "error": {
+      "error": "too_short",
+      "field": "label"
+    }
+  }
+}

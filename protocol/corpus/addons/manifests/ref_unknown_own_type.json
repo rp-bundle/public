@@ -1,0 +1,25 @@
+{
+  "description": "A reference to the addon's own type names one it declares.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "ref",
+            "to": "acme_garden.tree"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_type",
+    "path": "types.plant.fields.x.to"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "description": "Five two-byte characters are ten bytes.",
+  "type": "widget",
+  "fields": {
+    "label": "ééééé"
+  },
+  "expect": {
+    "error": {
+      "error": "too_long",
+      "field": "label"
+    }
+  }
+}

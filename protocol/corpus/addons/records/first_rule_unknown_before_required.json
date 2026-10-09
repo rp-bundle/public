@@ -1,0 +1,13 @@
+{
+  "description": "Unknown fields are named before missing ones.",
+  "type": "widget",
+  "fields": {
+    "colour": 1
+  },
+  "expect": {
+    "error": {
+      "error": "unknown_field",
+      "field": "colour"
+    }
+  }
+}

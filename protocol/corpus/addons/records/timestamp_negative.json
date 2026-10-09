@@ -1,0 +1,14 @@
+{
+  "description": "A timestamp is not before the epoch.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "at": -1
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "at"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "description": "requires is an object.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "requires": []
+  },
+  "error": {
+    "error": "wrong_type",
+    "path": "requires"
+  }
+}

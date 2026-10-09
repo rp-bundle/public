@@ -1,0 +1,28 @@
+{
+  "description": "hold is owner or server.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "live",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        },
+        "owners": [
+          "player"
+        ],
+        "hold": "always"
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_value",
+    "path": "types.plant.hold"
+  }
+}

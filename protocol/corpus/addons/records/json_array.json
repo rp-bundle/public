@@ -1,0 +1,16 @@
+{
+  "description": "A JSON field is an object.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "meta": [
+      1
+    ]
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "meta"
+    }
+  }
+}

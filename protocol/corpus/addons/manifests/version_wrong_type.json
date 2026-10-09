@@ -1,0 +1,13 @@
+{
+  "description": "A version is a string.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": 1,
+    "api": 1,
+    "title": "Garden"
+  },
+  "error": {
+    "error": "wrong_type",
+    "path": "version"
+  }
+}

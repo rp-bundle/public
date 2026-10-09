@@ -1,0 +1,24 @@
+{
+  "description": "A type name is at most 32 bytes.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "ppppppppppppppppppppppppppppppppp": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "name",
+    "path": "types.ppppppppppppppppppppppppppppppppp"
+  }
+}

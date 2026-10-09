@@ -1,0 +1,20 @@
+{
+  "description": "A whole number written as a double is an integer on both sides, so {\"abcdefghij\":1.0} is the 16 bytes of {\"abcdefghij\":1}, at the bound.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "meta": {
+      "abcdefghij": 1.0
+    }
+  },
+  "expect": {
+    "fields": {
+      "label": "Pot",
+      "meta": {
+        "abcdefghij": 1
+      },
+      "count": 1,
+      "maybe": null
+    }
+  }
+}

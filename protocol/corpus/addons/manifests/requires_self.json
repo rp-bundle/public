@@ -1,0 +1,16 @@
+{
+  "description": "An addon does not require itself.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "requires": {
+      "acme_garden": "^1"
+    }
+  },
+  "error": {
+    "error": "requires_self",
+    "path": "requires.acme_garden"
+  }
+}

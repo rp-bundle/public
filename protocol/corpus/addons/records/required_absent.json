@@ -1,0 +1,11 @@
+{
+  "description": "A required field without a default must be given.",
+  "type": "widget",
+  "fields": {},
+  "expect": {
+    "error": {
+      "error": "required",
+      "field": "label"
+    }
+  }
+}

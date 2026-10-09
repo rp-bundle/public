@@ -1,0 +1,13 @@
+{
+  "description": "Nine bytes is over max_len 8.",
+  "type": "widget",
+  "fields": {
+    "label": "123456789"
+  },
+  "expect": {
+    "error": {
+      "error": "too_long",
+      "field": "label"
+    }
+  }
+}

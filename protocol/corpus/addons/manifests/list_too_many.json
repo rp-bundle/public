@@ -1,0 +1,59 @@
+{
+  "description": "list has at most 8 columns.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "f0": {
+            "type": "boolean"
+          },
+          "f1": {
+            "type": "boolean"
+          },
+          "f2": {
+            "type": "boolean"
+          },
+          "f3": {
+            "type": "boolean"
+          },
+          "f4": {
+            "type": "boolean"
+          },
+          "f5": {
+            "type": "boolean"
+          },
+          "f6": {
+            "type": "boolean"
+          },
+          "f7": {
+            "type": "boolean"
+          },
+          "f8": {
+            "type": "boolean"
+          }
+        },
+        "list": [
+          "f0",
+          "f1",
+          "f2",
+          "f3",
+          "f4",
+          "f5",
+          "f6",
+          "f7",
+          "f8"
+        ]
+      }
+    }
+  },
+  "error": {
+    "error": "too_many",
+    "path": "types.plant.list"
+  }
+}

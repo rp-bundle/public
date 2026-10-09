@@ -1,0 +1,13 @@
+{
+  "description": "A printable string has no control character.",
+  "type": "widget",
+  "fields": {
+    "label": "P\u0007t"
+  },
+  "expect": {
+    "error": {
+      "error": "charset",
+      "field": "label"
+    }
+  }
+}

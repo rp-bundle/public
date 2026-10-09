@@ -1,0 +1,16 @@
+{
+  "description": "A permission name is lowercase.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "permissions": {
+      "Tend": "Tend."
+    }
+  },
+  "error": {
+    "error": "name",
+    "path": "permissions.Tend"
+  }
+}

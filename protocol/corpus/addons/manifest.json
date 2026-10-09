@@ -1,0 +1,122 @@
+{
+  "namespace": "acme_kit",
+  "version": "1.0.0",
+  "api": 1,
+  "title": "Kit",
+  "types": {
+    "widget": {
+      "schema": 1,
+      "authority": "config",
+      "fields": {
+        "label": {
+          "type": "string",
+          "max_len": 8,
+          "min_len": 2,
+          "required": true
+        },
+        "code": {
+          "type": "string",
+          "charset": "identifier",
+          "max_len": 16
+        },
+        "line": {
+          "type": "string",
+          "charset": "any",
+          "nullable": true
+        },
+        "notes": {
+          "type": "text",
+          "max_len": 16
+        },
+        "count": {
+          "type": "integer",
+          "min": 0,
+          "max": 10,
+          "default": 1
+        },
+        "ratio": {
+          "type": "number",
+          "min": -1.5,
+          "max": 1.5
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "stage": {
+          "type": "enum",
+          "values": [
+            "seed",
+            "sprout"
+          ]
+        },
+        "at": {
+          "type": "timestamp"
+        },
+        "spot": {
+          "type": "vector3"
+        },
+        "species": {
+          "type": "ref",
+          "to": "acme_kit.species"
+        },
+        "player": {
+          "type": "ref",
+          "to": "player"
+        },
+        "item": {
+          "type": "ref",
+          "to": "item"
+        },
+        "job": {
+          "type": "ref",
+          "to": "job"
+        },
+        "tags": {
+          "type": "list",
+          "of": "string",
+          "max_len": 4,
+          "max_items": 2
+        },
+        "levels": {
+          "type": "list",
+          "of": "integer",
+          "min": 0,
+          "max": 5
+        },
+        "meta": {
+          "type": "json",
+          "max_bytes": 16
+        },
+        "maybe": {
+          "type": "integer",
+          "nullable": true,
+          "default": null
+        },
+        "blob": {
+          "type": "json"
+        }
+      }
+    },
+    "species": {
+      "schema": 1,
+      "authority": "config",
+      "fields": {
+        "label": {
+          "type": "string"
+        }
+      }
+    },
+    "essay": {
+      "schema": 1,
+      "authority": "config",
+      "fields": {
+        "a": {
+          "type": "text"
+        },
+        "b": {
+          "type": "text"
+        }
+      }
+    }
+  }
+}

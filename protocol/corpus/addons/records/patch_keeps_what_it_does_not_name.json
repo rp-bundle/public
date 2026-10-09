@@ -1,0 +1,21 @@
+{
+  "description": "A patch changes only the fields it names.",
+  "type": "widget",
+  "current": {
+    "label": "Pot",
+    "line": "a",
+    "count": 3,
+    "maybe": 2
+  },
+  "patch": {
+    "count": 4
+  },
+  "expect": {
+    "fields": {
+      "label": "Pot",
+      "line": "a",
+      "count": 4,
+      "maybe": 2
+    }
+  }
+}

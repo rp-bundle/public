@@ -1,0 +1,13 @@
+{
+  "description": "A version part has no leading zero.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "01.0.0",
+    "api": 1,
+    "title": "Garden"
+  },
+  "error": {
+    "error": "version",
+    "path": "version"
+  }
+}

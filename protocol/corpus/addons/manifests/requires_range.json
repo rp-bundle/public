@@ -1,0 +1,16 @@
+{
+  "description": "A requirement is a range with an operator.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "requires": {
+      "acme_core": "1.0"
+    }
+  },
+  "error": {
+    "error": "range",
+    "path": "requires.acme_core"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "description": "An integer is whole.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "count": 1.5
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "count"
+    }
+  }
+}

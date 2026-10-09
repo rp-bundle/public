@@ -1,0 +1,13 @@
+{
+  "description": "A namespace is lowercase.",
+  "manifest": {
+    "namespace": "Acme",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden"
+  },
+  "error": {
+    "error": "name",
+    "path": "namespace"
+  }
+}

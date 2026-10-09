@@ -1,0 +1,14 @@
+{
+  "description": "The first unknown field in byte order.",
+  "type": "widget",
+  "fields": {
+    "zz": 1,
+    "Zz": 1
+  },
+  "expect": {
+    "error": {
+      "error": "unknown_field",
+      "field": "Zz"
+    }
+  }
+}

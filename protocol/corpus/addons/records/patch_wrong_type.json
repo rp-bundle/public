@@ -1,0 +1,17 @@
+{
+  "description": "A patch is an object.",
+  "type": "widget",
+  "current": {
+    "label": "Pot",
+    "line": "a",
+    "count": 3,
+    "maybe": 2
+  },
+  "patch": [],
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": ""
+    }
+  }
+}

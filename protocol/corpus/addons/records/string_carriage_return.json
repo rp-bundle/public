@@ -1,0 +1,14 @@
+{
+  "description": "A carriage return breaks a line too.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "line": "a\rb"
+  },
+  "expect": {
+    "error": {
+      "error": "charset",
+      "field": "line"
+    }
+  }
+}

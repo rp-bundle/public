@@ -1,0 +1,24 @@
+{
+  "description": "A field has a type.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "required": true
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "missing",
+    "path": "types.plant.fields.x.type"
+  }
+}

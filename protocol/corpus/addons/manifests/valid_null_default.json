@@ -1,0 +1,23 @@
+{
+  "description": "A nullable field may default to null.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "integer",
+            "nullable": true,
+            "default": null
+          }
+        }
+      }
+    }
+  },
+  "error": null
+}

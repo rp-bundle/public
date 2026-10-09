@@ -1,0 +1,26 @@
+{
+  "description": "Flags are checked in the order required, nullable, index, unique, hidden, read_only, engine.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean",
+            "engine": 1,
+            "hidden": 1
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "wrong_type",
+    "path": "types.plant.fields.x.hidden"
+  }
+}

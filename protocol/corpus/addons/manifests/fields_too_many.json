@@ -1,0 +1,216 @@
+{
+  "description": "A type declares at most 64 fields.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "f0": {
+            "type": "boolean"
+          },
+          "f1": {
+            "type": "boolean"
+          },
+          "f2": {
+            "type": "boolean"
+          },
+          "f3": {
+            "type": "boolean"
+          },
+          "f4": {
+            "type": "boolean"
+          },
+          "f5": {
+            "type": "boolean"
+          },
+          "f6": {
+            "type": "boolean"
+          },
+          "f7": {
+            "type": "boolean"
+          },
+          "f8": {
+            "type": "boolean"
+          },
+          "f9": {
+            "type": "boolean"
+          },
+          "f10": {
+            "type": "boolean"
+          },
+          "f11": {
+            "type": "boolean"
+          },
+          "f12": {
+            "type": "boolean"
+          },
+          "f13": {
+            "type": "boolean"
+          },
+          "f14": {
+            "type": "boolean"
+          },
+          "f15": {
+            "type": "boolean"
+          },
+          "f16": {
+            "type": "boolean"
+          },
+          "f17": {
+            "type": "boolean"
+          },
+          "f18": {
+            "type": "boolean"
+          },
+          "f19": {
+            "type": "boolean"
+          },
+          "f20": {
+            "type": "boolean"
+          },
+          "f21": {
+            "type": "boolean"
+          },
+          "f22": {
+            "type": "boolean"
+          },
+          "f23": {
+            "type": "boolean"
+          },
+          "f24": {
+            "type": "boolean"
+          },
+          "f25": {
+            "type": "boolean"
+          },
+          "f26": {
+            "type": "boolean"
+          },
+          "f27": {
+            "type": "boolean"
+          },
+          "f28": {
+            "type": "boolean"
+          },
+          "f29": {
+            "type": "boolean"
+          },
+          "f30": {
+            "type": "boolean"
+          },
+          "f31": {
+            "type": "boolean"
+          },
+          "f32": {
+            "type": "boolean"
+          },
+          "f33": {
+            "type": "boolean"
+          },
+          "f34": {
+            "type": "boolean"
+          },
+          "f35": {
+            "type": "boolean"
+          },
+          "f36": {
+            "type": "boolean"
+          },
+          "f37": {
+            "type": "boolean"
+          },
+          "f38": {
+            "type": "boolean"
+          },
+          "f39": {
+            "type": "boolean"
+          },
+          "f40": {
+            "type": "boolean"
+          },
+          "f41": {
+            "type": "boolean"
+          },
+          "f42": {
+            "type": "boolean"
+          },
+          "f43": {
+            "type": "boolean"
+          },
+          "f44": {
+            "type": "boolean"
+          },
+          "f45": {
+            "type": "boolean"
+          },
+          "f46": {
+            "type": "boolean"
+          },
+          "f47": {
+            "type": "boolean"
+          },
+          "f48": {
+            "type": "boolean"
+          },
+          "f49": {
+            "type": "boolean"
+          },
+          "f50": {
+            "type": "boolean"
+          },
+          "f51": {
+            "type": "boolean"
+          },
+          "f52": {
+            "type": "boolean"
+          },
+          "f53": {
+            "type": "boolean"
+          },
+          "f54": {
+            "type": "boolean"
+          },
+          "f55": {
+            "type": "boolean"
+          },
+          "f56": {
+            "type": "boolean"
+          },
+          "f57": {
+            "type": "boolean"
+          },
+          "f58": {
+            "type": "boolean"
+          },
+          "f59": {
+            "type": "boolean"
+          },
+          "f60": {
+            "type": "boolean"
+          },
+          "f61": {
+            "type": "boolean"
+          },
+          "f62": {
+            "type": "boolean"
+          },
+          "f63": {
+            "type": "boolean"
+          },
+          "f64": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "too_many",
+    "path": "types.plant.fields"
+  }
+}

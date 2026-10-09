@@ -1,0 +1,18 @@
+{
+  "description": "Three items is over max_items 2.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "tags": [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  "expect": {
+    "error": {
+      "error": "too_many_items",
+      "field": "tags"
+    }
+  }
+}

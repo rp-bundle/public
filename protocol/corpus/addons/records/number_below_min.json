@@ -1,0 +1,14 @@
+{
+  "description": "A number under min.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "ratio": -1.75
+  },
+  "expect": {
+    "error": {
+      "error": "below_min",
+      "field": "ratio"
+    }
+  }
+}

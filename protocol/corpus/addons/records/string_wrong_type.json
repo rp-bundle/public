@@ -1,0 +1,13 @@
+{
+  "description": "A string is a string.",
+  "type": "widget",
+  "fields": {
+    "label": 5
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "label"
+    }
+  }
+}

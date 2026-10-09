@@ -1,0 +1,14 @@
+{
+  "description": "An enum value is a string.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "stage": 1
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "stage"
+    }
+  }
+}

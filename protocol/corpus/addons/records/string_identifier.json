@@ -1,0 +1,14 @@
+{
+  "description": "An identifier is lowercase letters, digits and underscores, starting with a letter.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "code": "Pot"
+  },
+  "expect": {
+    "error": {
+      "error": "charset",
+      "field": "code"
+    }
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "description": "A value of every kind within its bounds.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "code": "pot_1",
+    "line": "a\tb",
+    "notes": "two\nlines",
+    "count": 3,
+    "ratio": -0.25,
+    "enabled": true,
+    "stage": "seed",
+    "at": 1700000000000,
+    "spot": {
+      "x": 1.5,
+      "y": -2,
+      "z": 0
+    },
+    "species": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+    "player": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+    "item": "water",
+    "job": {
+      "employer": "lspd",
+      "job": "officer"
+    },
+    "tags": [
+      "a",
+      "bc"
+    ],
+    "levels": [
+      0,
+      5
+    ],
+    "meta": {
+      "k": 1
+    },
+    "maybe": 2
+  },
+  "expect": {
+    "fields": {
+      "label": "Pot",
+      "code": "pot_1",
+      "line": "a\tb",
+      "notes": "two\nlines",
+      "count": 3,
+      "ratio": -0.25,
+      "enabled": true,
+      "stage": "seed",
+      "at": 1700000000000,
+      "spot": {
+        "x": 1.5,
+        "y": -2,
+        "z": 0
+      },
+      "species": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+      "player": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+      "item": "water",
+      "job": {
+        "employer": "lspd",
+        "job": "officer"
+      },
+      "tags": [
+        "a",
+        "bc"
+      ],
+      "levels": [
+        0,
+        5
+      ],
+      "meta": {
+        "k": 1
+      },
+      "maybe": 2
+    }
+  }
+}

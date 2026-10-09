@@ -28,6 +28,7 @@
 ---@field commands rpf.commands The portal's staff commands, each run by the module that registered it.
 ---@field moderation rpf.moderation The staff actions on players that need them in game: kicks (F4).
 ---@field staff rpf.staff In-game staff (F9): linked staff members' permissions here, as the portal last pushed them, account linking, and staff actions reported for the audit log.
+---@field manifest rpf.manifest Addon manifests and their types' records: the rules both sides hold them to (J2).
 ---@field records rpf.records The records this server holds (C7), and nothing else.
 ---@field sync rpf.sync Holds, releases and state reports for those records.
 ---@field accounts rpf.accounts Balances, transfers and payments on held accounts, and the ledger fold.
@@ -71,6 +72,7 @@ rpf.files = {
     "moderation.lua",
     "staff.lua",
     "inventory.lua",
+    "manifest.lua",
     "records.lua",
     "sync.lua",
     "accounts.lua",
