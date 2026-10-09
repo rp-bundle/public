@@ -644,6 +644,7 @@ local REJECT_CODES = {
   "duplicate_instance",
   "expired",
   "rate_limited",
+  "suspended",
 }
 
 -- Messages ----------------------------------------------------------------

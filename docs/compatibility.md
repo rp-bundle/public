@@ -26,7 +26,7 @@ Two numbers are involved, and only one decides compatibility.
 | Protocol | First release | Served by portal releases | Status |
 |---|---|---|---|
 | 1 | 0.1.0 | 0.1.0 and later, until its support window closes | Served |
-| 2 | Unreleased | The next release and later | Current, unreleased: adds `Restarting` (H1), a character's job (D7), and in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`) |
+| 2 | Unreleased | The next release and later | Current, unreleased: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), and the `suspended` reject code (H5) |
 
 A row is added when a release ships a new protocol version, and a version's
 last portal release is filled in when one drops it. `CHANGELOG.md` names the
@@ -154,8 +154,8 @@ would be ugly.
 ### The freeze
 
 `protocol/corpus/v<N>/` is the spec of protocol `N`: one sample frame per
-message type in each direction, plus `commands.json` and
-`command_outcomes.json`. **Once a release ships version `N`, its corpus is
+message type in each direction, plus `commands.json`,
+`command_outcomes.json` and, from protocol 2, `reject_codes.json`. **Once a release ships version `N`, its corpus is
 frozen**: `protocol/corpus/frozen.json` lists every file with a digest, and
 `released_corpora_are_frozen` fails if any file is changed, added or removed.
 v1 is frozen as of 0.1.0.
@@ -191,7 +191,7 @@ window: the portal decodes that version's frames and encodes its frames to
 that version's shapes, choosing by the connection's protocol, or the change
 waits until the old version is dropped.
 
-Two things the portal sends depend on the connection's version.
+Three things the portal sends depend on the connection's version.
 `Restarting`, added in protocol 2 (`protocol::RESTARTING_PROTOCOL`), goes
 only to a connection whose `Hello` named protocol 2 or later; a protocol 1
 connection is closed without it, as a restart always closed it, and its core
@@ -205,9 +205,16 @@ nothing is ever built or sent for it, and a protocol 1 core has no
 `rpf.staff` to give the list to anyway (`staff_lists_are_pushed_after_each_change`
 in `rpf-backend`'s store suite holds it). F9's other frames need no gate: a
 game server sends `link_player` and `staff_action` only if its core has them,
-and `player_linked` only answers one. The next message or nested variant the
-portal gains follows the same pattern: a `<NAME>_PROTOCOL` constant beside
-the type, and the check where the registry queues the frame.
+and `player_linked` only answers one. The `suspended` reject code (H5,
+protocol 2, `protocol::SUSPENDED_PROTOCOL`) is the third: it refuses a
+suspended guild's `Hello` only on protocol 2 or later, and a protocol 1
+`Hello` is refused `forbidden` with the same reason, which its core logs as
+it stops for good, since it is final there. The gate is
+`ws::auth::suspended`, the one place either refusal is made, at the
+handshake, and `a_core_on_the_previous_protocol_is_told_in_words_and_stops`
+holds it. The next message or nested variant the portal gains follows the
+same pattern: a `<NAME>_PROTOCOL` constant beside the type, and the check in
+the one place that sends it.
 
 ### How the tests hold it
 
@@ -219,6 +226,7 @@ All in `crates/rpf-protocol/tests/protocol.rs` unless named otherwise.
 | `every_supported_version_is_still_read_and_written` | For every version from `MIN_VERSION` to `VERSION`: each frame a game server on it sends still decodes, and each frame the portal sends it, decoded and written again, still carries every field it had, with the same value. A required field added to a server's frame, or a field removed, renamed or retyped anywhere, fails it |
 | `every_field_is_required_or_named_optional` | Every field in the corpus is required unless `OPTIONAL` names it. Making a field optional or required is a decision, not a side effect |
 | `server_to_portal_unknown_fields_are_ignored`, `portal_to_server_unknown_fields_are_ignored`, `unknown_fields_in_nested_samples_are_ignored` | An unknown field at any depth of any sample is ignored, and changes nothing |
+| `reject_codes_corpus_matches_the_type` | `reject_codes.json` lists every `RejectCode`, which `lua/spec/protocol_spec.lua` decodes inside a `rejected` frame, so the core knows every refusal its version can be sent |
 | `unknown_message_types_are_rejected`, `unknown_nested_variants_are_rejected` | An unknown message type, command, outcome or reject code is refused, not misread |
 | `missing_fields_are_rejected` | A required field left out is refused, nullable ones included |
 | `the_lua_core_is_released_with_the_portal` | The core's release and protocol versions match the portal's |

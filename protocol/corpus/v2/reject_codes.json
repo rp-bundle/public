@@ -1,0 +1,11 @@
+[
+  "unauthorised",
+  "forbidden",
+  "malformed",
+  "not_found",
+  "retry",
+  "duplicate_instance",
+  "expired",
+  "rate_limited",
+  "suspended"
+]

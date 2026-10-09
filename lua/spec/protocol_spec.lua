@@ -412,17 +412,27 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
       }, reissuable)
     end)
 
+    -- `reject_codes.json` in the corpus lists every `RejectCode`, which
+    -- `crates/rpf-protocol/tests/protocol.rs` checks against the Rust type.
+    it("decodes a rejected frame with every reject code in the corpus, and no other", function()
+      local codes = assert(json.decode(support.read(support.corpus("reject_codes.json"))))
+      assert.is_true(#codes >= 9)
+      local seen = {}
+      for _, code in ipairs(codes) do
+        local frame = assert(json.decode(corpus("portal_to_server").rejected))
+        frame.code = code
+        local decoded = assert(protocol.decode("portal_to_server", assert(json.encode(frame))), code)
+        assert.are.equal(code, decoded.code)
+        seen[code] = true
+      end
+      assert.is_true(seen.suspended, "H5: a suspended community's Hello")
+      local bad = assert(json.decode(corpus("portal_to_server").rejected))
+      bad.code = "upgrade_required"
+      assert.is_nil(protocol.decode("portal_to_server", assert(json.encode(bad))))
+    end)
+
     it("retries only retry and rate_limited", function()
-      local codes = {
-        "unauthorised",
-        "forbidden",
-        "malformed",
-        "not_found",
-        "retry",
-        "duplicate_instance",
-        "expired",
-        "rate_limited",
-      }
+      local codes = assert(json.decode(support.read(support.corpus("reject_codes.json"))))
       local retryable = {}
       for _, code in ipairs(codes) do
         if protocol.may_retry(code) then

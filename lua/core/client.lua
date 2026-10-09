@@ -144,6 +144,7 @@ end
 ---@field backoff_max_ms number? The longest reconnect delay, before jitter.
 ---@field jitter number? The largest random extra, as a fraction of the delay: 0.5 adds up to half again. Applied to an announced restart's `retry_after_ms` too, which is what spreads the servers the portal dropped together.
 ---@field max_retry_after_ms number? The longest a `restarting` notice may hold the reconnect off. A longer `retry_after_ms` is clipped to it, so a portal cannot park a server for an hour by mistake.
+---@field suspended_retry_ms number? How long to wait, before jitter, after the portal refuses `Hello` because this server's community is suspended (H5), before trying again. Long, because a suspension is lifted by a person, and finite, so a lifted one needs no restart.
 ---@field retry_window_ms number? The window the portal promises to remember a request id for (C3's `RETRY_WINDOW`; it keeps them longer), which is how old an entry may get before it is reissued or dropped.
 ---@field window_margin_ms number? How long before the window closes an entry is dealt with, to cover clock drift between the hosts and a frame still in flight.
 ---@field sweep_interval_ms number? How often the outbox is checked against the window, and running requests against their timeout.
@@ -162,6 +163,7 @@ client.DEFAULTS = {
   backoff_max_ms = 60 * 1000,
   jitter = 0.5,
   max_retry_after_ms = 5 * 60 * 1000,
+  suspended_retry_ms = 5 * 60 * 1000,
   retry_window_ms = 7 * 24 * 60 * 60 * 1000,
   window_margin_ms = 12 * 60 * 60 * 1000,
   sweep_interval_ms = 60 * 1000,
@@ -1301,8 +1303,11 @@ end
 ---`Welcome` makes the connection ready: the outbox is swept and then flushed
 ---under its original ids. One naming a protocol other than the one this
 ---core speaks stops the connection for good (`docs/compatibility.md`). A retryable refusal sends a fresh `Hello` after a
----backoff; any other refusal stops the connection for good, because the same
----key would be refused again, and retrying it forever is a loop.
+---backoff. `suspended` (H5) drops the connection and makes it again after
+---`suspended_retry_ms` plus jitter, for as long as the suspension lasts, so
+---a lifted one needs no restart. Any other refusal stops the connection for
+---good, because the same key would be refused again, and retrying it
+---forever is a loop.
 ---@param frame rpf.Frame A frame received before the handshake completed.
 function Client:handshake_reply(frame)
   if frame.re ~= self.hello_id then
@@ -1344,7 +1349,14 @@ function Client:handshake_reply(frame)
     end
   elseif frame.type == "rejected" then
     self:ack(frame.id)
-    if protocol.may_retry(frame.code) then
+    if frame.code == "suspended" then
+      -- Not this server's fault, and not for good: an operator lifts a
+      -- suspension once its cause is dealt with. The wait replaces the
+      -- backoff for this one reconnect, as an announced restart's does.
+      self:log("error", "the portal refused Hello (suspended): " .. frame.reason)
+      self.retry_after_ms = self.options.suspended_retry_ms
+      self:reconnect("suspended")
+    elseif protocol.may_retry(frame.code) then
       local delay = self:backoff(self.attempt)
       self.attempt = self.attempt + 1
       local generation = self.generation
