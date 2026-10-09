@@ -610,24 +610,40 @@ function auth.delete_account(username, password)
     return false, "the account was deleted"
   end
   state = "working"
-  send_with_nonce("delete_account", function(n)
-    return { nonce = n, username = username, password = password }
-  end, function(status, body)
-    if status ~= 204 then
-      fail(failure_from(status == 200 and 502 or status, body, "delete_account"))
-      return
-    end
-    -- The portal deleted every remember and session token the account had,
-    -- so there is nothing left to revoke, only to forget.
-    save_token(nil)
-    unsaved_token = nil
-    drop_session()
-    waiting, pending, account = nil, nil, nil
-    state = "deleted"
-    ---@type rpf.AuthDeleted
-    local deleted = { username = username }
-    events.emit("auth.account_deleted", deleted)
-  end)
+  local retried = false
+  ---Sends the deletion with a nonce. Unlike `send_with_nonce`, its answer
+  ---is not tied to `generation`: once the request has gone, the portal may
+  ---have deleted the account whatever happened here meanwhile (a logout, a
+  ---refused refresh), and a deletion that happened must be reported.
+  ---@param n rpf.auth.Nonce The nonce.
+  local function attempt(n)
+    n.in_use = true
+    post("delete_account", { nonce = n.value, username = username, password = password }, function(status, body)
+      -- The portal does not consume the nonce, whatever it answers.
+      n.in_use = false
+      if status == 401 and body and body.error == "invalid_nonce" and not retried then
+        retried = true
+        nonce = nil
+        with_nonce(attempt, "delete_account")
+        return
+      end
+      if status ~= 204 then
+        fail(failure_from(status == 200 and 502 or status, body, "delete_account"))
+        return
+      end
+      -- The portal deleted every remember and session token the account
+      -- had, so there is nothing left to revoke, only to forget.
+      save_token(nil)
+      unsaved_token = nil
+      drop_session()
+      waiting, pending, account = nil, nil, nil
+      state = "deleted"
+      ---@type rpf.AuthDeleted
+      local deleted = { username = username }
+      events.emit("auth.account_deleted", deleted)
+    end)
+  end
+  with_nonce(attempt, "delete_account")
   return true, nil
 end
 
