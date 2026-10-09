@@ -27,6 +27,7 @@
 ---@field players rpf.players The players on this server and their lifecycle.
 ---@field commands rpf.commands The portal's staff commands, each run by the module that registered it.
 ---@field moderation rpf.moderation The staff actions on players that need them in game: kicks (F4).
+---@field staff rpf.staff In-game staff (F9): linked staff members' permissions here, as the portal last pushed them, account linking, and staff actions reported for the audit log.
 ---@field records rpf.records The records this server holds (C7), and nothing else.
 ---@field sync rpf.sync Holds, releases and state reports for those records.
 ---@field accounts rpf.accounts Balances, transfers and payments on held accounts, and the ledger fold.
@@ -55,7 +56,7 @@ rpf.VERSION = "0.1.0"
 ---is last on both sides, because it fronts whichever modules the side loaded.
 ---@class rpf.LoadOrder
 ---@field server string[] The game server's files, relative to `lua/core/`.
----@field client string[] The player client's files, relative to `lua/core/`. The client never loads the portal connection, because it must never hold the server's API key, and never loads the server's player registry, join flow, records, characters or jobs.
+---@field client string[] The player client's files, relative to `lua/core/`. The client never loads the portal connection, because it must never hold the server's API key, and never loads the server's player registry, join flow, staff grants, records, characters or jobs.
 rpf.files = {
   server = {
     "json.lua",
@@ -68,6 +69,7 @@ rpf.files = {
     "players.lua",
     "commands.lua",
     "moderation.lua",
+    "staff.lua",
     "inventory.lua",
     "records.lua",
     "sync.lua",
@@ -126,6 +128,7 @@ function rpf.start_server(platform, options)
   rpf.players.start(platform)
   rpf.commands.serve(rpf.connection)
   rpf.moderation.start(platform)
+  rpf.staff.start(platform, rpf.connection)
   rpf.sync.start(platform, rpf.connection, options.sync)
   rpf.accounts.start(platform, rpf.connection)
   rpf.join.start(platform, rpf.connection, {

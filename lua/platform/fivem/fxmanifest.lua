@@ -34,6 +34,7 @@ server_scripts({
   "core/players.lua",
   "core/commands.lua",
   "core/moderation.lua",
+  "core/staff.lua",
   "core/inventory.lua",
   "core/records.lua",
   "core/sync.lua",

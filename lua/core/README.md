@@ -49,9 +49,9 @@ files each side loads after it and in what order:
 
 ```lua
 rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, config.lua,
-                 -- client.lua, players.lua, commands.lua, moderation.lua, inventory.lua,
-                 -- records.lua, sync.lua, accounts.lua, handoff.lua, join.lua,
-                 -- characters.lua, jobs.lua, edits.lua, api.lua
+                 -- client.lua, players.lua, commands.lua, moderation.lua, staff.lua,
+                 -- inventory.lua, records.lua, sync.lua, accounts.lua, handoff.lua,
+                 -- join.lua, characters.lua, jobs.lua, edits.lua, api.lua
 rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua,
                  -- picker.lua, api.lua
 ```
@@ -71,9 +71,9 @@ core keeps working after the Gmod adapter replaces the global with the public
 API (see The public API).
 
 The client never loads `protocol.lua`, `client.lua`, `players.lua`,
-`commands.lua`, `moderation.lua`, `inventory.lua`, `records.lua`, `sync.lua`,
+`commands.lua`, `moderation.lua`, `staff.lua`, `inventory.lua`, `records.lua`, `sync.lua`,
 `accounts.lua`, `join.lua`, `characters.lua`, `jobs.lua` or `edits.lua`, because the player's client
-must never hold the server's API key and has no players or records to
+must never hold the server's API key and has no players, staff or records to
 manage.
 
 Then the adapter starts one side:
@@ -132,7 +132,7 @@ different trust from the server, so it gets its own interface: `engine`,
 `http_request`, `kv_get` / `kv_set` (for the remember token), `now` / `after`,
 `to_server(name, payload)` / `on_server(name, handler)`, `log`, and `expose`
 (the client's scripts get the public API too, with `auth` in place of
-`players` and `config`). It has no websocket, no `random_hex` and no player
+`players`, `staff` and `config`). It has no websocket, no `random_hex` and no player
 management.
 
 ## Refusal
@@ -197,7 +197,8 @@ wire (`frame.type`, `frame.id`, `frame.re`, and the message's fields).
   decode as no job.
 - `answered_by` and `reissuable` mirror `Message::answered_by` and
   `Message::reissuable`, and `may_retry` mirrors `RejectCode::may_retry`.
-- `redact` replaces the credentials (`api_key`, `ticket`, `nonce`) for logging.
+- `redact` replaces the credentials (`api_key`, `ticket`, `nonce`, and a
+  staff `link_code`, F9) for logging.
 
 `spec/protocol_spec.lua` decodes and re-encodes every file in
 `protocol/corpus/v<VERSION>/`, the corpus of the protocol version this core
@@ -288,6 +289,12 @@ The game server's connection to the portal (`rpf.connection` once started).
   in Portal requests, below. `rpf.commands` is the `apply_command` handler
   (Staff commands, below), and a command no module registered is answered as
   failed (truthfully: nothing ran), so the portal is never left waiting.
+  Notices (a frame with no `re` that asks only for an `Ack`, such as
+  `staff_permissions`) go to every listener registered with
+  `connection:listen(type, listener)`, in order, after the ack, each under
+  the same guard as a callback, so one that throws is logged and the rest
+  still run. `restarting` is the connection's own. Listening for a request
+  or an answer is refused with an error, since none would ever arrive.
 
 #### Portal requests: the delivery guarantee
 
@@ -499,7 +506,7 @@ hears exactly what the core's own modules hear.
   `MAX_DEPTH` (32) deep are refused and logged, so a cycle is a log line, not
   a stack overflow.
 - **Core event names are reserved.** The public `emit` refuses anything under
-  `players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.` or `rpf.`, so a
+  `players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `staff.` or `rpf.`, so a
   script cannot forge a lifecycle event other scripts would believe.
 
 ### `rpf.players`
@@ -573,6 +580,66 @@ portal has the new state when it reads `applied`. `delete_character` lets
 the character and everything it owns go, with their final state (a player
 with it in play goes back to choosing first); the portal purges them once
 it has the answer.
+
+### Staff (`rpf.staff`)
+
+In-game staff (F9). A staff member links their player account to their
+portal user once, and from then on may do in game what their portal roles
+allow on this server, under the portal's own permission names
+(`player.kick`).
+
+**The game server enforces permissions locally, from what the portal
+pushes.** The portal sends `staff_permissions`, a notice, acked: every
+linked staff member on this server's online list and what each may do
+here. It sends one after every change that could move anyone's permissions
+here (a link or unlink, a role edited or assigned), on each join, and after
+each `online_players` resync, so a reconnect repairs anything missed. Each
+push is the whole list, so `rpf.staff` replaces what it held, and a player
+left out may do nothing. Grants are kept by `player_id` whoever they name,
+since a push may arrive before the `player_authenticated` of a player it
+lists, and take effect once that player registers. Permission names this
+core does not know are kept as they are (the portal adds flags, and addons
+will add `addon.*` ones). A push that does not decode is dropped by the
+connection; one that decodes but names a player twice is logged and
+refused; either way the grants stay as they were. Grants outlive a dropped
+connection to the portal, so staff can still moderate through an outage,
+but not the player: a player who leaves loses theirs at once. They are
+memory only, so a restart has none until the portal pushes again.
+
+| Call | What |
+|---|---|
+| `can(handle, permission)` | True only for a player logged in here (`registered` or later, not `dropping`) whose last grant holds exactly that name |
+| `permissions(handle)` | Their names, sorted, as a copy; empty for anyone else |
+| `link(handle, code)` | Sends `link_player` with the code as typed. Refused, with nothing sent, as `not_logged_in`, `invalid_code` (not a non-empty UTF-8 string of at most `MAX_CODE_BYTES`, 32) or `busy` (one link per player in flight, since each wrong code counts against the player, the guild and every live code) |
+| `record(handle, permission, action, target)` | Sends `staff_action` for the guild's audit log. Refused, with nothing sent, as `forbidden` unless `can(handle, permission)`, `invalid_action` unless `action` is `[a-z][a-z0-9_]*` of at most 64 bytes, `invalid_target` for a `target` that is not a logged-in player. `target_player_id` goes as `null` for no target |
+
+Both sending calls return `true` once the frame is queued, or `false` and
+the outbox's `outbox_full` / `outbox_unavailable`.
+
+**Linking.** The portal answers `link_player` with `player_linked`, naming
+the staff account, or `rejected`: `forbidden` with a reason written for the
+player (a code that does not link, or too many tries), `not_found` for a
+player not on its online list. The player is told either way through
+`platform.notify` (looked up again by `player_id`, so one who has left is
+told nothing), with the portal's reason on a refusal and a generic sentence
+(`LINK_UNAVAILABLE`) when the portal never answered (`expired`, or an
+outbox refusal). Linking grants nothing by itself: the permissions follow
+in the portal's next push. **The code is a credential and is never
+logged**; `rpf.protocol.redact` hides it too. The core has no chat command
+for it yet: a server's own script calls `rpf.api.staff.link(handle, code)`
+from whatever command it offers (the adapters may add one later).
+
+**Recording.** A script that kicks, teleports or otherwise acts as staff
+checks `can` first, does the deed, and reports it with `record`. The portal
+believes none of it on the server's word: it checks the link and the
+permission again when the notice arrives, and a refusal there is logged
+here at `warn` (the deed is done; nobody is told in game).
+
+Events, reserved: `staff.changed({ player_id, permissions })` once for
+each player whose grant a push or a departure changed (`permissions`
+sorted, empty when they lost everything), `staff.linked({ player_id,
+staff_name })` and `staff.link_failed({ player_id, code, reason })`, `code`
+being the portal's refusal or the local error.
 
 ### Held records (`rpf.records`, `rpf.sync`)
 
@@ -1106,6 +1173,7 @@ internal.
 | `VERSION`, `engine` | both | The core's version, and the engine (`"fivem"`, `"gmod"` or `"mock"`) for owners' scripts. The core never branches on it |
 | `events` | both | `on`, `once`, `off`, `emit` (core names refused) |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
+| `staff` | server | `can`, `permissions`, `link`, `record` (F9, `rpf.staff` above) |
 | `config` | server | `item`, `item_base`, `item_defaults`, `employer`, `department`, `job`, `starting_accounts`, `default_job`, `setting`, `version` |
 | `auth` | client | `login`, `register`, `change_password`, `logout`, `state`, `account`, `api_token`, `PASSWORD_REUSE_WARNING` |
 | `bridge` | — | Reserved for K2 (Milestone 2), nil now |

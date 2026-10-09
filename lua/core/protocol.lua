@@ -508,6 +508,16 @@ local ONLINE_PLAYER = object({
   { "player_id", UUID },
 })
 
+---`StaffGrant`: one linked staff member on the online list and what they
+---may do on this server (F9), in `staff_permissions`. The permissions are
+---plain strings, not an enum: the portal adds flags (and addons will add
+---`addon.*` ones), and a name this core does not know is still one a script
+---may ask `rpf.staff.can` about, so it is kept rather than refused.
+local STAFF_GRANT = object({
+  { "player_id", UUID },
+  { "permissions", array_of(STRING) },
+})
+
 ---`AccountFlags`: `"unlimited_balance"`, or `{ "server_specific": "…" }`,
 ---externally tagged like `Gender` and held to one key the same way.
 local ACCOUNT_FLAG = same_both_ways(function(value, path)
@@ -702,6 +712,20 @@ protocol.messages = {
     declare_holds = message("reply", false, {
       { "records", array_of(RECORD_REVISION) },
     }),
+    -- Not reissuable: a link code is single-use and lives five minutes, so a
+    -- reissue could only be refused, and would count as a failed guess.
+    link_player = message("reply", false, {
+      { "player_id", UUID },
+      { "link_code", SECRET },
+    }),
+    -- Not reissuable: one sent again under a fresh id would be a second
+    -- entry in the guild's audit log for one action.
+    staff_action = message("ack", false, {
+      { "player_id", UUID },
+      { "permission", STRING },
+      { "action", STRING },
+      { "target_player_id", nullable(UUID) },
+    }),
     ack = message("nothing", false, {
       { "re", UUID },
     }),
@@ -752,6 +776,15 @@ protocol.messages = {
       { "re", UUID },
       { "stale", array_of(RECORD_REVISION) },
       { "released", array_of(RECORD_REF) },
+    }),
+    player_linked = message("ack", false, {
+      { "re", UUID },
+      { "staff_name", STRING },
+    }),
+    -- A notice: the whole list of linked staff on this server's online list,
+    -- which `rpf.staff` replaces its grants with (F9).
+    staff_permissions = message("ack", false, {
+      { "staff", array_of(STAFF_GRANT) },
     }),
     -- Never answered: the portal closes the socket right after sending it
     -- (protocol 2, H1).

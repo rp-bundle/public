@@ -17,10 +17,12 @@ one-way door, a new environment variable. How to cut a release is in
 ## [Unreleased]
 
 **Protocol:** speaks protocol 2, and serves protocols 1 and 2. Protocol 2
-adds the `restarting` notice (below) and a character's job (D7); a game
-server on protocol 1 is served unchanged, and is simply closed where a
-protocol 2 one is told first. A protocol 1 core ignores a held character's
-`job`, and its reports, which carry none, keep the job the portal has.
+adds the `restarting` notice (below), a character's job (D7), and in-game
+staff (F9: `link_player`, `staff_action`, `player_linked` and
+`staff_permissions`); a game server on protocol 1 is served unchanged, and
+is simply closed where a protocol 2 one is told first, and is never sent
+`staff_permissions`. A protocol 1 core ignores a held character's `job`,
+and its reports, which carry none, keep the job the portal has.
 
 ### Added
 
@@ -65,8 +67,22 @@ protocol 2 one is told first. A protocol 1 core ignores a held character's
   screens; the password goes from the client to the portal, never over
   `net`. See `lua/platform/README.md`.
 
+- In-game staff (F9, #41): staff link their player account in a guild with
+  a short-lived code from their new in-game account page
+  (`/guilds/:slug/link`), typed in game through `rpf.api.staff.link`, and
+  then hold their portal permissions there, as `rpf.api.staff.can(player,
+  "player.kick")` answers them. The portal pushes each server its linked
+  staff's permissions on every change, on join and after each reconnect.
+  Codes are 40 bits, single use and live five minutes, and wrong guesses are
+  limited per player and per guild and lock a guild's codes out. Scripts
+  report in-game staff actions with `rpf.api.staff.record`, and the audit
+  log names the staff account each was taken under
+  ([Players](docs/architecture/players.md#staff-links)).
+
 ### Database
 
+- `20261009035000_player_links` is additive: player links, link codes and
+  failed link attempts.
 - `20261008222809_character_jobs` is additive: a character's job, a job's
   rank and salary, and an employer's payroll account, all nullable or
   defaulted.

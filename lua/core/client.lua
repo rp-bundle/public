@@ -236,6 +236,7 @@ client.DEFAULTS = {
 ---@field hello_id string? The id of this connection's `Hello`, whose answer completes the handshake.
 ---@field callbacks table<string, rpf.ReplyCallback> Callbacks by frame id. In memory only, so they do not survive a restart; the entries do.
 ---@field handlers table<string, rpf.RequestHandler> Handlers for requests from the portal, by type.
+---@field listeners table<string, rpf.NoticeListener[]> Listeners for the portal's notices, by type, in registration order. See `listen`.
 ---@field seen table<string, true> Recently received frame ids, to recognise a duplicate.
 ---@field seen_order string[] The same ids, oldest first, to evict from.
 ---@field on_ready fun(client: rpf.Client)? Called after each `Welcome`, once the outbox is flushed.
@@ -280,6 +281,7 @@ function client.new(platform, settings)
     generation = 0,
     callbacks = {},
     handlers = {},
+    listeners = {},
     seen = {},
     seen_order = {},
   }, Client)
@@ -1157,6 +1159,48 @@ function Client:handle(tag, handler)
   self.handlers[tag] = handler
 end
 
+---Hears one kind of notice from the portal: a frame that answers nothing
+---this server sent and asks for no reply, only an `Ack`.
+---@alias rpf.NoticeListener fun(frame: rpf.Frame)
+
+---Registers a listener for one kind of notice from the portal, such as
+---`staff_permissions` (F9), so the module that owns what the notice is about
+---hears it without the connection knowing what it means.
+---
+---A notice is handed over once, after its `Ack` has gone out, as every
+---frame the portal sends is: a duplicate is acked again and not handed over
+---again. Listeners run in registration order, each under `Client:call`, so
+---one that throws is logged and the connection and the listeners after it
+---carry on. Unlike a request there is nothing to journal, because the
+---portal's answer is the `Ack` the connection already sent.
+---
+---Only a type that can arrive as a notice may be listened for. A request
+---goes to `handle`, and an answer to the callback of the frame it answers,
+---so a listener for one of those would never run; asking for one is a bug
+---and throws.
+---@param tag string The notice's type, like `staff_permissions`.
+---@param listener rpf.NoticeListener Called with the decoded frame.
+function Client:listen(tag, listener)
+  local spec = protocol.messages[IN][tag]
+  if not spec or spec.answered_by == "reply" then
+    error("rpf: " .. tostring(tag) .. " is not a notice the portal sends", 2)
+  end
+  for _, field in ipairs(spec.fields) do
+    if field[1] == "re" then
+      error("rpf: " .. tag .. " answers a frame; it goes to that frame's callback", 2)
+    end
+  end
+  if type(listener) ~= "function" then
+    error("rpf: Client:listen needs a function", 2)
+  end
+  local list = self.listeners[tag]
+  if not list then
+    list = {}
+    self.listeners[tag] = list
+  end
+  list[#list + 1] = listener
+end
+
 ---Remembers a received frame id, forgetting the oldest past the limit.
 ---@param id string The id.
 ---@return boolean duplicate True if it was already remembered.
@@ -1221,16 +1265,34 @@ function Client:receive(text)
   end
 end
 
----Handles a frame from the portal that answers nothing: the portal telling
----this server something about the connection itself. Today that is only
----`restarting`; a type the core does not know is refused by `decode` long
----before it gets here.
+---Handles a frame from the portal that answers nothing. `restarting` is
+---about the connection itself, so the connection acts on it here; any other
+---notice (`staff_permissions`) goes to the listeners a module registered
+---with `listen`, after its `Ack`. A notice nobody listens for is logged and
+---otherwise ignored: it was acked, so the portal will not send it again. A
+---type the core does not know is refused by `decode` long before it gets
+---here.
 ---@param frame rpf.Frame The decoded notice.
 function Client:notice(frame)
   if frame.type == "restarting" then
     local asked = math.min(frame.retry_after_ms, self.options.max_retry_after_ms)
     self.retry_after_ms = asked
     self:log("info", "the portal is restarting; reconnecting " .. math.floor(asked) .. " ms after it closes")
+  end
+  local list = self.listeners[frame.type]
+  if not list then
+    if frame.type ~= "restarting" then
+      self:log("debug", "nothing listens for " .. frame.type .. "; acked and ignored")
+    end
+    return
+  end
+  -- A copy, so a listener registered while this one runs waits for the next.
+  local snapshot = {}
+  for i, listener in ipairs(list) do
+    snapshot[i] = listener
+  end
+  for _, listener in ipairs(snapshot) do
+    self:call("a listener for " .. frame.type, listener, frame)
   end
 end
 

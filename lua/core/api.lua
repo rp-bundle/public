@@ -20,8 +20,9 @@
 ---   accidents, not attackers: `rawset` and the debug library still reach
 ---   past it, and on Gmod it is all the server owner's own code anyway.
 ---
----What a side gets follows what it loaded: `players` and `config` on the
----server, `auth` on the client, and `events`, `engine` and `VERSION` on both.
+---What a side gets follows what it loaded: `players`, `staff` and `config`
+---on the server, `auth` on the client, and `events`, `engine` and `VERSION`
+---on both.
 local rpf = rpf
 local events = rpf.events
 
@@ -95,6 +96,24 @@ if players then
       return players.authenticated(handle)
     end,
   }, "rpf.players")
+end
+
+local staff = rpf.staff
+if staff then
+  surface.staff = freeze({
+    can = function(handle, permission)
+      return staff.can(handle, permission)
+    end,
+    permissions = function(handle)
+      return staff.permissions(handle)
+    end,
+    link = function(handle, code)
+      return staff.link(handle, code)
+    end,
+    record = function(handle, permission, action, target)
+      return staff.record(handle, permission, action, target)
+    end,
+  }, "rpf.staff")
 end
 
 local config = rpf.config
