@@ -611,16 +611,24 @@ function auth.delete_account(username, password)
   end
   state = "working"
   local retried = false
-  ---Sends the deletion with a nonce. Unlike `send_with_nonce`, its answer
+  ---Sends the deletion with a nonce. Unlike `send_with_nonce`, its success
   ---is not tied to `generation`: once the request has gone, the portal may
   ---have deleted the account whatever happened here meanwhile (a logout, a
-  ---refused refresh), and a deletion that happened must be reported.
+  ---refused refresh), and a deletion that happened must be reported. A
+  ---refusal is, like any abandoned request's: it changed nothing, and the
+  ---flow that replaced it must not be disturbed.
   ---@param n rpf.auth.Nonce The nonce.
   local function attempt(n)
+    local mine = generation
     n.in_use = true
     post("delete_account", { nonce = n.value, username = username, password = password }, function(status, body)
       -- The portal does not consume the nonce, whatever it answers.
       n.in_use = false
+      if status ~= 204 and mine ~= generation then
+        -- Abandoned (a logout, and maybe a newer login since): nothing
+        -- was deleted, so the flow that replaced this one is left alone.
+        return
+      end
       if status == 401 and body and body.error == "invalid_nonce" and not retried then
         retried = true
         nonce = nil

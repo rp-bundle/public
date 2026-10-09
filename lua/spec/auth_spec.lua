@@ -540,6 +540,30 @@ describe("rpf.auth", function()
       assert.is_nil(rpf.auth.account())
     end)
 
+    it("leaves a newer login alone when an abandoned deletion is refused", function()
+      local c, seen = start()
+      nonce(c, "rpf_jn_delete")
+      assert.are.equal("required", rpf.auth.state())
+      assert(rpf.auth.delete_account("sam", "correct horse"))
+      local deletion = assert(c.pending()).index
+      -- The player gives up on it and logs in instead, on a fresh nonce.
+      rpf.auth.logout()
+      assert(rpf.auth.login("sam", "correct horse"))
+      nonce(c, "rpf_jn_login")
+      -- The login is answered first, then the old deletion's refusal.
+      local login = c.requests[#c.requests]
+      assert.is_truthy(login.url:find("/login", 1, true))
+      login.answered = true
+      login.callback(200, assert(rpf.json.encode(rpf.json.object(grant()))), {})
+      local old = c.requests[deletion]
+      old.answered = true
+      old.callback(401, '{"error":"invalid_credentials","message":"That username and password do not match."}', {})
+      assert.are.equal("redeeming", rpf.auth.state())
+      c.from_server(RESULT, { ok = true, player_id = PLAYER, username = "sam", created = false })
+      assert.are.equal("auth.succeeded", seen[#seen].name)
+      assert.are.equal("authenticated", rpf.auth.state())
+    end)
+
     it("retries once with a fresh nonce when the portal says the nonce ran out", function()
       local c = start()
       log_in(c)
