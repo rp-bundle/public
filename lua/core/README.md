@@ -501,6 +501,26 @@ keeps the snapshot whole rather than field by field, so a section not listed
 there is kept and reported in `config.changed`, just not indexed, and a
 newer portal adding one is never a refusal.
 
+**In-game edits (E6).** `config.edit(handle, base_version, changes)` is how
+a server's config menu changes config for a linked staff member: up to
+`config.MAX_CHANGES` (16) changes, each shaped as the portal's
+`ConfigChange` (`{ change = "setting", key, value = { state = "set", value }
+}`, `{ change = "create_item", item = … }`, `{ change = "delete_job",
+employer, slug }`, …), made against `base_version`, the version the staff
+member was looking at. It refuses before sending anything a player not
+logged in, a version that is not a whole number, changes of an unknown kind
+or the wrong shape (`invalid_changes`, checked by the encoder the connection
+uses), and a player whose grants (`rpf.staff`) hold none of the flags that
+kind of change takes (`config.EDIT_FLAGS`); otherwise it sends
+`config_changed` through the outbox, so an edit made during an outage goes
+out after the next `Welcome`. Nothing here changes on sending: the portal
+applies the edit only if `base_version` is still the server's version and
+pushes the result as the next `config`. The answer tells the staff member
+(`config.EDIT_APPLIED`, `config.EDIT_DISCARDED`, or the portal's reason) and
+announces `config.edit_applied` or `config.edit_discarded` with `{
+player_id, version }`, or `config.edit_refused` with `{ player_id, code,
+reason }`. A discarded edit is listed on the server's settings page.
+
 ### `rpf.events`
 
 The bus every module talks through. Modules never call each other to say
@@ -1222,7 +1242,7 @@ internal.
 | `events` | both | `on`, `once`, `off`, `emit` (core names refused) |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
 | `staff` | server | `can`, `permissions`, `link`, `record` (F9, `rpf.staff` above) |
-| `config` | server | `item`, `item_base`, `item_defaults`, `employer`, `department`, `job`, `starting_accounts`, `default_job`, `setting`, `version` |
+| `config` | server | `item`, `item_base`, `item_defaults`, `employer`, `department`, `job`, `starting_accounts`, `default_job`, `setting`, `version`, and `edit` (E6, above) |
 | `auth` | client | `login`, `register`, `change_password`, `logout`, `state`, `account`, `api_token`, `PASSWORD_REUSE_WARNING` |
 | `bridge` | — | Reserved for K2 (Milestone 2), nil now |
 

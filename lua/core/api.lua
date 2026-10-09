@@ -149,6 +149,9 @@ if config then
     version = function()
       return config.version()
     end,
+    edit = function(handle, base_version, changes)
+      return config.edit(handle, base_version, changes)
+    end,
   }, "rpf.config")
 end
 

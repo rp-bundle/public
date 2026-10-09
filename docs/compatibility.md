@@ -26,7 +26,7 @@ Two numbers are involved, and only one decides compatibility.
 | Protocol | First release | Served by portal releases | Status |
 |---|---|---|---|
 | 1 | 0.1.0 | 0.1.0 and later, until its support window closes | Served |
-| 2 | Unreleased | The next release and later | Current, unreleased: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), and the `suspended` reject code (H5) |
+| 2 | Unreleased | The next release and later | Current, unreleased: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), and in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`) |
 
 A row is added when a release ships a new protocol version, and a version's
 last portal release is filled in when one drops it. `CHANGELOG.md` names the
@@ -212,9 +212,19 @@ suspended guild's `Hello` only on protocol 2 or later, and a protocol 1
 it stops for good, since it is final there. The gate is
 `ws::auth::suspended`, the one place either refusal is made, at the
 handshake, and `a_core_on_the_previous_protocol_is_told_in_words_and_stops`
+holds it. In-game config editing (E6, protocol 2,
+`protocol::CONFIG_CHANGE_PROTOCOL`) is the fourth, and the other way round:
+the portal sends `config_change_applied` and `config_change_discarded` only
+in answer to a `config_changed`, which a protocol 1 core never sends, so the
+gate is on the frame coming in. The socket refuses any message newer than
+its connection's protocol `malformed` before dispatch
+(`ServerToPortal::protocol`, exhaustive, so a new message says which version
+it is new in), and no handler is reached by one;
+`a_core_on_the_previous_protocol_cannot_edit_config` (the fake game server)
 holds it. The next message or nested variant the portal gains follows the
 same pattern: a `<NAME>_PROTOCOL` constant beside the type, and the check in
-the one place that sends it.
+the one place that sends it, or for a message a game server sends, its
+version in `ServerToPortal::protocol`.
 
 ### How the tests hold it
 
@@ -259,14 +269,21 @@ receiver takes the default (empty, `false` or `None`).
 | `job` | `new_character` | `None` | No default job |
 | `data` | A stack in container contents | Empty | Omitted when empty, which is the common case |
 | `rotated` | A grid placement in container contents | `false` | Upright is the common case |
+| `weight`, `size`, `stack_limit` | An item base in an in-game config change (`config_changes`) | `None` | Left out when the base leaves it to its items and the defaults, as in the snapshot |
+| `base`, `weight`, `size`, `stack_limit` | An item in an in-game config change | `None` | Left out when the item takes it from its base |
+| `description`, `payroll` | An employer in an in-game config change | Empty, `None` | Free text, possibly empty; no payroll for an employer that pays none |
+| `description` | A department in an in-game config change | Empty | Free text, possibly empty |
+| `department`, `description`, `rank`, `salary` | A job in an in-game config change | `None`, empty, `0`, `None` | As for a job in the snapshot |
 
 Container contents travel both ways (a hold hands them to a game server, a
-state report brings them back); `employment` is only ever sent by a game
-server, and a character's `job` only by the portal; everything else in the
-table is in the config snapshot, which only the portal sends. `OPTIONAL` in the protocol
-tests is the same list as far as the corpus shows it: `stack_limit`, `data`
-and `rotated` are absent from every sample, so the test cannot see them, and
-this table is where they are recorded.
+state report brings them back); `employment` and an in-game config change's
+definitions (E6, new in protocol 2, so no older core sends one) are only
+ever sent by a game server, and a character's `job` only by the portal;
+everything else in the table is in the config snapshot, which only the
+portal sends. `OPTIONAL` in the protocol
+tests is the same list as far as the corpus shows it: a snapshot base's
+`stack_limit`, `data` and `rotated` are absent from every sample, so the
+test cannot see them, and this table is where they are recorded.
 
 The Lua core requires every field of the protocol version it speaks, apart
 from what it keeps whole (the config snapshot, container contents and
@@ -282,7 +299,8 @@ rules do not apply inside them:
 - **Maps**: the snapshot's `settings` are keyed by setting name. A new key is
   a new setting the receiver keeps.
 - **Opaque values**: a setting's value is whatever its setting holds, carried
-  as JSON. The Lua core also keeps the whole snapshot, and container contents
+  as JSON, in the snapshot and in an in-game config change's `set` state
+  alike. The Lua core also keeps the whole snapshot, and container contents
   and flags, as received.
 - **Variants**: `Gender` is externally tagged, and `{"server_specific": "…"}`
   is exactly one key on both sides. A key beside it is a different value, not

@@ -453,3 +453,166 @@ describe("rpf.config", function()
     assert.are.equal(0, #changes)
   end)
 end)
+
+-- In-game config edits (E6): sent to the portal against the version the
+-- staff member saw, never applied here, and the staff member told how each
+-- went.
+describe("rpf.config.edit", function()
+  local PLAYER = "00000002-0000-4000-8000-000000000002"
+  local MAX = {
+    change = "setting",
+    key = "characters.max_per_player",
+    value = { state = "set", value = 4 },
+  }
+  local p, notified, heard
+
+  ---Frames of one type among everything sent.
+  ---@param tag string The type.
+  ---@return rpf.Frame[] frames The frames.
+  local function sent_of(tag)
+    local out = {}
+    for _, frame in ipairs(p.frames()) do
+      if frame.type == tag then
+        out[#out + 1] = frame
+      end
+    end
+    return out
+  end
+
+  ---A logged-in player holding `permissions` here, logged in on first use.
+  ---@param handle any The engine's handle.
+  ---@param permissions string[] What the portal's last push gave them.
+  local function staff(handle, permissions)
+    if not rpf.players.get(handle) then
+      rpf.players.connected(handle)
+      assert(rpf.players.authenticating(handle))
+      assert(rpf.players.register(handle, { player_id = PLAYER, username = "sam" }))
+    end
+    p.deliver(support.portal_frame("staff_permissions", {
+      staff = { { player_id = PLAYER, permissions = permissions } },
+    }))
+  end
+
+  before_each(function()
+    support.load_core()
+    p = support.fake_platform()
+    notified = {}
+    p.notify = function(player, message)
+      notified[#notified + 1] = { player = player, message = message }
+    end
+    support.connected(p)
+    heard = { ["config.edit_applied"] = {}, ["config.edit_discarded"] = {}, ["config.edit_refused"] = {} }
+    for name, list in pairs(heard) do
+      rpf.events.on(name, function(payload)
+        list[#list + 1] = payload
+      end)
+    end
+  end)
+
+  it("refuses a player not logged in or without the permission, and a malformed edit, sending nothing", function()
+    assert.are.same({ false, "not_logged_in" }, { rpf.config.edit(7, 3, { MAX }) })
+    staff(7, { "config.items.edit" })
+    assert.are.same({ false, "forbidden" }, { rpf.config.edit(7, 3, { MAX }) }, "a setting needs a settings flag")
+    staff(7, { "config.settings.edit" })
+    assert.are.same({ false, "invalid_version" }, { rpf.config.edit(7, -1, { MAX }) })
+    assert.are.same({ false, "invalid_version" }, { rpf.config.edit(7, 1.5, { MAX }) })
+    assert.are.same({ false, "invalid_version" }, { rpf.config.edit(7, "3", { MAX }) })
+    assert.are.same({ false, "invalid_changes" }, { rpf.config.edit(7, 3, {}) })
+    assert.are.same({ false, "invalid_changes" }, { rpf.config.edit(7, 3, "x") })
+    assert.are.same({ false, "invalid_changes" }, { rpf.config.edit(7, 3, { { change = "delete_guild" } }) })
+    assert.are.same(
+      { false, "invalid_changes" },
+      { rpf.config.edit(7, 3, { { change = "setting", key = "motd", value = { state = "set" } } }) },
+      "a set value, missing"
+    )
+    local many = {}
+    for i = 1, rpf.config.MAX_CHANGES + 1 do
+      many[i] = MAX
+    end
+    assert.are.same({ false, "invalid_changes" }, { rpf.config.edit(7, 3, many) })
+    assert.are.same({ false, "invalid_changes" }, { rpf.config.edit(7, 3, { MAX, nil, MAX }) }, "a list with a hole")
+    assert.are.same(
+      { false, "forbidden" },
+      { rpf.config.edit(7, 3, { MAX, { change = "delete_job", employer = "lspd", slug = "officer" } }) },
+      "every change needs its own flag"
+    )
+    assert.are.equal(0, #sent_of("config_changed"))
+  end)
+
+  it("sends the edit against the version named, applies nothing itself, and tells the staff member it was applied", function()
+    staff(7, { "config.settings.edit" })
+    assert.are.same({ true }, { rpf.config.edit(7, 3, { MAX }) })
+    local sent = p.last()
+    assert.are.equal("config_changed", sent.type)
+    assert.are.equal(PLAYER, sent.player_id)
+    assert.are.equal(3, sent.base_version)
+    assert.are.same({ MAX }, sent.changes)
+    assert.is_nil(rpf.config.setting("characters.max_per_player"), "nothing changes until the portal pushes it")
+
+    p.deliver(support.portal_frame("config_change_applied", { re = sent.id, version = 4 }))
+    assert.are.same({ { player = 7, message = string.format(rpf.config.EDIT_APPLIED, 4) } }, notified)
+    assert.are.same({ { player_id = PLAYER, version = 4 } }, heard["config.edit_applied"])
+    assert.is_nil(rpf.config.setting("characters.max_per_player"))
+  end)
+
+  it("takes either settings flag for a setting, which the portal narrows to the setting's own", function()
+    staff(7, { "config.accounts.edit" })
+    assert.is_true((rpf.config.edit(7, 3, { MAX })))
+  end)
+
+  it("tells the staff member to redo an edit the portal discarded, and logs it", function()
+    staff(7, { "config.settings.edit" })
+    rpf.config.edit(7, 3, { MAX })
+    p.deliver(support.portal_frame("config_change_discarded", { re = p.last().id, version = 5 }))
+
+    assert.are.same({ { player = 7, message = rpf.config.EDIT_DISCARDED } }, notified)
+    assert.are.same({ { player_id = PLAYER, version = 5 } }, heard["config.edit_discarded"])
+    assert.are.equal(0, #heard["config.edit_applied"])
+    local logged = false
+    for _, line in ipairs(p.logs) do
+      logged = logged or (line.level == "warn" and line.message:find("discarded a config edit", 1, true) ~= nil)
+    end
+    assert.is_true(logged)
+  end)
+
+  it("tells the staff member the portal's reason when it refuses the edit", function()
+    staff(7, { "config.settings.edit" })
+    rpf.config.edit(7, 3, { MAX })
+    local reason = "That number is not allowed for this setting."
+    p.deliver(support.portal_frame("rejected", { re = p.last().id, code = "malformed", reason = reason }))
+
+    assert.are.same({ { player = 7, message = reason } }, notified)
+    assert.are.same({ { player_id = PLAYER, code = "malformed", reason = reason } }, heard["config.edit_refused"])
+  end)
+
+  it("tells nobody when the staff member has left, and still announces the answer", function()
+    staff(7, { "config.settings.edit" })
+    rpf.config.edit(7, 3, { MAX })
+    local id = p.last().id
+    rpf.players.dropped(7, "quit")
+    p.deliver(support.portal_frame("config_change_discarded", { re = id, version = 5 }))
+
+    assert.are.same({}, notified)
+    assert.are.same({ { player_id = PLAYER, version = 5 } }, heard["config.edit_discarded"])
+  end)
+
+  it("keeps an edit made while the portal is out of reach, and sends it on reconnect", function()
+    staff(7, { "config.settings.edit" })
+    p.drop()
+    assert.is_true((rpf.config.edit(7, 3, { MAX })))
+    assert.are.equal(0, #sent_of("config_changed"), "nothing goes out while disconnected")
+    -- Reconnects after the backoff, and sends it after `Welcome`.
+    p.advance(60 * 1000)
+    p.open()
+    local hello = p.last()
+    p.deliver(support.portal_frame("welcome", {
+      re = hello.id,
+      protocol = rpf.protocol.VERSION,
+      server_id = "00000001-0000-4000-8000-000000000001",
+    }))
+    support.declared(p)
+    local sent = sent_of("config_changed")
+    assert.are.equal(1, #sent)
+    assert.are.equal(3, sent[1].base_version)
+  end)
+end)

@@ -1,0 +1,130 @@
+[
+  {
+    "change": "setting",
+    "key": "characters.max_per_player",
+    "value": {
+      "state": "set",
+      "value": 4
+    }
+  },
+  {
+    "change": "create_item_base",
+    "base": {
+      "slug": "food",
+      "name": "Food",
+      "weight": 1,
+      "size": {
+        "x": 1,
+        "y": 1
+      },
+      "stack_limit": 20
+    }
+  },
+  {
+    "change": "update_item_base",
+    "base": {
+      "slug": "food",
+      "name": "Food"
+    }
+  },
+  {
+    "change": "delete_item_base",
+    "slug": "food"
+  },
+  {
+    "change": "create_item",
+    "item": {
+      "slug": "water_bottle",
+      "name": "Water bottle",
+      "base": "food",
+      "weight": 2,
+      "size": {
+        "x": 1,
+        "y": 2
+      },
+      "stack_limit": 10
+    }
+  },
+  {
+    "change": "update_item",
+    "item": {
+      "slug": "water_bottle",
+      "name": "Water bottle"
+    }
+  },
+  {
+    "change": "delete_item",
+    "slug": "water_bottle"
+  },
+  {
+    "change": "create_employer",
+    "employer": {
+      "slug": "lspd",
+      "name": "Los Santos Police",
+      "description": "Keeps the peace.",
+      "payroll": "city_treasury"
+    }
+  },
+  {
+    "change": "update_employer",
+    "employer": {
+      "slug": "lspd",
+      "name": "Los Santos Police",
+      "description": ""
+    }
+  },
+  {
+    "change": "delete_employer",
+    "slug": "lspd"
+  },
+  {
+    "change": "create_department",
+    "department": {
+      "employer": "lspd",
+      "slug": "traffic",
+      "name": "Traffic",
+      "description": "Roads and highways."
+    }
+  },
+  {
+    "change": "update_department",
+    "department": {
+      "employer": "lspd",
+      "slug": "traffic",
+      "name": "Traffic",
+      "description": ""
+    }
+  },
+  {
+    "change": "delete_department",
+    "employer": "lspd",
+    "slug": "traffic"
+  },
+  {
+    "change": "create_job",
+    "job": {
+      "employer": "lspd",
+      "slug": "officer",
+      "name": "Officer",
+      "department": "traffic",
+      "description": "Patrols.",
+      "rank": 1,
+      "salary": 500
+    }
+  },
+  {
+    "change": "update_job",
+    "job": {
+      "employer": "lspd",
+      "slug": "officer",
+      "name": "Officer",
+      "description": "",
+      "rank": 0
+    }
+  },
+  {
+    "change": "delete_job",
+    "employer": "lspd",
+    "slug": "officer"
+  }
+]

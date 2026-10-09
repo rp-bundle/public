@@ -28,7 +28,7 @@
 ---@field events rpf.api.Events The event bus. The only way scripts hear what the core does.
 ---@field players rpf.api.Players? The players on this game server. Server only.
 ---@field staff rpf.api.Staff? In-game staff: what a linked staff member may do here, account linking, and staff actions for the audit log. Server only.
----@field config rpf.api.Config? Lookups over the config the portal pushed. Server only.
+---@field config rpf.api.Config? Lookups over the config the portal pushed, and linked staff's edits of it in game. Server only.
 ---@field auth rpf.api.Auth? The player's own login. Client only.
 ---@field bridge rpf.api.Bridge? **Reserved for Milestone 2 (K2, #92).** Always nil in 0.1. It will register the one bridge to an existing RP framework on a companion server (see `docs/architecture/framework-integration.md`). The name is reserved now so no script claims it first.
 
@@ -47,6 +47,12 @@
 ---   left (nil for `connecting`). Server only.
 --- - `config.changed(change)`, an `rpf.ConfigChange`, when an applied
 ---   snapshot differs from the one before. Server only.
+--- - `config.edit_applied(result)` and `config.edit_discarded(result)`, an
+---   `rpf.ConfigEditResult`, when the portal applied a staff member's
+---   in-game config edit, or discarded it because the config had moved on;
+---   `config.edit_refused(failure)`, an `rpf.ConfigEditFailure`, when it
+---   refused one or never answered. The staff member has been told either
+---   way. Server only.
 --- - `staff.changed(change)`, an `rpf.StaffChange`, once for each player
 ---   whose staff permissions here changed: a push from the portal gave them
 ---   new ones or took some away, or they left. Server only.
@@ -213,8 +219,10 @@ function Staff.record(handle, permission, action, target) end
 ---@field code string The portal's refusal (`forbidden` for a code that does not link or too many tries, `not_found` for a player the portal does not have online here), or why it never answered: `expired`, `outbox_full`, `outbox_unavailable`.
 ---@field reason string What the player was told.
 
----Lookups over the config the portal pushed (E2). Config is portal-
----authoritative, so these are read-only, and each returns a copy.
+---Lookups over the config the portal pushed (E2), and the one way to change
+---it from the game (E6). Lookups are read-only, and each returns a copy:
+---config changes only when the portal pushes a new snapshot, an in-game
+---edit included.
 ---@class rpf.api.Config
 local Config = {}
 
@@ -275,6 +283,79 @@ function Config.setting(key) end
 ---The config version applied now.
 ---@return number? version The version, or nil before any config has arrived.
 function Config.version() end
+
+---Changes this server's config for a linked staff member in game (E6), for
+---your config menu or command to call once they confirm.
+---
+---Pass the version the staff member was looking at (`version()` when the
+---menu opened). The portal applies every change or none, and only if that is
+---still the server's version: if a portal edit, or another edit, landed
+---first, nothing is applied, the edit is listed as discarded on the server's
+---settings page, and the staff member is told to redo it. The new config
+---arrives as `config.changed`, never from this call. The staff member is told
+---how it went, and `config.edit_applied`, `config.edit_discarded` or
+---`config.edit_refused` is announced.
+---
+---Sent only for a player holding a permission that may make each kind of
+---change (`config.settings.edit` or `config.accounts.edit` for a setting,
+---`config.items.edit` for items and bases, `config.jobs.edit` for
+---employers, departments and jobs). The portal checks the exact one, and
+---every value, as its own pages do.
+---@param handle any The engine's handle of the staff member.
+---@param base_version number The config version the change was made against.
+---@param changes rpf.ConfigEditChange[] From 1 to 16 changes, applied in order.
+---@return boolean sent True once it is on its way.
+---@return rpf.ConfigEditRefusal? err Why not.
+function Config.edit(handle, base_version, changes) end
+
+---One change in an in-game config edit (E6): exactly what one of the
+---portal's config forms submits, tagged by `change`. Which other fields it
+---has follows the tag:
+---
+--- - `setting`: `key`, and `value` as `{ state = "set", value = … }` to
+---   override, `{ state = "null" }` to clear, or `{ state = "inherit" }` to
+---   take the parent server's.
+--- - `create_item_base`, `update_item_base`: `base`, an
+---   `rpf.ConfigItemBase`. `delete_item_base`: `slug`.
+--- - `create_item`, `update_item`: `item`, with `slug`, `name`, and
+---   optionally `base`, `weight`, `size` and `stack_limit`; one left out
+---   comes from the base. `delete_item`: `slug`.
+--- - `create_employer`, `update_employer`: `employer`, an
+---   `rpf.ConfigEmployer`. `delete_employer`: `slug`.
+--- - `create_department`, `update_department`: `department`, an
+---   `rpf.ConfigDepartment`. `delete_department`: `employer` and `slug`.
+--- - `create_job`, `update_job`: `job`, an `rpf.ConfigJob`. `delete_job`:
+---   `employer` and `slug`.
+---@class rpf.ConfigEditChange
+---@field change string What kind of change, as above.
+---@field key string? A setting's key.
+---@field value table? A setting's new state.
+---@field base rpf.ConfigItemBase? An item base.
+---@field item table? An item as staff define it.
+---@field employer rpf.ConfigEmployer|string? An employer, or for a department or job delete the employer's slug.
+---@field department rpf.ConfigDepartment? A department.
+---@field job rpf.ConfigJob? A job.
+---@field slug string? What a delete names.
+
+---Why `config.edit` refused before sending anything.
+---@alias rpf.ConfigEditRefusal
+---| "not_logged_in" # The player has not logged in to their account here, or is leaving.
+---| "invalid_version" # The base version is not a whole number from 0.
+---| "invalid_changes" # The changes are not a list of 1 to 16 changes, each of a known kind and the shape that kind takes.
+---| "forbidden" # The player holds no permission that may make one of the changes here.
+---| "outbox_full" # Too much is waiting for the portal; try again later.
+---| "outbox_unavailable" # The game server's stored outbox needs repair.
+
+---What `config.edit_applied` and `config.edit_discarded` carry.
+---@class rpf.ConfigEditResult
+---@field player_id string The staff member's player account.
+---@field version number The server's config version: the one the edit made, or the one it was discarded against.
+
+---What `config.edit_refused` carries.
+---@class rpf.ConfigEditFailure
+---@field player_id string The staff member's player account.
+---@field code string The portal's refusal (`forbidden`, `malformed`, `not_found`), or why it never answered: `expired`, `outbox_full`, `outbox_unavailable`.
+---@field reason string What the staff member was told.
 
 ---A job by its employer's slug and its own, as a character holds one (D7) and
 ---the config's default job names one.
