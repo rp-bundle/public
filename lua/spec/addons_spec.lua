@@ -260,6 +260,21 @@ describe("rpf.addons", function()
       assert.are.equal("failed", (rpf.addons.state("acme_bad")))
     end)
 
+    it("starts an addon once when its start handler registers another", function()
+      local starts = 0
+      rpf.addons.register(manifest("acme_kit"), {
+        start = function()
+          starts = starts + 1
+          rpf.addons.register(manifest("acme_late"))
+        end,
+      })
+      support.connected(p)
+      configure(p, { installed(manifest("acme_kit")), installed(manifest("acme_late")) })
+      assert.are.equal(1, starts)
+      assert.are.equal("active", (rpf.addons.state("acme_kit")))
+      assert.are.equal("active", (rpf.addons.state("acme_late")))
+    end)
+
     it("lets a start handler read its config records", function()
       local seen = nil
       rpf.addons.register(manifest("acme_kit"), {

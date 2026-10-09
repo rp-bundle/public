@@ -83,6 +83,11 @@ local declared = {}
 local connection = nil
 ---@type rpf.ServerPlatform?
 local platform = nil
+---Whether an evaluation is running, and whether another was asked for
+---while it ran (a handler registering an addon), with a retry or not.
+local evaluating = false
+---@type boolean?
+local pending_retry = nil
 
 ---Logs through the platform, when there is one.
 ---@param level string The level.
@@ -232,6 +237,31 @@ end
 ---declaration's acknowledgement is not.
 ---@param retry boolean? Whether a `failed` addon may be started again.
 function addons.evaluate(retry)
+  -- A handler that registers an addon asks for an evaluation while one is
+  -- running. It is run after this one, never inside it, so no addon's
+  -- `start` runs twice for one activation.
+  if evaluating then
+    pending_retry = pending_retry or retry or false
+    return
+  end
+  evaluating = true
+  local ok, err = pcall(addons.evaluate_once, retry)
+  local rounds = 0
+  while ok and pending_retry ~= nil and rounds <= rpf.manifest.MAX_ADDONS_PER_SERVER do
+    local again = pending_retry
+    pending_retry = nil
+    rounds = rounds + 1
+    ok, err = pcall(addons.evaluate_once, again)
+  end
+  evaluating, pending_retry = false, nil
+  if not ok then
+    error(err, 0)
+  end
+end
+
+---One evaluation pass: what `evaluate` runs, never re-entered.
+---@param retry boolean? Whether a `failed` addon may be started again.
+function addons.evaluate_once(retry)
   local order = names()
   local want = {}
   local reasons = {}
