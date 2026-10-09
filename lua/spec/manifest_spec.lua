@@ -123,6 +123,21 @@ describe("rpf.manifest.check against protocol/corpus/addons/manifests", function
     )
   end)
 
+  it("refuses a number no frame could carry where it stands, rather than throwing", function()
+    for _, bad in ipairs({ 0 / 0, math.huge, -math.huge }) do
+      local ok, checked, refusal = pcall(rpf.manifest.check, {
+        namespace = "acme_garden",
+        version = "1.0.0",
+        api = bad,
+        title = "Garden",
+      })
+      assert.is_true(ok, tostring(checked))
+      assert.is_nil(checked)
+      assert.are.same({ error = "wrong_type", path = "api" }, refusal)
+    end
+    assert.is_nil(rpf.json.serde_bytes({ n = 0 / 0 }))
+  end)
+
   it("refuses a table that is neither an object nor an array where it stands", function()
     local _, refusal = rpf.manifest.check({ namespace = "acme_garden", version = "1.0.0", api = 1, title = { 1, x = 2 } })
     assert.are.same({ error = "wrong_type", path = "title" }, refusal)

@@ -473,6 +473,9 @@ function json.serde_bytes(value)
   elseif kind == "boolean" then
     return value and 4 or 5
   elseif kind == "number" then
+    if value ~= value or value == math.huge or value == -math.huge then
+      return nil
+    end
     return number_bytes(value)
   elseif kind == "string" then
     return string_bytes(value)
