@@ -138,7 +138,9 @@ one that goes is deprecated a release ahead, with the replacement named in
 `CHANGELOG.md` and the release's upgrade notes.
 
 - The resource and addon names (`rpf`, `rpf-ws`), and the folder layout an
-  owner installs.
+  owner installs: the FiveM release's one `[rpf]` folder holding the two
+  resources, and the Gmod release's `rpf` addon folder
+  ([Deployment](deployment.md#the-game-server-release)).
 - Convars (`rpf_url`, `rpf_api_key`, …) and their Gmod equivalents.
 - Exports and globals other resources call (`exports.rpf:api()`, the
   `rpf` global on Gmod), and the public Lua API behind them, whose majors
