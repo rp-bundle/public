@@ -83,11 +83,20 @@ local declared = {}
 local connection = nil
 ---@type rpf.ServerPlatform?
 local platform = nil
+---Applies a checked registration; defined beside `register`.
+---@type fun(checked: table, handlers: rpf.addons.Handlers?): boolean?, table?
+local apply
+
 ---Whether an evaluation is running, and whether another was asked for
 ---while it ran (a handler registering an addon), with a retry or not.
 local evaluating = false
 ---@type boolean?
 local pending_retry = nil
+---Registrations made while an evaluation ran (by a handler), applied once
+---it ends, in order, so none replaces an addon whose old registration is
+---still being stopped or started.
+---@type { manifest: table, handlers: rpf.addons.Handlers? }[]
+local deferred = {}
 
 ---Logs through the platform, when there is one.
 ---@param level string The level.
@@ -255,13 +264,21 @@ function addons.evaluate(retry)
   evaluating = true
   local ok, err = pcall(addons.evaluate_once, retry)
   local rounds = 0
-  while ok and pending_retry ~= nil and rounds <= rpf.manifest.MAX_ADDONS_PER_SERVER do
-    local again = pending_retry
-    pending_retry = nil
+  while ok and (pending_retry ~= nil or #deferred > 0) and rounds <= 4 * rpf.manifest.MAX_ADDONS_PER_SERVER do
     rounds = rounds + 1
-    ok, err = pcall(addons.evaluate_once, again)
+    if pending_retry ~= nil then
+      local again = pending_retry
+      pending_retry = nil
+      ok, err = pcall(addons.evaluate_once, again)
+    else
+      -- Applied outside the evaluation, which runs its own.
+      local registration = table.remove(deferred, 1)
+      evaluating = false
+      ok, err = pcall(apply, registration.manifest, registration.handlers)
+      evaluating = true
+    end
   end
-  evaluating, pending_retry = false, nil
+  evaluating, pending_retry, deferred = false, nil, {}
   if not ok then
     error(err, 0)
   end
@@ -362,7 +379,10 @@ end
 ---Registering the same namespace again replaces the manifest and the
 ---handlers; an addon that was running is stopped first if the manifest
 ---changed. Nothing throws: a manifest the shared rules refuse, or one more
----addon than a server may install, is refused with why.
+---addon than a server may install, is refused with why. A registration a
+---handler makes while the core is starting or stopping addons is applied
+---once that ends, so it never replaces an addon mid-change; one past the
+---addon limit is then refused in the log.
 ---@param manifest table The manifest, as the addon wrote it.
 ---@param handlers rpf.addons.Handlers? What to run for it.
 ---@return boolean? ok True once registered.
@@ -374,6 +394,20 @@ function addons.register(manifest, handlers)
     log("error", "an addon's manifest was refused: " .. tostring(refusal.error) .. " at " .. tostring(refusal.path))
     return nil, refusal
   end
+  if evaluating then
+    deferred[#deferred + 1] = { manifest = checked, handlers = handlers }
+    return true, nil
+  end
+  return apply(checked, handlers)
+end
+
+---Applies a registration whose manifest was checked: what `register` does
+---once no evaluation is running.
+---@param checked table The manifest, as `rpf.manifest.check` returned it.
+---@param handlers rpf.addons.Handlers? What to run for it.
+---@return boolean? ok True once registered.
+---@return table? refusal `{ error = "too_many", path = "" }` past the addon limit.
+apply = function(checked, handlers)
   local namespace = checked.namespace
   local previous = loaded[namespace]
   if not previous and #names() >= rpf.manifest.MAX_ADDONS_PER_SERVER then

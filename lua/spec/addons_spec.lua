@@ -283,6 +283,23 @@ describe("rpf.addons", function()
       assert.are.equal("active", (rpf.addons.state("acme_late")))
     end)
 
+    it("replaces an active addon a start handler registers again only once its old registration stopped", function()
+      local ran = {}
+      rpf.addons.register(manifest("acme_base"), recording("acme_base", ran))
+      rpf.addons.register(manifest("acme_kit"), {
+        start = function()
+          ran[#ran + 1] = "start acme_kit"
+          rpf.addons.register(manifest("acme_base", "1.1.0"), recording("acme_base new", ran))
+        end,
+      })
+      support.connected(p)
+      configure(p, { installed(manifest("acme_base")), installed(manifest("acme_kit")) })
+      -- The old registration started and stopped; the new one never ran,
+      -- being a release the portal did not install.
+      assert.are.same({ "start acme_base", "start acme_kit", "stop acme_base" }, ran)
+      assert.are.equal("mismatch", (rpf.addons.state("acme_base")))
+    end)
+
     it("lets a start handler read its config records", function()
       local seen = nil
       rpf.addons.register(manifest("acme_kit"), {

@@ -168,7 +168,7 @@ describe("rpf.events", function()
     end)
   end)
 
-  for _, name in ipairs({ "players.active", "config.changed", "auth.succeeded", "staff.changed", "rpf.anything" }) do
+  for _, name in ipairs({ "players.active", "config.changed", "auth.succeeded", "staff.changed", "addons.state", "rpf.anything" }) do
     it("refuses a script emitting the core's " .. name, function()
       local fired = false
       events.on(name, function()
