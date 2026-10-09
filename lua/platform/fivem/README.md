@@ -208,7 +208,9 @@ point the convars at a portal with a server and an API key, and add
   (FXServer logs hitch warnings), so run it on a server nobody is playing on.
   A run that has no answer in 60 seconds is given up.
 - `rpf_dev_status` prints the connection's state and the players the core
-  knows, with their lifecycle state.
+  knows, with their lifecycle state and the identifiers FiveM reports for
+  them (an `ip:` without its address), to compare with what the portal
+  stored.
 
 Run for #186 on FXServer 35245 under OneSync, against a local portal:
 

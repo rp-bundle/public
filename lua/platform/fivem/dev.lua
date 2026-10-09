@@ -17,7 +17,8 @@
 ---   benchmark (`ws-shim/bench/`) under FXServer's own Lua, JS and
 ---   marshalling rather than emulated ones.
 --- - `rpf_dev_status` prints the connection's state and the players the core
----   knows.
+---   knows, each with the identifiers FiveM reports for them, to compare with
+---   what the portal stored for a join.
 ---@class rpf.fivem.dev
 local dev = {}
 
@@ -177,11 +178,29 @@ function dev.bench(url, frames, bytes)
   end)
 end
 
+---A player's identifiers as FiveM reports them, in its order, for the
+---smoke test to compare with what the portal stored: the account `license:`
+---and the allowlisted kinds verbatim, and no `ip:`. An `ip:` identifier is
+---shown without its address, which the core never sends and the console
+---need not keep.
+---@param handle integer The player's server id.
+---@return string identifiers One line, space-separated.
+function dev.identifiers(handle)
+  local out = {}
+  for _, identifier in ipairs(GetPlayerIdentifiers(tostring(handle)) or {}) do
+    if type(identifier) == "string" then
+      out[#out + 1] = identifier:match("^ip:") and "ip:<not sent>" or identifier
+    end
+  end
+  return table.concat(out, " ")
+end
+
 ---Prints the connection's state and every player the core knows.
 function dev.status()
   print("rpf: connection " .. tostring(core.connection and core.connection.state))
   for _, view in ipairs(core.players.list()) do
     print("rpf: player " .. tostring(view.handle) .. " " .. view.state .. " " .. tostring(view.player_id))
+    print("rpf:   identifiers " .. dev.identifiers(view.handle))
   end
 end
 
