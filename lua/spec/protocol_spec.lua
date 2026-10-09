@@ -285,6 +285,40 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
     assert.is_nil(protocol.decode("portal_to_server", assert(json.encode(kick))))
   end)
 
+  -- `config_changes.json` in the corpus holds one sample of every
+  -- `ConfigChange` (E6), which `crates/rpf-protocol/tests/protocol.rs` checks
+  -- against the Rust type. The core only ever encodes one, and a change it
+  -- encodes in another shape is one the portal refuses.
+  it("encodes every config change in the corpus inside a config_changed exactly as the portal reads it", function()
+    local changes = assert(json.decode(support.read(support.corpus("config_changes.json"))))
+    local seen = {}
+    for _, change in ipairs(changes) do
+      local frame = assert(json.decode(corpus("server_to_portal").config_changed))
+      frame.changes = json.array({ change })
+      local wire = assert(json.encode(change))
+      local decoded = assert(protocol.decode("server_to_portal", assert(json.encode(frame))), wire)
+      local encoded = json.decode(assert(protocol.encode("server_to_portal", decoded)))
+      assert.are.equal(wire, assert(json.encode(encoded.changes[1])))
+      seen[change.change] = true
+    end
+    assert.is_true(seen.setting)
+    assert.is_true(seen.delete_job)
+    assert.are.equal(16, #changes)
+
+    -- An unknown kind of change, and a set setting with no value, are refused.
+    local unknown = assert(json.decode(corpus("server_to_portal").config_changed))
+    unknown.changes[1] = json.object({ change = "delete_guild" })
+    assert.is_nil(protocol.decode("server_to_portal", assert(json.encode(unknown))))
+    assert.is_nil(protocol.encode("server_to_portal", {
+      id = "00000005-0000-4000-8000-000000000005",
+      sent_at = "2026-01-01T00:00:00Z",
+      type = "config_changed",
+      player_id = "00000002-0000-4000-8000-000000000002",
+      base_version = 7,
+      changes = { { change = "setting", key = "server.welcome_message", value = { state = "set" } } },
+    }))
+  end)
+
   it("decodes every gender the portal can send", function()
     local raw = corpus("portal_to_server").character_created
     for _, gender in ipairs({ '"male"', '"female"', '{"server_specific":"Nonbinary"}' }) do
@@ -342,6 +376,7 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
         declare_holds = "reply",
         link_player = "reply",
         staff_action = "ack",
+        config_changed = "reply",
         ack = "nothing",
       },
       portal_to_server = {
@@ -356,6 +391,8 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
         state_applied = "ack",
         resync_required = "ack",
         player_linked = "ack",
+        config_change_applied = "ack",
+        config_change_discarded = "ack",
         staff_permissions = "ack",
         restarting = "nothing",
         ack = "nothing",

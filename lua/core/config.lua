@@ -62,9 +62,24 @@
 ---the setting (`economy.default_job`) still names it, and applying the
 ---snapshot logs that, so the server's console says why new characters get
 ---no job.
+---
+---**Linked staff change config in game (E6) through `edit`**, never by
+---changing what is held here: the change goes to the portal, which applies
+---it only if the version it names is still this server's, and the result
+---comes back the way every config does, in a `config` request. So this
+---module stays the portal's snapshot and nothing else, and an edit the
+---portal discarded (because the config moved on first, or while the edit
+---waited out an outage) never shows here at all. The staff member is told
+---either way, and `config.edit_applied`, `config.edit_discarded` or
+---`config.edit_refused` is announced.
 ---@class rpf.config
 ---@field KEY string The storage key. Namespaced, because the store is shared with whatever else the engine persists.
 ---@field SECTIONS table<string, rpf.config.Section> How each known section is indexed.
+---@field MAX_CHANGES integer The most changes one `edit` carries. Mirrors `limits::MAX_CONFIG_CHANGES`.
+---@field EDIT_FLAGS table<string, string[]> For each kind of change, the permissions of which a staff member must hold one for `edit` to send it. The portal checks the exact one again.
+---@field EDIT_APPLIED string What a staff member is told when the portal applied their edit, with `%d` for the new version.
+---@field EDIT_DISCARDED string What a staff member is told when the portal discarded their edit because the config had moved on.
+---@field EDIT_UNAVAILABLE string What a staff member is told when their edit got no answer from the portal at all.
 local config = {}
 
 local rpf = rpf
@@ -72,6 +87,35 @@ local json = rpf.json
 local events = rpf.events
 
 config.KEY = "rpf.config.applied"
+config.MAX_CHANGES = 16
+config.EDIT_APPLIED = "Config change saved. The server moves to config version %d."
+config.EDIT_DISCARDED =
+  "The config changed before your change reached the portal, so it was not applied. Look at the config again and redo it."
+config.EDIT_UNAVAILABLE = "Your config change could not reach the portal. Try again in a moment."
+
+local SETTINGS_FLAGS = { "config.settings.edit", "config.accounts.edit" }
+local ITEMS_FLAGS = { "config.items.edit" }
+local JOBS_FLAGS = { "config.jobs.edit" }
+
+config.EDIT_FLAGS = {
+  -- Which of the two a setting needs is the portal's (`SettingDef::permission`).
+  setting = SETTINGS_FLAGS,
+  create_item_base = ITEMS_FLAGS,
+  update_item_base = ITEMS_FLAGS,
+  delete_item_base = ITEMS_FLAGS,
+  create_item = ITEMS_FLAGS,
+  update_item = ITEMS_FLAGS,
+  delete_item = ITEMS_FLAGS,
+  create_employer = JOBS_FLAGS,
+  update_employer = JOBS_FLAGS,
+  delete_employer = JOBS_FLAGS,
+  create_department = JOBS_FLAGS,
+  update_department = JOBS_FLAGS,
+  delete_department = JOBS_FLAGS,
+  create_job = JOBS_FLAGS,
+  update_job = JOBS_FLAGS,
+  delete_job = JOBS_FLAGS,
+}
 
 ---How one snapshot section is indexed for lookups.
 ---@class rpf.config.Section
@@ -111,6 +155,12 @@ end
 
 ---@type rpf.config.Current
 local current = { index = {} }
+
+---The platform and connection `serve` was given, which `edit` sends through.
+---@type rpf.ServerPlatform?
+local platform_in_use = nil
+---@type rpf.Client?
+local connection = nil
 
 local copy = json.copy
 
@@ -399,9 +449,10 @@ end
 ---what the portal is told, so staff never see a version as live here that
 ---this server did not take.
 ---@param platform rpf.ServerPlatform The platform the config is stored through.
----@param connection rpf.Client The connection to the portal.
-function config.serve(platform, connection)
-  connection:handle("config", function(frame, reply)
+---@param c rpf.Client The connection to the portal, which `edit` sends through too.
+function config.serve(platform, c)
+  platform_in_use, connection = platform, c
+  c:handle("config", function(frame, reply)
     local applied, err = config.apply(platform, frame.version, frame.hash, frame.snapshot)
     if applied then
       reply("config_applied", { outcome = { outcome = "applied" } })
@@ -415,6 +466,159 @@ end
 ---@return number? version The version, or nil before any config.
 function config.version()
   return current.version
+end
+
+---A player who may make an edit: logged in here and not leaving. Read from
+---`rpf.players` when called, since that module loads after this one.
+---@param handle any The engine's handle.
+---@return rpf.PlayerView? player A copy, or nil.
+local function editor(handle)
+  local players = rpf.players
+  local player = handle ~= nil and players and players.get(handle) or nil
+  if not player or player.player_id == nil or player.state == "dropping" then
+    return nil
+  end
+  return player
+end
+
+---Whether a player holds one of the permissions that may make a change of
+---this kind.
+---@param handle any The engine's handle.
+---@param flags string[] The permissions.
+---@return boolean allowed True if the last push gave them any.
+local function holds_any(handle, flags)
+  local staff = rpf.staff
+  for _, flag in ipairs(flags) do
+    if staff and staff.can(handle, flag) then
+      return true
+    end
+  end
+  return false
+end
+
+---Tells the staff member how their edit went and announces it. The player is
+---looked up again by account, since they may have left while the portal
+---answered; one who is not here is told nothing, and the portal has recorded
+---a discarded edit for staff whether they are or not.
+---@param player_id string The staff member's player account.
+---@param reply rpf.Frame? The portal's answer.
+---@param failure string? Why there was none: `expired`, `outbox_full`, `outbox_unavailable`.
+local function edit_answered(player_id, reply, failure)
+  local players = rpf.players
+  local player = players and players.by_player_id(player_id) or nil
+  if player and player.state == "dropping" then
+    player = nil
+  end
+  local p = platform_in_use
+  ---Tells the staff member, if they are still here.
+  ---@param text string The message.
+  local function tell(text)
+    if p and player then
+      p.notify(player.handle, text)
+    end
+  end
+  if reply and reply.type == "config_change_applied" then
+    tell(string.format(config.EDIT_APPLIED, reply.version))
+    events.emit("config.edit_applied", { player_id = player_id, version = reply.version })
+    return
+  end
+  if reply and reply.type == "config_change_discarded" then
+    if p then
+      p.log("warn", "rpf: the portal discarded a config edit by player " .. player_id .. ": the config had moved on to version " .. reply.version)
+    end
+    tell(config.EDIT_DISCARDED)
+    events.emit("config.edit_discarded", { player_id = player_id, version = reply.version })
+    return
+  end
+  local code, reason
+  if reply and reply.type == "rejected" then
+    -- The portal writes the reason for the staff member.
+    code, reason = reply.code, reply.reason
+  else
+    code, reason = failure or (reply and reply.type) or "unanswered", config.EDIT_UNAVAILABLE
+  end
+  if p then
+    p.log("warn", "rpf: a config edit by player " .. player_id .. " was not applied (" .. code .. "): " .. reason)
+  end
+  tell(reason)
+  events.emit("config.edit_refused", { player_id = player_id, code = code, reason = reason })
+end
+
+---Changes this server's config on behalf of a linked staff member in game
+---(E6): what a server's config menu or command calls once the staff member
+---confirms.
+---
+---`base_version` is the config version the staff member was looking at when
+---they made the change (`version()` when the menu opened, not when they
+---confirmed). The portal applies the changes only if that is still the
+---server's version, all or none; if anything moved it in between, it applies
+---nothing, records the edit as discarded for staff on the portal, and the
+---staff member is told to redo it on the config as it is now. Nothing here
+---changes until the portal pushes the new config, so a menu re-reads after
+---`config.changed`.
+---
+---Sent only for a logged-in player holding a permission that may make each
+---kind of change (`EDIT_FLAGS`). The portal checks the exact permission, and
+---every value, as its own pages do, and refuses the whole edit otherwise.
+---The outcome comes later: the staff member is told, and
+---`config.edit_applied`, `config.edit_discarded` or `config.edit_refused` is
+---announced. While the portal is unreachable the edit waits in the outbox,
+---and is answered by the same rule when it arrives.
+---@param handle any The engine's handle of the staff member.
+---@param base_version any The config version the change was made against, a whole number.
+---@param changes any The changes, from 1 to `MAX_CHANGES`, each a table shaped as the portal's `ConfigChange` (`{ change = "setting", key = …, value = { state = "set", value = … } }`).
+---@return boolean sent True once it is on its way.
+---@return rpf.ConfigEditRefusal? err Why not.
+function config.edit(handle, base_version, changes)
+  local player = editor(handle)
+  local c = connection
+  if not player or not c then
+    return false, "not_logged_in"
+  end
+  if not is_whole(base_version) or base_version < 0 then
+    return false, "invalid_version"
+  end
+  if type(changes) ~= "table" or #changes < 1 or #changes > config.MAX_CHANGES then
+    return false, "invalid_changes"
+  end
+  local count = 0
+  for _ in pairs(changes) do
+    count = count + 1
+  end
+  if count ~= #changes then
+    return false, "invalid_changes"
+  end
+  for _, change in ipairs(changes) do
+    local flags = type(change) == "table" and config.EDIT_FLAGS[change.change] or nil
+    if not flags then
+      return false, "invalid_changes"
+    end
+    if not holds_any(handle, flags) then
+      return false, "forbidden"
+    end
+  end
+  local player_id = player.player_id --[[@as string]]
+  local fields = { player_id = player_id, base_version = base_version, changes = changes }
+  -- Checked as the connection will encode it, so a change of the wrong shape
+  -- is the caller's refusal here rather than an error from `send`.
+  local _, shape_err = rpf.protocol.encode(rpf.protocol.SERVER_TO_PORTAL, {
+    id = "00000000-0000-4000-8000-000000000000",
+    sent_at = "1970-01-01T00:00:00Z",
+    type = "config_changed",
+    player_id = player_id,
+    base_version = base_version,
+    changes = changes,
+  })
+  if shape_err then
+    return false, "invalid_changes"
+  end
+  local id, err = c:send("config_changed", fields, function(reply, failure)
+    edit_answered(player_id, reply, failure)
+  end)
+  if not id then
+    return false, err --[[@as rpf.ConfigEditRefusal]]
+  end
+  return true, nil
 end
 
 ---Looks one entry up in an indexed section.

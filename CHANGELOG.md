@@ -19,15 +19,29 @@ one-way door, a new environment variable. How to cut a release is in
 **Protocol:** speaks protocol 2, and serves protocols 1 and 2. Protocol 2
 adds the `restarting` notice (below), a character's job (D7), in-game
 staff (F9: `link_player`, `staff_action`, `player_linked` and
-`staff_permissions`) and the `suspended` reject code (H5); a game server on
+`staff_permissions`), the `suspended` reject code (H5) and in-game config
+editing (E6: `config_changed`, `config_change_applied` and
+`config_change_discarded`); a game server on
 protocol 1 is served unchanged, and is simply closed where a protocol 2 one
 is told first, is never sent `staff_permissions`, and is refused
-`forbidden` where a protocol 2 one is refused `suspended`. A protocol 1
+`forbidden` where a protocol 2 one is refused `suspended`. A message newer
+than a connection's protocol is refused `malformed` at the socket. A protocol 1
 core ignores a held character's `job`, and its reports, which carry none,
 keep the job the portal has.
 
 ### Added
 
+- In-game config editing (E6, #48). A linked staff member changes their
+  server's settings, items, item bases, employers, departments and jobs in
+  game with `rpf.api.config.edit(handle, base_version, changes)`, with the
+  flags the portal's config pages need, checked by the portal when the edit
+  arrives. The portal applies an edit only on the config version it was made
+  against, through the same checks as its pages, and pushes the result back
+  as config; one made against a version that has since moved (a portal edit
+  landed first, or the portal moved on while it waited out an outage) is
+  applied in no part, the staff member is told to redo it, and the server's
+  settings page lists it under "Discarded in-game changes". Audited with the
+  server and the player as the actor and the staff account linked.
 - The platform operator (H5, #54). Platform admins, made only with
   `rpf-portal platform-admin grant <account>` and separate from every guild
   role, get a console at `/platform` to suspend a guild (its game servers

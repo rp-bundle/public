@@ -205,9 +205,10 @@ end
 
 ---A field the portal leaves out when it has no value, rather than sending
 ---null: decoded as nil whether absent or null, and left out when encoding
----nil. Only a character's `job` (D7) is one. It is the portal's
----`skip_serializing_if`, there so that frames recorded before the field
----existed still re-encode exactly; every other field must be present.
+---nil. A character's `job` (D7) is one, there so that frames recorded before
+---the field existed still re-encode exactly; the unset fields of a definition
+---in an in-game config change (E6) are the others, left out exactly as the
+---portal's own definitions leave them out. Every other field must be present.
 ---@param inner rpf.protocol.Type The type when present and not null.
 ---@return rpf.protocol.Type type The type.
 local function optional(inner)
@@ -486,6 +487,130 @@ local OUTCOME = tagged("outcome", {
   unknown = { { "reason", STRING } },
 })
 
+-- In-game config changes (E6) ----------------------------------------------
+
+---A setting's value, whatever its setting holds (a number, text, an array of
+---starting accounts, a job), passed through as it is: the portal checks it
+---against the setting, as it checks a value typed on its settings page.
+local SETTING_VALUE = same_both_ways(function(value, path)
+  if value == nil or value == json.null then
+    fail(path, "missing")
+  end
+  return value
+end)
+
+---Checks an `Inheritable` state's name.
+---@param value table The object.
+---@param path string Where it is.
+---@return "set"|"null"|"inherit" state The state.
+local function inheritable_state(value, path)
+  local state = value.state
+  check_string(state, path .. ".state")
+  if state ~= "set" and state ~= "null" and state ~= "inherit" then
+    fail(path .. ".state", "unknown value " .. state)
+  end
+  return state
+end
+
+---`Inheritable`: a server's own state for a setting, adjacently tagged as
+---the portal writes it: `{ state = "set", value = … }` to override,
+---`{ state = "null" }` to clear, `{ state = "inherit" }` to take the
+---parent's. Only `set` carries a value.
+local INHERITABLE = {
+  decode = function(value, path)
+    if not json.is_object(value) then
+      fail(path, "expected an object")
+    end
+    local state = inheritable_state(value, path)
+    if state == "set" then
+      return { state = state, value = SETTING_VALUE.decode(value.value, path .. ".value") }
+    end
+    return { state = state }
+  end,
+  encode = function(value, path)
+    if type(value) ~= "table" then
+      fail(path, "expected an object")
+    end
+    local state = inheritable_state(value, path)
+    if state == "set" then
+      return json.object({ state = state, value = SETTING_VALUE.encode(value.value, path .. ".value") })
+    end
+    return json.object({ state = state })
+  end,
+}
+
+---`ItemBase`: an item base as staff define it (E3). A field it leaves to
+---the items and the defaults is left out.
+local ITEM_BASE = object({
+  { "slug", STRING },
+  { "name", STRING },
+  { "weight", optional(I32) },
+  { "size", optional(IVECTOR) },
+  { "stack_limit", optional(U32) },
+})
+
+---`ItemSpec`: an item as staff define it (E3), before its base and the
+---defaults fill what it leaves out.
+local ITEM_SPEC = object({
+  { "slug", STRING },
+  { "name", STRING },
+  { "base", optional(STRING) },
+  { "weight", optional(I32) },
+  { "size", optional(IVECTOR) },
+  { "stack_limit", optional(U32) },
+})
+
+---`EmployerDef`: a server-run employer (E4); its payroll (D7) names one of
+---the server's paying accounts.
+local EMPLOYER_DEF = object({
+  { "slug", STRING },
+  { "name", STRING },
+  { "description", optional(STRING) },
+  { "payroll", optional(STRING) },
+})
+
+---`DepartmentDef`: a department of a server-run employer (E4).
+local DEPARTMENT_DEF = object({
+  { "employer", STRING },
+  { "slug", STRING },
+  { "name", STRING },
+  { "description", optional(STRING) },
+})
+
+---`JobDef`: a job at a server-run employer (E4), with its rank and salary
+---(D7).
+local JOB_DEF = object({
+  { "employer", STRING },
+  { "slug", STRING },
+  { "name", STRING },
+  { "department", optional(STRING) },
+  { "description", optional(STRING) },
+  { "rank", optional(U32) },
+  { "salary", optional(integer(1, protocol.MAX_AMOUNT)) },
+})
+
+---`ConfigChange`: one change to this server's own config, exactly as one of
+---the portal's config forms submits it, tagged by `change`. The portal checks
+---each as its own form would, so this only holds them to their shape.
+local CONFIG_CHANGE = tagged("change", {
+  setting = { { "key", STRING }, { "value", INHERITABLE } },
+  create_item_base = { { "base", ITEM_BASE } },
+  update_item_base = { { "base", ITEM_BASE } },
+  delete_item_base = { { "slug", STRING } },
+  create_item = { { "item", ITEM_SPEC } },
+  update_item = { { "item", ITEM_SPEC } },
+  delete_item = { { "slug", STRING } },
+  create_employer = { { "employer", EMPLOYER_DEF } },
+  update_employer = { { "employer", EMPLOYER_DEF } },
+  delete_employer = { { "slug", STRING } },
+  create_department = { { "department", DEPARTMENT_DEF } },
+  update_department = { { "department", DEPARTMENT_DEF } },
+  delete_department = { { "employer", STRING }, { "slug", STRING } },
+  create_job = { { "job", JOB_DEF } },
+  update_job = { { "job", JOB_DEF } },
+  delete_job = { { "employer", STRING }, { "slug", STRING } },
+})
+
 -- Records (C7) ------------------------------------------------------------
 
 local RECORD_KIND = enum({ "character", "account", "container" })
@@ -727,6 +852,13 @@ protocol.messages = {
       { "action", STRING },
       { "target_player_id", nullable(UUID) },
     }),
+    -- Not reissuable: a change sent again under a fresh id would be a second
+    -- change, against a version that has moved since (E6).
+    config_changed = message("reply", false, {
+      { "player_id", UUID },
+      { "base_version", U64 },
+      { "changes", array_of(CONFIG_CHANGE) },
+    }),
     ack = message("nothing", false, {
       { "re", UUID },
     }),
@@ -781,6 +913,16 @@ protocol.messages = {
     player_linked = message("ack", false, {
       { "re", UUID },
       { "staff_name", STRING },
+    }),
+    -- The answers to a `config_changed` (E6): applied, with the version it
+    -- made, or discarded because the version had moved past the one it named.
+    config_change_applied = message("ack", false, {
+      { "re", UUID },
+      { "version", U64 },
+    }),
+    config_change_discarded = message("ack", false, {
+      { "re", UUID },
+      { "version", U64 },
     }),
     -- A notice: the whole list of linked staff on this server's online list,
     -- which `rpf.staff` replaces its grants with (F9).

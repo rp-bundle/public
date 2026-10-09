@@ -1,0 +1,17 @@
+{
+  "id": "00000005-0000-4000-8000-000000000005",
+  "sent_at": "2026-01-01T00:00:00Z",
+  "type": "config_changed",
+  "player_id": "00000002-0000-4000-8000-000000000002",
+  "base_version": 7,
+  "changes": [
+    {
+      "change": "setting",
+      "key": "characters.max_per_player",
+      "value": {
+        "state": "set",
+        "value": 4
+      }
+    }
+  ]
+}
