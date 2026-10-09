@@ -65,6 +65,8 @@ addons.STATES = {
 ---@field handlers rpf.addons.Handlers What to run for it.
 ---@field state string Its state, one of `addons.STATES`.
 ---@field reason string? Why it is in that state, for the log and its handler.
+---@field starting boolean? True while its `start` handler runs, which may read its config records.
+---@field replaced boolean? True while a new registration takes its place, so it and its dependents stop in order first.
 
 ---A state change, as `addons.state` emits it.
 ---@class rpf.addons.StateChange
@@ -153,6 +155,9 @@ end
 ---@return string? reason Why.
 local function own_state(namespace, addon)
   local manifest = addon.manifest
+  if addon.replaced then
+    return "not_installed", "the addon registered another manifest"
+  end
   if not addons.API_MAJORS[manifest.api] then
     return "api", "it is written for addon API " .. tostring(manifest.api) .. ", which this core does not serve"
   end
@@ -298,10 +303,16 @@ function addons.evaluate(retry)
       end
       if blocked then
         move(namespace, "requires", "it requires " .. blocked .. ", which is not active here")
-      elseif call(namespace, "start") then
-        move(namespace, "active", nil)
       else
-        move(namespace, "failed", "its start handler failed")
+        local addon = loaded[namespace]
+        addon.starting = true
+        local started = call(namespace, "start")
+        addon.starting = nil
+        if started then
+          move(namespace, "active", nil)
+        else
+          move(namespace, "failed", "its start handler failed")
+        end
       end
     end
   end
@@ -332,11 +343,11 @@ function addons.register(manifest, handlers)
     return nil, { error = "too_many", path = "" }
   end
   if previous and not addons.same(previous.manifest, checked) then
-    -- Another release under the same name: what ran was the old one.
-    if previous.state == "active" then
-      call(namespace, "stop", "the addon registered another manifest")
-    end
-    previous.state = "not_installed"
+    -- Another release under the same name: what ran was the old one, and
+    -- it stops as any addon does, after whatever requires it.
+    previous.replaced = true
+    addons.evaluate(false)
+    previous.replaced = nil
     declared[namespace] = nil
   end
   loaded[namespace] = {
@@ -386,12 +397,14 @@ function addons.definition(type_name)
 end
 
 ---The records of a `config` type, as the config carries them, while their
----addon is active: staff write them, and this server only reads them.
+---addon is active or its `start` handler runs: staff write them, and this
+---server only reads them.
 ---@param type_name string The type's full name.
 ---@return table[] records Copies, each `{ id, type, revision, fields }`, in id order; empty if the addon is not active here.
 function addons.config_records(type_name)
   local namespace = string.match(type_name, "^([^.]+)%.")
-  if not namespace or addons.state(namespace) ~= "active" then
+  local addon = namespace and loaded[namespace]
+  if not addon or (addon.state ~= "active" and not addon.starting) then
     return {}
   end
   local installed = rpf.config.addon(namespace)

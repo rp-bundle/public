@@ -260,6 +260,33 @@ describe("rpf.addons", function()
       assert.are.equal("failed", (rpf.addons.state("acme_bad")))
     end)
 
+    it("lets a start handler read its config records", function()
+      local seen = nil
+      rpf.addons.register(manifest("acme_kit"), {
+        start = function()
+          seen = #rpf.addons.config_records("acme_kit.thing")
+        end,
+      })
+      support.connected(p)
+      configure(p, { installed(manifest("acme_kit")) })
+      assert.are.equal(1, seen)
+    end)
+
+    it("stops what requires an addon before the addon, when it registers another manifest", function()
+      local ran = {}
+      rpf.addons.register(manifest("acme_zoo", nil, { acme_base = "^1.0.0" }), recording("acme_zoo", ran))
+      rpf.addons.register(manifest("acme_base"), recording("acme_base", ran))
+      support.connected(p)
+      configure(p, {
+        installed(manifest("acme_base")),
+        installed(manifest("acme_zoo", nil, { acme_base = "^1.0.0" })),
+      })
+      rpf.addons.register(manifest("acme_base", "1.1.0"), recording("acme_base", ran))
+      assert.are.same({ "start acme_base", "start acme_zoo", "stop acme_zoo", "stop acme_base" }, ran)
+      assert.are.equal("mismatch", (rpf.addons.state("acme_base")))
+      assert.are.equal("requires", (rpf.addons.state("acme_zoo")))
+    end)
+
     it("gives an active addon's types and config records, and nothing while it is not", function()
       rpf.addons.register(manifest("acme_kit"))
       support.connected(p)
