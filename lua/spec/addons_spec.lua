@@ -203,6 +203,14 @@ describe("rpf.addons", function()
       assert.are.same({ "not_installed", "pending", "active", "disabled", "mismatch", "pending" }, heard)
     end)
 
+    it("tells an empty array from an empty object, as the portal's hash does", function()
+      local json = rpf.json
+      assert.is_false(rpf.addons.same(json.array({}), json.object({})))
+      assert.is_true(rpf.addons.same(json.array({}), json.array({})))
+      assert.is_true(rpf.addons.same({ a = json.object({}) }, { a = json.object({}) }))
+      assert.is_false(rpf.addons.same({ a = json.array({}) }, { a = json.object({}) }))
+    end)
+
     it("reads a whole double the portal sends back as the integer the addon wrote", function()
       rpf.addons.register(manifest("acme_kit"))
       support.connected(p)

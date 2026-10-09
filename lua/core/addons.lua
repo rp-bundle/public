@@ -114,6 +114,14 @@ function addons.same(a, b)
   if a == json.null or b == json.null then
     return a == b
   end
+  -- An empty array and an empty object encode differently, and so hash
+  -- differently: two tables that both carry a mark must carry the same one.
+  local marked = function(t)
+    return json.is_array(t) or json.is_object(t)
+  end
+  if marked(a) and marked(b) and json.is_array(a) ~= json.is_array(b) then
+    return false
+  end
   for key, value in pairs(a) do
     if not addons.same(value, b[key]) then
       return false
