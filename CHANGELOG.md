@@ -47,8 +47,11 @@ keep the job the portal has.
   the server for good. Every portal path that writes or holds a record of
   an external domain refuses it, whether or not the game server is
   connected, and a game server is told so with the new reject code
-  `domain_external` (part 2). The core's own refusals and the portal's pages
-  follow in later parts; until then, do not run a server as a companion.
+  `domain_external` (part 2). The core refuses too: RPF's own character,
+  money, inventory and job modules answer `domain_external` there, the
+  facade `unavailable`, and on a companion server without its bridge (K2)
+  no player gets past `registered`, with one log line saying why (part 3).
+  The portal's pages follow.
 - Release docs (H7, #56). Every release publishes its own docs site on
   GitHub Pages, from its tag: installing, upgrading from the release before
   (`docs/upgrading.md`, which a tag now requires), compatibility, the

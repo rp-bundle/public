@@ -156,6 +156,7 @@ function rpf.start_server(platform, options)
   rpf.platform.check(platform, "server")
   rpf.events.bind(platform.log)
   rpf.instance_id = rpf.protocol.new_id(platform)
+  rpf.domains.start(platform)
   rpf.connection = rpf.client.new(platform, {
     url = options.url,
     api_key = options.api_key,

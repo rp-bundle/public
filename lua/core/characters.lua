@@ -101,6 +101,14 @@ local function log(level, message)
   end
 end
 
+---`"domain_external"` if this server's framework owns `domain` (K1), so
+---RPF keeps no record of it here and its own module refuses, or nil.
+---@param domain string One of `rpf.domains.NAMES`.
+---@return string? err The refusal.
+local function external(domain)
+  return rpf.domains.is_external(domain) and "domain_external" or nil
+end
+
 ---Whether a record's owner is the given one.
 ---@param data table The record's data.
 ---@param kind string The owner's kind.
@@ -130,7 +138,12 @@ end
 ---this is all of them once `characters.loaded` says so.
 ---@param player_id string The player.
 ---@return table[] characters Copies of each character.
+---@return string? err `"domain_external"` where the server's framework owns the domain (K1). The list is empty then.
 function characters.list(player_id)
+  local refused = external("characters")
+  if refused then
+    return {}, refused
+  end
   local out = {}
   for _, ref in ipairs(records.held()) do
     if ref.kind == "character" then
@@ -156,7 +169,12 @@ end
 ---complete.
 ---@param player_id string The player.
 ---@return boolean loaded True once their session records are held.
+---@return string? err `"domain_external"` where the server's framework owns the domain (K1).
 function characters.loaded(player_id)
+  local refused = external("characters")
+  if refused then
+    return false, refused
+  end
   local session = session_of(player_id)
   return session ~= nil and session.loaded
 end
@@ -164,7 +182,12 @@ end
 ---The character a player has in play, as a copy.
 ---@param player_id string The player.
 ---@return table? character A copy, or nil if they have none selected.
+---@return string? err `"domain_external"` where the server's framework owns the domain (K1).
 function characters.selected(player_id)
+  local refused = external("characters")
+  if refused then
+    return nil, refused
+  end
   local session = session_of(player_id)
   if not session or not session.selected then
     return nil
@@ -381,6 +404,9 @@ end
 ---@param err string? The refusal, or nil once the records are held.
 ---@param serial integer? The connection the hold was sent for.
 local function on_session(player_id, err, serial)
+  if external("characters") then
+    return
+  end
   local player = players.by_player_id(player_id)
   if not player or player.serial ~= serial then
     -- An answer for an earlier connection of theirs: what it held was
@@ -408,7 +434,10 @@ local function on_session(player_id, err, serial)
   session.stale = false
   local player = players.get(session.handle)
   if player and player.state == "registered" then
-    players.advance(session.handle, "character_select")
+    local moved, why = players.advance(session.handle, "character_select")
+    if not moved then
+      log("warn", "a player could not move on to choosing a character (" .. tostring(why) .. ")")
+    end
   end
   send_list(session)
 end
@@ -443,6 +472,10 @@ end
 ---@return boolean? ok True if they are choosing now.
 ---@return string? err `"not_ready"` before their characters are loaded, `"busy"` while a request of theirs is in flight.
 function characters.deselect(handle)
+  local refused = external("characters")
+  if refused then
+    return nil, refused
+  end
   local player = players.get(handle)
   local session = player and player.player_id and session_of(player.player_id)
   if not session or not session.loaded then
@@ -466,6 +499,10 @@ end
 ---@return boolean? ok True if the selection is under way (or already made).
 ---@return string? err `"not_ready"` before their characters are loaded, `"busy"` while a request of theirs is in flight, `"not_found"` for a character that is not theirs here.
 function characters.select(handle, id, callback)
+  local refused = external("characters")
+  if refused then
+    return nil, refused
+  end
   local player = players.get(handle)
   local session = player and player.player_id and session_of(player.player_id)
   if not session or not session.loaded then
@@ -548,6 +585,10 @@ end
 ---@return boolean? ok True if the request is under way.
 ---@return string? err `"not_ready"` before the characters are loaded, and while the list may be missing one (`stale`), so the limit is never checked against a short list; `"busy"`, `"invalid"` for a bad name or gender, `"limit"` at `max_per_player()`.
 function characters.create(handle, fields, callback)
+  local refused = external("characters")
+  if refused then
+    return nil, refused
+  end
   local player = players.get(handle)
   local session = player and player.player_id and session_of(player.player_id)
   if not session or not session.loaded or session.stale then
@@ -762,6 +803,10 @@ end
 ---@return boolean? ok True once it has been let go.
 ---@return string? err `"not_held"`, `"busy"`, `"backlog"`, or the release's refusal (`"outbox_full"`, `"too_large"`).
 function characters.remove(id)
+  local refused = external("characters")
+  if refused then
+    return nil, refused
+  end
   local character = records.get("character", id)
   if not character then
     return nil, "not_held"
@@ -806,6 +851,10 @@ end
 ---and they are listed when that lands.
 ---@param player rpf.PlayerView The player.
 local function on_registered(player)
+  if external("characters") then
+    -- The framework's bridge (K2) moves them on, never this module.
+    return
+  end
   ensure(player.player_id)
 end
 

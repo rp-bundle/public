@@ -21,6 +21,16 @@
 ---
 ---Before the first `Welcome` no profile is fixed: `current` is nil and no
 ---domain is external.
+---
+---**A companion server fails closed without its bridge.** RPF's own modules
+---refuse an external domain (`domain_external`), so on a companion server
+---the domains are the framework's, reached through a bridge (K2). Until a
+---bridge is accepted, one whose `provides` is exactly the set of external
+---domains, no player gets past `registered` (`may_play`, which
+---`rpf.players.advance` asks), and one log line says why: a server with
+---RPF's domains off and nothing in their place would let players into a
+---world nobody keeps. K2 registers the bridge, checks its contract, and
+---offers it here (`accept_bridge`).
 ---@class rpf.domains
 ---@field NAMES string[] The four domains, in the portal's order.
 ---@field NATIVE rpf.Domains The native profile, which a `Welcome` leaves out rather than names. Not to be changed: `fix` copies it.
@@ -44,6 +54,18 @@ domains.NATIVE = { characters = "rpf", money = "rpf", inventory = "rpf", jobs = 
 ---The profile this process fixed, once it has.
 ---@type rpf.Domains?
 local fixed = nil
+
+---The bridge offered for the external domains, once one is (K2).
+---@type { name: string, provides: table<string, true> }?
+local offered = nil
+
+---The platform log lines go through, once `domains.start` has run.
+---@type rpf.ServerPlatform?
+local platform = nil
+
+---Whether the line saying why players are held at `registered` has been
+---logged, so it is logged once rather than per player.
+local gate_logged = false
 
 ---A copy of a profile, holding only the four domains.
 ---@param profile rpf.Domains The profile.
@@ -113,6 +135,115 @@ function domains.fix(profile)
   return true
 end
 
+---The domains a profile leaves to the framework, as a set.
+---@param profile rpf.Domains The profile.
+---@return table<string, true> external The external domains.
+local function external_set(profile)
+  local out = {}
+  for _, name in ipairs(domains.NAMES) do
+    if profile[name] == "external" then
+      out[name] = true
+    end
+  end
+  return out
+end
+
+---A set of domain names, in `NAMES` order, for a log line.
+---@param set table<string, true> The set.
+---@return string names Comma-separated, or "none".
+local function names_of(set)
+  local out = {}
+  for _, name in ipairs(domains.NAMES) do
+    if set[name] then
+      out[#out + 1] = name
+    end
+  end
+  return #out > 0 and table.concat(out, ", ") or "none"
+end
+
+---Why the offered bridge does not fit the fixed profile, or nil if it does
+---or there is nothing to fit yet.
+---@return string? mismatch The reason, naming both sides.
+local function mismatch()
+  if not fixed then
+    return nil
+  end
+  local wanted = external_set(fixed)
+  if not offered then
+    if next(wanted) == nil then
+      return nil
+    end
+    return "this server runs the "
+      .. domains.kind(fixed)
+      .. " profile, whose "
+      .. names_of(wanted)
+      .. " are its framework's, and no bridge to that framework is registered"
+  end
+  for _, name in ipairs(domains.NAMES) do
+    if (wanted[name] == true) ~= (offered.provides[name] == true) then
+      return "the "
+        .. offered.name
+        .. " bridge provides "
+        .. names_of(offered.provides)
+        .. ", and this server's profile leaves "
+        .. names_of(wanted)
+        .. " to its framework"
+    end
+  end
+  return nil
+end
+
+---Offers the bridge for the server's external domains (K2 calls this once
+---it has checked the bridge's contract). It is accepted only if `provides`
+---is exactly the set of domains the profile marks external; checked again
+---when a profile is fixed, since a bridge registers when its resource
+---starts, before the portal is reached. At most one is offered.
+---@param name string The bridge's name, for the log.
+---@param provides string[] The domains its framework owns.
+---@return boolean ok False if one was offered already.
+---@return string? err Why not.
+function domains.accept_bridge(name, provides)
+  if offered then
+    return false, "a bridge is registered already: " .. offered.name
+  end
+  local set = {}
+  for _, domain in ipairs(provides) do
+    set[domain] = true
+  end
+  offered = { name = name, provides = set }
+  gate_logged = false
+  return true
+end
+
+---The accepted bridge's name: one is offered and fits the fixed profile.
+---@return string? name The bridge, or nil.
+function domains.bridge()
+  if offered and fixed and mismatch() == nil then
+    return offered.name
+  end
+  return nil
+end
+
+---Whether players may get past `registered`: always on a native server,
+---and on one whose framework owns any domain only once a bridge that fits
+---is accepted. Logs the reason once when they may not. Before a profile is
+---fixed nobody can be registered, so this answers yes.
+---@return boolean ok True if a player may move on.
+---@return string? err `"no_bridge"` if not.
+function domains.may_play()
+  local why = mismatch()
+  if not why then
+    return true
+  end
+  if not gate_logged then
+    gate_logged = true
+    if platform then
+      platform.log("error", "rpf.domains: " .. why .. ", so players stay at registered until a bridge that provides exactly those is")
+    end
+  end
+  return false, "no_bridge"
+end
+
 ---The profile this process runs: a copy, or nil before the first `Welcome`.
 ---@return rpf.Domains? profile The profile.
 function domains.current()
@@ -133,6 +264,18 @@ end
 ---@return boolean external True if the domain is external.
 function domains.is_external(name)
   return domains.authority(name) == "external"
+end
+
+---Binds the platform this module logs through, and checks the gate as each
+---player registers, so the reason they go no further is logged when it
+---first matters, whatever does or does not try to move them on. Called by
+---`rpf.start_server`.
+---@param p rpf.ServerPlatform The platform.
+function domains.start(p)
+  platform = p
+  rpf.events.on("players.registered", function()
+    domains.may_play()
+  end)
 end
 
 rpf.domains = domains

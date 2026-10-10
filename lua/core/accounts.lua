@@ -88,6 +88,14 @@ local function valid_amount(amount)
     and amount <= rpf.protocol.MAX_AMOUNT
 end
 
+---`"domain_external"` if this server's framework owns `domain` (K1), so
+---RPF keeps no record of it here and its own module refuses, or nil.
+---@param domain string One of `rpf.domains.NAMES`.
+---@return string? err The refusal.
+local function external(domain)
+  return rpf.domains.is_external(domain) and "domain_external" or nil
+end
+
 ---An account's balance as this server has it: the portal's fold when it was
 ---handed over, moved by every entry made here since. Always equal to
 ---`fold` over the account's ledger.
@@ -95,6 +103,10 @@ end
 ---@return number? balance The balance, a whole number within ±`protocol.MAX_AMOUNT`, or nil.
 ---@return string? err `"not_held"` when this server does not hold it.
 function accounts.balance(id)
+  local refused = external("money")
+  if refused then
+    return nil, refused
+  end
   local account = records.get("account", id)
   if not account then
     return nil, "not_held"
@@ -105,7 +117,12 @@ end
 ---A held account, as a copy: `id`, `owner`, `name`, `flags` and `balance`.
 ---@param id string The account's uuid.
 ---@return table? account A copy, or nil if this server does not hold it.
+---@return string? err `"domain_external"` where the server's framework owns the domain (K1).
 function accounts.get(id)
+  local refused = external("money")
+  if refused then
+    return nil, refused
+  end
   return records.get("account", id)
 end
 
@@ -116,7 +133,12 @@ end
 ---@param kind string The owner's kind: `"player"`, `"character"`, `"server"`, `"employer"`.
 ---@param id string The owner's uuid.
 ---@return table[] accounts Copies.
+---@return string? err `"domain_external"` where the server's framework owns the domain (K1). The list is empty then.
 function accounts.owned_by(kind, id)
+  local refused = external("money")
+  if refused then
+    return {}, refused
+  end
   local out = {}
   for _, ref in ipairs(records.held()) do
     if ref.kind == "account" then
@@ -173,6 +195,10 @@ end
 ---@return string? client_id The ledger entry's id, or nil if refused.
 ---@return string? err `"not_held"`, `"not_a_source"` for a paying account without `unlimited_balance` or not owned by the server or an employer, `"invalid"` or `"out_of_range"`. Nothing changes on an error.
 function accounts.pay(from, to, amount, description)
+  local refused = external("money")
+  if refused then
+    return nil, refused
+  end
   local source = records.get("account", from)
   if not source then
     return nil, "not_held"
@@ -196,6 +222,10 @@ end
 ---reached it is logged and asked for again at the next `Welcome` or config
 ---change; until then `pay` from that account is `not_held`.
 function accounts.hold_paying()
+  if external("money") then
+    -- No account is RPF's here, the paying ones included (K1).
+    return
+  end
   if not connection or connection.state ~= "ready" then
     return
   end
