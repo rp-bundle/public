@@ -49,6 +49,12 @@ local function tags(limit)
         authority = "config",
         fields = { label = { type = "string", required = true } },
       },
+      mark = {
+        schema = 1,
+        authority = "live",
+        owners = { "player" },
+        fields = { label = { type = "string" } },
+      },
     },
   }
 end
@@ -338,6 +344,66 @@ conformance.run(busted, "addon records", {
       end)
       assert.are.same({ nil, "inactive" }, got)
       assert.are.equal(0, #world.api.records.list("acme_tags.tag"))
+    end,
+  },
+  {
+    name = "lets the records an addon held go once their creates land, if it stopped before",
+    run = function(world)
+      local api = installed(world)
+      local record = assert(api.records.create("acme_tags.tag", tag(), OWNER))
+      world:advance(1000) -- the create is on its way, not yet answered
+      world:install({ conformance.installed(world.core, tags(), false) })
+      world:pump()
+      world:advance(2000)
+      world:pump()
+      assert.is_false(world.portal.records[record.id].held, "released once the portal had the create")
+    end,
+  },
+  {
+    name = "counts a batch's own creates against the type's limit",
+    run = function(world)
+      local api = installed(world, 1)
+      local _, err, detail = api.records.batch({
+        { op = "create", type = "acme_tags.tag", fields = tag("a"), owner = OWNER.owner },
+        { op = "create", type = "acme_tags.tag", fields = tag("b"), owner = OWNER.owner },
+      })
+      assert.are.same({ "limit", 2 }, { err, detail.index })
+      assert.are.equal(0, #api.records.list("acme_tags.tag"))
+    end,
+  },
+  {
+    name = "refuses a query whose parts are not their shape, without throwing",
+    run = function(world)
+      local api = installed(world)
+      for _, query in ipairs({ { owner = 42 }, { after = 5 }, { order = 1 }, { limit = "ten" } }) do
+        local ok, err = api.records.query("acme_tags.tag", query, function() end)
+        assert.is_nil(ok)
+        assert.are.equal("invalid", err)
+      end
+    end,
+  },
+  {
+    name = "holds only records of the type named, and gives back one of another",
+    run = function(world)
+      local api = installed(world)
+      world.portal.records[TAG] = {
+        id = TAG,
+        type = "acme_tags.mark",
+        owner = { kind = "player", id = PLAYER },
+        revision = 1,
+        fields = { label = "x" },
+        held = false,
+      }
+      local got
+      assert.is_true(api.records.hold("acme_tags.tag", { TAG }, function(held, err)
+        got = { held = held, err = err }
+      end))
+      world:pump()
+      assert.are.same({ err = "not_found" }, got)
+      assert.is_false(world.portal.records[TAG].held, "given back")
+      assert(api.records.hold("acme_tags.mark", { TAG }))
+      world:pump()
+      assert.are.same({ nil, "not_found" }, { api.records.hold("acme_tags.tag", { TAG }) }, "held as a mark already")
     end,
   },
   {

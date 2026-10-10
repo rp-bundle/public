@@ -431,12 +431,21 @@ function data.query(type_name, query, callback)
   if not filters then
     return nil, "invalid", refusal
   end
+  local shapes = { order = "string", descending = "boolean", limit = "number", schema = "number", after = "table" }
+  for name, kind in pairs(shapes) do
+    if q[name] ~= nil and type(q[name]) ~= kind then
+      return nil, "invalid", { error = "query", field = name }
+    end
+  end
+  if q.owner ~= nil and (type(q.owner) ~= "table" or type(q.owner.kind) ~= "string" or type(q.owner.id) ~= "string") then
+    return nil, "invalid", { error = "query", field = "owner" }
+  end
   local wire = json.object({ filters = json.array({}) })
   for _, filter in ipairs(filters) do
     wire.filters[#wire.filters + 1] = json.object(filter)
   end
   if q.owner ~= nil then
-    wire.owner = json.object(q.owner)
+    wire.owner = json.object({ kind = q.owner.kind, id = q.owner.id })
   end
   for _, name in ipairs({ "order", "descending", "limit", "schema" }) do
     wire[name] = q[name]
@@ -500,20 +509,40 @@ function data.hold(type_name, ids, callback)
   if def.authority ~= "live" or not refs or (callback ~= nil and not rpf.callable(callback)) then
     return nil, "invalid"
   end
+  -- A record this server holds already, of another type, is not one of
+  -- these: refused here, since a hold would only hand it back.
+  for _, ref in ipairs(refs) do
+    local entry = records.entries[records.key("addon_record", ref.id)]
+    if entry and entry.data.type ~= type_name then
+      return nil, "not_found"
+    end
+  end
   local ctx = rpf.addons.context()
   rpf.sync.hold({ records = refs }, nil, function(_, why)
-    if callback == nil then
-      return
-    end
     local out = nil
     if not why then
+      -- The portal holds by id alone: a record of another type it handed
+      -- over is not what was asked for, and goes straight back.
+      local strays = {}
       out = {}
       for _, ref in ipairs(refs) do
-        local entry = held(type_name, ref.id)
-        if entry then
+        local entry = records.entries[records.key("addon_record", ref.id)]
+        if entry and entry.data.type ~= type_name then
+          strays[#strays + 1] = { kind = "addon_record", id = ref.id }
+        elseif entry and not entry.deleted then
           out[#out + 1] = view_of(entry)
         end
       end
+      if #strays > 0 then
+        local released, failure = rpf.sync.release(strays)
+        if not released then
+          rpf.sync.platform.log("warn", "rpf: could not give back records of another type a hold took (" .. tostring(failure) .. ")")
+        end
+        out, why = nil, "not_found"
+      end
+    end
+    if callback == nil then
+      return
     end
     local ran, thrown = rpf.addons.run(ctx, callback, out, why)
     if not ran then
@@ -568,10 +597,11 @@ end
 ---@param fields any The fields.
 ---@param opts any The options: `owner`, and `id` if the addon minted one.
 ---@param taken table<string, true>? Ids already used in this batch.
+---@param planned table<string, integer>? Creates this batch makes already, by type, which count against the type's limit too.
 ---@return table? plan `{ owner, id, fields }` to create with.
 ---@return string? err Why not.
 ---@return table? refusal For `invalid`, the rule.
-local function plan_create(def, type_name, fields, opts, taken)
+local function plan_create(def, type_name, fields, opts, taken, planned)
   if def.authority ~= "live" then
     return nil, "invalid", { error = "authority", field = "" }
   end
@@ -596,7 +626,7 @@ local function plan_create(def, type_name, fields, opts, taken)
     return nil, "conflict"
   end
   if def.limit then
-    local count = 0
+    local count = planned and planned[type_name] or 0
     for _, entry in pairs(records.entries) do
       if entry.kind == "addon_record" and not entry.deleted and entry.data.type == type_name then
         count = count + 1
@@ -786,7 +816,7 @@ function data.batch(ops)
   if type(ops) ~= "table" or #ops == 0 or #ops > rpf.sync.options.max_records_per_frame then
     return nil, "invalid", { index = 0, error = "batch" }
   end
-  local plans, taken = {}, {}
+  local plans, taken, planned = {}, {}, {}
   for i, op in ipairs(ops) do
     if type(op) ~= "table" then
       return nil, "invalid", { index = i, error = "op" }
@@ -797,9 +827,10 @@ function data.batch(ops)
     end
     local plan, why, refusal
     if op.op == "create" then
-      plan, why, refusal = plan_create(def, op.type, op.fields, { owner = op.owner, id = op.id }, taken)
+      plan, why, refusal = plan_create(def, op.type, op.fields, { owner = op.owner, id = op.id }, taken, planned)
       if plan then
         plan.id = plan.id or rpf.protocol.new_id(rpf.sync.platform)
+        planned[op.type] = (planned[op.type] or 0) + 1
       end
     elseif op.op == "update" then
       plan, why, refusal = plan_update(def, op.type, op.id, op.patch, { revision = op.revision, clear = op.clear })
@@ -861,17 +892,20 @@ end
 
 -- Lifecycle ----------------------------------------------------------------
 
----Releases the records an addon held for the server when it stops being
----active: the contract's drain, after its `stop` ran. A record a player's
----session holds stays until the player leaves; one whose create is still
----on its way stays until the portal has it, and is released by the next
----stop or at the declaration after a restart.
----@param change rpf.addons.StateChange The addon's new state.
-local function on_state(change)
-  if change.state == "active" or not rpf.sync.connection then
+---How long a drain that could not finish waits before it tries again.
+local DRAIN_RETRY_MS = 1000
+
+---Releases the records an addon held for the server, while it is not
+---active: the contract's drain. One that cannot finish yet (a create still
+---on its way to the portal, a full outbox) tries again a second later, for
+---as long as the addon stays inactive and anything is left.
+---@param namespace string The addon.
+local function drain(namespace)
+  local state = rpf.addons.state(namespace)
+  if state == "active" or not rpf.sync.connection then
     return
   end
-  local prefix = change.namespace .. "."
+  local prefix = namespace .. "."
   local refs = {}
   for _, entry in pairs(records.entries) do
     if
@@ -890,11 +924,25 @@ local function on_state(change)
     return a.id < b.id
   end)
   local ok, err = rpf.sync.release(refs)
-  if not ok then
+  if not ok and err == "too_large" then
+    rpf.sync.platform.log("error", "rpf: a record of " .. namespace .. " is too large to release, and stays held")
+  elseif not ok then
     rpf.sync.platform.log(
-      "warn",
-      "rpf: some of " .. change.namespace .. "'s records stay held now it has stopped (" .. tostring(err) .. ")"
+      "debug",
+      "rpf: some of " .. namespace .. "'s records stay held for now (" .. tostring(err) .. "); trying again"
     )
+    rpf.sync.platform.after(DRAIN_RETRY_MS, function()
+      drain(namespace)
+    end)
+  end
+end
+
+---Starts the drain when an addon stops being active, after its `stop` ran.
+---A record a player's session holds stays until the player leaves.
+---@param change rpf.addons.StateChange The addon's new state.
+local function on_state(change)
+  if change.state ~= "active" then
+    drain(change.namespace)
   end
 end
 
