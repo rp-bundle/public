@@ -12,7 +12,8 @@ resource on FiveM, an addon on Gmod. It is engine-specific, because it calls
 its framework's exports or hooks, and it ships free and open source with the
 rest of the game side. No framework name, id or setting appears in Rust, the
 protocol, the schema or the portal. The pilots are K3 (#93), Qbox, built
-in [`qbox/`](qbox/README.md), and K4 (#94), DarkRP.
+in [`qbox/`](qbox/README.md), and K4 (#94), DarkRP, built in
+[`darkrp/`](darkrp/README.md).
 
 ## The contract
 
@@ -60,7 +61,12 @@ active: its `start` runs, and every player logged in to RPF moves to
 cue to show the framework's own character selection, and nothing before it
 may load a framework character: RPF's login gate (`connecting →
 authenticating → registered`) comes first, and the engine adapter holds the
-player still server-side until `active`.
+player still server-side until `active`. A framework with one implicit
+character per player and nothing to choose (DarkRP) has no selection to
+show: its bridge reports the character once the player is at
+`character_select` and the framework has their data, and it holds the gate
+by keeping every player not yet `active` out of the framework's play
+([`darkrp/`](darkrp/README.md#the-gate-held-out-of-play)).
 
 | Report | When | What the core does |
 |---|---|---|
@@ -72,7 +78,9 @@ player still server-side until `active`.
 On FiveM only the resource that registered the bridge may report for it,
 and that resource stopping withdraws the bridge: its players go back to
 `character_select`, and new ones wait at `registered` until it registers
-again.
+again. On Gmod every addon shares one Lua state, so there is no resource
+to stop: a bridge registers once, from `Initialize`, through the `rpf`
+global, and a map change, which starts a new Lua state, registers it again.
 
 ## Answering the core
 
@@ -127,7 +135,9 @@ Every bridge runs the shared conformance suite
 (`lua/spec/support/bridge_conformance.lua`, `docs/testing.md`) against a
 fake of its framework, on every engine the harness boots that its
 framework runs on (`platforms`: a FiveM bridge's players are server ids,
-so it runs on FiveM and on the mock platform, never on Gmod). It brings a
+so it runs on FiveM and on the mock platform, never on Gmod; a Gmod
+bridge's are `Player` entities, so it runs on Gmod and the mock, never on
+FiveM). It brings a
 kit (`spec.BridgeKit`): a fake of its framework, a driver over that fake
 the cases act through (`spec.FrameworkDriver`: load and unload a
 character, say which one is loaded, stop and start the framework, make a
@@ -135,10 +145,15 @@ call fail part way, run something inside one), and how its own code
 registers it. A bridge that is its framework's selection, as the Qbox
 bridge is, keeps a player who has not logged in to RPF from loading
 anything at all; one that is not leaves the core to refuse the character
-and log that the gate is not holding. The gate case holds either way. The
+and log that the gate is not holding. The gate case holds either way. A
+kit whose framework has one implicit character per player and never stops
+(DarkRP) says `implicit`, and the steps that need a selection, an unload or
+a stop are left out; its own spec covers what stands in for them. The
 mock bridge (`lua/spec/support/mock_bridge.lua`, over `mock_framework.lua`)
 is the worked example, and the Qbox bridge
-([`qbox/`](qbox/README.md), over `spec/support/qbox_fake.lua`) is a real
-one. Then one smoke test on a real server:
-an RPF login, a framework character reaching `active`, a debit through the
-facade, and the framework's resource restarting mid-session.
+([`qbox/`](qbox/README.md), over `spec/support/qbox_fake.lua`) and the
+DarkRP bridge ([`darkrp/`](darkrp/README.md), over
+`spec/support/darkrp_fake.lua`) are real ones. Then one smoke test on a
+real server: an RPF login, a framework character reaching `active`, a debit
+through the facade, and the framework's resource restarting mid-session (a
+map change, for a framework that is the gamemode).

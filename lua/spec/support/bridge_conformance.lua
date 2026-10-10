@@ -5,6 +5,13 @@
 ---engine globals). The mock bridge runs it (`spec/conformance_bridge_spec.lua`);
 ---K3's Qbox bridge and K4's DarkRP bridge run it with their own fakes.
 ---
+---A framework with **one implicit character per player** (DarkRP: no
+---selection, a character that is the player's data, and a framework that
+---is the gamemode, so never stops while the server runs) says `implicit`.
+---The steps it has no counterpart for are left out (showing a selection,
+---unloading a character, the framework stopping and starting), and its
+---own spec covers what stands in for them.
+---
 ---A bridge brings a **kit** (`spec.BridgeKit`): how to make a fake of its
 ---framework, with a driver the cases act through (`spec.FrameworkDriver`),
 ---and how its own code registers the bridge. The cases then prove, through
@@ -50,6 +57,8 @@ local COMPANION = { characters = "external", money = "external", inventory = "ex
 ---@field accounts string[] The account names the bridge lists; the cases use the first two, or the one twice (DarkRP's `wallet`).
 ---@field item string? An item the framework knows, for the inventory cases; nil when the bridge supports no item call.
 ---@field job boolean Whether the bridge reads jobs.
+---@field grades boolean? False when the framework's jobs have no grades (DarkRP's teams): `jobs.current` answers grade 0.
+---@field implicit boolean? True for one implicit character per player, with no selection, that unloads only when the player leaves, in a framework that never stops while the server runs (DarkRP). The steps that need a selection, an unload or a stop are left out.
 ---@field platforms string[]? The platforms it runs on, when it is one engine's: a FiveM bridge's players are server ids, never a Gmod `Player`, so it runs on `fivem` and on `mock`, whose handles are numbers too. Every platform unless given.
 
 ---What the cases do to the framework: the same for every bridge's fake.
@@ -57,16 +66,16 @@ local COMPANION = { characters = "external", money = "external", inventory = "ex
 ---@class spec.FrameworkDriver
 ---@field seed fun(self, key: string, money: table<string, integer>?, items: table<string, integer>?, job: table?) A character the framework has.
 ---@field load fun(self, player: any, key: string, name: string) The player picks that character in the framework's own selection, and it loads.
----@field unload fun(self, player: any) Their character unloads.
----@field stop fun(self) The framework's resource stops (its characters unload).
----@field start fun(self) It starts again.
+---@field unload fun(self, player: any) Their character unloads. Never called for an `implicit` kit.
+---@field stop fun(self) The framework's resource stops (its characters unload). Never called for an `implicit` kit.
+---@field start fun(self) It starts again. Never called for an `implicit` kit.
 ---@field balance fun(self, key: string, account: string): integer? A balance, as the framework holds it.
 ---@field count fun(self, key: string, item: string): integer A count, as the framework holds it.
 ---@field changes table<string, integer> How many times each facade call changed the framework's state.
 ---@field fail_next fun(self, call: string, how: "throw_after"|"unknown") The next call changes the state, then throws, or answers that it cannot say.
 ---@field inside_next fun(self, call: string, fn: fun()) Runs `fn` inside the next call, once it changed the state: where a crash goes.
 ---@field forget_listeners fun(self) The bridge's resource restarted: the event handlers its old code subscribed go.
----@field shown table<any, integer> How many times the framework's character selection was shown to each player.
+---@field shown table<any, integer> How many times the framework's character selection was shown to each player: never, for an `implicit` kit.
 ---@field loaded fun(self, player: any): string? The key of the character the framework has loaded for a player, if any.
 
 ---An addon a composite operation grants a record of: badges a player owns.
@@ -133,8 +142,9 @@ end
 
 ---Every case, for one bridge.
 ---@param kit spec.BridgeKit The bridge.
----@return { name: string, origins: boolean?, run: fun(world: spec.ConformanceWorld) }[] cases The cases.
+---@return { name: string, origins: boolean?, stops: boolean?, run: fun(world: spec.ConformanceWorld) }[] cases The cases. One with `stops` stops the framework, and is left out for an `implicit` kit.
 function suite.cases(kit)
+  local grade = kit.grades == false and 0 or 2
   local cash, bank = kit.accounts[1], kit.accounts[2] or kit.accounts[1]
 
   ---A fresh world's framework, with Jane in it.
@@ -150,7 +160,7 @@ function suite.cases(kit)
     return fw
   end
 
-  return {
+  local cases = {
     {
       name = "is active on a companion server, and moves a player through the framework's own selection",
       run = function(world)
@@ -159,16 +169,22 @@ function suite.cases(kit)
         local api = world.api
         local handle = world:login(1, PLAYER)
         assert.are.equal("character_select", api.players.get(handle).state, "the bridge's cue")
-        assert.are.equal(1, fw.shown[handle], "and the framework's selection shown, once")
+        if kit.implicit then
+          assert.is_nil(fw.shown[handle], "there is no selection to show")
+        else
+          assert.are.equal(1, fw.shown[handle], "and the framework's selection shown, once")
+        end
         assert.are.same({ nil, "no_character" }, { api.characters.current(handle) })
         fw:load(handle, "CIT-JANE", "Jane Doe")
         world:pump()
         assert.are.equal("active", api.players.get(handle).state)
         assert.are.same({ key = "CIT-JANE", name = "Jane Doe" }, api.characters.current(handle))
         assert.is_true(api.characters.supports("current"))
-        fw:unload(handle)
-        assert.are.equal("character_select", api.players.get(handle).state)
-        assert.are.same({ nil, "no_character" }, { api.characters.current(handle) })
+        if not kit.implicit then
+          fw:unload(handle)
+          assert.are.equal("character_select", api.players.get(handle).state)
+          assert.are.same({ nil, "no_character" }, { api.characters.current(handle) })
+        end
       end,
     },
     {
@@ -212,7 +228,7 @@ function suite.cases(kit)
         if kit.job then
           local job = api.jobs.current(handle)
           assert.are.equal("police", job.name)
-          assert.are.equal(2, job.grade)
+          assert.are.equal(grade, job.grade)
         end
         assert.are.same({ nil, "not_logged_in" }, { api.money.balance(9, cash) })
       end,
@@ -247,7 +263,15 @@ function suite.cases(kit)
           assert.are.same({ nil, "refused", "insufficient" }, { api.inventory.take(handle, kit.item, 9, api.ops.new()) })
           assert.are.equal(1, fw:count("CIT-JANE", kit.item))
         else
+          -- Unsupported without reaching the framework: a read is nil and
+          -- why, a command refused, and neither leaves an intent behind.
+          for _, call in ipairs({ "count", "give", "take" }) do
+            assert.is_false(api.inventory.supports(call), call)
+          end
+          assert.are.same({ nil, "unsupported" }, { api.inventory.count(handle, "water") })
           assert.are.same({ nil, "refused", "unsupported" }, { api.inventory.give(handle, "water", 1, api.ops.new()) })
+          assert.are.same({ nil, "refused", "unsupported" }, { api.inventory.take(handle, "water", 1, api.ops.new()) })
+          assert.are.equal(0, #api.ops.unknown())
         end
       end,
     },
@@ -264,10 +288,13 @@ function suite.cases(kit)
         fw:fail_next("money.debit", "unknown")
         assert.are.same({ nil, "unknown" }, { api.money.debit(handle, cash, 100, "Car", unsure) })
         assert.are.equal(2, fw.changes["money.debit"])
+        -- What the two did is the framework's to say: a framework that
+        -- cannot answer may still have moved some other amount.
+        local after = fw:balance("CIT-JANE", cash)
         assert.are.same({ nil, "unknown" }, { api.money.debit(handle, cash, 100, "Car", threw) })
         assert.are.same({ nil, "unknown" }, { api.money.debit(handle, cash, 100, "Car", unsure) })
         assert.are.equal(2, fw.changes["money.debit"], "never again")
-        assert.are.equal(300, fw:balance("CIT-JANE", cash), "and nothing compensated")
+        assert.are.equal(after, fw:balance("CIT-JANE", cash), "and nothing compensated")
         local listed = api.ops.unknown()
         assert.are.equal(2, #listed)
         for _, unknown in ipairs(listed) do
@@ -278,6 +305,7 @@ function suite.cases(kit)
     },
     {
       name = "answers unavailable while the framework is stopped, and takes players back when it starts",
+      stops = true,
       run = function(world)
         local fw = framework()
         companion(world, kit, fw)
@@ -444,6 +472,7 @@ function suite.cases(kit)
     {
       name = "withdraws the bridge when its resource stops, and takes it back when it starts",
       origins = true,
+      stops = true,
       run = function(world)
         local fw = framework()
         companion(world, kit, fw)
@@ -465,6 +494,17 @@ function suite.cases(kit)
       end,
     },
   }
+  if not kit.implicit then
+    return cases
+  end
+  -- A framework that never stops has no counterpart for the cases that stop it.
+  local out = {}
+  for _, case in ipairs(cases) do
+    if not case.stops then
+      out[#out + 1] = case
+    end
+  end
+  return out
 end
 
 ---Runs every case for a bridge on every platform it runs on.

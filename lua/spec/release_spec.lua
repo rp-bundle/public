@@ -26,6 +26,7 @@ end
 
 local RESOURCES = DIR .. "/fivem/[rpf]/"
 local ADDON = DIR .. "/gmod/rpf/"
+local BRIDGE = DIR .. "/gmod/rpf_darkrp/"
 
 ---Reads a whole file, failing like a missing file does.
 ---@param path string The file.
@@ -274,20 +275,30 @@ describe("the Gmod zip", function()
   end)
 
   ---Boots one side of the packaged addon on the fake Gmod globals. Gmod
-  ---finds a file by its path under the addon's `lua/`; the fake asks for
+  ---finds a file by its path under some addon's `lua/`; the fake asks for
   ---paths under `rpf/` and runs `rpf/platform/gmod/autorun.lua` first, which
-  ---the addon ships as `lua/autorun/rpf.lua`.
+  ---the addon ships as `lua/autorun/rpf.lua`. With `bridge`, the packaged
+  ---`rpf_darkrp` addon is installed beside it, and Gmod runs its server
+  ---autorun file too before `Initialize`.
   ---@param side "server"|"client" Which side.
   ---@param read_paths table<string, true> Filled with every file read, as a path in the zip.
+  ---@param bridge boolean? Whether `rpf_darkrp` is installed too.
   ---@return rpf.mock.GmodWorld world The fake.
   ---@return table record What the host recorded.
-  local function boot(side, read_paths)
+  local function boot(side, read_paths, bridge)
     local gmod = dofile(support.path("lua/platform/mock/gmod.lua"))
     local host, record = fake_host()
     local function read(relative)
-      local path = relative == "platform/gmod/autorun.lua" and "lua/autorun/rpf.lua" or "lua/rpf/" .. relative
-      local source = read_file(ADDON .. path)
-      read_paths["rpf/" .. path] = true
+      local root, path = ADDON, "lua/rpf/" .. relative
+      if relative == "platform/gmod/autorun.lua" then
+        path = "lua/autorun/rpf.lua"
+      elseif bridge and relative == "autorun/server/rpf_darkrp.lua" then
+        root, path = BRIDGE, "lua/" .. relative
+      elseif bridge and relative:match("^rpf_darkrp/") then
+        root, path = BRIDGE, "lua/" .. relative
+      end
+      local source = read_file(root .. path)
+      read_paths[(root == BRIDGE and "rpf_darkrp/" or "rpf/") .. path] = true
       return source
     end
     local world = gmod.install(side, host, {
@@ -295,7 +306,14 @@ describe("the Gmod zip", function()
       convars = { rpf_ws_url = "wss://portal.example/ws", rpf_api_key = "rpf_sk_release" },
     })
     installed = world
-    world:boot()
+    if bridge then
+      world.include("rpf/platform/gmod/autorun.lua")
+      world.include("autorun/server/rpf_darkrp.lua")
+      world:run_hook("Initialize")
+      world:run_hook("InitPostEntity")
+    else
+      world:boot()
+    end
     support.core = world.core
     return world, record
   end
@@ -315,15 +333,41 @@ describe("the Gmod zip", function()
     assert.are.equal("rpf:client_ready", record.to_server[1].name)
   end)
 
-  it("ships exactly the files the two sides load, and the licence", function()
+  it("starts the DarkRP bridge from the packaged files, beside the packaged addon", function()
+    local _, record = boot("server", {}, true)
+    -- No DarkRP here: the bridge says so, and registers all the same.
+    local said = 0
+    for _, line in ipairs(record.logs) do
+      if line.level == "error" and line.message:find("rpf_darkrp: DarkRP is not the gamemode", 1, true) then
+        said = said + 1
+      end
+    end
+    assert.are.equal(1, said)
+    local again = {
+      rawget(_G, "rpf").bridge.register({
+        name = "other",
+        version = "1",
+        contract = { major = 1, minor = 0 },
+        provides = {},
+        running = function()
+          return false
+        end,
+      }),
+    }
+    assert.are.same({ nil, "registered" }, again, "the core took it")
+  end)
+
+  it("ships exactly the files the two sides load, the bridge's, and the licences", function()
     local loaded = {}
-    local server = boot("server", loaded)
+    local server = boot("server", loaded, true)
     server:uninstall()
     installed = nil
     boot("client", loaded)
     local files = shipped("gmod")
-    if files["rpf/LICENSE"] then
-      loaded["rpf/LICENSE"] = true
+    for _, licence in ipairs({ "rpf/LICENSE", "rpf_darkrp/LICENSE" }) do
+      if files[licence] then
+        loaded[licence] = true
+      end
     end
     assert.are.same(sorted(loaded), sorted(files))
     assert.is_nil(files["rpf/lua/rpf/platform/gmod/dev.lua"], "its presence alone turns the smoke test's commands on")

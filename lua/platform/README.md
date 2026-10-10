@@ -138,7 +138,9 @@ global is `rpf`, and once the adapter publishes it, `rpf` is the public API,
 not the core.
 
 **Install.** A release's `rpf-gmod-<version>.zip` holds the addon as one
-`rpf` folder in that layout, for `garrysmod/addons/` (`dev/release-addon`,
+`rpf` folder in that layout, for `garrysmod/addons/`, beside `rpf_darkrp`,
+the bridge to DarkRP, which only a DarkRP server installs
+([`lua/bridges/darkrp/`](../bridges/darkrp/README.md)) (`dev/release-addon`,
 [Deployment](../../docs/deployment.md#the-game-server-release)). GWSockets is required: put `gmsv_gwsockets_<platform>.dll` from
 <https://github.com/FredyH/GWSockets> into `garrysmod/lua/bin/`. Gmod has no
 websocket of its own and there is no fallback (#57), so without it the
