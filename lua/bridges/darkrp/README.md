@@ -116,6 +116,7 @@ actions refused, chat dropped), a held player is:
 | Team changes | `playerCanChangeTeam`, which DarkRP asks whatever `force` says | `false, "Log in first."` |
 | DarkRP's commands | `canChatCommand`, which every command asks, typed in chat or sent as `darkrp <command>` from the console (the F4 menu's job changes and purchases) | `false` |
 | Votes | `canVote`, which is all DarkRP's own `vote` console command asks | `false, "Log in first."` |
+| Dropping from the pocket | `canDropPocketItem`, which DarkRP's `DarkRP_spawnPocket` message asks | `false, "Log in first."` |
 | Salary | `playerGetSalary` | `true, "", 0`, as DarkRP's AFK module does it |
 | Voice | `PlayerCanHearPlayersVoice`, since DarkRP's `deadvoice` lets the dead talk | `false, false` |
 | Others' commands that name them | `canDemote`, `canWanted`, `canRequestWarrant`, `canRequestHit` | `false, "That player is not playing yet."` |
@@ -125,7 +126,23 @@ own `PlayerSpawn` gives them their team's model and loadout, and every hook
 leaves them to DarkRP again. The server console is never refused.
 
 **What the hold does not cover.** These need DarkRP or another addon to
-offer a hook it does not:
+offer a hook it does not. Every console command and net message DarkRP
+2.7.0's server code registers was read for this list (FAdmin, FPP and
+FSpectate aside, which are admin tools):
+
+- **DarkRP's tip jar.** Its `DarkRP_TipJarDonate` message checks only that
+  the giver can afford it and stands within 100 units of the jar, and asks
+  no hook. So a modified client of a held player whose data DarkRP has
+  loaded, dead where they joined beside someone's tip jar, can donate from
+  their wallet. Refusing their side through `playerWalletChanged` would
+  still pay the jar's owner (`payPlayer` is two `addMoney` calls), which
+  makes money, so the bridge leaves it. An owner who runs tip jars and
+  wants this closed keeps them away from where players spawn.
+- **DarkRP's other hookless commands,** none of which moves money or an
+  item: answering a question put to the player (`ans`), signing a letter
+  (`_DarkRP_SignLetter`), a gesture (`_DarkRP_DoAnimation`), the job model
+  they prefer (`DarkRP_preferredjobmodel`), and lookups (`rp_lookup`,
+  `rp_getvehicles`).
 
 - **Admin commands.** FAdmin's `_FAdmin` command runs with no hook before
   it, so a player with an admin usergroup can use FAdmin (and ULX, SAM or

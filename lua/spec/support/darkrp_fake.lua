@@ -513,6 +513,14 @@ function fake:vote(player)
   return (self:ask("canVote", player, {}))
 end
 
+---A player drops an item from their pocket (`DarkRP_spawnPocket`), which
+---asks `canDropPocketItem`.
+---@param player any The engine's handle.
+---@return boolean dropped True if it would drop.
+function fake:drop_pocket(player)
+  return (self:ask("canDropPocketItem", player, 1, {}))
+end
+
 ---A player changes their roleplay name (`/rpname`).
 ---@param player any The engine's handle.
 ---@param name string The new name.

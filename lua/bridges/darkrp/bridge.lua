@@ -302,6 +302,12 @@ function darkrp.register(api, fx)
 
   -- What a held player cannot do. Each hook answers only for a held
   -- player, and leaves every other to DarkRP and the hooks after it.
+  --
+  -- Not held, because DarkRP asks no hook there (README, "What the hold does
+  -- not cover"): its tip jar's `DarkRP_TipJarDonate`, where refusing the
+  -- giver through `playerWalletChanged` would still pay the jar's owner and
+  -- so make money, and a few commands that move nothing (`ans`, letters,
+  -- gestures, job model preferences).
 
   fx.hook("PlayerSpawn", function(handle)
     -- DarkRP's own spawn runs after the hooks: take them out once it has.
@@ -340,6 +346,12 @@ function darkrp.register(api, fx)
   fx.hook("PlayerCanHearPlayersVoice", function(_, talker)
     if refused(talker) then
       return false, false
+    end
+  end)
+  -- DarkRP's pocket is dropped through a net message of its own.
+  fx.hook("canDropPocketItem", function(handle)
+    if refused(handle) then
+      return false, darkrp.REFUSED
     end
   end)
   -- DarkRP's `vote` console command asks only this, not `canChatCommand`.
