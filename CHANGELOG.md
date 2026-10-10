@@ -214,6 +214,16 @@ keep the job the portal has.
 
 ### Deployment
 
+- Staging (H2, #51): a second deployment of `deploy/compose.yml`, with its
+  own hosts, Rauthy, keys and backup prefix, follows `main` on a host of
+  its own. `deploy/staging/update`, on a systemd timer, builds each new
+  commit there, deploys it and checks it through the public hostnames, and
+  a weekly timer runs the restore drill against staging's backups. A
+  release is tagged only from a commit staging has run
+  ([Deployment](docs/deployment.md#staging)). `deploy/compose.yml` takes
+  the hosts, TLS and listening address of a real deployment
+  (`RPF_PORTAL_HOST`, `PORTAL_BASE_URL`, `RPF_TLS`, `RPF_HTTPS_BIND`) and
+  passes the `RPF_STORAGE_*` variables through.
 - The database runs the image built from `deploy/postgres/` (the official
   Postgres 17 with WAL-G), with the `backup` service beside it, and needs a
   backup bucket at another provider: the `RPF_BACKUP_*` variables, a
