@@ -529,6 +529,33 @@ end
 ---@type fun(namespace: string)
 local drain
 
+---How long a release that could not be queued waits before it tries again.
+local RETRY_MS = 1000
+
+---Gives back records a hold took that are not wanted, trying again each
+---second until every one still held here has gone (a full outbox, a create
+---not yet at the portal), so none is left held for nobody.
+---@param refs table[] The records, `{ kind, id }`.
+local function give_back(refs)
+  local still = {}
+  for _, ref in ipairs(refs) do
+    if records.entries[records.key(ref.kind, ref.id)] then
+      still[#still + 1] = ref
+    end
+  end
+  if #still == 0 then
+    return
+  end
+  local ok, err = rpf.sync.release(still)
+  if not ok and err ~= "too_large" then
+    rpf.sync.platform.after(RETRY_MS, function()
+      give_back(still)
+    end)
+  elseif not ok then
+    rpf.sync.platform.log("error", "rpf: a record a hold took is too large to give back, and stays held")
+  end
+end
+
 ---Record refs for ids of a type, or nil if one is not an id.
 ---@param ids any The ids.
 ---@return table[]? refs `{ kind = "addon_record", id }` each.
@@ -586,7 +613,7 @@ function data.hold(type_name, ids, callback)
     if not why and not rpf.addons.running(namespace) then
       -- The addon stopped while the hold was on its way, and its drain
       -- found nothing to release: what arrived goes back now.
-      drain(namespace)
+      give_back(fresh)
       why = "inactive"
     elseif not why then
       -- The portal holds by id alone: a record of another type it handed
@@ -602,10 +629,7 @@ function data.hold(type_name, ids, callback)
         end
       end
       if strays then
-        local released, failure = rpf.sync.release(fresh)
-        if not released then
-          rpf.sync.platform.log("warn", "rpf: could not give back records of another type a hold took (" .. tostring(failure) .. ")")
-        end
+        give_back(fresh)
         out, why = nil, "not_found"
       end
     end
@@ -1024,8 +1048,6 @@ end
 
 -- Lifecycle ----------------------------------------------------------------
 
----How long a drain that could not finish waits before it tries again.
-local DRAIN_RETRY_MS = 1000
 
 ---Releases the records an addon held for the server, while it is not
 ---active: the contract's drain. One that cannot finish yet (a create still
@@ -1071,7 +1093,7 @@ drain = function(namespace)
       "debug",
       "rpf: some of " .. namespace .. "'s records stay held for now (" .. tostring(err) .. "); trying again"
     )
-    rpf.sync.platform.after(DRAIN_RETRY_MS, function()
+    rpf.sync.platform.after(RETRY_MS, function()
       drain(namespace)
     end)
   end

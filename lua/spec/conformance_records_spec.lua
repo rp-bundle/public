@@ -594,6 +594,34 @@ conformance.run(busted, "addon records", {
     end,
   },
   {
+    name = "gives back what a wrong hold took even when the outbox was full at first",
+    run = function(world)
+      local api = installed(world)
+      world.portal.records[TAG] = {
+        id = TAG,
+        type = "acme_tags.mark",
+        owner = { kind = "player", id = PLAYER },
+        revision = 1,
+        fields = { label = "x" },
+        held = false,
+      }
+      local got
+      assert(api.records.hold("acme_tags.tag", { TAG }, function(_, err)
+        got = err
+      end))
+      local options = world.core.connection.options
+      local entries = options.max_entries
+      options.max_entries = 0 -- nothing more fits as the answer arrives
+      world:pump()
+      assert.are.equal("not_found", got)
+      assert.is_true(world.portal.records[TAG].held, "not given back yet")
+      options.max_entries = entries
+      world:advance(1000)
+      world:pump()
+      assert.is_false(world.portal.records[TAG].held, "given back once there was room")
+    end,
+  },
+  {
     name = "lets a start handler write the records of its own addon",
     run = function(world)
       local m = tags()
