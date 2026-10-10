@@ -273,6 +273,17 @@ keep the job the portal has.
   and [Writing addons](docs/writing-addons.md) is the author's guide on the
   docs site. [Compatibility](docs/compatibility.md#addon-api-majors) says
   how addon API majors, game servers and the portal move.
+- Interactions that answer (J10, #239, part 1). On the client,
+  `rpf.api.interactions.request(name, payload, callback)` hands the
+  handler's answer, and now a table of data, to a callback, with a timeout;
+  every request is answered, `unknown`, `too_many` and `not_logged_in`
+  included, rather than dropped. Requests travel as a request and its
+  answer, which the platform pairs: ox_lib's `lib.callback` on FiveM,
+  numbered `net` messages on Garry's Mod. The example addon lists a
+  player's own tags and scrubs one by id, resolved in the player's scope.
+  **A FiveM server needs ox_lib 3.40.0 or newer**, ensured before `rpf`
+  ([Installing](docs/installing.md#fivem)); the txAdmin recipe installs it.
+  It is LGPL-3.0 and never part of the release's zip.
 
 ### Database
 

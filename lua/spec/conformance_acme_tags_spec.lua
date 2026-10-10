@@ -8,7 +8,9 @@
 -- against a fake portal (`spec/support/conformance.lua`). An addon RPF has
 -- never heard of declares a type, registers an interaction a player's
 -- client calls, keeps its records across a restart, and fades them on a
--- timer, through the public API alone.
+-- timer, through the public API alone. Its `mine` and `scrub` interactions
+-- answer with data and resolve a client's id inside the player's scope
+-- (J10), which a hostile client probes here on every engine.
 
 local conformance = require("spec.support.conformance")
 local support = require("spec.support")
@@ -17,6 +19,7 @@ local support = require("spec.support")
 local busted = { describe = describe, it = it, before_each = before_each, after_each = after_each }
 
 local PLAYER = "00000002-0000-4000-8000-000000000002"
+local OTHER = "00000003-0000-4000-8000-000000000003"
 local OLD_TAG = "0000000c-0000-4000-8000-00000000000c"
 
 ---Loads the example's server half as an engine entry point does, and
@@ -44,22 +47,31 @@ local function sprayable(world)
   return 1
 end
 
----Sends an interaction from a player's client, as the client core frames
----it, and gives the server's answer.
+---How many requests the harness's clients have numbered.
+local numbered = 0
+
+---Sends an interaction from a player's client, as the client core encodes
+---it and the platform frames a request (`<number>\n<body>`, which the mock,
+---the FiveM fakes' `lib.callback` and the Gmod adapter share), and gives
+---the server's answer.
 ---@param world spec.ConformanceWorld The world.
 ---@param player integer The player.
----@param name string The interaction.
+---@param name string? The interaction; nil with `raw`.
 ---@param payload table? Its payload.
----@return table? answer The decoded `rpf:interaction_result`.
-local function interact(world, player, name, payload)
+---@param raw string? A body to send instead, as a hostile client might.
+---@return table? answer The decoded answer, or nil if none came.
+local function interact(world, player, name, payload, raw)
   local json = world.core.json
   local before = #world.to_clients
-  local body = json.object({ name = name, payload = payload and json.object(payload) or nil })
-  world.from_client(player, "rpf:interact", assert(json.encode(body)))
+  local body = raw or assert(json.encode(json.object({ name = name, payload = payload and json.object(payload) or nil })))
+  numbered = numbered + 1
+  world.from_client(player, "rpf:interact", numbered .. "\n" .. body)
   for i = before + 1, #world.to_clients do
     local sent = world.to_clients[i]
-    if sent.name == "rpf:interaction_result" then
-      return json.decode(sent.payload)
+    if sent.name == "rpf:interact" then
+      local id, reply = sent.payload:match("^(%d+)\n(.*)$")
+      assert.are.equal(tostring(numbered), id, "answered under the number it was asked with")
+      return json.decode(reply)
     end
   end
   return nil
@@ -99,17 +111,55 @@ conformance.run(busted, "the acme_tags example", {
     end,
   },
   {
-    name = "ignores a client that has not logged in, and one that sends too many",
+    name = "refuses a client that has not logged in, and one that sends too many, running nothing",
     run = function(world)
       local player = sprayable(world)
       world.join(2)
-      assert.is_nil(interact(world, 2, "acme_tags.spray", { text = "hi" }), "not logged in: no answer")
+      local early = assert(interact(world, 2, "acme_tags.spray", { text = "hi" }))
+      assert.are.same({ false, "not_logged_in" }, { early.ok, early.reason })
       for _ = 1, 20 do
         interact(world, player, "acme_tags.paint", {})
       end
-      assert.is_nil(interact(world, player, "acme_tags.spray", { text = "hi" }), "past the rate: dropped")
+      local flood = assert(interact(world, player, "acme_tags.spray", { text = "hi" }))
+      assert.are.same({ false, "too_many" }, { flood.ok, flood.reason })
+      assert.are.equal(0, #world.api.records.list("acme_tags.tag"))
       world:advance(10000)
       assert.is_true(assert(interact(world, player, "acme_tags.spray", { text = "hi" })).ok)
+    end,
+  },
+  {
+    name = "answers a player's own tags as data, and refuses another's id as it refuses a missing one",
+    run = function(world)
+      local player = sprayable(world)
+      world:login(2, OTHER)
+      local other = 2
+      world.place(other, { x = 1, y = 2, z = 3 })
+      assert.is_true(assert(interact(world, player, "acme_tags.spray", { text = "mine" })).ok)
+      assert.is_true(assert(interact(world, other, "acme_tags.spray", { text = "theirs" })).ok)
+      local listed = assert(interact(world, player, "acme_tags.mine"))
+      assert.is_true(listed.ok)
+      assert.are.equal(1, #listed.data.tags)
+      assert.are.equal("mine", listed.data.tags[1].text)
+      local mine = listed.data.tags[1].id
+      local theirs = assert(interact(world, other, "acme_tags.mine")).data.tags[1].id
+      world:settle()
+      local before = #world.portal.frames
+
+      local refusals = {}
+      for _, id in ipairs({ theirs, "00000000-0000-4000-8000-0000000000ff", 42 }) do
+        local answer = assert(interact(world, player, "acme_tags.scrub", { id = id }))
+        assert.is_false(answer.ok)
+        refusals[#refusals + 1] = answer.reason
+      end
+      assert.are.same({ "No such tag of yours.", "No such tag of yours.", "No such tag of yours." }, refusals, "another's, missing and garbage alike")
+      world:settle()
+      assert.are.equal(2, #world.api.records.list("acme_tags.tag"), "nothing deleted")
+      assert.are.equal(before, #world.portal.frames, "nothing reported")
+
+      assert.is_true(assert(interact(world, player, "acme_tags.scrub", { id = mine })).ok)
+      local again = assert(interact(world, player, "acme_tags.scrub", { id = mine }))
+      assert.are.same({ false, "No such tag of yours." }, { again.ok, again.reason }, "a deleted tag is not there")
+      assert.are.same({ "theirs" }, { world.api.records.list("acme_tags.tag")[1].fields.text })
     end,
   },
   {
@@ -153,7 +203,7 @@ conformance.run(busted, "the acme_tags example", {
     end,
   },
   {
-    name = "answers a long reason whole characters at a time, and drops a name no addon could have",
+    name = "answers a long reason whole characters at a time, and a name no addon could have as unknown",
     run = function(world)
       local player = sprayable(world)
       world.api.interactions.register("acme_tags.euros", function()
@@ -162,8 +212,12 @@ conformance.run(busted, "the acme_tags example", {
       local answer = assert(interact(world, player, "acme_tags.euros", {}))
       assert.is_false(answer.ok)
       assert.are.equal(string.rep("€", 42), answer.reason, "128 bytes is 42 whole euro signs")
-      assert.is_nil(interact(world, player, "Acme Tags!", {}))
-      assert.is_nil(interact(world, player, string.rep("a", 60) .. "." .. string.rep("b", 10), {}))
+      for _, name in ipairs({ "Acme Tags!", string.rep("a", 60) .. "." .. string.rep("b", 10) }) do
+        local answer_to = assert(interact(world, player, name, {}))
+        assert.are.same({ false, "unknown" }, { answer_to.ok, answer_to.reason }, name)
+      end
+      local garbled = assert(interact(world, player, nil, nil, "not json"))
+      assert.are.same({ false, "invalid" }, { garbled.ok, garbled.reason })
     end,
   },
   {

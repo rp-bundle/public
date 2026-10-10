@@ -19,8 +19,16 @@ name "rpf"
 description "rp-framework: the Lua core and its FiveM adapter"
 
 -- The socket's shim must be running before the core connects, and stopping
--- it stops this resource too.
+-- it stops this resource too. ox_lib (J10) carries requests between client
+-- and server, and the UI addons show; it is LGPL-3.0, a prerequisite the
+-- owner installs, never bundled. FXServer cannot pin a dependency's
+-- version, so `ox.lua` refuses one older than its MINIMUM at start.
 dependency "rpf-ws"
+dependency "ox_lib"
+
+-- ox_lib's loader, which puts `lib` in this resource's Lua state, before
+-- any script of ours on either side.
+shared_script "@ox_lib/init.lua"
 
 server_scripts({
   "core/init.lua",
@@ -54,6 +62,7 @@ server_scripts({
   "core/interactions.lua",
   "core/api.lua",
   "shared.lua",
+  "ox.lua",
   "ws.lua",
   "lock.lua",
   "server.lua",
@@ -71,6 +80,7 @@ client_scripts({
   "core/interactions.lua",
   "core/api.lua",
   "shared.lua",
+  "ox.lua",
   "ui.lua",
   "client.lua",
 })

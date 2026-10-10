@@ -118,6 +118,7 @@ step.
 | | `notify(player, message)` | Shows a player a message |
 | ToClients | `to_client(player, name, payload)` | Sends a string to one client |
 | | `on_client(name, handler)` | `handler(player, payload)`. The platform supplies the sender, and the payload is hostile input |
+| | `on_client_request(name, handler)` | `handler(player, payload, respond)`: a client's request (`request_server`), answered by calling `respond(reply)` once. The platform pairs the two (ox_lib's `lib.callback` on FiveM, numbered `net` messages on Gmod) and supplies the sender; the core always answers (J10) |
 | Log | `log(level, message)` | `"debug"`, `"info"`, `"warn"` or `"error"`. The core never logs a secret |
 | Api | `expose(api)` | Publishes the public API table: through the resource's export table on FiveM, where each resource has its own Lua state, and through the `rpf` global on Gmod, where every addon shares one. Only `rpf.api` is published, never the rest of `rpf` |
 
@@ -133,7 +134,9 @@ core should decide the bytes.
 `meta/platform_client.lua`. The client has different capabilities and
 different trust from the server, so it gets its own interface: `engine`,
 `http_request`, `kv_get` / `kv_set` (for the remember token), `now` / `after`,
-`to_server(name, payload)` / `on_server(name, handler)`, `log`, and `expose`
+`to_server(name, payload)` / `on_server(name, handler)`,
+`request_server(name, payload, callback)` (a request, and the server's
+answer handed to `callback`, or nil; the core keeps the timeout), `log`, and `expose`
 (the client's scripts get the public API too, with `auth` in place of
 `players`, `staff` and `config`). It has no websocket, no `random_hex` and no player
 management.
@@ -1171,31 +1174,45 @@ player's position as a plain `{ x, y, z }` (how a record stores one, a
 which is logged). A capability that is neither a function nor `false` is
 logged at start and counts as unsupported.
 
-### Interactions (`rpf.interactions`, J3)
+### Interactions (`rpf.interactions`, J3, J10)
 
 A player's client asks an addon to do something, by a name the addon
 registered: the one way a client's request reaches addon code, so a client
-never names an event. Loaded on both sides.
+never names an event. Loaded on both sides. A request and its answer travel
+as a request the platform pairs with its answer (`request_server`,
+`on_client_request`), over ox_lib's `lib.callback` on FiveM (J10).
 
 - **Server.** `register(name, handler)`: `name` is `<namespace>.<name>`
   under a loaded addon, its own when the caller is known (`may_use`), and
-  the registration is owned like a timer. `rpf:interact` (`{ name, payload
-  }`) reaches only a logged-in player (`players.on_client`), at most
-  `MAX_PER_WINDOW` (20) per `WINDOW_MS` (10 s) per player, past which it is
-  dropped. The payload is a JSON object within `handoff.MAX_PAYLOAD` (4 KiB)
-  and `MAX_DEPTH` (8); it is handed over as a plain copy. A name nobody
-  registered is answered `unknown`, an addon not running `inactive`, a
-  payload too deep `invalid`, and a handler that throws `failed` (logged);
-  otherwise the handler's own answer, `true` or `false` and a reason of at
-  most `MAX_REASON_BYTES`, goes back as `rpf:interaction_result`.
-- **Client.** `send(name, payload)` checks the name and that the payload is
-  plain data within the size, and sends `rpf:interact`; the answer is
-  announced as `interactions.result` (`{ name, ok, reason }`), a reserved
-  name.
+  the registration is owned like a timer; registering a name again
+  replaces it and forgets the old one's ownership. `rpf:interact`
+  (`{ name, payload }`) reaches only a logged-in player
+  (`players.on_client_request`, which answers anyone else
+  `not_logged_in`), at most `MAX_PER_WINDOW` (20) per `WINDOW_MS` (10 s)
+  per player, past which it is answered `too_many`. The payload is a JSON
+  object within `handoff.MAX_PAYLOAD` (4 KiB) and `MAX_DEPTH` (8); it is
+  handed over as a plain copy. A request that cannot be decoded is
+  answered `invalid`, a name nobody registered (or no addon could) is
+  `unknown`, a payload too deep `invalid`, an addon not running
+  `inactive`, and a handler that throws `failed` (logged); otherwise the
+  handler's own answer, `true` and optionally a table of plain data (at
+  most `MAX_ANSWER`, 16 KiB, encoded; data that is not plain is `failed`
+  and logged for the addon), or `false` and a reason of at most
+  `MAX_REASON_BYTES`. Every request is answered, as `{ ok, reason, data }`
+  (`rpf:interaction_result`'s schema), because ox_lib holds one open until
+  it is.
+- **Client.** `send(name, payload)` and `request(name, payload, callback)`
+  check the name and that the payload is plain data within the size (a
+  table is walked with `next`, so a throwing `__pairs` is refused, not
+  thrown), and ask; at most `MAX_WAITING` (64) wait for an answer at once.
+  `send`'s answer is announced as `interactions.result` (`{ name, ok,
+  reason }`), a reserved name; `request`'s goes to its callback,
+  `callback(true, data)` or `callback(false, reason)`, under `pcall`. No
+  answer in `TIMEOUT_MS` (10 s) is `timeout`, a later one is dropped, and
+  one that cannot be read is `failed`, logged.
 
 J4 (#81) builds targeting on it (which record, entity or zone, distance,
-cooldowns) and J10 (#239) a request/response transport over ox_lib's
-callbacks on FiveM; both keep its rule.
+cooldowns); it keeps the rule.
 
 ### Characters (`rpf.characters`, `rpf.picker`)
 
@@ -1537,7 +1554,7 @@ internal.
 | `addons` | server | `API`, `API_MIN`, `register`, `state`, `provide`, `call` (`rpf.addons` above) |
 | `records` | server | `get`, `list`, `query`, `hold`, `release`, `create`, `update`, `delete`, `batch` (`rpf.data` above) |
 | `capabilities`, `world` | server | `capabilities()` and `world.position` (`rpf.world` above) |
-| `interactions` | both | `register` on the server, `send` on the client (`rpf.interactions` above) |
+| `interactions` | both | `register` on the server, `send` and `request` on the client (`rpf.interactions` above) |
 | `characters`, `money`, `inventory`, `jobs`, `ops` | server | The domain-neutral facade (`rpf.facade` above): `characters.current`; `money.accounts`, `balance`, `debit`, `credit`; `inventory.count`, `give`, `take`; `jobs.current`; each domain's `supports`; `ops.new` |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
 | `staff` | server | `can`, `permissions`, `link`, `record` (F9, `rpf.staff` above) |

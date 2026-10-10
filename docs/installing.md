@@ -34,6 +34,14 @@ default on a current server. The framework holds each player in a routing
 bucket of their own until they have logged in, and routing buckets are a
 OneSync feature.
 
+You also need **[ox_lib](https://github.com/overextended/ox_lib) 3.40.0 or
+newer**, which most FiveM servers run already (Qbox requires it). The
+framework carries requests between players' clients and the server over its
+callbacks, and builds the menus and dialogs addons show on it. It is a
+separate download under its own licence (LGPL-3.0), so the release does not
+include it: the txAdmin recipe installs it, and by hand you download
+`ox_lib.zip` from its [releases](https://github.com/overextended/ox_lib/releases).
+
 ### With txAdmin
 
 1. In txAdmin's setup, choose **Remote URL Template** and give it the
@@ -42,7 +50,7 @@ OneSync feature.
    For a specific release, use `releases/download/v<version>/rpf-txadmin-recipe.yaml`
    instead.
 2. Run the deployer. It installs txAdmin's basic server, the default
-   resources and the `[rpf]` folder, with OneSync on.
+   resources, ox_lib and the `[rpf]` folder, with OneSync on.
 3. When the deployer shows `server.cfg`, paste the two values from the
    portal into the `set rpf_url ""` and `set rpf_api_key ""` lines at the
    bottom, then start the server.
@@ -53,19 +61,26 @@ OneSync feature.
 2. Unzip it into the server's `resources/`. You get one folder, `[rpf]`,
    holding the two resources `rpf` and `rpf-ws`. FXServer finds resources
    inside a bracketed folder, and starts only what `server.cfg` ensures.
-3. Paste the FiveM lines from the portal into `server.cfg`:
+3. If the server has no ox_lib, or one older than 3.40.0, download
+   `ox_lib.zip` from [its releases](https://github.com/overextended/ox_lib/releases)
+   and unzip it into `resources/` too: one folder, `ox_lib`. Take the
+   release's `ox_lib.zip`, not GitHub's "Source code" archive, which lacks
+   its built web page.
+4. Paste the FiveM lines from the portal into `server.cfg`:
 
    ```
    set rpf_url "wss://portal.example/ws"
    set rpf_api_key "rpf_…"
+   ensure ox_lib
    ensure rpf-ws
    ensure rpf
    ```
 
    Keep `set`. `setr` and `sets` publish a convar to every client or to
-   the server list, and the key is a secret. `rpf-ws` before `rpf`: it
-   carries the portal connection.
-4. Start (or restart) the server.
+   the server list, and the key is a secret. `ox_lib` and `rpf-ws` before
+   `rpf`: `rpf` is built on the first, and the second carries the portal
+   connection. A server that ensures ox_lib already keeps its own line.
+5. Start (or restart) the server.
 
 Optional convars: `set rpf_portal_url "https://portal.example"` when
 players reach the portal's web address somewhere other than the websocket's
@@ -77,7 +92,8 @@ resources reach the framework as `exports.rpf:api()`
 
 Replace the `[rpf]` folder with the new release's and restart the server.
 Your `server.cfg` stays as it is. A release that changes anything you set
-says so in its notes.
+says so in its notes, and so does one that needs a newer ox_lib, which the
+console says at start too.
 
 ## Garry's Mod
 
@@ -169,6 +185,21 @@ load: update the artifact.
 **FXServer saying it could not find the dependency `rpf-ws` for `rpf`**
 (its own line, not the framework's): the `rpf-ws` folder is missing. Unzip the whole release, not only
 `rpf`.
+
+**FXServer saying it could not find the dependency `ox_lib` for `rpf`**
+(its own line): ox_lib is not installed. Install it as
+[By hand](#by-hand) says, step 3, and `ensure ox_lib` before `ensure rpf`.
+
+**`rpf: ox_lib is stopped, and RPF's FiveM adapter is built on it; …`** (or
+another state): ox_lib is there but not running, or failed to start; its
+own error is earlier in the console. A folder from GitHub's "Source code"
+archive fails this way (`Unable to load UI`): use the release's
+`ox_lib.zip`.
+
+**`rpf: ox_lib is version 3.30.0, and RPF needs 3.40.0 or newer; …`**: the
+server's ox_lib is too old. Replace its folder with a current release's,
+then restart the server. RPF needs 3.40.0 because it fixes a hole that let
+one player answer a callback the server sent another.
 
 ### At start, on Garry's Mod
 

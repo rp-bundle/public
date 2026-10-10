@@ -400,6 +400,30 @@ describe("the Gmod adapter's server", function()
     assert.truthy(last(world, record, "begin_join"))
   end)
 
+  it("answers a client's numbered request under its number, and drops one with none", function()
+    local world, record = boot("server")
+    welcome(world, record)
+    world:connect_player(1, "Alice", STEAMID)
+    local platform = world.core.connection.platform
+    local heard = {}
+    platform.on_client_request("rpf:test", function(player, payload, respond)
+      heard[#heard + 1] = payload
+      respond("answer to " .. payload)
+      respond("a second answer, dropped")
+    end)
+    world:from_client(1, "rpf:test", "12\nhello\nthere")
+    world:from_client(1, "rpf:test", "hello")
+    world:from_client(1, "rpf:test", "x\nhello")
+    assert.are.same({ "hello\nthere" }, heard)
+    local answers = {}
+    for _, message in ipairs(record.to_clients) do
+      if message.name == "rpf:test" then
+        answers[#answers + 1] = message.payload
+      end
+    end
+    assert.are.same({ "12\nanswer to hello\nthere" }, answers)
+  end)
+
   it("closes the socket on a map change, and reports the close once", function()
     local world, record = boot("server")
     welcome(world, record)
@@ -596,6 +620,34 @@ describe("the Gmod adapter's client", function()
     assert.are.equal("rpf:client_ready", record.to_server[1].name)
     assert.are.equal("gmod", rpf.engine)
     assert.truthy(rpf.auth)
+  end)
+
+  it("numbers its requests, and hands each answer to its own callback once", function()
+    local gmod = load_fake()
+    local host, record = fake_host()
+    local world = gmod.install("client", host, { read = read })
+    installed = world
+    world:boot()
+    local messages = world.include("rpf/platform/gmod/messages.lua")
+    local replies = {}
+    for _, which in ipairs({ "first", "second" }) do
+      messages.request_server("rpf:test", which, function(reply)
+        replies[#replies + 1] = which .. ":" .. tostring(reply)
+      end)
+    end
+    local asked = {}
+    for _, message in ipairs(record.to_server) do
+      if message.name == "rpf:test" then
+        asked[#asked + 1] = message.payload
+      end
+    end
+    local first, second = asked[1]:match("^(%d+)\n"), asked[2]:match("^(%d+)\n")
+    assert.are.same({ first .. "\nfirst", second .. "\nsecond" }, asked)
+    world:from_server("rpf:test", second .. "\ntwo")
+    world:from_server("rpf:test", "999\nnobody asked")
+    world:from_server("rpf:test", first .. "\none")
+    world:from_server("rpf:test", first .. "\nagain")
+    assert.are.same({ "second:two", "first:one" }, replies)
   end)
 
   it("shows the login form with the password reuse warning, and sends the password only to the portal", function()

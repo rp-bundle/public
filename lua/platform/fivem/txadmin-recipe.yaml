@@ -8,7 +8,9 @@
 # The base is txAdmin's own "FiveM Basic Server" recipe
 # (citizenfx/txAdmin-recipes, default-fivem), pinned by commit, as are the
 # default resources it downloads, so a recipe deploys the same server
-# whenever it runs.
+# whenever it runs. ox_lib, which the FiveM adapter is built on (J10), is
+# downloaded from its own release, the one ox.lua names as its MINIMUM: it
+# is LGPL-3.0 and never part of RPF's zip.
 
 $engine: 3
 $onesync: on
@@ -33,6 +35,14 @@ tasks:
     url: https://raw.githubusercontent.com/citizenfx/txAdmin-recipes/eb673e230d8ea6b0b3656936ffbf73af3ad924a1/default-fivem/server.cfg
     path: ./server.cfg
 
+  # ox_lib, as its release ships it: one ox_lib folder.
+  - action: download_file
+    url: https://github.com/overextended/ox_lib/releases/download/v3.40.0/ox_lib.zip
+    path: ./tmp/ox_lib.zip
+  - action: unzip
+    src: ./tmp/ox_lib.zip
+    dest: ./resources
+
   # The release: one [rpf] folder holding the rpf and rpf-ws resources.
   - action: download_file
     url: https://github.com/Sampleeeee/rp-framework/releases/download/v@VERSION@/rpf-fivem-@VERSION@.zip
@@ -55,5 +65,6 @@ tasks:
       ## server's API keys page. Keep `set`: `setr` and `sets` publish the key.
       set rpf_url ""
       set rpf_api_key ""
+      ensure ox_lib
       ensure rpf-ws
       ensure rpf

@@ -49,6 +49,7 @@ platform.SERVER = members({
   "notify",
   "to_client",
   "on_client",
+  "on_client_request",
   "log",
   "expose",
   "capabilities",
@@ -63,6 +64,7 @@ platform.CLIENT = members({
   "after",
   "to_server",
   "on_server",
+  "request_server",
   "log",
   "expose",
 })

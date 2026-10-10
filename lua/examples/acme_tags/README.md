@@ -9,8 +9,8 @@ addons](../../../docs/writing-addons.md) is the guide.
 | File | What |
 |---|---|
 | `manifest.lua` | The manifest: one live type, `acme_tags.tag`, and the `moderate` permission |
-| `server.lua` | Registers the addon; on start, the `acme_tags.spray` interaction, a fade every minute, and holding the tags the portal already has |
-| `client.lua` | Asks the server to spray, and tells the player how it went |
+| `server.lua` | Registers the addon; on start, its interactions (`acme_tags.spray`; `acme_tags.mine`, which answers with the player's own tags; `acme_tags.scrub`, which resolves a client's tag id inside the player's scope), a fade every minute, and holding the tags the portal already has |
+| `client.lua` | Asks the server to spray, lists the player's own tags and scrubs one through `rpf.interactions.request`, and tells the player how it went |
 | `fivem/` | The FiveM resource's manifest and entry points |
 | `gmod/autorun.lua` | The Gmod entry point |
 
@@ -19,14 +19,14 @@ addons](../../../docs/writing-addons.md) is the guide.
 Make a resource folder `acme_tags` holding `manifest.lua`, `server.lua`,
 `client.lua`, and `fivem/`'s files (`fxmanifest.lua` at the top, the two
 entry points in `fivem/`). `ensure acme_tags` after `ensure rpf`. In game,
-`/spray hello`.
+`/spray hello`, `/tags` to list yours, `/scrub 1` to scrub the first.
 
 ## On Garry's Mod
 
 Make an addon folder `acme_tags` holding `lua/acme_tags/manifest.lua`,
 `lua/acme_tags/server.lua`, `lua/acme_tags/client.lua`, and
 `gmod/autorun.lua` as `lua/autorun/acme_tags.lua`. In the console, `spray
-hello`.
+hello`, `tags`, `scrub 1`.
 
 ## Then
 

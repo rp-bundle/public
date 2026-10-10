@@ -34,8 +34,9 @@ local function core_files()
   return out
 end
 
--- Game globals from FiveM and Gmod, and the standard-library escape hatches
--- that would bypass the platform (its clock, its storage, its log).
+-- Game globals from FiveM and Gmod, ox_lib's `lib` (J10: only the FiveM
+-- adapter's `ox.lua` calls it), Derma, and the standard-library escape
+-- hatches that would bypass the platform (its clock, its storage, its log).
 local FORBIDDEN = {
   { "AddEventHandler", "AddEventHandler" },
   { "RegisterNetEvent", "RegisterNetEvent" },
@@ -50,6 +51,9 @@ local FORBIDDEN = {
   { "%f[%w_]timer%.[%a_]", "timer." },
   { "%f[%w_]file%.[%a_]", "file." },
   { "%f[%w_]concommand%.[%a_]", "concommand." },
+  -- Code only: the docs name ox_lib's calls in backticks.
+  { "[^`/%w_.]lib%.[%a_]", "lib." },
+  { "%f[%w_]vgui%.[%a_]", "vgui." },
   { "Citizen", "Citizen" },
   { "SetTimeout", "SetTimeout" },
   { "GetPlayerIdentifiers", "GetPlayerIdentifiers" },

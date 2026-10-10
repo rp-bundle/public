@@ -187,6 +187,36 @@ logged in, at most 20 times per player every 10 seconds, with a copy of the
 payload (plain data, at most 4 KiB). Treat the payload as hostile: a client
 can send anything.
 
+To hear the answer where you asked, and to send data back, use `request`:
+the handler answers `true` and a table, and the client's callback gets it.
+An id that came from a client is resolved inside the player's scope, and
+"not yours" is the same answer as "not there":
+
+```lua
+-- server
+rpf.interactions.register("acme_tags.scrub", function(player, payload)
+  local tag = type(payload.id) == "string" and rpf.records.get("acme_tags.tag", payload.id)
+  if not tag or tag.owner.id ~= player.player_id then
+    return false, "No such tag of yours."
+  end
+  rpf.records.delete("acme_tags.tag", tag.id)
+  return true, { scrubbed = tag.fields.text }
+end)
+
+-- client
+rpf.interactions.request("acme_tags.scrub", { id = id }, function(ok, result)
+  print(ok and ("Scrubbed " .. result.scrubbed) or ("No: " .. result))
+end)
+```
+
+The callback runs once: with the handler's answer, or `false` and
+`timeout` when none came in 10 seconds. The other refusals are `unknown`
+(nothing registered by that name), `inactive`, `invalid`, `failed` (the
+handler threw, or answered data that is not plain), `too_large` (data past
+16 KiB), `too_many` and `not_logged_in`. On FiveM a request travels over
+ox_lib's `lib.callback`, and it still reaches only the handler you
+registered.
+
 ## Money and items
 
 Addons move money and items only through one set of calls, which work the
@@ -259,8 +289,8 @@ and how functions cross into RPF.
   export: tables are copied, and a function you pass becomes a reference.
   That is why the API names the type in every call and returns copies.
   `rpf.events.on` returns a subscription id there, which `off` takes.
-  ox_lib is RPF's dependency on FiveM; an addon for FiveM alone may use it
-  directly.
+  ox_lib (3.40.0 or newer) is RPF's dependency on FiveM, so it is on every
+  RPF server; an addon for FiveM alone may use it directly.
 - **Garry's Mod.** Every addon shares one Lua state, and `rpf` is a global.
   Gmod loads autorun files in name order, so read `rpf` in a hook, not at
   load.
@@ -279,7 +309,8 @@ move and what each side does when they disagree.
 - [ ] Everything is set up in `start`; nothing at file load but `register`.
 - [ ] Every `rpf.api` call's second return is looked at.
 - [ ] Every interaction checks its payload, and resolves its ids in the
-      caller's scope.
+      caller's scope: another player's record is refused exactly as a
+      missing one is.
 - [ ] Money and items move only through `rpf.money` and `rpf.inventory`,
       each command with an op id minted once and kept with what it pays for.
 - [ ] The addon runs on both engines, or says which it needs.

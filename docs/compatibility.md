@@ -149,8 +149,11 @@ one that goes is deprecated a release ahead, with the replacement named in
 - Exports and globals other resources call (`exports.rpf:api()`, the
   `rpf` global on Gmod), and the public Lua API behind them, whose majors
   are the addon `api` ([Addons](architecture/addons.md#versions-and-schema-evolution)).
-- What the resource requires of the server: OneSync, GWSockets, the
-  artifact or Node version.
+- What the resource requires of the server: OneSync, GWSockets, ox_lib
+  and its minimum version (J10), the artifact or Node version. A new
+  requirement, or a higher minimum, is named in the release's upgrade notes,
+  and the resource refuses to start without it in one console line that
+  says what to install.
 
 The same "ask before going further" rule applies when keeping one of these
 would be ugly.

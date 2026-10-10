@@ -5,7 +5,8 @@
     "../../core",
     ".lls/fivem-lls-addon/library/runtime",
     ".lls/fivem-lls-addon/library/natives/CFX-NATIVE",
-    ".lls/fivem-lls-addon/library/natives/GTAV"
+    ".lls/fivem-lls-addon/library/natives/GTAV",
+    ".lls/ox_lib"
   ],
   "workspace.ignoreDir": [".lls", "ws-shim", "nui"],
   "workspace.checkThirdParty": false,

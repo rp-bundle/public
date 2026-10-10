@@ -20,6 +20,7 @@ local rpf = rpf
 ---The FiveM adapter's namespace: one table per adapter file.
 ---@class rpf.fivem
 ---@field shared rpf.fivem.shared Clock, timers, storage, logging and the API export.
+---@field ox rpf.fivem.ox Everything taken from ox_lib (J10).
 ---@field ws rpf.fivem.ws The portal socket, through the `rpf-ws` shim.
 ---@field server rpf.fivem.server The game-server platform and its engine hooks.
 ---@field lock rpf.fivem.lock The server-side input lock, until a player is `active`.

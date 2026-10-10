@@ -94,6 +94,7 @@ function support.fake_platform(opts)
   ---@field kicks { player: any, reason: string }[] Every kick, in order.
   ---@field to_clients { player: any, name: string, payload: string }[] Every message sent to a client, in order.
   ---@field client_handlers table<string, fun(player: any, payload: string)> Handlers registered with `on_client`, by name.
+  ---@field request_handlers table<string, fun(player: any, payload: string, respond: fun(reply: string))> Answerers registered with `on_client_request`, by name.
   ---@field bookkeeping table<string, true> Sent texts `support.wire` leaves out: the declaration after a `Welcome` and the ack of its answer.
   local p = {
     engine = "mock",
@@ -110,6 +111,7 @@ function support.fake_platform(opts)
     kicks = {},
     to_clients = {},
     client_handlers = {},
+    request_handlers = {},
     bookkeeping = {},
   }
 
@@ -207,6 +209,10 @@ function support.fake_platform(opts)
     p.client_handlers[name] = handler
   end
 
+  function p.on_client_request(name, handler)
+    p.request_handlers[name] = handler
+  end
+
   function p.log(level, message)
     p.logs[#p.logs + 1] = { level = level, message = message }
   end
@@ -300,6 +306,25 @@ function support.fake_platform(opts)
     end
   end
 
+  ---Sends a request from a player's client, as the engine would, and gives
+  ---the answer, which the core must give exactly once, before it returns.
+  ---@param player any The sender's handle.
+  ---@param name string The request's name.
+  ---@param payload any The payload, raw.
+  ---@return string? reply The answer, or nil when nothing answers the name.
+  function p.request_from(player, name, payload)
+    local handler = p.request_handlers[name]
+    if not handler then
+      return nil
+    end
+    local replies = {}
+    handler(player, payload, function(reply)
+      replies[#replies + 1] = reply
+    end)
+    assert(#replies == 1, "a request was answered " .. #replies .. " times")
+    return replies[1]
+  end
+
   ---The decoded payloads of every message of one name sent to a player.
   ---@param player any The recipient.
   ---@param name string The message name.
@@ -347,6 +372,7 @@ function support.fake_client_platform(opts)
   ---@field requests { method: string, url: string, headers: table, body: string?, callback: fun(status: integer, body: string, headers: table), answered: boolean }[] Every HTTP request, in order.
   ---@field to_servers { name: string, payload: string }[] Every message sent to the server, in order.
   ---@field server_handlers table<string, fun(payload: string)> Handlers registered with `on_server`, by name.
+  ---@field asked { name: string, payload: string, callback: fun(reply: string?) }[] Every request sent to the server, in order, unanswered until the test answers it.
   ---@field logs { level: string, message: string }[] Every log line.
   ---@field exposed table? What `expose` was given.
   local c = {
@@ -358,6 +384,7 @@ function support.fake_client_platform(opts)
     requests = {},
     to_servers = {},
     server_handlers = {},
+    asked = {},
     logs = {},
   }
 
@@ -389,6 +416,10 @@ function support.fake_client_platform(opts)
 
   function c.on_server(name, handler)
     c.server_handlers[name] = handler
+  end
+
+  function c.request_server(name, payload, callback)
+    c.asked[#c.asked + 1] = { name = name, payload = payload, callback = callback }
   end
 
   function c.log(level, message)

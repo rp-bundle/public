@@ -407,5 +407,28 @@ function players.on_client(name, handler)
   end)
 end
 
+---Registers the answerer for one request name from clients, answering a
+---player who has not logged in yet with `refused` and nothing else: the
+---same gate as `on_client`, for requests. A request always gets an answer,
+---because on some engines the transport holds one open until it does.
+---@param name string The request's name, namespaced `rpf:`.
+---@param handler fun(player: rpf.PlayerView, payload: string, respond: fun(reply: string)) Called for each request from a logged-in player. The payload is hostile input; `respond` must be called once.
+---@param refused string The answer, already encoded, for a player who has not logged in.
+function players.on_client_request(name, handler, refused)
+  if not platform then
+    error("rpf: players.on_client_request before rpf.start_server", 2)
+  end
+  local p = platform
+  p.on_client_request(name, function(handle, payload, respond)
+    local record = by_handle[handle]
+    if not record or record.player_id == nil or record.state == "dropping" then
+      p.log("debug", "rpf: refused " .. name .. " from a player who has not logged in")
+      respond(refused)
+      return
+    end
+    handler(view(record), payload, respond)
+  end)
+end
+
 rpf.players = players
 return players

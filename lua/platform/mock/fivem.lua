@@ -22,6 +22,14 @@
 ---  argument and status 0 when nothing came back.
 ---- **The clock as FiveM splits it**: `os.time` in whole seconds, and a
 ---  millisecond `GetGameTimer` that never goes back.
+---- **ox_lib, as far as the adapter uses it** (J10): `lib.callback` and
+---  `lib.callback.register`, with `promise` and `Citizen.Await` to wait on
+---  an answer from inside a callback, which runs on a thread of its own as
+---  ox_lib's do. Its wire is not ox_lib's: a request and its answer cross
+---  the host as the mock platform frames them (`mock.frame`), under the
+---  request's name, so a harness plays a client of any engine alike.
+---  `ox_lib` is a started resource at version 3.40.0 unless a test says
+---  otherwise (`resources`, `metadata`).
 ---
 ---It is not FiveM. A real server is layer 5 (`docs/testing.md`).
 ---@class rpf.mock.fivem
@@ -29,13 +37,48 @@
 local fivem = {}
 
 ---Loads a resource manifest and lists the scripts it names for one side,
----as FiveM reads it. The manifest is Lua that calls directives, so it runs
----here with each directive recording what it was given.
+---as FiveM reads it: its shared scripts first, then the side's own. The
+---manifest is Lua that calls directives, so it runs here with each
+---directive recording what it was given. A script in another resource
+---(`@ox_lib/init.lua`) is left out, because the fakes stand in for what it
+---does (`fivem.imports` lists them).
 ---@param source string The manifest's text.
 ---@param side "server"|"client" Which scripts.
 ---@return string[] scripts Paths relative to the resource, in load order.
 function fivem.scripts(source, side)
-  local found = { server = {}, client = {} }
+  local all = fivem.manifest(source)
+  local out = {}
+  for _, kind in ipairs({ "shared", side }) do
+    for _, path in ipairs(all[kind]) do
+      if path:sub(1, 1) ~= "@" then
+        out[#out + 1] = path
+      end
+    end
+  end
+  return out
+end
+
+---The scripts a manifest loads from other resources (`@<resource>/<file>`),
+---which the fakes stand in for.
+---@param source string The manifest's text.
+---@return string[] imports The paths, as the manifest gives them.
+function fivem.imports(source)
+  local out = {}
+  for _, kind in ipairs({ "shared", "server", "client" }) do
+    for _, path in ipairs(fivem.manifest(source)[kind]) do
+      if path:sub(1, 1) == "@" then
+        out[#out + 1] = path
+      end
+    end
+  end
+  return out
+end
+
+---Every script a manifest names, by kind, and the resources it depends on.
+---@param source string The manifest's text.
+---@return { shared: string[], server: string[], client: string[], dependencies: string[] } found What it names, in order.
+function fivem.manifest(source)
+  local found = { shared = {}, server = {}, client = {}, dependencies = {} }
   local env = {}
   local function record(kind)
     return function(list)
@@ -47,8 +90,10 @@ function fivem.scripts(source, side)
       end
     end
   end
+  env.shared_scripts, env.shared_script = record("shared"), record("shared")
   env.server_scripts, env.server_script = record("server"), record("server")
   env.client_scripts, env.client_script = record("client"), record("client")
+  env.dependencies, env.dependency = record("dependencies"), record("dependencies")
   setmetatable(env, {
     __index = function()
       return function() end
@@ -64,7 +109,7 @@ function fivem.scripts(source, side)
     chunk = assert(load(source, "=fxmanifest.lua", "t", env))
   end
   chunk()
-  return found[side]
+  return found
 end
 
 ---The parts both sides share: events, timers, storage, convars, exports.
@@ -101,9 +146,42 @@ local function common(env, host, p, convars)
     return { name = name, key = #handlers[name] }
   end
 
+  -- A promise is resolved once; `Citizen.Await` returns its value at once
+  -- if it has one, and otherwise waits on the thread it runs on, as FiveM's
+  -- does, so a callback that waits must be running on one (`thread`).
+  env.promise = {
+    new = function()
+      local waiters = {}
+      local promise = { resolved = false }
+      function promise.resolve(self, value)
+        if self.resolved then
+          return
+        end
+        self.resolved, self.value = true, value
+        for _, waiter in ipairs(waiters) do
+          local ok, err = coroutine.resume(waiter)
+          if not ok then
+            error(err, 0)
+          end
+        end
+      end
+      promise.waiters = waiters
+      return promise
+    end,
+  }
+
   env.Citizen = {
     SetTimeout = function(delay, callback)
       p.after(delay, callback)
+    end,
+    Await = function(promise)
+      if not promise.resolved then
+        local running, main = coroutine.running()
+        assert(running and not main, "fake FiveM: Citizen.Await outside a thread")
+        promise.waiters[#promise.waiters + 1] = running
+        coroutine.yield()
+      end
+      return promise.value
     end,
   }
 
@@ -145,6 +223,78 @@ local function common(env, host, p, convars)
   return handlers, fire
 end
 
+---Runs a function on a thread of its own, as FiveM runs an event's
+---handler, so it may wait (`Citizen.Await`). An error is raised, not
+---printed, so a test sees it.
+---@param fn fun() The function.
+local function thread(fn)
+  local ok, err = coroutine.resume(coroutine.create(fn))
+  if not ok then
+    error(err, 0)
+  end
+end
+
+---A fake `lib.callback` for one side: `lib.callback(name, target, cb, payload)`
+---asks the other side and hands `cb` its answer, and `lib.callback.register`
+---answers the other side's requests, each on a thread of its own. Requests
+---and answers cross the host as the mock frames them (`mock.frame`).
+---@param env table The globals, with `RegisterNetEvent` and `source`.
+---@param send fun(target: any, name: string, text: string) Sends a framed text to the other side: to a player from the server, to the server from a client.
+---@return table callback The fake `lib.callback`.
+---@return table<string, function> registered The callbacks registered, by name, for tests to call as a hostile client would.
+local function fake_callback(env, send)
+  local mock = fivem.mock
+  local registered = {}
+  local waiting = {}
+  local numbered = 0
+  local callback = setmetatable({
+    register = function(name, fn)
+      registered[name] = fn
+      env.RegisterNetEvent(name, function(text)
+        local id, body = mock.unframe(text)
+        local from = env.source
+        if not id then
+          return
+        end
+        thread(function()
+          local reply
+          if from ~= "" and from ~= nil then
+            reply = fn(from, body)
+          else
+            reply = fn(body)
+          end
+          if type(reply) == "string" then
+            send(from, name, mock.frame(id, reply))
+          end
+        end)
+      end)
+    end,
+  }, {
+    __call = function(_, name, target, cb, payload)
+      if not waiting[name] then
+        waiting[name] = {}
+        env.RegisterNetEvent(name, function(text)
+          local id, body = mock.unframe(text)
+          if not id then
+            return
+          end
+          local pending = waiting[name][id]
+          -- ox_lib 3.40 takes a server-to-client answer only from the
+          -- player it asked.
+          if pending and (pending.target == false or pending.target == env.source) then
+            waiting[name][id] = nil
+            pending.cb(body)
+          end
+        end)
+      end
+      numbered = numbered + 1
+      waiting[name][numbered] = { cb = cb, target = type(target) == "number" and target or false }
+      send(target, name, mock.frame(numbered, payload))
+    end,
+  })
+  return callback, registered
+end
+
 ---Fake FiveM server globals, with the `rpf-ws` shim, over a mock host.
 ---@param env table The global table the adapter will run in. Written to.
 ---@param host rpf.mock.ServerHost The harness's half, as for `mock.server`.
@@ -181,12 +331,19 @@ function fivem.server(env, host, seed, convars)
   ---@field run_due fun() Runs every timer due.
   ---@field next_due fun(): number? When the next timer is due.
   ---@field http_done fun(id: integer, status: integer, body: string, headers: table<string, string>?) Answers a request.
-  ---@field resources table<string, string> Each resource's state as `GetResourceState` reports it: `rpf` and `rpf-ws` started. Anything else is `missing`.
+  ---@field resources table<string, string> Each resource's state as `GetResourceState` reports it: `rpf`, `rpf-ws` and `ox_lib` started. Anything else is `missing`.
+  ---@field metadata table<string, table<string, string>> Each resource's manifest metadata, as `GetResourceMetadata` reports it: `ox_lib`'s `version` is 3.40.0.
+  ---@field callbacks table<string, function> What the adapter registered with `lib.callback.register`, by name, to call as a hostile client would.
   ---@field invoker string? The resource whose call into an export is running, as `GetInvokingResource` reports it; nil for this resource's own code.
   ---@field resource fun(name: string): table The exported `api` as another resource gets it: every value copied across the boundary, and every call naming that resource as the invoker.
   ---@field stop_resource fun(name: string) `onResourceStop` for another resource.
   ---@field positions table<integer, { x: number, y: number, z: number }> Where each player's ped stands, as `GetEntityCoords` reports it.
-  local driver = { exported = own_exports, lockdown = {}, resources = { rpf = "started", ["rpf-ws"] = "started" } }
+  local driver = {
+    exported = own_exports,
+    lockdown = {},
+    resources = { rpf = "started", ["rpf-ws"] = "started", ox_lib = "started" },
+    metadata = { ox_lib = { version = "3.40.0" } },
+  }
 
   env.GetInvokingResource = function()
     return driver.invoker
@@ -251,6 +408,14 @@ function fivem.server(env, host, seed, convars)
   env.GetResourceState = function(name)
     return driver.resources[name] or "missing"
   end
+  env.GetResourceMetadata = function(name, key)
+    local metadata = driver.metadata[name]
+    return metadata and metadata[key] or nil
+  end
+  env.lib = {}
+  env.lib.callback, driver.callbacks = fake_callback(env, function(player, name, text)
+    host.to_client(player, name, text)
+  end)
   env.DropPlayer = function(player, reason)
     host.kick(tonumber(player), reason)
   end
@@ -488,6 +653,7 @@ function fivem.client(env, host, seed, convars)
   ---@field feed string[] Every notification shown.
   ---@field nui fun(name: string, data: any): any Calls an NUI callback as the page does, and returns its answer.
   ---@field from_server fun(name: string, payload: any) The server triggered a net event.
+  ---@field callbacks table<string, function> What the adapter registered with `lib.callback.register`, by name.
   ---@field start fun() `onClientResourceStart` for this resource.
   ---@field stop fun() `onClientResourceStop` for this resource.
   ---@field run_due fun() Runs every timer due.
@@ -508,6 +674,10 @@ function fivem.client(env, host, seed, convars)
   env.TriggerServerEvent = function(name, payload)
     host.to_server(name, payload)
   end
+  env.lib = {}
+  env.lib.callback, driver.callbacks = fake_callback(env, function(_, name, text)
+    host.to_server(name, text)
+  end)
   env.RegisterNUICallback = function(name, handler)
     nui[name] = handler
   end

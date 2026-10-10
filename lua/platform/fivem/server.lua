@@ -149,6 +149,9 @@ function server.platform(shim, transport)
     end)
   end
 
+  -- Requests ride ox_lib's `lib.callback` (`ox.lua`).
+  p.on_client_request = fivem.ox.on_client_request
+
   return p
 end
 
@@ -209,7 +212,7 @@ function server.refusal(url, api_key)
       .. ", and it carries the portal connection; keep both folders of the release's [rpf] folder in resources/"
       .. " and `ensure rpf-ws` before `ensure rpf`. If it is there, its own error is above; not connecting"
   end
-  return nil
+  return fivem.ox.problem()
 end
 
 ---Starts the core from the convars, then hands it every player already on

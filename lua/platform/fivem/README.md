@@ -18,7 +18,34 @@ uploads them as the `fivem-resources` artifact. A release ships them as
 (`dev/release-addon`, [Deployment](../../../docs/deployment.md#the-game-server-release)). A server owner needs no
 `npm install`: the shim is one bundled file. `rpf` declares
 `dependency "rpf-ws"`, so FiveM starts the shim first and stops `rpf` with
-it. `dev/fivem-resources --dev` also adds `dev.lua`, the smoke test's
+it.
+
+## ox_lib
+
+`rpf` is built on [ox_lib](https://github.com/overextended/ox_lib) (J10,
+#239): `dependency "ox_lib"`, and `shared_script "@ox_lib/init.lua"`, which
+puts `lib` in the resource's Lua state on both sides before any script of
+its own. Most FiveM servers run it already (Qbox requires it), and it has
+the callbacks, notify, menus, input dialogs and progress bars an addon
+needs, which would otherwise be NUI written from scratch. Every call to it
+is in `ox.lua`, so leaving it is one file's work: upstream has moved once
+(Overextended archived it in 2025, CommunityOx forked it, and by October
+2026 Overextended's repository was active again and the fork archived).
+
+- **It is a prerequisite, never bundled.** ox_lib is LGPL-3.0; a release
+  names it and the txAdmin recipe downloads its own release. FXServer cannot
+  pin a dependency's version, so `ox.MINIMUM` is checked at start from
+  ox_lib's `version` metadata: 3.40.0, the first whose server takes a
+  server-to-client callback's answer only from the player it asked.
+- **`lib.callback` is only a transport.** It carries a request and its
+  answer (`request_server` / `on_client_request`) under one fixed name per
+  request kind (`rpf:interact`); what a client asks reaches only the
+  handler an addon registered, checked by the core (`rpf.interactions`).
+  ox_lib's own registry has no access control, so nothing else of RPF's is
+  registered with it.
+- **The login and character screens stay RPF's NUI.** ox_lib's dialogs
+  hand their values to Lua, and the password must never reach Lua (below).
+- **The core never calls it**, as it never calls a native. `dev/fivem-resources --dev` also adds `dev.lua`, the smoke test's
 console commands (Testing, below); a release never has it.
 
 ## Installing
@@ -33,6 +60,7 @@ folders of a `dev/fivem-resources` build there. Then in `server.cfg`:
 ```
 set rpf_url "wss://portal.example/ws"
 set rpf_api_key "rpf_<prefix>_…"
+ensure ox_lib
 ensure rpf-ws
 ensure rpf
 ```
@@ -47,7 +75,9 @@ The adapter refuses to start, in one console line saying what to do
 `ws://`/`wss://` address or `rpf_api_key` is not shaped like a key
 (`rpf.client.target_problem`, which never repeats the key), when the
 artifact lacks a routing-bucket native (`server.NATIVES`), when OneSync is
-not `on` (routing buckets do not work under `legacy`), or when `rpf-ws` is not started. A refused start hands the core no
+not `on` (routing buckets do not work under `legacy`), when `rpf-ws` is not started, or when ox_lib is not started or older than
+3.40.0 (`ox.problem`). A missing ox_lib or `rpf-ws` is FXServer's own line
+first: it will not start `rpf` without its dependencies. A refused start hands the core no
 player events either. Those lines are what `docs/installing.md`'s
 troubleshooting section is keyed by.
 
@@ -98,6 +128,7 @@ arrives as a function reference, which the core calls like a function.
 | `identifiers`, `name`, `kick` | `GetPlayerIdentifiers` verbatim, `GetPlayerName`, `DropPlayer` | `server.lua` |
 | `notify` | The `rpf:notify` client event, shown as a feed notification | `server.lua`, `client.lua` |
 | `to_client` / `on_client`, `to_server` / `on_server` | `TriggerClientEvent` / `RegisterNetEvent`, `TriggerServerEvent` / `RegisterNetEvent`, with the sender from FiveM's `source` and anything but a string payload dropped | `server.lua`, `client.lua` |
+| `request_server` / `on_client_request` | ox_lib's `lib.callback` / `lib.callback.register`, with no client-side rate limit (the core keeps its own); the server waits on the callback's thread (`Citizen.Await`) for the core's answer, which always comes, and answers a payload that is not a string with nothing | `ox.lua` |
 | `log` | `print`, as `[rpf] <level>: <message>` | `shared.lua` |
 | `expose` | The `api` export, a plain copy of `rpf.api` (read-only views do not survive FiveM's msgpack), with `events` subscriptions named by id | `shared.lua` |
 
@@ -190,9 +221,10 @@ The bundle targets Node 16, the oldest an FXServer that runs this ships.
 
 | What | Where | Run |
 |---|---|---|
-| The adapter, unmodified, on fake FiveM globals: both platforms complete, every member, the server-side lock, the screens, the two-line handlers, the manifest against `rpf.files` | `lua/spec/fivem_spec.lua`, fakes in `lua/platform/mock/fivem.lua` | `busted` from `lua/` |
+| The adapter, unmodified, on fake FiveM globals: both platforms complete, every member, the server-side lock, the screens, the two-line handlers, the manifest against `rpf.files`, ox_lib's refusals and its callback transport (a fake `lib.callback`, framed as the mock frames a request) | `lua/spec/fivem_spec.lua`, fakes in `lua/platform/mock/fivem.lua` | `busted` from `lua/` |
+| A hostile client's unknown name and another player's record id refused over `lib.callback`, against the real portal | `crates/fake-server/tests/scenarios/acme_tags.rs` | `cargo test -p fake-server --features lua54 acme_tags` |
 | The adapter against the real portal, under both Luas: a join with the identifiers in the expected shape, a staff kick, a cut and a restart | `crates/fake-server/tests/scenarios/fivem.rs` (`Engine::Fivem`) | `cargo test -p fake-server --features lua54 fivem` |
-| Annotations, and every native name, against overextended's `fivem-lls-addon` (pinned in `dev/fivem-natives`) | `.luarc.json` | `dev/fivem-natives && lua-language-server --check=lua/platform/fivem` |
+| Annotations, every native name and every ox_lib call, against overextended's `fivem-lls-addon` and ox_lib's own annotations at 3.40.0 (both pinned in `dev/fivem-natives`) | `.luarc.json` | `dev/fivem-natives && lua-language-server --check=lua/platform/fivem` |
 | The shim: `tsc --strict` (and the NUI page's JS, `tsconfig.nui.json`), its unit tests against a local websocket server, and the contract test | `ws-shim/` | `npm ci && npm run typecheck && npm test` |
 | Frames per second through the shim | `ws-shim/bench/` | `npm run bench` |
 | On a real FXServer (layer 5): resource KVP at the outbox's bounds, the benchmark under FXServer, the connection and the players | `dev.lua`, in a `dev/fivem-resources --dev` build | `rpf_dev_kv_bound`, `rpf_dev_bench`, `rpf_dev_status` at the server console |
@@ -263,3 +295,8 @@ Run for #186 on FXServer 35245 under OneSync, against a local portal:
   `active` on a fresh install, and the identifiers the portal stores (the
   account `license:` and the allowlisted kinds verbatim, with no `ip:`).
   It needs the game, and waits on the repository owner (#186).
+- ox_lib on a real server (J10, #239) is still to run: `rpf` refusing to
+  start beside an ox_lib older than 3.40.0 with the `ox.problem` line, and
+  an interaction's request and answer crossing `lib.callback` from a real
+  client (`/tags` and `/scrub` in the example addon), including one sent
+  while the server is restarting, which the core's timeout answers.

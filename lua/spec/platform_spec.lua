@@ -89,7 +89,7 @@ describe("rpf.platform", function()
     assert.are.same(flatten("rpf.ClientPlatform"), names(rpf.platform.CLIENT))
   end)
 
-  it("covers every capability issue D1 names for the server, and the thread and world J3 need", function()
+  it("covers every capability issue D1 names for the server, the thread and world J3 need, and J10's requests", function()
     assert.are.same({
       "after",
       "capabilities",
@@ -107,6 +107,7 @@ describe("rpf.platform", function()
       "notify",
       "now",
       "on_client",
+      "on_client_request",
       "random_hex",
       "send",
       "thread",
