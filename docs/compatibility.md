@@ -25,8 +25,8 @@ Two numbers are involved, and only one decides compatibility.
 
 | Protocol | First release | Served by portal releases | Status |
 |---|---|---|---|
-| 1 | 0.1.0 | 0.1.0 and later, until its support window closes | Served |
-| 2 | Unreleased | The next release and later | Current, unreleased: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), the `domain_external` reject code (K1), in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`), an item's `image` hash in the config snapshot (P3), and the profile (K1) in `hello` and `welcome` |
+| 1 | 0.1.0 | 0.1.0 only | Dropped before 0.2.0: no released game-side build ever spoke it, since 0.1.0 had no FiveM or Gmod adapter, and the repository owner confirmed nobody runs it (2026-10-09) |
+| 2 | Unreleased | The next release and later | Current, unreleased, and the oldest served: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), the `domain_external` reject code (K1), in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`), an item's `image` hash in the config snapshot (P3), and the profile (K1) in `hello` and `welcome` |
 
 A row is added when a release ships a new protocol version, and a version's
 last portal release is filled in when one drops it. `CHANGELOG.md` names the
@@ -36,10 +36,11 @@ protocol versions each release speaks.
 
 **The portal serves every protocol version from `protocol::MIN_VERSION` to
 `protocol::VERSION`**, and on each connection it speaks the version that
-connection's `Hello` named. Both constants were `1` in 0.1.0; the first
-change after it (H1's `Restarting`) made `VERSION` 2 with `MIN_VERSION`
-still 1, so a 0.1.0 core is served by the next portal exactly as this page
-says.
+connection's `Hello` named. Both constants were `1` in 0.1.0, and the
+first change after it (H1's `Restarting`) made `VERSION` 2. `MIN_VERSION`
+became 2 before 0.2.0 shipped, when protocol 1 was dropped on the owner's
+confirmation that nobody runs it ("Compatibility is kept clean, or not
+kept", below), so for now the range is the one version.
 
 - A `Hello` naming a version in the range is answered with `Welcome`, whose
   `protocol` is that same version (`rpf_backend::ws::auth`). The Lua core
@@ -47,8 +48,8 @@ says.
   after it would be read against the wrong shapes.
 - A `Hello` naming a version **below** `MIN_VERSION` is refused, before its
   key is even checked, as `Rejected` with code `malformed` and a reason that
-  is the upgrade message: *"unsupported protocol version 0: this portal
-  speaks protocol 1 to 1; upgrade the rpf core on this game server"*. The
+  is the upgrade message: *"unsupported protocol version 1: this portal
+  speaks protocol 2 to 2; upgrade the rpf core on this game server"*. The
   core treats `malformed` as final, stops reconnecting, and logs the reason,
   so the server's owner reads exactly what to do.
 - A version **above** `VERSION` (a core newer than the portal: a development
@@ -258,49 +259,29 @@ window: the portal decodes that version's frames and encodes its frames to
 that version's shapes, choosing by the connection's protocol, or the change
 waits until the old version is dropped.
 
-Three things the portal sends depend on the connection's version.
-`Restarting`, added in protocol 2 (`protocol::RESTARTING_PROTOCOL`), goes
-only to a connection whose `Hello` named protocol 2 or later; a protocol 1
-connection is closed without it, as a restart always closed it, and its core
-comes back on its own backoff. The gate is in `rpf_backend::ws::registry`'s
-drain, which holds the connections and their versions, so no caller can
-forget it, and `a_core_on_the_previous_protocol_is_cut_without_the_notice`
-(the fake game server) holds it. `StaffPermissions` (F9, protocol 2,
-`protocol::STAFF_PROTOCOL`) is the second: the registry hands out no staff
-ticket for an older connection (`ConnectionRegistry::staff_ticket`), so
-nothing is ever built or sent for it, and a protocol 1 core has no
-`rpf.staff` to give the list to anyway (`staff_lists_are_pushed_after_each_change`
-in `rpf-backend`'s store suite holds it). F9's other frames need no gate: a
-game server sends `link_player` and `staff_action` only if its core has them,
-and `player_linked` only answers one. The `suspended` reject code (H5,
-protocol 2, `protocol::SUSPENDED_PROTOCOL`) is the third: it refuses a
-suspended guild's `Hello` only on protocol 2 or later, and a protocol 1
-`Hello` is refused `forbidden` with the same reason, which its core logs as
-it stops for good, since it is final there. The gate is
-`ws::auth::suspended`, the one place either refusal is made, at the
-handshake, and `a_core_on_the_previous_protocol_is_told_in_words_and_stops`
-holds it. In-game config editing (E6, protocol 2,
-`protocol::CONFIG_CHANGE_PROTOCOL`) is the fourth, and the other way round:
-the portal sends `config_change_applied` and `config_change_discarded` only
-in answer to a `config_changed`, which a protocol 1 core never sends, so the
-gate is on the frame coming in. The socket refuses any message newer than
-its connection's protocol `malformed` before dispatch
-(`ServerToPortal::protocol`, exhaustive, so a new message says which version
-it is new in), and no handler is reached by one;
-`a_core_on_the_previous_protocol_cannot_edit_config` (the fake game server)
-holds it. Addons (J2, protocol 2, `protocol::ADDONS_PROTOCOL`) are the
-fifth, both ways: `declare_addons` and `query_records`, and any record frame
-naming an addon record, are refused on an older connection at the socket;
-the portal hands no addon record to one (a hold of an owner leaves them
-out) and sends it no addon command (the registry treats it as offline for
-one). The `domain_external` reject code (K1, protocol 2,
-`protocol::DOMAINS_PROTOCOL`) is the sixth: the socket rewrites it to
-`forbidden`, final in both, where it writes a reply to an older connection
-(`ws::in_protocol`), and an older core's `Hello` is adopted as native, so it
-is never refused this way to begin with. The next message or nested variant the portal gains follows the
-same pattern: a `<NAME>_PROTOCOL` constant beside the type, and the check in
-the one place that sends it, or for a message a game server sends, its
-version in `ServerToPortal::protocol`.
+Whatever is new in a version is gated on the connection's protocol, at
+the edge and nowhere else. Something the portal sends gets a
+`<NAME>_PROTOCOL` constant beside its type, holding the version it is new
+in, and the check sits in the one place that sends it: the registry, which
+holds each connection and its version, so no caller can forget it. A
+command checks `Command::protocol` there, and the registry treats a
+connection too old for it as offline. A message a game server sends names
+its version in `ServerToPortal::protocol`, exhaustive, so a new one cannot
+land without saying which version it is new in; the socket refuses one
+newer than its connection's protocol `malformed` before dispatch, so no
+handler is reached by it or answers in shapes the connection cannot read.
+A refusal code new in a version is turned into one the older connection
+knows where the socket writes the reply, or at the handshake for a
+`Hello`.
+
+A gate lives only as long as an older version is served. Raising
+`MIN_VERSION` to the version a gate names retires it: the constant, its
+check and the tests that played the older core go in the same change.
+Protocol 2 brought six (`Restarting`, `StaffPermissions`, the `suspended`
+and `domain_external` codes, in-game config editing and addons), and all six
+went when protocol 1 was dropped, which left every message in every served
+version (`Command::protocol` and `ServerToPortal::protocol` are
+`MIN_VERSION` throughout) and the mechanism in place for protocol 3.
 
 ### How the tests hold it
 

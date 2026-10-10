@@ -26,7 +26,7 @@ The first release with the FiveM resources and the Garry's Mod addon. 0.1.0
 had neither, so there is nothing to upgrade from: install it as
 [Installing](installing.md) says.
 
-- **Protocol:** speaks protocol 2. The portal serves protocols 1 and 2.
+- **Protocol:** speaks protocol 2, the only one the portal serves.
 - **Requirements:** on FiveM, OneSync on and an artifact with routing
   buckets. On Garry's Mod, the GWSockets binary module.
 - **Settings:** `rpf_url` and `rpf_api_key` on FiveM, and `rpf_ws_url` and
