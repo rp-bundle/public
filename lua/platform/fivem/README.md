@@ -129,6 +129,8 @@ arrives as a function reference, which the core calls like a function.
 | `notify` | The `rpf:notify` client event, shown as a feed notification | `server.lua`, `client.lua` |
 | `to_client` / `on_client`, `to_server` / `on_server` | `TriggerClientEvent` / `RegisterNetEvent`, `TriggerServerEvent` / `RegisterNetEvent`, with the sender from FiveM's `source` and anything but a string payload dropped | `server.lua`, `client.lua` |
 | `request_server` / `on_client_request` | ox_lib's `lib.callback` / `lib.callback.register`, with no client-side rate limit (the core keeps its own); the server waits on the callback's thread (`Citizen.Await`) for the core's answer, which always comes, and answers a payload that is not a string with nothing | `ox.lua` |
+| `request_client` / `on_server_request` | The other direction: `lib.callback` with the player's id, whose answer ox_lib 3.40 takes only from that player; the client waits on its thread for the player. At most `MAX_ASKING` per player and `MAX_UNANSWERED` from a client are left with ox_lib at once, since it never expires one sent with a callback | `ox.lua` |
+| `ui` (client) | `lib.notify`; a context menu (`lib.registerContext`, `lib.showContext`), counted as closed when another resource's replaces it; `lib.inputDialog`, a select's options by number; `lib.progressBar`. The server's `capabilities` declares all four | `ox.lua` |
 | `log` | `print`, as `[rpf] <level>: <message>` | `shared.lua` |
 | `expose` | The `api` export, a plain copy of `rpf.api` (read-only views do not survive FiveM's msgpack), with `events` subscriptions named by id | `shared.lua` |
 
@@ -298,5 +300,10 @@ Run for #186 on FXServer 35245 under OneSync, against a local portal:
 - ox_lib on a real server (J10, #239) is still to run: `rpf` refusing to
   start beside an ox_lib older than 3.40.0 with the `ox.problem` line, and
   an interaction's request and answer crossing `lib.callback` from a real
-  client (`/tags` and `/scrub` in the example addon), including one sent
-  while the server is restarting, which the core's timeout answers.
+  client (`/spray`, and `/tags`, which lists the player's tags as data and
+  shows them in `rpf.ui.menu`), including one sent while the server is
+  restarting, which the core's timeout answers; and `rpf.ui` drawn by
+  ox_lib's NUI: a notification of each kind, a menu picked and closed
+  (and one replaced by another resource's), an input dialog with each
+  field kind, a select's default and a required field, a progress bar run
+  out and cancelled with X, and a server's menu answered from the client.

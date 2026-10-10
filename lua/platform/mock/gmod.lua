@@ -60,6 +60,12 @@ local gmod = {}
 ---@field choices { text: string, data: any }[] A combo box's options.
 ---@field chosen integer? The chosen option's index.
 ---@field DoClick fun(self: rpf.mock.GmodPanel)? A button's click handler.
+---@field OnClose fun(self: rpf.mock.GmodPanel)? A window's close handler, which `Close` calls.
+---@field Close fun(self: rpf.mock.GmodPanel) Closes a window as its close button does: removed, and `OnClose` called.
+---@field Think fun(self: rpf.mock.GmodPanel)? Called each frame; a test calls it.
+---@field fraction number? What `SetFraction` set.
+---@field tooltip string? What `SetTooltip` set.
+---@field title string? What `SetTitle` set.
 
 ---The world's driving functions without `self`, the shape the fake game
 ---server calls the mock's in (`crates/fake-server/src/lua.rs`).
@@ -91,6 +97,8 @@ local gmod = {}
 ---@field commands table<string, function> Console commands, by name.
 ---@field console string[] Every `RunConsoleCommand`, as `name value…`.
 ---@field panels rpf.mock.GmodPanel[] Every Derma panel made, in order.
+---@field notices { text: string, kind: integer, seconds: number }[] Every `notification.AddLegacy`, in order.
+---@field keys table<integer, true> Keys held down, as `input.IsKeyDown` reports them.
 ---@field restore table<string, any> What the globals held before.
 ---@field restore_os_time fun(t: table?): integer The real `os.time`, put back by `uninstall`.
 ---@field host rpf.mock.ServerHost|rpf.mock.ClientHost The harness's half.
@@ -132,6 +140,14 @@ local GLOBALS = {
   "FCVAR_UNLOGGED",
   "TOP",
   "FILL",
+  "notification",
+  "input",
+  "ScrW",
+  "ScrH",
+  "KEY_X",
+  "NOTIFY_GENERIC",
+  "NOTIFY_ERROR",
+  "NOTIFY_HINT",
 }
 
 ---The Gmod adapter's part framing (`lua/platform/gmod/messages.lua`): part
@@ -770,6 +786,28 @@ function gmod.install(side, host, options)
 
   _G.TOP = 4
   _G.FILL = 1
+  _G.KEY_X = 34
+  _G.NOTIFY_GENERIC = 0
+  _G.NOTIFY_ERROR = 1
+  _G.NOTIFY_HINT = 3
+  _G.ScrW = function()
+    return 1920
+  end
+  _G.ScrH = function()
+    return 1080
+  end
+  world.notices = {}
+  world.keys = {}
+  _G.notification = {
+    AddLegacy = function(text, kind, seconds)
+      world.notices[#world.notices + 1] = { text = text, kind = kind, seconds = seconds }
+    end,
+  }
+  _G.input = {
+    IsKeyDown = function(key)
+      return world.keys[key] == true
+    end,
+  }
   local Panel = {}
   ---Any method a panel has that the fake does not record does nothing.
   local function ignore() end
@@ -794,6 +832,21 @@ function gmod.install(side, host, options)
     end,
     Remove = function(self)
       self.removed = true
+    end,
+    Close = function(self)
+      self.removed = true
+      if self.OnClose then
+        self:OnClose()
+      end
+    end,
+    SetFraction = function(self, fraction)
+      self.fraction = fraction
+    end,
+    SetTooltip = function(self, tooltip)
+      self.tooltip = tooltip
+    end,
+    SetTitle = function(self, title)
+      self.title = title
     end,
     IsValid = function(self)
       return not self.removed

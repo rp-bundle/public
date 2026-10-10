@@ -217,6 +217,88 @@ handler threw, or answered data that is not plain), `too_large` (data past
 ox_lib's `lib.callback`, and it still reaches only the handler you
 registered.
 
+## UI
+
+What a player sees: notifications, a menu to pick from, an input dialog and
+a progress bar. There are two ways to show them.
+
+**`rpf.ui`, for an addon that runs on both engines.** One call looks right
+everywhere: RPF builds it on ox_lib on FiveM and in Derma on Garry's Mod.
+It holds what an addon for both engines needs, not all of ox_lib. Every
+call takes plain tables and a callback, and returns `true` once shown or
+`nil` and why:
+
+```lua
+-- client: tell the player, ask them something, show a bar
+rpf.ui.notify("Sprayed.")
+rpf.ui.input({
+  title = "Spray a tag",
+  fields = {
+    { name = "text", label = "Text", required = true, max = 24 },
+    { name = "colour", label = "Colour", kind = "select",
+      options = { { label = "Red", value = "red" }, { label = "Blue", value = "blue" } } },
+  },
+}, function(values, err)
+  if values then rpf.interactions.send("acme_tags.spray", values) end -- err is "cancelled" if closed
+end)
+rpf.ui.progress({ label = "Spraying", duration_ms = 3000 }, function(done)
+  -- done is true when it ran to the end; nil, "cancelled" otherwise
+end)
+```
+
+On the server, the same four take the player's handle first and show it on
+their client. Use it when the server decides what to offer: the client's
+answer is checked against what you offered before your callback sees it. A
+menu answers one of your options, and its `value` never leaves the server,
+so it can be an id the player must not be able to choose freely:
+
+```lua
+-- server
+rpf.ui.menu(player.handle, {
+  title = "Your tags",
+  options = {
+    { label = "hello", value = tag.id },          -- the callback gets tag.id
+    { label = "faded", disabled = true },
+  },
+}, function(id, err)
+  if id then scrub(player, id) end -- err: "cancelled", "timeout", "gone", ...
+end)
+```
+
+The fields an input dialog takes are `text`, `number`, `checkbox` and
+`select`, each with `required`, a `default` and bounds (`min`, `max`); on
+the server the values are checked against them. A progress bar's `true` is
+still only the player's client saying so: if timing matters, keep the time
+yourself. `rpf.capabilities()` says which of the four an engine shows
+(`notify`, `menu`, `input`, `progress`). A call to one it does not show
+says `unsupported`, and one of each can be open per player at a time
+(`busy`).
+
+**`lib.*`, for an addon for FiveM alone.** Every RPF server on FiveM runs
+ox_lib 3.40.0 or newer, so a FiveM-only addon may use all of it directly:
+radial menus, zones, skill checks, anything `rpf.ui` leaves out. Load it in
+your resource as you would anywhere:
+
+```lua
+-- fxmanifest.lua
+dependencies { "rpf", "ox_lib" }
+shared_script "@ox_lib/init.lua"
+
+-- client.lua
+local rpf = exports.rpf:api()
+lib.notify({ title = "Tags", description = "Sprayed.", type = "success" })
+if lib.progressCircle({ duration = 3000, label = "Spraying", canCancel = true }) then
+  rpf.interactions.send("acme_tags.spray", { text = "hello" })
+end
+```
+
+Whichever you use, a client's request to the server still goes through
+`rpf.interactions`, even on FiveM, where it travels over `lib.callback`
+anyway. Do not register your own `lib.callback` handlers for what your
+addon does: an interaction reaches your handler only for a logged-in
+player, rate-limited, with a checked copy of its payload, and is taken down
+with your addon.
+
 ## Money and items
 
 Addons move money and items only through one set of calls, which work the
@@ -277,10 +359,11 @@ the Cfx.re platform rules forbid it, and RPF connects nothing to a payment.
 - `rpf.addons.provide("acme_tags.count", fn)` lets other addons call
   `rpf.addons.call("acme_tags.count", ...)`, which answers
   `true, ...results`, or `false` and why, only while your addon runs.
-- `rpf.capabilities()` says which game-world capabilities the engine's
-  adapter supports: `position` today (`rpf.world.position(player)`), with
-  models, zones and entities to come. Ask before offering something that
-  needs one; a call to one the engine lacks says `unsupported`.
+- `rpf.capabilities()` says what the engine's adapter supports: the game
+  world's `position` today (`rpf.world.position(player)`, server only),
+  with models, zones and entities to come, and the UI above. Ask before
+  offering something that needs one; a call to one the engine lacks says
+  `unsupported`.
 
 ## Engines
 
@@ -315,4 +398,5 @@ move and what each side does when they disagree.
       missing one is.
 - [ ] Money and items move only through `rpf.money` and `rpf.inventory`,
       each command with an op id minted once and kept with what it pays for.
-- [ ] The addon runs on both engines, or says which it needs.
+- [ ] The addon runs on both engines (its UI through `rpf.ui`), or says
+      which it needs.

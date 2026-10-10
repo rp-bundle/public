@@ -150,6 +150,12 @@ local platform = {
     model = false,
     zone = false,
     entity = false,
+    -- The UI addons show (J10), which the client builds in Derma
+    -- (`addon_ui.lua`).
+    notify = true,
+    menu = true,
+    input = true,
+    progress = true,
   },
   identifiers = identifiers,
   name = function(player)
@@ -168,6 +174,7 @@ local platform = {
   to_client = messages.to_client,
   on_client = messages.on_client,
   on_client_request = messages.on_client_request,
+  request_client = messages.request_client,
   log = shared.log,
   expose = shared.expose,
 }

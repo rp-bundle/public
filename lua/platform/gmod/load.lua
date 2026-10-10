@@ -23,6 +23,7 @@ load.CLIENT_FILES = {
   "platform/gmod/load.lua",
   "platform/gmod/shared.lua",
   "platform/gmod/messages.lua",
+  "platform/gmod/addon_ui.lua",
   "platform/gmod/client.lua",
   "platform/gmod/ui.lua",
 }

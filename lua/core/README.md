@@ -110,7 +110,7 @@ step.
 | Storage | `kv_get(key) -> string?` | Reads a persisted string |
 | | `kv_set(key, value?)` | Writes one, or deletes it with `nil`. Strings only, so the core owns the encoding |
 | Random | `random_hex(n) -> string` | `n` lowercase hex digits from the best randomness the engine offers |
-| World | `capabilities` | A table, not a function: what the engine can do with the game world for addons, each capability a function or `false` for unsupported (`rpf.world`). `position(player) -> { x, y, z }?` now; `model`, `zone` and `entity` are J4's, `false` on every adapter |
+| World | `capabilities` | A table, not a function: what the engine can do with the game world for addons, each capability a function or `false` for unsupported (`rpf.world`). `position(player) -> { x, y, z }?` now; `model`, `zone` and `entity` are J4's, `false` on every adapter. Beside them, the UI its clients show addons (J10): `notify`, `menu`, `input`, `progress`, each `true` or `false` (`rpf.ui`) |
 | Thread | `thread() -> any` | The running coroutine (`coroutine.running`), or nil where there are none (the mock), so `rpf.addons` keeps whose code is running per coroutine without the core touching `coroutine` |
 | Players | `identifiers(player) -> string[]` | Every identifier the engine knows, verbatim. Reference data, never identity |
 | | `name(player) -> string` | The in-game name |
@@ -119,6 +119,7 @@ step.
 | ToClients | `to_client(player, name, payload)` | Sends a string to one client |
 | | `on_client(name, handler)` | `handler(player, payload)`. The platform supplies the sender, and the payload is hostile input |
 | | `on_client_request(name, handler)` | `handler(player, payload, respond)`: a client's request (`request_server`), answered by calling `respond(reply)` once. The platform pairs the two (ox_lib's `lib.callback` on FiveM, numbered `net` messages on Gmod) and supplies the sender; the core always answers (J10) |
+| | `request_client(player, name, payload, callback)` | The other direction: asks one player's client and hands `callback` the answer, or nil, taking it only from that player (ox_lib 3.40's `lib.callback` with a player id on FiveM). The core keeps the timeout and reads the answer as hostile input (J10) |
 | Log | `log(level, message)` | `"debug"`, `"info"`, `"warn"` or `"error"`. The core never logs a secret |
 | Api | `expose(api)` | Publishes the public API table: through the resource's export table on FiveM, where each resource has its own Lua state, and through the `rpf` global on Gmod, where every addon shares one. Only `rpf.api` is published, never the rest of `rpf` |
 
@@ -136,7 +137,11 @@ different trust from the server, so it gets its own interface: `engine`,
 `http_request`, `kv_get` / `kv_set` (for the remember token), `now` / `after`,
 `to_server(name, payload)` / `on_server(name, handler)`,
 `request_server(name, payload, callback)` (a request, and the server's
-answer handed to `callback`, or nil; the core keeps the timeout), `log`, and `expose`
+answer handed to `callback`, or nil; the core keeps the timeout),
+`on_server_request(name, handler)` (the server's requests, answered once
+by `respond(reply)`), `ui` (what an addon shows the player, J10: `notify`,
+`menu`, `input`, `progress`, each a function taking a spec `rpf.ui` has
+checked and a `done` callback, or `false`), `log`, and `expose`
 (the client's scripts get the public API too, with `auth` in place of
 `players`, `staff` and `config`). It has no websocket, no `random_hex` and no player
 management.
@@ -1244,6 +1249,32 @@ as a request the platform pairs with its answer (`request_server`,
 J4 (#81) builds targeting on it (which record, entity or zone, distance,
 cooldowns); it keeps the rule.
 
+### UI (`rpf.ui`, J10)
+
+What an addon shows a player, the same call on every engine: `notify`,
+`menu`, `input` and `progress`. Loaded on both sides. `ui.spec` checks an
+addon's options (bounded text, at most `MAX_OPTIONS` options and
+`MAX_FIELDS` fields, each field `text`, `number`, `checkbox` or `select`
+with its bounds) and gives the plain spec an adapter shows and what an
+answer is read by; `ui.read` reads an answer against it, on both sides.
+
+- **Client.** The four take the options and a callback, show through
+  `platform.ui`, and hand the callback the result once: a menu option's
+  `value` (its number if it has none), the dialog's values by field name,
+  `true` for a bar that ran to its end, or nil and `cancelled`. One of each
+  kind is open at a time (`busy`); `unsupported` where the adapter has
+  none. It answers the server's `rpf:ui` requests the same way, with what
+  the player did, raw.
+- **Server.** The four take the player's handle first. `notify` is a
+  message (`rpf:ui_notify`); the other three are a request to the client
+  (`rpf:ui`, `request_client`) with the spec alone: a menu's values and a
+  select's stay on the server, which reads the client's answer
+  (`rpf:ui_answer`: `index`, `values` or `done`) against what it offered
+  (`invalid` for anything else). One of each kind per player at a time;
+  `gone` when the player leaves, `timeout` after `TIMEOUT_MS` (a bar: its
+  length and `GRACE_MS`). A callback runs in the context of the code that
+  asked, under `pcall`.
+
 ### Characters (`rpf.characters`, `rpf.picker`)
 
 A logged-in player's characters (D5): list, create, select and switch. Server
@@ -1583,7 +1614,8 @@ internal.
 | `time` | both | `now`, `after`, `every`, `cancel`: `rpf.time`'s timers |
 | `addons` | server | `API`, `API_MIN`, `register`, `state`, `provide`, `call` (`rpf.addons` above) |
 | `records` | server | `get`, `list`, `query`, `hold`, `release`, `create`, `update`, `delete`, `batch` (`rpf.data` above) |
-| `capabilities`, `world` | server | `capabilities()` and `world.position` (`rpf.world` above) |
+| `capabilities`, `world` | both, server | `capabilities()` on both sides (the world's on the server, the UI's on both), and `world.position` on the server (`rpf.world` above) |
+| `ui` | both | `notify`, `menu`, `input`, `progress`; on the server each takes the player first (`rpf.ui` above) |
 | `interactions` | both | `register` on the server, `send` and `request` on the client (`rpf.interactions` above) |
 | `characters`, `money`, `inventory`, `jobs`, `ops` | server | The domain-neutral facade (`rpf.facade` above): `characters.current`; `money.accounts`, `balance`, `debit`, `credit`; `inventory.count`, `give`, `take`; `jobs.current`; each domain's `supports`; `ops.new` |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |

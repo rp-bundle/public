@@ -41,7 +41,10 @@ function.
    - `capabilities` declares what the engine can do with the game world,
      each capability a function or `false` (`rpf.world`): `position` a
      player's position as `{ x, y, z }`, and `model`, `zone`, `entity`
-     `false` until J4. Never leave one out: say unsupported on purpose.
+     `false` until J4. Beside them, `notify`, `menu`, `input` and
+     `progress`, each `true` or `false`: whether this engine's clients show
+     an addon's UI (J10, `rpf.ui`). Never leave one out: say unsupported on
+     purpose.
    - `thread` names the running coroutine (`coroutine.running`), or returns
      nil where there are none, so the core keeps whose code is running per
      coroutine.
@@ -54,7 +57,9 @@ function.
      platform pairs a request with its answer and supplies the sender, and
      the core always answers. Use the engine's own pairing where it has one
      (ox_lib's `lib.callback` on FiveM), or number them (Gmod's `net`, the
-     mock: `<number>\n<body>`).
+     mock: `<number>\n<body>`). `request_client` is the other direction,
+     and takes an answer only from the player it asked: the core's
+     callback for one player's menu must never hear another's.
    - `expose` publishes `rpf.api` the way scripts on this engine share code.
      Where each resource has its own Lua state, that is an export of a plain
      copy: read-only views do not survive serialisation, and neither does a
@@ -66,7 +71,11 @@ function.
 2. **The client platform table**, every member of `rpf.ClientPlatform`
    (`meta/platform_client.lua`), with the same rules where they overlap.
    `request_server` hands its callback the server's answer, or nothing;
-   the core keeps its own timeout.
+   the core keeps its own timeout. `on_server_request` answers the server
+   once, perhaps after the player has picked. `ui` builds what an addon
+   shows (J10): `notify`, `menu`, `input` and `progress`, each over the
+   engine's own toolkit where it has one, taking a spec `rpf.ui` checked
+   and calling `done` once with what the player did.
 3. **The engine events**, two lines each: a player handed over calls
    `core.players.connected(handle)`, a player gone calls
    `core.players.dropped(handle, reason)`. Use the handle the engine keeps
@@ -104,6 +113,7 @@ function.
 | `random.lua` | `random_hex`: SHA-256 in counter mode over an entropy pool |
 | `lock.lua` | The input lock |
 | `ui.lua` | The Derma login form and character screen |
+| `addon_ui.lua` | The UI addons show (J10): Gmod's notifications, and a Derma menu, input dialog and progress bar |
 | `dev.lua` | Development-only console commands for the smoke test; not shipped |
 | `meta/gwsockets.lua` | Annotations for GWSockets, which ships none |
 
@@ -165,7 +175,11 @@ for the clients' `HTTP`.
 - *Player disconnects* carry no reason in `PlayerDisconnected`, so the core
   is told `"disconnected"`.
 - *Capabilities* (J3): `position` is `ply:GetPos()`; `model`, `zone` and
-  `entity` are unsupported until J4.
+  `entity` are unsupported until J4. All four UI kinds are supported
+  (`addon_ui.lua`): a progress bar is X to cancel, as on ox_lib, and an
+  input dialog will not submit a required field left empty or a value out
+  of its bounds. Drawn on fake Derma only so far: a real Gmod client is
+  still to show them (layer 5).
 
 The language-server check for this directory runs on its own
 (`lua/platform/gmod/.luarc.json`) with the GLua annotations

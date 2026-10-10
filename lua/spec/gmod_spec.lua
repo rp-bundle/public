@@ -759,3 +759,164 @@ describe("the Gmod adapter's client", function()
     })
   end)
 end)
+
+describe("the Gmod adapter's addon UI (J10)", function()
+  ---The panels on show of a class.
+  ---@param world rpf.mock.GmodWorld The fake.
+  ---@param class string The Derma class.
+  ---@return rpf.mock.GmodPanel[] panels The panels.
+  local function shown(world, class)
+    return load_fake().shown(world, class)
+  end
+
+  ---The button on show with a text.
+  ---@param world rpf.mock.GmodWorld The fake.
+  ---@param text string Its text.
+  ---@return rpf.mock.GmodPanel button The button.
+  local function button(world, text)
+    for _, panel in ipairs(shown(world, "DButton")) do
+      if panel.text == text then
+        return panel
+      end
+    end
+    error("no button " .. text .. " on show")
+  end
+
+  ---Boots a client: the global `rpf` is the public API.
+  ---@return rpf.mock.GmodWorld world The fake.
+  ---@return table api The public API.
+  ---@return table record What the host recorded; its `time` is the clock.
+  local function client()
+    local world, record = boot("client")
+    return world, rawget(_G, "rpf"), record
+  end
+
+  it("shows a notification in Gmod's own, by kind", function()
+    local world, api = client()
+    assert.is_true(api.ui.notify({ text = "Sprayed.", title = "Tags", kind = "error", duration_ms = 3000 }))
+    assert.are.same({ text = "Tags: Sprayed.", kind = NOTIFY_ERROR, seconds = 3 }, world.notices[1])
+  end)
+
+  it("shows a menu of buttons, a disabled one greyed out, and closing it is cancelling", function()
+    local world, api = client()
+    local got = {}
+    local keep = function(choice, err)
+      got[#got + 1] = { choice, err }
+    end
+    api.ui.menu({ title = "Pick", options = { { label = "a", value = "A", description = "first" }, { label = "b", disabled = true } } }, keep)
+    local frame = shown(world, "DFrame")[1]
+    assert.are.equal("Pick", frame.title)
+    assert.are.equal("first", button(world, "a").tooltip)
+    assert.is_false(button(world, "b").enabled)
+    button(world, "a"):DoClick()
+    assert.are.same({ { "A" } }, got)
+    assert.are.same({}, shown(world, "DFrame"), "closed once picked")
+    api.ui.menu({ title = "Pick", options = { { label = "a" } } }, keep)
+    shown(world, "DFrame")[1]:Close()
+    assert.are.same({ nil, "cancelled" }, got[2])
+  end)
+
+  it("shows an input dialog that will not submit until it is filled in right", function()
+    local world, api = client()
+    local got
+    api.ui.input({
+      title = "Spray",
+      fields = {
+        { name = "text", label = "Text", required = true, max = 4 },
+        { name = "size", label = "Size", kind = "number", min = 1, max = 3 },
+        { name = "glow", label = "Glow", kind = "checkbox" },
+        { name = "colour", label = "Colour", kind = "select", default = "blue", options = { { label = "Red", value = "red" }, { label = "Blue", value = "blue" } } },
+      },
+    }, function(values, err)
+      got = { values, err }
+    end)
+    local entries = shown(world, "DTextEntry")
+    local submit = button(world, "Submit")
+    submit:DoClick()
+    assert.is_nil(got)
+    local status = shown(world, "DLabel")
+    assert.are.equal("Text is required.", status[#status].text)
+    entries[1].value = "too long"
+    submit:DoClick()
+    assert.are.equal("Text is too long.", status[#status].text)
+    entries[1].value = "hi"
+    entries[2].value = "7"
+    submit:DoClick()
+    assert.are.equal("Size must be between 1 and 3.", status[#status].text)
+    entries[2].value = "2"
+    shown(world, "DCheckBoxLabel")[1].value = true
+    submit:DoClick()
+    assert.are.same({ { text = "hi", size = 2, glow = true, colour = "blue" } }, got)
+    api.ui.input({ title = "Again", fields = { { name = "a", label = "A" } } }, function(values, err)
+      got = { values, err }
+    end)
+    button(world, "Cancel"):DoClick()
+    assert.are.same({ nil, "cancelled" }, got)
+  end)
+
+  it("fills a progress bar over its duration, and lets X cancel it when allowed", function()
+    local world, api, record = client()
+    local got = {}
+    local keep = function(done, err)
+      got[#got + 1] = { done, err }
+    end
+    api.ui.progress({ label = "Spraying", duration_ms = 2000 }, keep)
+    local frame = shown(world, "DFrame")[1]
+    assert.are.equal("Spraying (X to cancel)", frame.title)
+    record.time = record.time + 1000
+    frame:Think()
+    assert.are.equal(0.5, shown(world, "DProgress")[1].fraction)
+    world.keys[KEY_X] = true
+    frame:Think()
+    assert.are.same({ { nil, "cancelled" } }, got)
+    world.keys[KEY_X] = nil
+    api.ui.progress({ label = "Spraying", duration_ms = 500, cancel = false }, keep)
+    frame = shown(world, "DFrame")[1]
+    world.keys[KEY_X] = true
+    frame:Think()
+    assert.are.equal(1, #got, "X does nothing to one that cannot be cancelled")
+    record.time = record.time + 500
+    frame:Think()
+    assert.are.same({ true }, got[2])
+  end)
+
+  it("answers its server's request under the number it was asked with, once the player picks", function()
+    local world, _, record = client()
+    local core = assert(world.core)
+    local spec = core.ui.spec("menu", { title = "Pick", options = { { label = "a" }, { label = "b" } } })
+    local request = core.handoff.encode("rpf:ui", { kind = "menu", spec = core.json.object(core.json.copy(spec)) })
+    world:from_server("rpf:ui", "8\n" .. request)
+    local before = #record.to_server
+    button(world, "b"):DoClick()
+    assert.are.equal(before + 1, #record.to_server)
+    local sent = record.to_server[#record.to_server]
+    assert.are.equal("rpf:ui", sent.name)
+    local number, reply = sent.payload:match("^(%d+)\n(.*)$")
+    assert.are.equal("8", number)
+    assert.are.same({ true, 2 }, { core.json.decode(reply).ok, core.json.decode(reply).index })
+  end)
+
+  it("takes a server's answer only from the player it asked", function()
+    local world, record = boot("server")
+    welcome(world, record)
+    local alice = world:connect_player(1, "Alice", STEAMID)
+    world:connect_player(2, "Bob", "76561198000000002")
+    local messages = world.include("rpf/platform/gmod/messages.lua")
+    local replies = {}
+    messages.request_client(alice, "rpf:test_ui", "{}", function(reply)
+      replies[#replies + 1] = reply == nil and "nil" or reply
+    end)
+    local sent = record.to_clients[#record.to_clients]
+    local number = sent.payload:match("^(%d+)\n")
+    world:from_client(2, "rpf:test_ui", number .. "\nfrom Bob")
+    assert.are.same({}, replies)
+    world:from_client(1, "rpf:test_ui", number .. "\nfrom Alice")
+    assert.are.same({ "from Alice" }, replies)
+    messages.request_client(alice, "rpf:test_ui", "{}", function(reply)
+      replies[#replies + 1] = reply == nil and "nil" or reply
+    end)
+    record.time = record.time + messages.ANSWER_TTL * 1000
+    world:run_due()
+    assert.are.same({ "from Alice", "nil" }, replies, "forgotten after ANSWER_TTL")
+  end)
+end)

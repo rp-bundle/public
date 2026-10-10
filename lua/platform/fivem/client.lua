@@ -45,6 +45,8 @@ function client.platform(screens)
     kv_set = shared.kv_set,
     log = shared.logger(GetConvar("rpf_debug", "false") == "true"),
     expose = shared.expose,
+    -- The UI addons show is built on ox_lib (`ox.lua`).
+    ui = fivem.ox.ui,
   }
 
   function p.http_request(method, url, headers, body, callback)
@@ -63,8 +65,9 @@ function client.platform(screens)
     end)
   end
 
-  -- Requests ride ox_lib's `lib.callback` (`ox.lua`).
+  -- Requests ride ox_lib's `lib.callback` (`ox.lua`), both ways.
   p.request_server = fivem.ox.request_server
+  p.on_server_request = fivem.ox.on_server_request
 
   return p
 end

@@ -68,6 +68,11 @@ function server.platform(shim, transport)
       model = false,
       zone = false,
       entity = false,
+      -- The UI addons show (J10), which the client builds on ox_lib.
+      notify = true,
+      menu = true,
+      input = true,
+      progress = true,
     },
   }
 
@@ -149,8 +154,9 @@ function server.platform(shim, transport)
     end)
   end
 
-  -- Requests ride ox_lib's `lib.callback` (`ox.lua`).
+  -- Requests ride ox_lib's `lib.callback` (`ox.lua`), both ways.
   p.on_client_request = fivem.ox.on_client_request
+  p.request_client = fivem.ox.request_client
 
   return p
 end

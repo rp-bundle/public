@@ -7,24 +7,37 @@
 ---is too old is refused here, at start, in one line (`ox.problem`). It is
 ---LGPL-3.0, so a release names it as a prerequisite and never bundles it.
 ---
----What it carries here is a request and its answer between a client and
----the server (`request_server`, `on_client_request`): `lib.callback` pairs
----them. It is only the transport. A client reaches one fixed name per
+---It carries a request and its answer between a client and the server, both
+---ways (`request_server` and `on_client_request`, `request_client` and
+---`on_server_request`): `lib.callback` pairs them. It is only the transport. A client reaches one fixed name per
 ---request kind, and what it asks for is checked by the core
 ---(`rpf.interactions`), never by a handler ox_lib calls directly. The login
 ---and character screens are RPF's own NUI and never touch ox_lib: its
 ---dialogs hand their values to Lua, and a password must never reach Lua.
+---
+---And it builds the UI an addon shows a player (`ox.ui`, the client
+---platform's `ui`): a notification over `lib.notify`, a menu over
+---`lib.registerContext` and `lib.showContext`, an input dialog over
+---`lib.inputDialog`, a progress bar over `lib.progressBar`. `rpf.ui` hands
+---each a spec it has checked, and reads what comes back.
 ---@class rpf.fivem.ox
 ---@field RESOURCE string The resource's name.
----@field MAX_UNANSWERED integer The most requests this client has open over `lib.callback` at once: ox_lib keeps each until its answer comes and never expires one sent with a callback, so past this a request is answered with nothing rather than left in its table.
+---@field MAX_UNANSWERED integer The most requests a client has open to the server over `lib.callback` at once: ox_lib keeps each until its answer comes and never expires one sent with a callback, so past this a request is answered with nothing rather than left in its table.
+---@field MAX_ASKING integer The same bound for the server's requests to one player's client. Per player, so players who leave with a menu open (whose requests ox_lib keeps) never stop anyone else's.
 ---@field MINIMUM string The oldest release the adapter accepts. 3.40.0 is the first whose server checks who answers a server-to-client callback, which `rpf.api.ui` relies on.
 ---@field RELEASES_URL string Where an owner gets it.
+---@field MENU_ID string The context menu id addons' menus are registered under: one at a time, as `rpf.ui` allows.
+---@field WATCH_MS integer How often an open menu checks it is still the one on show, since ox_lib says nothing when another resource's menu replaces it.
+---@field ui rpf.ClientUi The UI an addon shows, for the client platform.
 local ox = {}
 
 ox.RESOURCE = "ox_lib"
 ox.MINIMUM = "3.40.0"
 ox.MAX_UNANSWERED = 256
+ox.MAX_ASKING = 16
 ox.RELEASES_URL = "https://github.com/overextended/ox_lib/releases"
+ox.MENU_ID = "rpf_menu"
+ox.WATCH_MS = 1000
 
 ---The three numbers of a `MAJOR.MINOR.PATCH` version, anything after them
 ---ignored.
@@ -133,6 +146,187 @@ function ox.request_server(name, payload, callback)
     callback(type(reply) == "string" and reply or nil)
   end, payload)
 end
+
+---How many of the server's requests to each player's client ox_lib holds
+---without an answer yet, by player; a player with none has no entry.
+---@type table<integer, integer>
+local asking = {}
+
+---Asks a player's client, over `lib.callback` with their id: from 3.40.0,
+---ox_lib takes the answer only from that player. ox_lib raises for a player
+---who is gone, and a request past `MAX_ASKING` for one player is not sent
+---(the core has at most one menu, dialog and bar open per player, and a
+---player who leaves never answers, which ox_lib keeps for good); both are
+---answered with nothing, later, as the interface asks.
+---@param player integer The player.
+---@param name string The request's name.
+---@param payload string The request.
+---@param callback fun(reply: string?) Called with the answer.
+function ox.request_client(player, name, payload, callback)
+  local sent = false
+  if (asking[player] or 0) < ox.MAX_ASKING then
+    sent = pcall(lib.callback --[[@as function]], name, player, function(reply)
+      local left = (asking[player] or 1) - 1
+      asking[player] = left > 0 and left or nil
+      callback(type(reply) == "string" and reply or nil)
+    end, payload)
+  end
+  if sent then
+    asking[player] = (asking[player] or 0) + 1
+    return
+  end
+  Citizen.SetTimeout(0, function()
+    callback(nil)
+  end)
+end
+
+---The client's answerer for one request name from the server, over
+---`lib.callback.register`. ox_lib holds the server's request open until the
+---callback returns, so it waits on its thread for the core's answer, which
+---for a menu comes when the player picks.
+---@param name string The request's name.
+---@param handler fun(payload: string, respond: fun(reply: string)) The core's answerer.
+function ox.on_server_request(name, handler)
+  lib.callback.register(name, function(payload)
+    if type(payload) ~= "string" then
+      return nil
+    end
+    local answer = promise.new()
+    handler(payload, function(reply)
+      answer:resolve(reply)
+    end)
+    return Citizen.Await(answer)
+  end)
+end
+
+---Calls `done` once, whatever calls it first.
+---@param done function The callback.
+---@return function once The same callback, which runs once.
+local function once(done)
+  local called = false
+  return function(...)
+    if not called then
+      called = true
+      done(...)
+    end
+  end
+end
+
+---A notification, over `lib.notify`.
+---@param spec rpf.ui.NoticeSpec The notification.
+---@param done fun() Called once it is shown.
+local function notify(spec, done)
+  lib.notify({ title = spec.title, description = spec.text, type = spec.kind, duration = spec.duration_ms })
+  done()
+end
+
+---A menu, over ox_lib's context menu. Picking an option closes it without
+---`onExit`; closing it runs `onExit`. Another resource's menu can replace
+---it with no word to anyone, so while it waits it checks every `WATCH_MS`
+---that it is still the one on show, and counts one replaced as closed.
+---@param spec rpf.ui.MenuSpec The menu.
+---@param done fun(index: integer?) Called once.
+local function menu(spec, done)
+  local finish = once(done)
+  local options = {}
+  for i, option in ipairs(spec.options) do
+    options[i] = {
+      title = option.label,
+      description = option.description,
+      disabled = option.disabled,
+      onSelect = function()
+        finish(i)
+      end,
+    }
+  end
+  lib.registerContext({
+    id = ox.MENU_ID,
+    title = spec.title,
+    options = options,
+    onExit = function()
+      finish(nil)
+    end,
+  })
+  lib.showContext(ox.MENU_ID)
+  local function watch()
+    if lib.getOpenContextMenu() ~= ox.MENU_ID then
+      finish(nil)
+      return
+    end
+    Citizen.SetTimeout(ox.WATCH_MS, watch)
+  end
+  Citizen.SetTimeout(ox.WATCH_MS, watch)
+end
+
+---One input dialog row for a field.
+---@param field rpf.ui.FieldSpec The field.
+---@return table row The row, as `lib.inputDialog` takes it.
+local function row(field)
+  if field.kind == "number" then
+    return { type = "number", label = field.label, placeholder = field.placeholder, default = field.default, required = field.required, min = field.min, max = field.max }
+  elseif field.kind == "checkbox" then
+    return { type = "checkbox", label = field.label, checked = field.default, required = field.required }
+  elseif field.kind == "select" then
+    local choices = {}
+    for i, label in ipairs(field.options or {}) do
+      choices[i] = { value = tostring(i), label = label }
+    end
+    return {
+      type = "select",
+      label = field.label,
+      options = choices,
+      default = field.default and tostring(field.default),
+      required = field.required,
+    }
+  end
+  -- ox_lib reads a text row's min and max as its least and greatest length.
+  return { type = "input", label = field.label, placeholder = field.placeholder, default = field.default, required = field.required, min = field.min, max = field.max }
+end
+
+---An input dialog, over `lib.inputDialog`, which waits for the player on a
+---thread of its own. Its answer is the values by row, a select's by the
+---option number this put in its `value`; nil for a dialog cancelled, or
+---not shown because another resource's is open.
+---@param spec rpf.ui.InputSpec The dialog.
+---@param done fun(values: table?) Called once.
+local function input(spec, done)
+  local rows = {}
+  for i, field in ipairs(spec.fields) do
+    rows[i] = row(field)
+  end
+  CreateThread(function()
+    local values = lib.inputDialog(spec.title, rows, { allowCancel = true })
+    if type(values) ~= "table" then
+      done(nil)
+      return
+    end
+    local out = {}
+    for i, field in ipairs(spec.fields) do
+      local value = values[i] --[[@as any]]
+      if field.kind == "select" then
+        value = tonumber(value)
+      elseif value == "" then
+        value = nil
+      end
+      out[i] = value
+    end
+    done(out)
+  end)
+end
+
+---A progress bar, over `lib.progressBar`, which waits on a thread of its
+---own: true when it ran to its end, anything else (cancelled, interrupted,
+---or not started because another is running) is false.
+---@param spec rpf.ui.ProgressSpec The bar.
+---@param done fun(completed: boolean) Called once.
+local function progress(spec, done)
+  CreateThread(function()
+    local completed = lib.progressBar({ duration = spec.duration_ms, label = spec.label, canCancel = spec.cancel, useWhileDead = false })
+    done(completed == true)
+  end)
+end
+
+ox.ui = { notify = notify, menu = menu, input = input, progress = progress }
 
 rpf.fivem.ox = ox
 return ox

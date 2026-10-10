@@ -25,7 +25,9 @@
 ---- **ox_lib, as far as the adapter uses it** (J10): `lib.callback` and
 ---  `lib.callback.register`, with `promise` and `Citizen.Await` to wait on
 ---  an answer from inside a callback, which runs on a thread of its own as
----  ox_lib's do. Its wire is not ox_lib's: a request and its answer cross
+---  ox_lib's do; and on the client the UI addons show, recorded for a test
+---  to answer as a player would (`notify`, the context menu, `inputDialog`
+---  and `progressBar`, which wait on their thread as ox_lib's do). Its wire is not ox_lib's: a request and its answer cross
 ---  the host as the mock platform frames them (`mock.frame`), under the
 ---  request's name, so a harness plays a client of any engine alike.
 ---  `ox_lib` is a started resource at version 3.40.0 unless a test says
@@ -654,6 +656,13 @@ function fivem.client(env, host, seed, convars)
   ---@field nui fun(name: string, data: any): any Calls an NUI callback as the page does, and returns its answer.
   ---@field from_server fun(name: string, payload: any) The server triggered a net event.
   ---@field callbacks table<string, function> What the adapter registered with `lib.callback.register`, by name.
+  ---@field notices table[] Every `lib.notify`, as it was given.
+  ---@field contexts table<string, table> Every context menu registered, by id.
+  ---@field open_context string? The context menu on show, as `lib.getOpenContextMenu` reports it.
+  ---@field dialog { heading: string, rows: table[], options: table?, answer: fun(values: table?) }? The input dialog on show; `answer` is the player submitting (or nil, cancelling).
+  ---@field bar { data: table, finish: fun(completed: boolean?) }? The progress bar on show; `finish` is it ending.
+  ---@field pick fun(n: integer) The player picks the open context menu's `n`th option.
+  ---@field close_context fun() The player closes the open context menu.
   ---@field start fun() `onClientResourceStart` for this resource.
   ---@field stop fun() `onClientResourceStop` for this resource.
   ---@field run_due fun() Runs every timer due.
@@ -678,6 +687,69 @@ function fivem.client(env, host, seed, convars)
   env.lib.callback, driver.callbacks = fake_callback(env, function(_, name, text)
     host.to_server(name, text)
   end)
+  env.CreateThread = thread
+  driver.notices, driver.contexts = {}, {}
+  env.lib.notify = function(data)
+    driver.notices[#driver.notices + 1] = data
+  end
+  env.lib.registerContext = function(context)
+    driver.contexts[context.id] = context
+  end
+  env.lib.showContext = function(id)
+    assert(driver.contexts[id], "No context menu of such id found.")
+    driver.open_context = id
+  end
+  env.lib.getOpenContextMenu = function()
+    return driver.open_context
+  end
+  -- As ox_lib's: a pick closes the menu without `onExit`; a close runs it.
+  function driver.pick(n)
+    local context = driver.contexts[assert(driver.open_context, "no context menu is open")]
+    driver.open_context = nil
+    local option = context.options[n]
+    if option.onSelect then
+      option.onSelect(option.args)
+    end
+  end
+  function driver.close_context()
+    local context = driver.contexts[assert(driver.open_context, "no context menu is open")]
+    driver.open_context = nil
+    if context.onExit then
+      context.onExit()
+    end
+  end
+  -- One dialog and one bar at a time, as ox_lib's: another while one is on
+  -- show answers nil at once.
+  env.lib.inputDialog = function(heading, rows, options)
+    if driver.dialog then
+      return nil
+    end
+    local answer = env.promise.new()
+    driver.dialog = {
+      heading = heading,
+      rows = rows,
+      options = options,
+      answer = function(values)
+        driver.dialog = nil
+        answer:resolve(values)
+      end,
+    }
+    return env.Citizen.Await(answer)
+  end
+  env.lib.progressBar = function(data)
+    if driver.bar then
+      return nil
+    end
+    local ended = env.promise.new()
+    driver.bar = {
+      data = data,
+      finish = function(completed)
+        driver.bar = nil
+        ended:resolve(completed)
+      end,
+    }
+    return env.Citizen.Await(ended)
+  end
   env.RegisterNUICallback = function(name, handler)
     nui[name] = handler
   end

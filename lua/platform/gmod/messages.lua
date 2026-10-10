@@ -1,7 +1,7 @@
 ---Messages between the game server and its players' clients, over Gmod's
----`net` library: the platform's `to_client` / `on_client` and
----`on_client_request` on the server, and `to_server` / `on_server` and
----`request_server` on the client.
+---`net` library: the platform's `to_client` / `on_client`,
+---`on_client_request` and `request_client` on the server, and `to_server` /
+---`on_server`, `request_server` and `on_server_request` on the client.
 ---
 ---The core's payloads are strings it has already encoded, and this carries
 ---them byte for byte. One `net` message holds at most 64 KiB, and the list of
@@ -17,9 +17,11 @@
 ---payload arrive together and in order, and the receiver joins them.
 ---
 ---A request and its answer (J10) are two payloads under the request's name,
----each `<number>\n<body>`: the client numbers its requests, and the server
----answers under the number it was asked with. The numbers are the client's
----own business, so a hostile one can only confuse its own answers.
+---each `<number>\n<body>`: the side that asks numbers its requests, and the
+---other answers under the number it was asked with. A client's numbers are
+---its own business, so a hostile one can only confuse its own answers; the
+---server takes an answer to its own request only from the player it asked,
+---so one player cannot answer for another.
 ---
 ---**Every client is hostile.** The server takes a payload from a client only
 ---in a single part: nothing the core sends from a client comes near the
@@ -30,7 +32,8 @@
 ---@class rpf.gmod.Messages
 ---@field PART_BYTES integer The most bytes one part carries, under `net`'s 64 KiB with room for the header.
 ---@field MAX_PARTS_FROM_SERVER integer The most parts a client joins into one payload, so even its own server cannot make it hold more than a couple of megabytes.
----@field REQUEST_TTL integer How long, in seconds, a request waits for its answer before it is forgotten: well past the core's own timeout, which has answered it by then, so an answer that never comes holds nothing for good.
+---@field REQUEST_TTL integer How long, in seconds, a client's request waits for its answer before it is forgotten: well past the core's own timeout, which has answered it by then, so an answer that never comes holds nothing for good.
+---@field ANSWER_TTL integer The same for the server's requests to a client, which wait on a player: past the longest the core waits (a progress bar of ten minutes and its grace).
 local messages = {}
 
 ---Callbacks for this client's requests the server has not answered, by
@@ -40,6 +43,14 @@ local waiting = {}
 
 ---How many requests this client has numbered.
 local numbered = 0
+
+---The server's requests to clients not answered yet, by name and number,
+---with the player each was sent to.
+---@type table<string, table<integer, { player: Player, callback: fun(reply: string?) }>>
+local asking = {}
+
+---How many requests the server has numbered.
+local asked = 0
 
 ---Reads a numbered request or answer.
 ---@param text string The payload.
@@ -56,6 +67,7 @@ end
 messages.PART_BYTES = 60000
 messages.MAX_PARTS_FROM_SERVER = 32
 messages.REQUEST_TTL = 60
+messages.ANSWER_TTL = 660
 
 ---Names already pooled with `util.AddNetworkString` in this state.
 ---@type table<string, true>
@@ -180,6 +192,68 @@ function messages.on_client_request(name, handler)
       if not answered then
         answered = true
         messages.to_client(player, name, tostring(number) .. "\n" .. reply)
+      end
+    end)
+  end)
+end
+
+---Asks a player's client something and hands its answer to `callback`.
+---The first request under a name listens for answers, and takes one only
+---from the player it was sent to. One with no answer in `ANSWER_TTL` is
+---forgotten, its callback told none will come; so is one to a player gone.
+---@param player Player The player.
+---@param name string The request's name.
+---@param payload string The request.
+---@param callback fun(reply: string?) Called once, with the answer.
+function messages.request_client(player, name, payload, callback)
+  if not asking[name] then
+    asking[name] = {}
+    messages.on_client(name, function(from, reply)
+      local number, body = unnumber(reply)
+      if not number then
+        return
+      end
+      local pending = asking[name][number]
+      if pending and pending.player == from then
+        asking[name][number] = nil
+        pending.callback(body)
+      end
+    end)
+  end
+  if not IsValid(player) then
+    timer.Simple(0, function()
+      callback(nil)
+    end)
+    return
+  end
+  asked = asked + 1
+  local number = asked
+  asking[name][number] = { player = player, callback = callback }
+  timer.Simple(messages.ANSWER_TTL, function()
+    local pending = asking[name][number]
+    if pending then
+      asking[name][number] = nil
+      pending.callback(nil)
+    end
+  end)
+  messages.to_client(player, name, tostring(number) .. "\n" .. payload)
+end
+
+---Registers the client's answerer for one request name from the server,
+---answering under the number it was asked with, once.
+---@param name string The request's name.
+---@param handler fun(payload: string, respond: fun(reply: string)) Called for each request.
+function messages.on_server_request(name, handler)
+  messages.on_server(name, function(payload)
+    local number, body = unnumber(payload)
+    if not number then
+      return
+    end
+    local answered = false
+    handler(body --[[@as string]], function(reply)
+      if not answered then
+        answered = true
+        messages.to_server(name, tostring(number) .. "\n" .. reply)
       end
     end)
   end)
