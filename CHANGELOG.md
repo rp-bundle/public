@@ -51,7 +51,10 @@ keep the job the portal has.
   money, inventory and job modules answer `domain_external` there, the
   facade `unavailable`, and on a companion server without its bridge (K2)
   no player gets past `registered`, with one log line saying why (part 3).
-  The portal's pages follow.
+  The portal shows "managed by the game server's framework" in place of an
+  external domain's characters, containers and accounts, offers no edit of
+  them, marks the item catalog and the jobs "not applied", and lists the
+  archived records behind an explicit, read-only Archived filter (part 4).
 - Release docs (H7, #56). Every release publishes its own docs site on
   GitHub Pages, from its tag: installing, upgrading from the release before
   (`docs/upgrading.md`, which a tag now requires), compatibility, the
