@@ -8,7 +8,8 @@
 -- the mock platform and on the real FiveM and Gmod adapters, against a fake
 -- portal (`spec/support/conformance.lua`). A player logs in and puts a
 -- character in play; an addon reads their character, money, items and job,
--- and moves money and items, each command once per op id.
+-- and moves money and items, each command once per op id, and pays for a
+-- change to its own records in one intent (a composite operation).
 
 local conformance = require("spec.support.conformance")
 
@@ -125,6 +126,50 @@ local function playing(world, addon_account, pockets_weight)
   local handle = world:login(1, PLAYER)
   world:select(handle, JANE)
   return handle
+end
+
+---An addon that sells badges: a live type a player owns.
+---@return table manifest The manifest.
+local function badges()
+  return {
+    namespace = "acme_badges",
+    version = "1.0.0",
+    api = 1,
+    title = "Badges",
+    types = {
+      badge = {
+        schema = 1,
+        authority = "live",
+        owners = { "player" },
+        fields = { label = { type = "string", max_len = 24, required = true } },
+      },
+    },
+  }
+end
+
+---A world with Jane in play and the badges addon active.
+---@param world spec.ConformanceWorld The world.
+---@return any handle Her engine handle.
+local function selling(world)
+  seed(world)
+  local manifest = badges()
+  assert(world.api.addons.register(manifest))
+  world:connect()
+  world:install({ conformance.installed(world.core, manifest) }, config(world))
+  world:pump()
+  assert.are.equal("active", (world.api.addons.state("acme_badges")))
+  local handle = world:login(1, PLAYER)
+  world:select(handle, JANE)
+  return handle
+end
+
+---The journal's entry for an op, as storage holds it.
+---@param world spec.ConformanceWorld The world.
+---@param op string The op id.
+---@return table entry The entry, decoded.
+local function stored(world, op)
+  local key = world.core.ops.ENTRY_PREFIX .. op
+  return world.core.json.decode(assert(world.server_platform.kv_get(key)))
 end
 
 conformance.run(busted, "the facade", {
@@ -269,6 +314,105 @@ conformance.run(busted, "the facade", {
       )
       assert.is_true(world.api.jobs.supports("current"))
       assert.are.same({ nil, "not_logged_in" }, { world.api.jobs.current(9) })
+    end,
+  },
+  {
+    name = "pays for an addon's change in one intent, which completes once the change is on its way",
+    run = function(world)
+      local handle = selling(world)
+      local api = world.api
+      local applied, op = 0, api.ops.new()
+      ---@type { id: string }?
+      local badge = nil
+      ---The badge the debit pays for.
+      ---@return table? record The badge.
+      local function grant()
+        applied = applied + 1
+        -- Not on its way to the portal yet: a crash now loses the badge and
+        -- has taken the money, so the intent must still be pending on disk.
+        assert.are.equal("pending", stored(world, op).state)
+        badge = api.records.create("acme_badges.badge", { label = "Gold" }, { owner = { kind = "player", id = PLAYER } })
+        return badge
+      end
+      -- The outbox has no room yet, so the badge's create stays in memory.
+      local options = world.core.connection.options
+      local entries = options.max_entries
+      options.max_entries = 0
+      assert.is_true(api.money.debit(handle, "wallet", 40, "Gold badge", op, grant))
+      assert.are.equal(1, applied)
+      assert.are.equal(60, api.money.balance(handle, "wallet"))
+      local made = assert(badge)
+      assert.are.equal("Gold", assert(api.records.get("acme_badges.badge", made.id)).fields.label)
+      assert.are.equal("pending", stored(world, op).state, "the badge is not on disk yet")
+      options.max_entries = entries
+      world:advance(1000)
+      assert.are.equal("done", stored(world, op).state)
+      assert.is_true(api.money.debit(handle, "wallet", 40, "Gold badge", op, grant), "a repeat answers as before")
+      assert.are.equal(1, applied, "and neither pays nor grants again")
+      assert.are.equal(60, api.money.balance(handle, "wallet"))
+      world:settle()
+      assert.are.equal("Gold", world.portal.records[made.id].fields.label)
+    end,
+  },
+  {
+    name = "never runs the change when the payment is refused",
+    run = function(world)
+      local handle = selling(world)
+      local api = world.api
+      local applied = false
+      assert.are.same(
+        { nil, "refused", "insufficient_funds" },
+        {
+          api.money.debit(handle, "wallet", 500, "Car", api.ops.new(), function()
+            applied = true
+            return true
+          end),
+        }
+      )
+      assert.is_false(applied)
+      assert.are.same({ nil, "refused", "invalid" }, { api.money.debit(handle, "wallet", 1, "x", api.ops.new(), 42) })
+      assert.are.same({}, api.ops.unknown())
+    end,
+  },
+  {
+    name = "is unknown, for staff, when the change it paid for fails, and refunds nothing",
+    run = function(world)
+      local handle = selling(world)
+      local api = world.api
+      local seen = {}
+      api.events.on("domains.op_unknown", function(unknown)
+        seen[#seen + 1] = unknown
+      end)
+      local answered, threw = api.ops.new(), api.ops.new()
+      assert.are.same({ nil, "unknown" }, {
+        api.money.debit(handle, "wallet", 10, "Badge", answered, function()
+          return nil, "limit"
+        end),
+      })
+      assert.are.same({ nil, "unknown" }, {
+        api.inventory.take(handle, "water", 1, threw, function()
+          error("no badge for you")
+        end),
+      })
+      assert.are.equal(90, api.money.balance(handle, "wallet"), "the money moved, and stays moved")
+      assert.are.equal(2, api.inventory.count(handle, "water"))
+      local listed = api.ops.unknown()
+      assert.are.equal(2, #listed)
+      local by_op, heard = {}, {}
+      for i, unknown in ipairs(listed) do
+        by_op[unknown.op_id] = unknown
+        heard[seen[i].op_id] = seen[i]
+      end
+      assert.are.same(by_op, heard, "what was announced is what is listed")
+      assert.are.same(
+        { player = PLAYER, account = "wallet", amount = 10, reason = "Badge" },
+        by_op[answered].detail
+      )
+      assert.are.equal("money.debit", by_op[answered].call)
+      assert.are.same({ player = PLAYER, item = "water", count = 1 }, by_op[threw].detail)
+      assert.truthy(by_op[threw].cause:find("no badge for you", 1, true))
+      assert.are.equal(1, world:logged("error", answered))
+      assert.are.same({ nil, "unknown" }, { api.money.debit(handle, "wallet", 10, "Badge", answered) })
     end,
   },
 })

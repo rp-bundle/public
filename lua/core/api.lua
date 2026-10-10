@@ -275,11 +275,11 @@ if facade then
     balance = function(player, account)
       return facade.balance(player, account)
     end,
-    debit = function(player, account, amount, reason, op_id)
-      return facade.debit(player, account, amount, reason, op_id)
+    debit = function(player, account, amount, reason, op_id, apply)
+      return facade.debit(player, account, amount, reason, op_id, apply)
     end,
-    credit = function(player, account, amount, reason, op_id)
-      return facade.credit(player, account, amount, reason, op_id)
+    credit = function(player, account, amount, reason, op_id, apply)
+      return facade.credit(player, account, amount, reason, op_id, apply)
     end,
     supports = function(call)
       return facade.supports("money", call)
@@ -289,11 +289,11 @@ if facade then
     count = function(player, item)
       return facade.count(player, item)
     end,
-    give = function(player, item, count, op_id)
-      return facade.give(player, item, count, op_id)
+    give = function(player, item, count, op_id, apply)
+      return facade.give(player, item, count, op_id, apply)
     end,
-    take = function(player, item, count, op_id)
-      return facade.take(player, item, count, op_id)
+    take = function(player, item, count, op_id, apply)
+      return facade.take(player, item, count, op_id, apply)
     end,
     supports = function(call)
       return facade.supports("inventory", call)
@@ -310,6 +310,9 @@ if facade then
   surface.ops = freeze({
     new = function()
       return rpf.ops.new()
+    end,
+    unknown = function()
+      return rpf.ops.unknown()
     end,
   }, "rpf.ops")
 end

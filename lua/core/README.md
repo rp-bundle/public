@@ -1107,6 +1107,7 @@ authority (K1), behind the same calls. Server only; `rpf.api.characters`,
 | `jobs.current(player)` | `{ name, employer, grade, on_duty }` from `rpf.jobs` (the job's slug, its employer's, its rank, duty) |
 | `<domain>.supports(call)` | Whether the call works here: every native call does, except `money.debit` and `credit` without the addon account |
 | `ops.new()` | An op id, `<ms>-<16 hex>`: when it was minted, and the platform's randomness |
+| `ops.unknown()` | The commands whose result is `unknown`, oldest first, each `{ op_id, call, at, detail, cause }`: for a staff tool in game |
 
 Every call takes the engine's handle of a logged-in player and acts on the
 character in play. A read is its value, or nil and `not_logged_in`,
@@ -1132,6 +1133,31 @@ persisted outbox), tried again each second until then: a crash in between
 would otherwise lose the change while the journal answered a retry `true`.
 Until then the entry is `pending` on disk, which a restart reads as
 `unknown`.
+
+**Every `unknown` is surfaced to staff** (K2), whenever it arises: a
+command that threw or answered `unknown`, an `apply` that failed, or an
+intent a restart cut off. The journal keeps each intent's `detail` (the
+player's account, the account or item, the amount or count, the reason;
+never a framework's key), and an `unknown` one is logged at `error` with
+it, announced as `domains.op_unknown`, and listed by `ops.unknown()` until
+it ages out. A durability check that throws is logged once and tried again.
+
+**A lost index never lets an op id run twice.** Each entry is written
+under its own key before the index, so an id the journal does not know (an
+unreadable index, or one a crash cut short) is looked up by that key before
+it may run: what is there is its result, and an entry that cannot be read
+is `unknown`. One found joins the index again.
+
+**Composite operations** (conflict rule 4). Each command takes an optional
+`apply` after its op id: the addon's own change the command pays for (or
+goes with). It runs inside the same journaled intent, only once the
+command went through, under `rpf.records.watch`, which lists the held
+records it wrote; the intent completes on disk only once each of them is
+reported (`rpf.sync.reported`: carried by a report queued in the
+persisted outbox) as well as the command's own change. An `apply` that
+throws or answers nil or false makes the command `unknown`, with the money
+or items already moved: nothing compensates. A non-callable `apply` is
+`refused` (`invalid`) before anything is journaled.
 
 ### The game world (`rpf.world`, J3)
 

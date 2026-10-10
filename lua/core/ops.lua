@@ -15,8 +15,16 @@
 ---   recorded result without running again, so an addon that is not sure a
 ---   payment went through may simply send it again.
 --- - **After a restart** an intent still `pending` is `unknown`: it is
----   logged for staff and never run again, because nobody can tell whether
+---   surfaced to staff and never run again, because nobody can tell whether
 ---   it happened. An addon must not grant what it was paying for.
+--- - **Every `unknown` is surfaced to staff**, whenever it arises: a command
+---   that threw or answered `unknown`, or an intent a restart cut off. It is
+---   logged at `error` with what the operation was (the call, the player,
+---   the account or item, the amount and the reason, `rpf.ops.Detail`),
+---   announced as `domains.op_unknown`, and listed by `ops.unknown()` while
+---   it is in the journal. Staff resolve it by hand, in the framework or
+---   the portal: nothing here compensates, since nothing can tell a lost
+---   payment from a lost grant.
 --- - **Tombstones go only by age.** The journal holds at most `MAX_ENTRIES`;
 ---   a new command past that is refused `journal_full` rather than evicting a
 ---   young tombstone, whose id could then run twice. An `op_id` older than
@@ -25,6 +33,12 @@
 ---
 ---An op id carries when it was minted: `<ms>-<16 hex digits>`, the
 ---milliseconds since the Unix epoch and the platform's randomness.
+---
+---**A lost index never lets an id run twice.** Each entry is stored under
+---its own key, written before the index, so an id the journal does not
+---know (its index could not be read, or a crash lost the line naming it)
+---is looked up by that key before it may run: what is there is its result,
+---and an entry that cannot be read is `unknown`.
 ---@class rpf.ops
 ---@field WINDOW_MS integer How long a result is kept, and how old an op id may be: a day.
 ---@field MAX_ENTRIES integer The most operations the journal holds at once.
@@ -50,11 +64,36 @@ ops.ENTRY_PREFIX = "rpf.ops.op."
 ---@field ok boolean? Whether it succeeded, once done.
 ---@field status string? Its refusal's status, once done and not ok: `refused`, `unavailable` or `unknown`.
 ---@field reason string? Why it was refused.
+---@field detail rpf.ops.Detail? What it was, for staff resolving an `unknown` one.
+---@field cause string? For an `unknown` one, what went wrong, for staff.
+
+---What an operation was, kept with its intent so that staff resolving an
+---`unknown` one know what to grant or refund. Plain values only: it is
+---stored as JSON and logged. Never a framework's key, which stays out of
+---the log as it stays out of the portal.
+---@class rpf.ops.Detail
+---@field player string? The player's account (`player_id`).
+---@field account string? The account's name, for money.
+---@field amount number? The amount, for money.
+---@field item string? The item's slug, for items.
+---@field count number? How many, for items.
+---@field reason string? The reason the addon gave, for money.
+
+---What `ops.unknown()` lists and `domains.op_unknown` carries.
+---@class rpf.ops.Unknown
+---@field op_id string The op id.
+---@field call string What it was: `money.debit`, `inventory.give`, …
+---@field at number When its op id was minted, in milliseconds since the Unix epoch.
+---@field detail rpf.ops.Detail What it was.
+---@field cause string What went wrong.
 
 ---@type table<string, rpf.ops.Entry>
 local entries = {}
 ---@type rpf.ServerPlatform?
 local platform = nil
+---The op ids whose durability check has thrown, logged once each.
+---@type table<string, true>
+local complained = {}
 
 ---Logs through the platform.
 ---@param level string The level.
@@ -74,7 +113,22 @@ local function save(id, index)
   local p = assert(platform, "rpf.ops is not started")
   if id then
     local entry = entries[id]
-    p.kv_set(ops.ENTRY_PREFIX .. id, entry and assert(json.encode(json.object(entry))) or nil)
+    local stored = nil
+    if entry then
+      stored = json.object({})
+      for key, value in pairs(entry) do
+        stored[key] = value
+      end
+      if type(entry.detail) == "table" then
+        -- Its own copy, marked, so an empty one still encodes as an object.
+        local detail = json.object({})
+        for key, value in pairs(entry.detail) do
+          detail[key] = value
+        end
+        stored.detail = detail
+      end
+    end
+    p.kv_set(ops.ENTRY_PREFIX .. id, stored and assert(json.encode(stored)) or nil)
   end
   if index then
     local ids = {}
@@ -141,6 +195,115 @@ local function recorded(entry)
   return nil, entry.status, entry.reason
 end
 
+---A copy of an entry's detail, holding only plain values.
+---@param detail any The detail.
+---@return rpf.ops.Detail copy The copy.
+local function detail_of(detail)
+  local out = {}
+  if type(detail) == "table" then
+    for _, key in ipairs({ "player", "account", "amount", "item", "count", "reason" }) do
+      local value = detail[key]
+      if type(value) == "string" or type(value) == "number" then
+        out[key] = value
+      end
+    end
+  end
+  return out
+end
+
+---What staff are told of an unknown entry.
+---@param id string The op id.
+---@param entry rpf.ops.Entry The entry.
+---@return rpf.ops.Unknown unknown A copy.
+local function unknown_of(id, entry)
+  return {
+    op_id = id,
+    call = tostring(entry.call),
+    at = entry.at,
+    detail = detail_of(entry.detail),
+    cause = entry.cause or "unknown",
+  }
+end
+
+---Surfaces an entry that ended `unknown` to staff: one line at `error`
+---naming what it was, and `domains.op_unknown`.
+---@param id string The op id.
+---@param entry rpf.ops.Entry The entry.
+local function surface(id, entry)
+  local unknown = unknown_of(id, entry)
+  local parts = {}
+  for _, key in ipairs({ "player", "account", "amount", "item", "count", "reason" }) do
+    if unknown.detail[key] ~= nil then
+      parts[#parts + 1] = key .. "=" .. tostring(unknown.detail[key])
+    end
+  end
+  log(
+    "error",
+    unknown.call
+      .. " "
+      .. id
+      .. " may or may not have happened ("
+      .. unknown.cause
+      .. "); it will not run again, and staff must resolve it by hand"
+      .. (#parts > 0 and (": " .. table.concat(parts, " ")) or "")
+  )
+  rpf.events.emit("domains.op_unknown", unknown)
+end
+
+---Reads an entry from storage, as a restart does: one still `pending` is
+---`unknown` from now on, and surfaced; one that cannot be read is too.
+---@param id string The op id.
+---@param raw string? What storage holds under its key.
+---@return rpf.ops.Entry? entry The entry, or nil if storage holds none.
+---@return boolean cut_off Whether it changed to `unknown` here, and so must be written back.
+local function read_entry(id, raw)
+  if raw == nil then
+    return nil, false
+  end
+  local entry = json.decode(raw)
+  if type(entry) ~= "table" or (entry.state ~= "pending" and entry.state ~= "done") then
+    ---@type rpf.ops.Entry
+    local lost = {
+      at = assert(ops.minted_at(id)),
+      call = "unreadable",
+      state = "done",
+      ok = false,
+      status = "unknown",
+      cause = "its journal entry could not be read",
+    }
+    surface(id, lost)
+    return lost, true
+  end
+  ---@cast entry rpf.ops.Entry
+  if entry.state == "pending" then
+    entry.state, entry.ok, entry.status = "done", false, "unknown"
+    entry.cause = "cut off by a restart"
+    surface(id, entry)
+    return entry, true
+  end
+  return entry, false
+end
+
+---Finds an entry the index did not name, under its own key, which is
+---written before the index. One found joins the journal, so the index
+---names it again. Nothing there means the id never ran here.
+---@param id string The op id.
+---@return rpf.ops.Entry? entry The entry, or nil if it never ran.
+local function recover(id)
+  local p = assert(platform)
+  local entry, cut_off = read_entry(id, p.kv_get(ops.ENTRY_PREFIX .. id))
+  if not entry then
+    return nil
+  end
+  entries[id] = entry
+  log("warn", "found " .. tostring(entry.call) .. " " .. id .. " outside the journal's index; it joins the journal again")
+  local ok, why = pcall(save, cut_off and id or nil, true)
+  if not ok then
+    log("error", "could not write the operation journal (" .. tostring(why) .. ")")
+  end
+  return entry
+end
+
 ---Runs a command once per op id. A repeated id inside the window gets the
 ---recorded result; a new one is journaled `pending`, run, and its result
 ---recorded. A command that throws is `unknown`: it may have done part of
@@ -155,11 +318,12 @@ end
 ---@param id any The op id.
 ---@param call string What it is, for the journal and staff.
 ---@param durable (fun(): boolean)? Whether the change is on disk yet; nil when the command's own result is the whole of it.
----@param run fun(): boolean?, string?, string? The command: true, or nil, a status and a reason.
+---@param run fun(): boolean?, string?, string? The command: true, or nil, a status and a reason. For `unknown`, the reason is what went wrong, for staff, and is not returned.
+---@param detail rpf.ops.Detail? What it is, kept with the intent for staff.
 ---@return boolean? ok True if it succeeded, now or before.
 ---@return string? status `refused`, `unavailable` or `unknown` when not.
 ---@return string? reason For `refused`, why: the command's own, or `invalid_op`, `expired_op`, `journal_full`.
-function ops.run(id, call, durable, run)
+function ops.run(id, call, durable, run, detail)
   if not platform then
     return nil, "unavailable"
   end
@@ -175,7 +339,16 @@ function ops.run(id, call, durable, run)
     return nil, "refused", "invalid_op"
   end
   ---@cast id string
+  ---@type rpf.ops.Entry?
   local known = entries[id]
+  if not known then
+    local found, lookup = pcall(recover, id)
+    if not found then
+      log("error", "could not look " .. id .. " up in storage (" .. tostring(lookup) .. "); it was not run")
+      return nil, "unavailable"
+    end
+    known = lookup
+  end
   if known then
     return recorded(known)
   end
@@ -191,26 +364,36 @@ function ops.run(id, call, durable, run)
     return nil, "refused", "journal_full"
   end
   ---@type rpf.ops.Entry
-  local entry = { at = at, call = call, state = "pending" }
+  local entry = { at = at, call = call, state = "pending", detail = detail_of(detail) }
   entries[id] = entry
   local saved, why = pcall(save, id, true)
   if not saved then
     entries[id] = nil
-    pcall(save, id, true)
+    local cleaned, failure = pcall(save, id, true)
+    if not cleaned then
+      log("error", "could not take " .. id .. " back out of the journal either (" .. tostring(failure) .. ")")
+    end
     log("error", "could not journal " .. call .. " " .. id .. " (" .. tostring(why) .. "); it was not run")
     return nil, "unavailable"
   end
   local ran, ok, status, reason = pcall(run)
   if not ran then
-    log("error", call .. " " .. id .. " failed part way and may have done some of its work: " .. tostring(ok))
-    ok, status, reason = nil, "unknown", nil
+    ok, status, reason = nil, "unknown", "it threw part way: " .. tostring(ok)
   end
   entry.state = "done"
   entry.ok = ok == true
   if not entry.ok then
-    entry.status, entry.reason = status or "unknown", reason
+    entry.status = status or "unknown"
+    if entry.status == "unknown" then
+      entry.cause = type(reason) == "string" and reason or "its provider could not say whether it happened"
+    else
+      entry.reason = reason
+    end
   end
   ops.settle(id, call, entry.ok and durable or nil)
+  if entry.status == "unknown" then
+    surface(id, entry)
+  end
   return recorded(entry)
 end
 
@@ -229,10 +412,15 @@ function ops.settle(id, call, durable)
   if not ready then
     local ok, answer = pcall(durable --[[@as fun(): boolean]])
     ready = ok and answer == true
+    if not ok and not complained[id] then
+      complained[id] = true
+      log("error", "could not tell whether " .. call .. " " .. id .. "'s change is on disk (" .. tostring(answer) .. "); trying again")
+    end
   end
   if ready then
     local stored, failure = pcall(save, id, false)
     if stored then
+      complained[id] = nil
       return
     end
     log("error", "could not record " .. call .. " " .. id .. "'s result (" .. tostring(failure) .. "); trying again")
@@ -248,6 +436,7 @@ end
 function ops.start(p)
   platform = p
   entries = {}
+  complained = {}
   local text = p.kv_get(ops.KEY)
   local ids = text and json.decode(text) or nil
   if text and not json.is_array(ids) then
@@ -256,21 +445,15 @@ function ops.start(p)
   end
   local cut_off = {}
   for _, id in ipairs(ids or {}) do
-    local raw = ops.minted_at(id) and p.kv_get(ops.ENTRY_PREFIX .. id) or nil
-    local entry = raw and json.decode(raw) or nil
-    if type(entry) == "table" and (entry.state == "pending" or entry.state == "done") then
-      ---@cast entry rpf.ops.Entry
-      entries[id] = entry
-      if entry.state == "pending" then
-        log(
-          "warn",
-          tostring(entry.call)
-            .. " "
-            .. id
-            .. " was cut off by a restart: whether it happened is unknown, and it will not run again"
-        )
-        entry.state, entry.ok, entry.status = "done", false, "unknown"
-        cut_off[#cut_off + 1] = id
+    if ops.minted_at(id) then
+      local read, entry, changed = pcall(read_entry, id, p.kv_get(ops.ENTRY_PREFIX .. id))
+      if not read then
+        log("error", "could not read " .. tostring(id) .. " from the journal (" .. tostring(entry) .. ")")
+      elseif entry then
+        entries[id] = entry
+        if changed then
+          cut_off[#cut_off + 1] = id
+        end
       end
     end
   end
@@ -285,6 +468,26 @@ function ops.start(p)
   if not ok then
     log("error", "could not write the operation journal (" .. tostring(why) .. ")")
   end
+end
+
+---The operations in the journal whose result is `unknown`, oldest first:
+---what staff must resolve by hand, for a script that shows them in game.
+---Each stays listed until its tombstone ages out.
+---@return rpf.ops.Unknown[] unknown Copies.
+function ops.unknown()
+  local out = {}
+  for id, entry in pairs(entries) do
+    if entry.state == "done" and entry.status == "unknown" then
+      out[#out + 1] = unknown_of(id, entry)
+    end
+  end
+  table.sort(out, function(a, b)
+    if a.at ~= b.at then
+      return a.at < b.at
+    end
+    return a.op_id < b.op_id
+  end)
+  return out
 end
 
 ---How many operations the journal holds, for tests and diagnostics.
