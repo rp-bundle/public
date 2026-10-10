@@ -276,6 +276,35 @@ local cases = {
     end,
   },
   {
+    name = "never gives another connection's character from qbx_core's own callbacks to whoever took the server id",
+    run = function(world)
+      local fw = framework()
+      boot(world, fw)
+      local api = world.api
+      local handle = world:login(1, PLAYER)
+      local again
+      -- A client calls qbx_core's own load and leaves while `Login` waits;
+      -- someone else, with licences of their own, takes the server id.
+      fw.logging_in = function()
+        assert(world.core.players.dropped(handle, "left"))
+        world:pump()
+        again = world.join(1)
+        fw.licences[again] = { "license2:someone-else" }
+        assert(world.core.players.authenticating(again))
+        assert(world.core.players.register(again, { player_id = OTHER, username = "other" }))
+        world:pump()
+      end
+      assert.is_true(fw:hostile_load(handle, "CIT-JANE"))
+      assert.are.equal(handle, again, "the same server id")
+      assert.are.equal("character_select", api.players.get(again).state, "never active with Jane")
+      assert.are.same({ nil, "no_character" }, { api.characters.current(again) })
+      assert.is_nil(fw:loaded(again), "and Jane logged out of qbx_core")
+      assert.are.equal(1, bridge_logged(fw, "error", "that is not on their licence"))
+      world:advance(1000)
+      assert.are.equal("character_select", api.players.get(again).state, "nor by the sweep")
+    end,
+  },
+  {
     name = "answers item calls, and cash moves, unavailable while ox_inventory alone is stopped",
     run = function(world)
       local fw = framework()

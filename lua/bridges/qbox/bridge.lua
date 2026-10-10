@@ -246,6 +246,25 @@ function qbox.register(api, fx)
     return ok
   end
 
+  ---Whether a loaded character is one of the player's own, on this
+  ---connection: stored under one of the licences the connection has. A
+  ---load another connection asked for (one that left while `Login`
+  ---waited, its server id since given to someone else) is not.
+  ---@param handle integer The player's server id.
+  ---@param data table The character's `PlayerData`.
+  ---@return boolean own True if it is.
+  local function owns(handle, data)
+    if type(data.license) ~= "string" or data.license == "" then
+      return false
+    end
+    for _, licence in ipairs(fx.identifiers(handle)) do
+      if licence == data.license then
+        return true
+      end
+    end
+    return false
+  end
+
   ---Looks at what qbx_core has loaded for a player, on any cue: reports a
   ---character of a player choosing or playing, and turns away one loaded
   ---before RPF's gate. Never acts on the cue's own arguments.
@@ -255,15 +274,25 @@ function qbox.register(api, fx)
     if not active or not handle or leaving[handle] or loading[handle] or not started(qbox.CORE) then
       return
     end
-    local character = loaded(handle)
-    if not character then
+    local character, data = loaded(handle)
+    if not character or not data then
       return
     end
     local state = rpf_state(handle)
-    if state == "character_select" or state == "active" then
-      report(handle, character)
-    elseif state ~= "dropping" then
+    if state == "dropping" then
+      return
+    elseif state ~= "character_select" and state ~= "active" then
       turn_away(handle)
+    elseif not owns(handle, data) then
+      turn_away(
+        handle,
+        "qbx_core loaded a character for player "
+          .. tostring(handle)
+          .. " that is not on their licence, so it was logged out: another connection asked for it, and left while"
+          .. " qbx_core logged it in"
+      )
+    else
+      report(handle, character)
     end
   end
 

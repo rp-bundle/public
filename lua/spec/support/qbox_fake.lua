@@ -44,6 +44,7 @@
 ---@field deferred integer[]? Players whose `Logout` waits to remove them, when logouts are delayed.
 ---@field searches table[] Every filter `SearchPlayers` was called with.
 ---@field veto boolean? Whether qbx_core's money hooks veto every change, as an owner's hook may.
+---@field licences table<integer, string[]> The licences a player's connection has, where a test gives them: `license2:<id>` and `license:<id>` otherwise.
 ---@field logging_in fun()? Runs inside the next `Login`, where the real one waits on the database, before it loads the character.
 ---@field searching fun()? Runs inside the next `SearchPlayers`, where the real one waits on the database: another request overlapping it.
 ---@field created integer? How many characters qbx_core's creation made, for their citizenids.
@@ -95,6 +96,7 @@ function fake.new()
     logouts = {},
     dropped = {},
     searches = {},
+    licences = {},
   }, fake)
 end
 
@@ -406,7 +408,7 @@ function fake:engine()
       return resource == "qbx_core" and fw.version or nil
     end,
     identifiers = function(player)
-      return { licence_of(player), "license:" .. tostring(player) }
+      return copy(fw.licences[player] or { licence_of(player), "license:" .. tostring(player) })
     end,
     account_items = function()
       return { "money" }

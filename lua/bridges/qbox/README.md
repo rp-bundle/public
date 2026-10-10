@@ -92,7 +92,10 @@ it happens:
   every character it loads. The bridge reads who is loaded from
   `GetPlayer(source)`, never from the event.
 - A character loaded for a player at `character_select` (or `active`) is
-  reported to RPF. One loaded for a player who has not reached
+  reported to RPF, if it is stored under one of the licences that player's
+  connection has. Otherwise another connection asked for it and left while
+  `Login` waited, and its server id has gone to someone else, so it is
+  logged out. One loaded for a player who has not reached
   `character_select` is **logged out at once** (`Logout`). The log line
   names the likely cause: a client calling qbx_core's callbacks, qbx_core's
   own selection left on, or another character resource.
@@ -122,10 +125,14 @@ After a load, the client does what qbx_core's own selection does after one
 character's last position, or at qbx_core's default spawn for a new one),
 ends the loading screen, and sends `QBCore:Server:OnPlayerLoaded` and
 `QBCore:Client:OnPlayerLoaded`. qbx_core's client sets `QBX.IsLoggedIn`,
-and its server sets the `isLoggedIn` state bag, only from those, so a
+and its server sets the `isLoggedIn` state bag, only from those two, so a
 selection that replaces qbx_core's has to send them. They are the only Qbox
 events the bridge sends. They go from the client, after the server's own
 login, and the bridge's server never takes the networked one as a fact.
+For a new character the client also sends
+`qb-clothes:client:CreateFirstCharacter`, as qbx_core's selection does: it
+belongs to the appearance resource (illenium-appearance, qb-clothing), not
+to Qbox, and starts its first-character setup.
 
 ## Why not depend on qbx_core
 

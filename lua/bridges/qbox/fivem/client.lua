@@ -131,6 +131,10 @@ local function create()
     return
   end
   spawn(nil)
+  -- What qbx_core's own selection does for a new character: the appearance
+  -- resource (illenium-appearance, qb-clothing) starts its first-character
+  -- setup on this event.
+  TriggerEvent("qb-clothes:client:CreateFirstCharacter")
 end
 
 choose = function()
