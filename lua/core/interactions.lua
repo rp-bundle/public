@@ -175,6 +175,12 @@ end
 ---resource).
 local push_rules
 
+---Whether every rule with a target, this one among them (in place of any
+---registered under its name), still fits the one `rpf:target_rules` frame
+---a client decodes (`handoff.MAX_LIST_PAYLOAD`), counting addons that are
+---not running too, so a rule accepted now stays deliverable.
+local rules_fit
+
 ---Registers an addon's interaction. Registering a name again replaces it,
 ---and the one replaced goes at once; one registered while the addon's code
 ---runs goes when it stops.
@@ -182,7 +188,7 @@ local push_rules
 ---@param handler any `handler(player, payload, target)`, answering `true` and optionally a table of data for the client, or `false` and a reason for the player. `target` is what the rules resolved (`rpf.targets`), nil without a target rule.
 ---@param rules any? The rules (`rpf.targets.check_rules`): `label`, `target`, `distance`, `cooldown`, `permission`, `check`.
 ---@return boolean? ok True once registered.
----@return string? err `invalid` for a name, handler or rules that are not one, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an addon activation that has ended.
+---@return string? err `invalid` for a name, handler or rules that are not one, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an addon activation that has ended, `too_large` for a rule that would take every rule with a target past what one `rpf:target_rules` frame carries.
 ---@return table? detail For rules refused, `{ error = "rules", field = <key> }`.
 function interactions.register(name, handler, rules)
   if not rpf.addons then
@@ -204,6 +210,9 @@ function interactions.register(name, handler, rules)
   local checked, bad = rpf.targets.check_rules(namespace, rules)
   if bad then
     return nil, "invalid", { error = "rules", field = bad }
+  end
+  if checked and not rules_fit(name, namespace, checked) then
+    return nil, "too_large"
   end
   local previous = handlers[name]
   if previous then
@@ -380,6 +389,24 @@ local function on_interact(player, payload, respond)
         respond(refusal("inactive"))
         return
       end
+      -- And still allowed: a check that yields may resume after the player
+      -- moved, left or lost the permission, or the target was hidden or
+      -- deleted. Everything but the cooldown, which this request holds, is
+      -- checked again, from the player and the target as they are now.
+      local fresh = rpf.players.get(player.handle)
+      if not fresh or fresh.player_id ~= player.player_id or fresh.state == "dropping" then
+        rpf.targets.release(reservation)
+        respond(refusal("not_logged_in"))
+        return
+      end
+      player = fresh
+      local again, refused_now = rpf.targets.admit(name, rules, player, given, true)
+      if again == nil then
+        rpf.targets.release(reservation)
+        respond(refusal(refused_now or "not_found"))
+        return
+      end
+      target = again or nil
     end
   end
   local ran, ok, extra = rpf.addons.run(context, entry.handler, player, given, rpf.targets.copy(target))
@@ -408,6 +435,21 @@ local function list_of(list)
     return json.array({})
   end
   return mark(list) or json.array({})
+end
+
+---Checks a rule against the frame's size (declared above, for `register`).
+---@param name string The interaction.
+---@param namespace string Its addon.
+---@param rules rpf.targets.Rules Its rules.
+---@return boolean fits True if every rule still fits one frame.
+rules_fit = function(name, namespace, rules)
+  local entries = {}
+  for other, entry in pairs(handlers) do
+    entries[other] = entry
+  end
+  entries[name] = { rules = rules, namespace = namespace }
+  local text = handoff.encode(handoff.TARGET_RULES, { rules = list_of(rpf.targets.listed(entries, true)) })
+  return #text <= handoff.MAX_LIST_PAYLOAD
 end
 
 ---The rules with a target, encoded for a client.

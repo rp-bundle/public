@@ -758,7 +758,7 @@ local Interactions = {}
 ---@param handler fun(player: rpf.PlayerView, payload: table, target: rpf.targets.Target?): boolean, (table|string)? Answers `true` and, optionally, a table of plain data for a `request` (at most 16 KiB encoded, 8 deep), or `false` and a reason the player's client is told. `target` is the resolved target: `{ type, id, record, position, distance }` for a record, `{ ref, model, position, distance }` (with `type` and `id` when RPF placed it) for an entity.
 ---@param rules { target: (string|{ type: string?, models: string[]? })?, distance: number?, cooldown: integer?, permission: string?, check: (fun(player: rpf.PlayerView, target: rpf.targets.Target?): boolean, string?)?, label: string? }? The rules.
 ---@return boolean? ok True once registered.
----@return "invalid"|"not_found"|"forbidden"|"inactive"|nil err `invalid` for a bad name, handler or rules, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an activation that has ended.
+---@return "invalid"|"not_found"|"forbidden"|"inactive"|"too_large"|nil err `invalid` for a bad name, handler or rules, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an activation that has ended, `too_large` when the server's rules with a target would no longer fit what a client reads (64 KiB).
 ---@return { error: "rules", field: string }? detail Which rule was refused.
 function Interactions.register(name, handler, rules) end
 

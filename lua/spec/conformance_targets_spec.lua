@@ -368,6 +368,51 @@ conformance.run(busted, "Interactions with targets", {
     end,
   },
   {
+    name = "checks the player and target again after the addon's check, which may have yielded while they moved",
+    run = function(world)
+      ready(world)
+      local ran = false
+      assert(world.api.interactions.register("acme_npcs.wander", function()
+        ran = true
+        return true
+      end, {
+        target = "acme_npcs.greeter",
+        check = function()
+          -- As a check that yields might resume: the player walked away.
+          world.place(1, { x = 500, y = 20, z = 30 })
+          return true
+        end,
+      }))
+      local answer = interact(world, "acme_npcs.wander", { id = NEAR })
+      assert.are.same({ false, "too_far" }, { answer.ok, answer.reason })
+      assert.is_false(ran)
+    end,
+  },
+  {
+    name = "refuses a rule that would make the rules too large for a client to read",
+    run = function(world)
+      ready(world)
+      local long = string.rep("m", 250)
+      local accepted, refusal = 0, nil
+      for n = 1, 20 do
+        local models = {}
+        for i = 1, 32 do
+          models[i] = long .. n .. "_" .. i
+        end
+        local ok, err = world.api.interactions.register("acme_npcs.many" .. n, function()
+          return true
+        end, { target = { models = models } })
+        if not ok then
+          refusal = err
+          break
+        end
+        accepted = accepted + 1
+      end
+      assert.is_true(accepted > 0)
+      assert.are.equal("too_large", refusal)
+    end,
+  },
+  {
     name = "gives the cooldown back when the addon's own check refuses",
     run = function(world)
       ready(world)

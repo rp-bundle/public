@@ -1146,7 +1146,10 @@ describe("the FiveM adapter", function()
       end
       assert.are.same({ "AddGlobalPed", "AddTargetModel" }, calls)
       assert.are.equal(3, driver.target_calls[1].args[1].distance)
-      assert.are.equal("Talk", driver.target_calls[1].args[1].options[1].label)
+      local label = driver.target_calls[1].args[1].options[1].label
+      assert.are.equal("Talk", label:sub(1, 4), "shown as the rule's label")
+      assert.are_not.equal("Talk", label, "but never a bare label another script may use")
+      assert.are_not.equal(rpf.fivem.target.qb_label("Talk", 1), rpf.fivem.target.qb_label("Talk", 2))
     end)
 
     it("offers the rules to a target resource that starts later, and never asks a stopped one to take them back", function()

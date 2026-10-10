@@ -232,7 +232,10 @@ qb-target is started, it offers the rules the server sends
 ped (`addGlobalPed`, `AddGlobalPed`) and of kind `object` on every object,
 shown only where the entity's `rpf_placement` state bag names the rule's
 type, and a models rule on those models (`addModel`, `AddTargetModel`),
-each with the rule's label and distance. Selecting one sends the
+each with the rule's label and distance. qb-target keys its options by
+label, so each label it is given carries an invisible marker
+(`target.qb_label`): two rules both labelled "Talk" stay two options, and
+no other script's "Talk" is replaced or taken away. Selecting one sends the
 interaction with the entity's network id, and a refusal is shown with
 ox_lib's notify. New rules replace the old ones, and stopping the
 resource takes them back. A target resource that starts (or restarts)

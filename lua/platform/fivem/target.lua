@@ -37,6 +37,23 @@ local offered = nil
 ---@type table[]
 local rules_given = {}
 
+---A label made unique for qb-target, which keys its options by label: the
+---rule's label, then a marker no player sees, a zero-width joiner followed
+---by the rule's position written in binary with zero-width spaces and
+---non-joiners. Two of our rules both labelled "Talk" stay two options, and
+---no other script's "Talk" is replaced or, on `clear`, taken away.
+---@param label string The rule's label.
+---@param i integer The rule's position in what is offered.
+---@return string unique The label qb-target is given.
+function target.qb_label(label, i)
+  local bits = {}
+  repeat
+    bits[#bits + 1] = i % 2 == 0 and "\226\128\139" or "\226\128\140"
+    i = math.floor(i / 2)
+  until i == 0
+  return label .. "\226\128\141" .. table.concat(bits)
+end
+
 ---The target resource that is running, if any.
 ---@return string? resource Its name.
 function target.resource()
@@ -116,9 +133,9 @@ function target.apply(rules)
   ---@type rpf.fivem.target.Offered
   local now = { resource = resource_name, peds = {}, objects = {}, models = {} }
   local ox = resource_name == "ox_target"
-  for _, rule in ipairs(rules) do
+  for i, rule in ipairs(rules) do
     local name, type_name = rule.name, rule.type
-    local key = ox and name or rule.label
+    local key = ox and name or target.qb_label(rule.label, i)
     local option
     if ox then
       option = {
@@ -134,7 +151,7 @@ function target.apply(rules)
       }
     else
       option = {
-        label = rule.label,
+        label = key,
         canInteract = type_name and function(entity)
           return target.placed(entity, type_name)
         end or nil,

@@ -345,9 +345,10 @@ end
 ---@param rules rpf.targets.Rules The rules.
 ---@param player rpf.PlayerView The player.
 ---@param payload table The request's payload, a plain copy.
+---@param again boolean? True when checking again after the addon's `check` ran (it may have yielded): the request's own cooldown is not held against it.
 ---@return rpf.targets.Target|false|nil target The resolved target; false for a rule with none; nil if refused.
 ---@return string? err `not_active`, `forbidden`, `cooldown`, `not_found`, `too_far` or `unsupported`.
-function targets.admit(name, rules, player, payload)
+function targets.admit(name, rules, player, payload, again)
   local wants_target = rules.type ~= nil or rules.models ~= nil
   if wants_target and player.state ~= "active" then
     return nil, "not_active"
@@ -355,7 +356,7 @@ function targets.admit(name, rules, player, payload)
   if rules.permission and not rpf.staff.can(player.handle, rules.permission) then
     return nil, "forbidden"
   end
-  if rules.cooldown > 0 then
+  if rules.cooldown > 0 and not again then
     local last = used[name] and used[name][player.player_id]
     if last and assert(platform).now() - last < rules.cooldown then
       return nil, "cooldown"
@@ -495,11 +496,12 @@ end
 ---its name, label, and the type (with its world kind) or models it targets,
 ---and how near, in name order.
 ---@param entries table<string, { rules: rpf.targets.Rules?, namespace: string }> The registrations, by name.
+---@param all boolean? True to list those of addons not running too: what a registration's size is checked against.
 ---@return table[] rules The rules, plain.
-function targets.listed(entries)
+function targets.listed(entries, all)
   local names = {}
   for name, entry in pairs(entries) do
-    if entry.rules and (entry.rules.type or entry.rules.models) and rpf.addons.running(entry.namespace) then
+    if entry.rules and (entry.rules.type or entry.rules.models) and (all or rpf.addons.running(entry.namespace)) then
       names[#names + 1] = name
     end
   end
