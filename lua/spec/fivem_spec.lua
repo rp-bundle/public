@@ -958,6 +958,38 @@ describe("the FiveM adapter", function()
       assert.is_nil(rpf.fivem.server.entity(ref).placement)
     end)
 
+    it("never adopts another entity that inherits a pending spawn's handle", function()
+      for _, fired in ipairs({ true, false }) do
+        local driver, record = started_server()
+        local answer
+        rpf.fivem.server.spawn(spec_of(), function(ref, err)
+          answer = { ref, err }
+        end)
+        local handle, entity = next(driver.entities)
+        while entity and entity.ready ~= false do
+          handle, entity = next(driver.entities, handle)
+        end
+        assert(entity, "a pending entity")
+        ---@cast handle integer
+        if fired then
+          driver.delete_entity(handle)
+        else
+          driver.entities[handle] = nil
+        end
+        driver.recycle(handle, entity.net, entity.model, "another_resource")
+        for _ = 1, 3 do
+          record.time = record.time + rpf.fivem.server.SPAWN_POLL_MS
+          driver.run_due()
+        end
+        assert.are.same({ nil, "failed" }, answer, "event fired: " .. tostring(fired))
+        local theirs = driver.entities[handle]
+        assert.is_false(theirs.frozen)
+        assert.is_nil(theirs.state.rpf_placement)
+        driver.stop()
+        assert.is_not_nil(driver.entities[handle], "nor removed on stop")
+      end
+    end)
+
     it("removes, on a clean stop, what it placed and what it is still placing", function()
       local driver, record = started_server()
       local ref = assert(spawn(driver, record, spec_of("one")))

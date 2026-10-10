@@ -224,8 +224,10 @@ end
 local placed_here = {}
 
 ---Entities asked for and not there yet, by handle: removed by a stop that
----comes before they are.
----@type table<integer, true>
+---comes before they are. `removed` is set when the engine says the handle's
+---entity went meanwhile: the spawn then fails, and nothing done to the
+---handle afterwards could reach the entity that inherits it.
+---@type table<integer, { removed: boolean }>
 local creating = {}
 
 ---The entity a network id names on the server, or nil.
@@ -291,16 +293,27 @@ function server.spawn(spec, done)
     done(nil, "failed")
     return
   end
-  creating[entity] = true
+  local pending = { removed = false }
+  creating[entity] = pending
   local waited = 0
-  ---Looks for the entity, and sets it up once it is there.
+  ---Looks for the entity, and sets it up once it is there and is still the
+  ---one asked for: made by this resource, with the model asked for.
   local function look()
-    if not creating[entity] then
+    if creating[entity] ~= pending then
       return -- stopped meanwhile, and removed
+    end
+    if pending.removed then
+      creating[entity] = nil
+      done(nil, "failed")
+      return
     end
     local ref = DoesEntityExist(entity) and NetworkGetNetworkIdFromEntity(entity) or 0
     if ref ~= 0 then
       creating[entity] = nil
+      if not made_here(entity) or GetEntityModel(entity) ~= model then
+        done(nil, "failed")
+        return
+      end
       set_up(entity, spec, model)
       done(ref)
       return
@@ -352,6 +365,9 @@ end
 function server.removed(entity)
   if type(entity) == "number" then
     placed_here[entity] = nil
+    if creating[entity] then
+      creating[entity].removed = true
+    end
   end
 end
 
@@ -384,8 +400,10 @@ function server.clear()
   end
   -- One still being made may not exist yet; its handle is deleted anyway,
   -- and if the engine makes it after all, the next start's sweep takes it.
-  for entity in pairs(creating) do
-    DeleteEntity(entity)
+  for entity, pending in pairs(creating) do
+    if not pending.removed then
+      DeleteEntity(entity)
+    end
   end
   placed_here, creating = {}, {}
 end

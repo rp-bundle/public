@@ -172,7 +172,10 @@ it the OneSync way, from the server:
   an entity only once a client has made it, so the adapter looks every
   `SPAWN_POLL_MS` (50) for it to exist with a network id, up to
   `SPAWN_TIMEOUT_MS` (5 s), and answers the core then (`failed`, its
-  handle deleted, if it never came). Then it is frozen where the record
+  handle deleted, if it never came). A pending spawn whose handle the
+  engine reports removed meanwhile fails, and an entity is set up only if
+  the engine says this resource made it with the model asked for, so a
+  recycled handle is never adopted. Then it is frozen where the record
   says (`FreezeEntityPosition`, `SetEntityHeading`), put in the record's
   routing bucket (`SetEntityRoutingBucket`), and kept when the client that
   owns it leaves (`SetEntityOrphanMode` 2, `KEEP_ENTITY`), so ownership can
