@@ -85,6 +85,35 @@ Two things to know from the start:
   record kept. A breaking change to a type with records is refused: add a
   new type instead.
 
+### Things in the world
+
+If your records are places in the game world (an NPC, a prop, a spawn
+point, a zone), say which fields hold where they are with `world`. It adds
+no field, and the portal then shows each record's placement and lets staff
+move it with the usual form:
+
+```lua
+greeter = {
+  schema = 1,
+  authority = "config",
+  fields = {
+    spot = { type = "vector3", required = true },
+    heading = { type = "number", default = 0 },
+    model = { type = "json", engine = true, required = true },
+    line = { type = "string", max_len = 120, required = true },
+  },
+  world = { kind = "ped", position = "spot", heading = "heading", model = "model" },
+},
+```
+
+`kind` is `ped` or `object` (placed for you, so it needs a `model`),
+`point` (nothing placed) or `zone` (needs a `radius` field). `bucket` and
+`visible` name an integer and a boolean field when you want them. A model
+field marked `engine = true` can hold one model per engine, `{ fivem =
+"a_m_y_business_01", gmod = "models/Humans/Group01/male_02.mdl" }`, so the
+same record works on both. The rules are in
+[Addons, "World definitions"](architecture/addons.md#world-definitions).
+
 ## Registering, installing, running
 
 ```lua

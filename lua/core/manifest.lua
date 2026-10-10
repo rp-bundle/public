@@ -63,6 +63,7 @@ manifest.MANIFEST_RULES = {
   "not_indexable",
   "default",
   "requires_self",
+  "world_field",
 }
 
 manifest.FIELD_RULES = {
@@ -826,6 +827,73 @@ local function check_field(field, path, context)
   return out
 end
 
+---The roles a type's `world` may give, in the order they are checked, each
+---with the field kinds it may name: `manifest::WorldRole`.
+local WORLD_ROLES = {
+  { name = "position", kinds = set({ "vector3" }) },
+  { name = "heading", kinds = set({ "number", "integer" }) },
+  { name = "bucket", kinds = set({ "integer" }) },
+  { name = "model", kinds = set({ "string", "json" }) },
+  { name = "visible", kinds = set({ "boolean" }) },
+  { name = "radius", kinds = set({ "number", "integer" }) },
+}
+
+---A type's `world`, against its checked fields: `manifest::check_world`.
+---@param value any The `world`.
+---@param path string Its path.
+---@param fields table The type's fields, checked.
+---@return table? world The world, marked, or nil.
+---@return table? refusal Why not.
+local function check_world(value, path, fields)
+  local allowed = set({ "kind" })
+  for _, role in ipairs(WORLD_ROLES) do
+    allowed[role.name] = true
+  end
+  local map, err = object(value, path, allowed, { "kind", "position" })
+  if not map then
+    return nil, err
+  end
+  local ok, refusal = one_of(map.kind, at(path, "kind"), set({ "ped", "object", "point", "zone" }))
+  if not ok then
+    return nil, refusal
+  end
+  local named = {}
+  for _, role in ipairs(WORLD_ROLES) do
+    local name = map[role.name]
+    if name ~= nil then
+      local role_path = at(path, role.name)
+      if type(name) ~= "string" then
+        return refuse("wrong_type", role_path)
+      end
+      local field = fields[name]
+      if field == nil then
+        return refuse("unknown_field", role_path)
+      end
+      if not role.kinds[field.type] or (role.name == "model" and not field.engine) then
+        return refuse("world_field", role_path)
+      end
+      if named[name] then
+        return refuse("duplicate", role_path)
+      end
+      named[name] = true
+    end
+  end
+  local places = map.kind == "ped" or map.kind == "object"
+  if places and map.model == nil then
+    return refuse("missing", at(path, "model"))
+  end
+  if map.kind == "zone" and map.radius == nil then
+    return refuse("missing", at(path, "radius"))
+  end
+  if not places and map.model ~= nil then
+    return refuse("conflict", at(path, "model"))
+  end
+  if map.kind ~= "zone" and map.radius ~= nil then
+    return refuse("conflict", at(path, "radius"))
+  end
+  return json.object(json.copy(map))
+end
+
 ---One type: the order is `manifest::check_type`'s.
 ---@param def any The type.
 ---@param path string Its path.
@@ -833,7 +901,7 @@ end
 ---@return table? type The type, normalised, or nil.
 ---@return table? refusal Why not.
 local function check_type(def, path, context)
-  local allowed = set({ "actions", "authority", "fields", "hold", "limit", "list", "owners", "schema", "title" })
+  local allowed = set({ "actions", "authority", "fields", "hold", "limit", "list", "owners", "schema", "title", "world" })
   local map, err = object(def, path, allowed, { "schema", "authority", "fields" })
   if not map then
     return nil, err
@@ -976,6 +1044,14 @@ local function check_type(def, path, context)
     if not ok then
       return nil, refusal
     end
+  end
+
+  if map.world ~= nil then
+    local world, refused = check_world(map.world, at(path, "world"), checked)
+    if not world then
+      return nil, refused
+    end
+    out.world = world
   end
   return out
 end

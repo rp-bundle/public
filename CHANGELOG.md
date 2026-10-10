@@ -34,6 +34,15 @@ keep the job the portal has.
 
 ### Added
 
+- World definitions on addon types (J4, #81): a type may declare `world =
+  { kind, position, heading, bucket, model, visible, radius }`, naming its
+  own fields by the part each plays, with `kind` one of `ped`, `object`,
+  `point` and `zone`. The portal and the core check it with the same rules
+  (one new rule, `world_field`, held to the addon corpus), a change to it
+  is compatible, and the generic record page shows a world-backed record's
+  placement. No migration, route or protocol change: a world-backed type is
+  still only fields.
+
 - Bridges to existing RP frameworks, part 3 (K2, #92): the shared bridge
   conformance suite (`lua/spec/support/bridge_conformance.lua`) every
   bridge runs against a fake of its framework, on the mock platform and the
