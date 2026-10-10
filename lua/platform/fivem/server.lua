@@ -180,6 +180,11 @@ end
 ---recognises one a previous run left.
 server.PLACEMENT = shared.PLACEMENT
 
+---The `GlobalState` key holding what this resource has placed, as `{
+---handle, model }` entries, for the next run's `server.sweep`. Set
+---unreplicated: no client sees it, and none can write it.
+server.PLACED_STATE = "rpf:placed"
+
 ---FiveM's `SetEntityOrphanMode` value that keeps an entity when the
 ---client that owned it leaves, rather than letting the server clean it up.
 server.KEEP_ENTITY = 2
@@ -205,8 +210,10 @@ end
 ---Which record each entity this run placed is, by the server's handle: the
 ---one proof of what an entity is. The state bag tag is what clients read,
 ---but the client that owns an entity can overwrite its state, so nothing
----here trusts it for an entity this run knows; only `server.sweep`, which
----runs before anything is placed, falls back to it for a previous run's.
+---here trusts it. What a run placed is also kept in `GlobalState`, server
+---side and unreplicated (`PLACED_STATE`), which a client cannot write and
+---which outlives a restart of this resource (but not of the server, whose
+---entities go with it), so `server.sweep` knows a previous run's too.
 ---
 ---An entry goes when the entity does (`server.removed`, on the engine's
 ---`entityRemoved`), whoever removed it, because FiveM recycles handles and
@@ -215,6 +222,36 @@ end
 ---that slipped past the event is still not taken for ours.
 ---@type table<integer, { id: string, model: integer|string }>
 local placed_here = {}
+
+---Whether a save of `placed_here` is waiting to go.
+local saving = false
+
+---Writes what this run has placed to `GlobalState`, now.
+function server.save()
+  saving = false
+  local list = {}
+  for handle, entry in pairs(placed_here) do
+    list[#list + 1] = { handle = handle, model = entry.model }
+  end
+  table.sort(list, function(a, b)
+    return a.handle < b.handle
+  end)
+  GlobalState:set(server.PLACED_STATE, list, false)
+end
+
+---Saves what this run has placed on the next tick, once however many
+---placements changed meanwhile: a reconcile places hundreds at once.
+local function save_soon()
+  if saving then
+    return
+  end
+  saving = true
+  Citizen.SetTimeout(0, function()
+    if saving then
+      server.save()
+    end
+  end)
+end
 
 ---The entity a network id names on the server, or nil.
 ---@param ref any The network id.
@@ -260,6 +297,7 @@ function server.spawn(spec)
   SetEntityOrphanMode(entity, server.KEEP_ENTITY)
   Entity(entity).state:set(server.PLACEMENT, { id = spec.id, type = spec.type }, true)
   placed_here[entity] = { id = spec.id, model = GetEntityModel(entity) }
+  save_soon()
   return NetworkGetNetworkIdFromEntity(entity)
 end
 
@@ -270,6 +308,7 @@ function server.despawn(ref)
   local entity = by_ref(ref)
   if entity and server.mine(entity) then
     placed_here[entity] = nil
+    save_soon()
     DeleteEntity(entity)
   end
 end
@@ -285,6 +324,7 @@ function server.mine(entity)
   end
   if GetEntityModel(entity) ~= entry.model then
     placed_here[entity] = nil
+    save_soon()
     return nil
   end
   return entry.id
@@ -294,8 +334,9 @@ end
 ---names nothing of ours when FiveM gives it to another entity.
 ---@param entity any The handle, as `entityRemoved` reports it.
 function server.removed(entity)
-  if type(entity) == "number" then
+  if type(entity) == "number" and placed_here[entity] then
     placed_here[entity] = nil
+    save_soon()
   end
 end
 
@@ -318,20 +359,36 @@ function server.entity(ref)
   }
 end
 
----Removes every entity a previous run of this resource placed and did not
----remove, recognised by its tag: what a crash, or a stop the engine cut
----short, left behind. Run as the resource starts, before the core places
----anything, so a restart never doubles what was placed. The tag is all a
----new run has to go on; a clean stop removes everything by `placed_here`
----(`rpf.world.clear`), so only a crash leans on it.
-function server.sweep()
-  for _, pool in ipairs({ GetAllPeds(), GetAllObjects() }) do
-    for _, entity in ipairs(pool or {}) do
-      if Entity(entity).state[server.PLACEMENT] ~= nil then
-        DeleteEntity(entity)
-      end
+---Removes whatever this run placed and still holds, after the core's own
+---`clear`, and records that nothing is left: a clean stop leaves nothing
+---for the next run's sweep.
+function server.clear()
+  for handle in pairs(placed_here) do
+    if DoesEntityExist(handle) then
+      DeleteEntity(handle)
     end
   end
+  placed_here = {}
+  server.save()
+end
+
+---Removes every entity a previous run of this resource placed and did not
+---remove: what a crash, or a stop the engine cut short, left behind. Run
+---as the resource starts, before the core places anything, so a restart
+---never doubles what was placed. It reads `PLACED_STATE`, which only the
+---server writes, never a tag a client could forge onto another resource's
+---entity or clear from ours; an entry whose handle now holds another model
+---is another entity, and stays.
+function server.sweep()
+  local list = GlobalState[server.PLACED_STATE]
+  for _, entry in ipairs(type(list) == "table" and list or {}) do
+    local handle = type(entry) == "table" and entry.handle
+    if type(handle) == "number" and DoesEntityExist(handle) and GetEntityModel(handle) == entry.model then
+      DeleteEntity(handle)
+    end
+  end
+  placed_here = {}
+  server.save()
 end
 
 ---The natives the adapter calls that an old FXServer artifact may lack:
@@ -527,6 +584,7 @@ function server.stop(transport)
   fivem.lock.release_all()
   if server.started then
     core.world.clear()
+    server.clear()
   end
 end
 

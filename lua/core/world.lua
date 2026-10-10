@@ -39,8 +39,8 @@
 ---  failed is tried again then too, and logged once until it succeeds.
 ---- **Stopping.** `clear()` despawns everything, for the adapter to call
 ---  as its resource stops; an adapter also removes, as it starts, any
----  entity a previous run placed and could not remove (a crash), which it
----  recognises by the tag it gives each one.
+---  entity a previous run placed and could not remove (a crash), from a
+---  record of its own that no client can write, never from a tag.
 ---
 ---Live records are not placed here: when a live record is in the world as
 ---an entity is J6's (#83), alongside when it is held. Their positions are
@@ -225,9 +225,9 @@ end
 
 ---A networked entity, by the ref a client named it by: hostile input, so a
 ---ref that is not a whole number is refused before the adapter sees it.
----`placement` says which record it is, only when the core placed it (the
----adapter's tag must name a record the core has placed as exactly that
----entity), so a tag a client forged names nothing.
+---`placement` says which record it is, only when the core placed it: the
+---adapter names it from what it placed, never from a tag a client can
+---write, and it must be a record the core placed as exactly that entity.
 ---@param ref any The ref.
 ---@return { position: { x: number, y: number, z: number }, model: any, bucket: integer, placement: { type: string, id: string }? }? entity A plain copy.
 ---@return string? err `unsupported` where the adapter has no `entity`, `not_found` for a ref that names nothing (or nothing it can say where it is).

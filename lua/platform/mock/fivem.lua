@@ -344,6 +344,7 @@ function fivem.server(env, host, seed, convars)
   ---@field set_bucket fun(player: integer, bucket: integer) Moves a player to a routing bucket, as another resource would.
   ---@field delete_entity fun(handle: integer) Deletes an entity as any script or the engine would, firing `entityRemoved`.
   ---@field recycle fun(handle: integer, net: integer, model: any) Gives a handle and network id to a new entity, as FiveM reuses them.
+  ---@field global_state table<string, any> The server's `GlobalState`, as set.
   local driver = {
     exported = own_exports,
     lockdown = {},
@@ -530,6 +531,18 @@ function fivem.server(env, host, seed, convars)
   env.GetAllObjects = function()
     return pool("object")
   end
+  -- The server's global state bag: what `GlobalState:set` wrote, kept in
+  -- the driver so a test can set what a previous run left.
+  driver.global_state = driver.global_state or {}
+  env.GlobalState = setmetatable({
+    set = function(_, key, value)
+      driver.global_state[key] = value
+    end,
+  }, {
+    __index = function(_, key)
+      return driver.global_state[key]
+    end,
+  })
   -- Not FiveM's joaat, but a stable number per name, which is all a model
   -- comparison needs.
   env.GetHashKey = function(name)

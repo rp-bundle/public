@@ -830,14 +830,35 @@ describe("the FiveM adapter", function()
       return rawget(_G, name)
     end
 
-    it("removes, as it starts, the entities a previous run placed and left, and leaves other scripts' alone", function()
+    it("removes, as it starts, what a previous run recorded placing, whatever the tags say, and nothing else", function()
       local driver = load_side("server", CONVARS)
       local left = native("CreatePed")(0, 1, 0, 0, 0, 0, true, true)
+      local untagged = native("CreatePed")(0, 1, 0, 0, 0, 0, true, true)
+      local forged = native("CreateObjectNoOffset")(2, 0, 0, 0, true, true, false)
+      local recycled = native("CreateObjectNoOffset")(3, 0, 0, 0, true, true, false)
       native("Entity")(left).state:set("rpf_placement", { id = "old", type = "acme_npcs.greeter" }, true)
-      local theirs = native("CreateObjectNoOffset")(2, 0, 0, 0, true, true, false)
+      native("Entity")(forged).state:set("rpf_placement", { id = "old", type = "acme_npcs.greeter" }, true)
+      driver.global_state["rpf:placed"] = {
+        { handle = left, model = 1 },
+        { handle = untagged, model = 1 }, -- a client cleared its tag
+        { handle = recycled, model = 2 }, -- its handle now holds another model
+      }
       driver.start()
       assert.is_nil(driver.entities[left])
-      assert.is_not_nil(driver.entities[theirs])
+      assert.is_nil(driver.entities[untagged])
+      assert.is_not_nil(driver.entities[forged], "a forged tag is not ours")
+      assert.is_not_nil(driver.entities[recycled])
+      assert.are.same({}, driver.global_state["rpf:placed"])
+    end)
+
+    it("records what it places in GlobalState, server-only, and empties it on a clean stop", function()
+      local driver = started_server()
+      local ref = assert(rpf.fivem.server.spawn({ id = "rec", type = "t", kind = "object", position = { x = 0, y = 0, z = 0 }, heading = 0, bucket = 0, model = "prop" }))
+      driver.run_due()
+      local handle = native("NetworkGetEntityFromNetworkId")(ref)
+      assert.are.same({ { handle = handle, model = native("GetHashKey")("prop") } }, driver.global_state["rpf:placed"])
+      driver.stop()
+      assert.are.same({}, driver.global_state["rpf:placed"])
     end)
 
     it("places a ped server-side: frozen, in its bucket, kept when its owner leaves, tagged, and named by its network id", function()

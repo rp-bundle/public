@@ -179,7 +179,10 @@ it the OneSync way, from the server:
   its own table (`placed_here`, by server handle): `server.entity` and
   `server.despawn` read that, never the tag. A client clearing the tag
   cannot make the core place a second entity, and one forging it names
-  nothing. Only `server.sweep`, at start, has nothing but tags to go on.
+  nothing. What a run placed is also kept in `GlobalState`, unreplicated
+  (`rpf:placed`, handle and model), which only the server writes and which
+  outlives a restart of this resource, so the sweep at start reads that
+  and never a tag.
   An entry goes when the engine removes its entity (`entityRemoved`),
   whoever removed it, and is checked against the model it was made with,
   because FiveM recycles handles and network ids: another script's entity
@@ -192,9 +195,11 @@ it the OneSync way, from the server:
   makes a placed ped invincible, deaf to the world (`SetBlockingOfNonTemporaryEvents`)
   and frozen on every client, whichever owns it.
 - **Cleanup.** The core removes what it placed when this resource stops
-  (`onResourceStop`, `rpf.world.clear`), and `server.sweep` removes, as the
-  resource starts and before the core places anything, every tagged ped
-  and object a crash left (`GetAllPeds`, `GetAllObjects`). So a restart, a
+  (`onResourceStop`, `rpf.world.clear`, then `server.clear` for anything the
+  adapter still holds), and `server.sweep` removes, as the resource starts
+  and before the core places anything, every entity the previous run
+  recorded in `GlobalState` that still has the model it was made with: what
+  a crash left. So a restart, a
   reconnect, a config pushed twice or an entity another script deleted
   (placed again within `rpf.world.CHECK_MS`) never leaves a record with two
   entities or none.

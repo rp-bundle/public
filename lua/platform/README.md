@@ -49,7 +49,9 @@ function.
      model as a name or as its own engine's entry of a table; and
      `despawn(ref)` removing only an entity it placed (J4). An adapter
      that places entities also removes, as it starts and before the core
-     starts, every entity carrying its tag, which a crash left; and it
+     starts, every entity a crash left, known from a record of its own
+     that no client can write (a client may be able to rewrite an
+     entity's tag); and it
      calls `rpf.world.clear()` as it stops, where it can stop without its
      state ending. Beside them, `notify`, `menu`, `input` and
      `progress`, each `true` or `false`: whether this engine's clients show
