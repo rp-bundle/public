@@ -409,6 +409,30 @@ describe("rpf.ui", function()
       assert.are.equal(value, got)
     end)
 
+    it("ends a wait with the addon that asked, its callback never called, and refuses one stopped", function()
+      local cleanups = {}
+      -- A stand-in, to stop the addon by hand.
+      ---@diagnostic disable-next-line: duplicate-set-field
+      rpf.addons.own = function(cleanup)
+        cleanups[#cleanups + 1] = cleanup
+        return function() end
+      end
+      local called = false
+      assert.is_true(rpf.api.ui.menu(7, menu(), function()
+        called = true
+      end))
+      local first = p.client_requests[#p.client_requests]
+      cleanups[1]()
+      assert.is_true(rpf.api.ui.menu(7, menu(), function() end), "not busy once its addon stopped")
+      first.callback(rpf.handoff.encode("rpf:ui_answer", { ok = true, index = 1 }))
+      p.advance(rpf.ui.TIMEOUT_MS)
+      assert.is_false(called)
+      rpf.addons.stale = function()
+        return true
+      end
+      assert.are.same({ nil, "inactive" }, { rpf.api.ui.notify(7, "x") })
+    end)
+
     it("sends a notification as a message of its own", function()
       assert.is_true(rpf.api.ui.notify(7, { text = "Welcome", kind = "success" }))
       local sent = p.messages_to(7, "rpf:ui_notify")[1]

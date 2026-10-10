@@ -546,63 +546,45 @@ describe("the FiveM adapter", function()
       assert.are.same({ ok = false, reason = "unknown" }, (rpf.json.decode(reply)))
     end)
 
-    it("asks a client over lib.callback, takes the answer only from that player, and bounds what ox_lib holds per player", function()
+    it("asks a client with numbered events of its own, and takes the answer only from that player", function()
       local driver, record = started_server()
-      local ox = rpf.fivem.ox
       local replies = {}
-      rpf.connection.platform.request_client(4, "rpf:ui", "{}", function(reply)
+      local function keep(reply)
         replies[#replies + 1] = reply == nil and "nil" or reply
-      end)
+      end
+      rpf.connection.platform.request_client(4, "rpf:ui", "{}", keep)
       local sent = record.to_clients[#record.to_clients]
       assert.are.same({ 4, "rpf:ui" }, { sent.player, sent.name })
+      assert.is_nil(driver.callbacks["rpf:ui"], "not over lib.callback, which never lets one go")
       local number = sent.payload:match("^(%d+)\n")
       driver.from_client(5, "rpf:ui", number .. "\nfrom someone else")
+      driver.from_client(4, "rpf:other", number .. "\nunder another name")
       assert.are.same({}, replies)
       driver.from_client(4, "rpf:ui", number .. "\npicked")
+      driver.from_client(4, "rpf:ui", number .. "\nagain")
       assert.are.same({ "picked" }, replies)
-
-      for _ = 1, ox.MAX_ASKING + 1 do
-        ox.request_client(6, "rpf:ui", "{}", function(reply)
-          replies[#replies + 1] = reply == nil and "nil" or reply
-        end)
-      end
-      local to_six = 0
-      for _, message in ipairs(record.to_clients) do
-        if message.player == 6 then
-          to_six = to_six + 1
-        end
-      end
-      assert.are.equal(ox.MAX_ASKING, to_six)
-      driver.run_due()
-      assert.are.same({ "picked", "nil" }, replies)
-      local before = #record.to_clients
-      ox.request_client(7, "rpf:ui", "{}", function() end)
-      assert.are.equal(before + 1, #record.to_clients, "another player is not held up")
     end)
 
-    it("forgets what a player who left never answered, so their id starts clean", function()
+    it("forgets what a player who left never answered, and what nobody answers", function()
       local driver, record = started_server()
-      local ox = rpf.fivem.ox
+      local replies = {}
+      local function keep(reply)
+        replies[#replies + 1] = reply == nil and "nil" or reply
+      end
       driver.add_player(6, "Sam", { "license:6" })
       driver.connect_player(6)
-      local first_number
-      for i = 1, ox.MAX_ASKING do
-        ox.request_client(6, "rpf:ui", "{}", function() end)
-        if i == 1 then
-          first_number = record.to_clients[#record.to_clients].payload:match("^(%d+)\n")
-        end
-      end
+      rpf.connection.platform.request_client(6, "rpf:ui", "{}", keep)
+      local number = record.to_clients[#record.to_clients].payload:match("^(%d+)\n")
       driver.drop_player(6, "Exiting")
+      assert.are.same({ "nil" }, replies, "told none will come")
       driver.add_player(6, "Next", { "license:66" })
       driver.connect_player(6)
-      local before = #record.to_clients
-      for _ = 1, ox.MAX_ASKING do
-        ox.request_client(6, "rpf:ui", "{}", function() end)
-      end
-      assert.are.equal(before + ox.MAX_ASKING, #record.to_clients, "the new player starts at nothing")
-      driver.from_client(6, "rpf:ui", first_number .. "\nlate")
-      ox.request_client(6, "rpf:ui", "{}", function() end)
-      assert.are.equal(before + ox.MAX_ASKING, #record.to_clients, "a late answer from before counts against nobody")
+      driver.from_client(6, "rpf:ui", number .. "\nlate")
+      assert.are.same({ "nil" }, replies, "the next player with the id cannot answer it")
+      rpf.connection.platform.request_client(6, "rpf:ui", "{}", keep)
+      record.time = record.time + rpf.fivem.server.ANSWER_TTL
+      driver.run_due()
+      assert.are.same({ "nil", "nil" }, replies)
     end)
 
     it("kicks, notifies and messages a player through the engine", function()
@@ -973,7 +955,7 @@ describe("the FiveM adapter", function()
       end)
       local dialog = assert(driver.dialog, "the dialog is on show")
       assert.are.equal("Spray", dialog.heading)
-      assert.are.same({ type = "input", label = "Text", placeholder = "Say something", required = true, min = 0, max = 24 }, dialog.rows[1])
+      assert.are.same({ type = "input", label = "Text", placeholder = "Say something", required = true, max = 24 }, dialog.rows[1])
       assert.are.same({ type = "number", label = "Size", min = 1, max = 3 }, dialog.rows[2])
       assert.are.same({ type = "checkbox", label = "Glow", checked = true }, dialog.rows[3])
       assert.are.same({ { value = "1", label = "Red" }, { value = "2", label = "Blue" } }, dialog.rows[4].options)
@@ -986,6 +968,20 @@ describe("the FiveM adapter", function()
       end)
       driver.dialog.answer(nil)
       assert.are.same({ nil, "cancelled" }, got)
+    end)
+
+    it("shows a dialog again, as the player left it, while text is out of its bounds in bytes", function()
+      local driver = load_side("client")
+      driver.start()
+      local got
+      rpf.api.ui.input({ title = "Spray", fields = { { name = "text", label = "Text", max = 4 } } }, function(values, err)
+        got = { values, err }
+      end)
+      driver.dialog.answer({ "ééé" })
+      assert.is_nil(got, "six bytes is too long for four, though three letters")
+      assert.are.same({ "ééé", "Too long: at most 4 bytes." }, { driver.dialog.rows[1].default, driver.dialog.rows[1].description })
+      driver.dialog.answer({ "éé" })
+      assert.are.same({ { text = "éé" } }, got)
     end)
 
     it("builds a progress bar on ox_lib, done only when it ran to its end", function()
@@ -1003,7 +999,7 @@ describe("the FiveM adapter", function()
       assert.are.same({ { true }, { nil, "cancelled" } }, got)
     end)
 
-    it("answers its server's UI request over lib.callback once the player has picked", function()
+    it("answers its server's UI request under its number once the player has picked", function()
       local driver, record = load_side("client")
       driver.start()
       local spec = rpf.ui.spec("menu", { title = "Pick", options = { { label = "a" }, { label = "b" } } })

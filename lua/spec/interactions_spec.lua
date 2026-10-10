@@ -221,6 +221,8 @@ describe("rpf.interactions", function()
     it("forgets the ownership of a handler it replaces", function()
       rpf.addons.register(manifest("acme_tags"))
       local live = 0
+      -- A stand-in, to count what is owned.
+      ---@diagnostic disable-next-line: duplicate-set-field
       rpf.addons.own = function()
         live = live + 1
         return function()

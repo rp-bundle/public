@@ -32,6 +32,28 @@ function client.notify(message)
   EndTextCommandThefeedPostTicker(false, true)
 end
 
+---Answers one of the server's requests (`server.ask`): `<number>\n<payload>`,
+---answered once under the same number, perhaps when the player has picked.
+---@param name string The request's name.
+---@param text any What the server sent.
+---@param handler fun(payload: string, respond: fun(reply: string)) The core's answerer.
+function client.asked(name, text, handler)
+  if type(text) ~= "string" then
+    return
+  end
+  local number, body = text:match("^(%d+)\n(.*)$")
+  if not number then
+    return
+  end
+  local answered = false
+  handler(body, function(reply)
+    if not answered then
+      answered = true
+      TriggerServerEvent(name, number .. "\n" .. reply)
+    end
+  end)
+end
+
 ---Builds the client platform (`rpf.ClientPlatform`).
 ---@param screens rpf.fivem.Screens The screens, which carry HTTP to the page.
 ---@return rpf.ClientPlatform platform The platform, complete.
@@ -65,9 +87,13 @@ function client.platform(screens)
     end)
   end
 
-  -- Requests ride ox_lib's `lib.callback` (`ox.lua`), both ways.
+  -- Its requests ride ox_lib's `lib.callback` (`ox.lua`); the server's
+  -- are its own numbered events (`server.ask`).
   p.request_server = fivem.ox.request_server
-  p.on_server_request = fivem.ox.on_server_request
+
+  function p.on_server_request(name, handler)
+    RegisterNetEvent(name, function(text) client.asked(name, text, handler) end)
+  end
 
   return p
 end

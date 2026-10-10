@@ -198,8 +198,9 @@ archive fails this way (`Unable to load UI`): use the release's
 
 **`rpf: ox_lib is version 3.30.0, and RPF needs 3.40.0 or newer; …`**: the
 server's ox_lib is too old. Replace its folder with a current release's,
-then restart the server. RPF needs 3.40.0 because it fixes a hole that let
-one player answer a callback the server sent another.
+then restart the server. RPF is built and checked against 3.40.0, which
+also fixes a hole in ox_lib's callbacks that let one player answer what
+the server asked another.
 
 ### At start, on Garry's Mod
 

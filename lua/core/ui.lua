@@ -19,7 +19,9 @@
 ---sent, by number, and the option's `value` never leaves the server; an
 ---input dialog's values are each of its field's kind and within its bounds.
 ---A player who leaves takes their dialogs with them (`gone`), and one left
----open past `TIMEOUT_MS` is `timeout`.
+---open past `TIMEOUT_MS` is `timeout`. A wait is the addon's that asked,
+---like a timer: when the addon stops, it goes, and its callback is never
+---called.
 ---
 ---Nothing here throws: a call that cannot show anything returns nil and a
 ---reason, and a callback that throws is logged.
@@ -636,7 +638,7 @@ end
 ---@param opts any The caller's options.
 ---@param callback any The callback, for every kind but `notify`.
 ---@return boolean? ok True once sent.
----@return string? err `invalid`, `too_large` for options that are each within bounds but together more than a client takes, `unsupported`, `not_found` for a player not logged in here, `busy` while one of the kind is open for them, or `unavailable` before the server has started.
+---@return string? err `invalid`, `too_large` for options that are each within bounds but together more than a client takes, `unsupported`, `not_found` for a player not logged in here, `busy` while one of the kind is open for them, `inactive` from code of an addon activation that has ended, or `unavailable` before the server has started.
 local function show_server(handle, kind, opts, callback)
   local p = platform --[[@as rpf.ServerPlatform?]]
   if not p or not rpf.players then
@@ -651,6 +653,9 @@ local function show_server(handle, kind, opts, callback)
   end
   if p.capabilities[kind] ~= true then
     return nil, "unsupported"
+  end
+  if rpf.addons and rpf.addons.stale() then
+    return nil, "inactive"
   end
   local player = rpf.players.get(handle)
   if not player or not player.player_id or player.state == "dropping" then
@@ -679,20 +684,20 @@ local function show_server(handle, kind, opts, callback)
   end
   waiting[player_id] = by_kind
   local ctx = rpf.addons and rpf.addons.context()
+  ---Forgets the wait. Only this request's own: once it is over, the next of
+  ---its kind for the player may be waiting in its place.
+  ---@type fun(): boolean
+  local forget
+  ---Forgets the addon's ownership of the wait, once it is over.
+  local disown = function() end
   ---Ends the wait, once: reads the answer, or passes on why there is none.
-  ---Only this request's own end counts: once it is over, the next of its
-  ---kind for the player may be waiting in its place.
   ---@type fun(raw: any, reason: string?)
   local finish
   finish = function(raw, reason)
-    local current = waiting[player_id]
-    if not current or current[kind] ~= finish then
+    if not forget() then
       return
     end
-    current[kind] = nil
-    if next(current) == nil then
-      waiting[player_id] = nil
-    end
+    disown()
     if reason then
       deliver(ctx, callback, nil, reason)
       return
@@ -706,7 +711,26 @@ local function show_server(handle, kind, opts, callback)
     -- value of any shape (one that refers to itself) comes back whole.
     deliver(ctx, callback, result, err)
   end
+  forget = function()
+    local current = waiting[player_id]
+    if not current or current[kind] ~= finish then
+      return false
+    end
+    current[kind] = nil
+    if next(current) == nil then
+      waiting[player_id] = nil
+    end
+    return true
+  end
   by_kind[kind] = finish
+  -- The wait is the addon's, like a timer: when it stops (disabled,
+  -- reloaded, its resource gone) the wait goes, its callback never called,
+  -- and the player may be shown the next one.
+  if rpf.addons then
+    disown = rpf.addons.own(function()
+      forget()
+    end)
+  end
   local timeout = kind == "progress" and spec.duration_ms + ui.GRACE_MS or ui.TIMEOUT_MS
   p.after(timeout, function()
     finish(nil, "timeout")

@@ -154,9 +154,10 @@ function server.platform(shim, transport)
     end)
   end
 
-  -- Requests ride ox_lib's `lib.callback` (`ox.lua`), both ways.
+  -- A client's requests ride ox_lib's `lib.callback` (`ox.lua`); the
+  -- server's to a client are its own numbered events (`server.ask`).
   p.on_client_request = fivem.ox.on_client_request
-  p.request_client = fivem.ox.request_client
+  p.request_client = server.ask
 
   return p
 end
@@ -173,6 +174,90 @@ server.NATIVES = {
 
 ---Where an owner finds a current FXServer artifact.
 server.ARTIFACTS_URL = "https://runtime.fivem.net/artifacts/fivem/"
+
+---How long, in milliseconds, the server's request to a client waits for
+---its answer before it is forgotten: past the longest the core waits (a
+---progress bar of ten minutes and its grace), so an answer that never
+---comes holds nothing for good.
+server.ANSWER_TTL = 660000
+
+---The server's requests to clients not answered yet, by number.
+---@type table<integer, { player: integer, name: string, callback: fun(reply: string?) }>
+local asking = {}
+
+---How many requests the server has numbered.
+local asked = 0
+
+---Request names whose answers are listened for.
+---@type table<string, true>
+local answering = {}
+
+---Ends a request, once, with its answer or with nothing.
+---@param number integer The request's number.
+---@param reply string? The answer.
+local function settle(number, reply)
+  local pending = asking[number]
+  if pending then
+    asking[number] = nil
+    pending.callback(reply)
+  end
+end
+
+---Asks a player's client something (`request_client`): a net event under
+---the request's name, `<number>\n<payload>`, answered under the same
+---number. Not over `lib.callback`, which keeps every request with no
+---answer for good; these are forgotten when the player leaves
+---(`server.forget`) or after `ANSWER_TTL`, and their callbacks told none
+---will come.
+---@param player integer The player.
+---@param name string The request's name.
+---@param payload string The request.
+---@param callback fun(reply: string?) Called once, with the answer.
+function server.ask(player, name, payload, callback)
+  if not answering[name] then
+    answering[name] = true
+    RegisterNetEvent(name, function(text) server.answered(tonumber(source), name, text) end)
+  end
+  asked = asked + 1
+  local number = asked
+  asking[number] = { player = player, name = name, callback = callback }
+  Citizen.SetTimeout(server.ANSWER_TTL, function()
+    settle(number, nil)
+  end)
+  TriggerClientEvent(name, player, tostring(number) .. "\n" .. payload)
+end
+
+---Takes a client's answer: only one the server asked for, under its name,
+---and only from the player it asked, so one player cannot answer for
+---another. Anything else is dropped.
+---@param player integer? Who sent it, FiveM's `source`.
+---@param name string The request's name.
+---@param text any What they sent.
+function server.answered(player, name, text)
+  if type(text) ~= "string" then
+    return
+  end
+  local number, body = text:match("^(%d%d?%d?%d?%d?%d?%d?%d?%d?)\n(.*)$")
+  local pending = number and asking[tonumber(number)]
+  if pending and pending.player == player and pending.name == name then
+    settle(tonumber(number) --[[@as integer]], body)
+  end
+end
+
+---Forgets the server's requests to a player who left: they will never
+---answer, and FiveM may give their id to someone else.
+---@param player integer The player.
+function server.forget(player)
+  local numbers = {}
+  for number, pending in pairs(asking) do
+    if pending.player == player then
+      numbers[#numbers + 1] = number
+    end
+  end
+  for _, number in ipairs(numbers) do
+    settle(number, nil)
+  end
+end
 
 ---Why the core must not start on this server, as the one line an owner
 ---reads in the console, or nil if it may. The lines are what
@@ -248,9 +333,9 @@ function server.start(platform)
   core.events.on("players.state_changed", function(player)
     fivem.lock.follow(player.handle, player.state)
   end)
-  -- A player leaving never answers what the server asked them over ox_lib.
+  -- A player leaving never answers what the server asked them.
   core.events.on("players.dropping", function(player)
-    fivem.ox.forget(player.handle)
+    server.forget(player.handle)
   end)
   for _, id in ipairs(GetPlayers() or {}) do
     core.players.connected(tonumber(id))

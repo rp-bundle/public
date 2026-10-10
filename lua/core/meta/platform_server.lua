@@ -114,11 +114,12 @@ function ToClients.on_client_request(name, handler) end
 
 ---Asks one player's client something and hears its one answer: the other
 ---half of the client's `on_server_request` (J10), for the UI an addon
----shows a player from the server (`rpf.ui`). On FiveM it is ox_lib's
----`lib.callback` with a player id, which from 3.40.0 takes the answer only
----from that player; on Gmod a numbered `net` message, whose answer is
----taken only from the player asked. The core keeps its own timeout, and
----checks the answer as hostile input.
+---shows a player from the server (`rpf.ui`). Numbered messages on both
+---engines (net events on FiveM, `net` on Gmod), not ox_lib's callbacks,
+---which keep a request nobody answers for good: the platform forgets one
+---when the player leaves or after a while, and takes an answer only from
+---the player it asked. The core keeps its own timeout, and checks the
+---answer as hostile input.
 ---@param player rpf.PlayerHandle The player.
 ---@param name string The request's name, namespaced `rpf:`.
 ---@param payload string The request, already encoded.

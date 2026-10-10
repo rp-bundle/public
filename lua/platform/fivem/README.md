@@ -35,14 +35,18 @@ is in `ox.lua`, so leaving it is one file's work: upstream has moved once
 - **It is a prerequisite, never bundled.** ox_lib is LGPL-3.0; a release
   names it and the txAdmin recipe downloads its own release. FXServer cannot
   pin a dependency's version, so `ox.MINIMUM` is checked at start from
-  ox_lib's `version` metadata: 3.40.0, the first whose server takes a
-  server-to-client callback's answer only from the player it asked.
-- **`lib.callback` is only a transport.** It carries a request and its
-  answer (`request_server` / `on_client_request`) under one fixed name per
-  request kind (`rpf:interact`); what a client asks reaches only the
-  handler an addon registered, checked by the core (`rpf.interactions`).
-  ox_lib's own registry has no access control, so nothing else of RPF's is
-  registered with it.
+  ox_lib's `version` metadata: 3.40.0, the release the adapter is built
+  and type-checked against, which also closes a hole in ox_lib's callbacks
+  that let one player answer what the server asked another.
+- **`lib.callback` is only a transport,** for a client's requests. It
+  carries a request and its answer (`request_server` / `on_client_request`)
+  under one fixed name per request kind (`rpf:interact`); what a client
+  asks reaches only the handler an addon registered, checked by the core
+  (`rpf.interactions`). ox_lib's own registry has no access control, so
+  nothing else of RPF's is registered with it. The server's requests to a
+  client (`rpf.ui`) are the adapter's own numbered events instead: ox_lib
+  keeps every server-to-client callback nobody answers for good, and a
+  player who leaves with a menu open never answers.
 - **The login and character screens stay RPF's NUI.** ox_lib's dialogs
   hand their values to Lua, and the password must never reach Lua (below).
 - **The core never calls it**, as it never calls a native. `dev/fivem-resources --dev` also adds `dev.lua`, the smoke test's
@@ -129,7 +133,7 @@ arrives as a function reference, which the core calls like a function.
 | `notify` | The `rpf:notify` client event, shown as a feed notification | `server.lua`, `client.lua` |
 | `to_client` / `on_client`, `to_server` / `on_server` | `TriggerClientEvent` / `RegisterNetEvent`, `TriggerServerEvent` / `RegisterNetEvent`, with the sender from FiveM's `source` and anything but a string payload dropped | `server.lua`, `client.lua` |
 | `request_server` / `on_client_request` | ox_lib's `lib.callback` / `lib.callback.register`, with no client-side rate limit (the core keeps its own); the server waits on the callback's thread (`Citizen.Await`) for the core's answer, which always comes, and answers a payload that is not a string with nothing | `ox.lua` |
-| `request_client` / `on_server_request` | The other direction: `lib.callback` with the player's id, whose answer ox_lib 3.40 takes only from that player; the client waits on its thread for the player. At most `MAX_ASKING` per player and `MAX_UNANSWERED` from a client are left with ox_lib at once, since it never expires one sent with a callback | `ox.lua` |
+| `request_client` / `on_server_request` | The other direction: a net event under the request's name, `<number>\n<payload>`, answered under the same number and taken only from the player asked (`server.ask`, `client.asked`); forgotten when the player leaves or after `ANSWER_TTL`. Not `lib.callback`, which keeps every request nobody answers for good. A client keeps at most `MAX_UNANSWERED` of its own requests with ox_lib at once | `server.lua`, `client.lua` |
 | `ui` (client) | `lib.notify`; a context menu (`lib.registerContext`, `lib.showContext`), counted as closed when another resource's replaces it; `lib.inputDialog`, a select's options by number; `lib.progressBar`. The server's `capabilities` declares all four | `ox.lua` |
 | `log` | `print`, as `[rpf] <level>: <message>` | `shared.lua` |
 | `expose` | The `api` export, a plain copy of `rpf.api` (read-only views do not survive FiveM's msgpack), with `events` subscriptions named by id | `shared.lua` |

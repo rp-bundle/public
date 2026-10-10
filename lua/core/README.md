@@ -119,7 +119,7 @@ step.
 | ToClients | `to_client(player, name, payload)` | Sends a string to one client |
 | | `on_client(name, handler)` | `handler(player, payload)`. The platform supplies the sender, and the payload is hostile input |
 | | `on_client_request(name, handler)` | `handler(player, payload, respond)`: a client's request (`request_server`), answered by calling `respond(reply)` once. The platform pairs the two (ox_lib's `lib.callback` on FiveM, numbered `net` messages on Gmod) and supplies the sender; the core always answers (J10) |
-| | `request_client(player, name, payload, callback)` | The other direction: asks one player's client and hands `callback` the answer, or nil, taking it only from that player (ox_lib 3.40's `lib.callback` with a player id on FiveM). The core keeps the timeout and reads the answer as hostile input (J10) |
+| | `request_client(player, name, payload, callback)` | The other direction: asks one player's client and hands `callback` the answer, or nil, taking it only from that player, and forgetting a request when the player leaves (numbered events on both engines: ox_lib's callbacks never let an unanswered one go). The core keeps the timeout and reads the answer as hostile input (J10) |
 | Log | `log(level, message)` | `"debug"`, `"info"`, `"warn"` or `"error"`. The core never logs a secret |
 | Api | `expose(api)` | Publishes the public API table: through the resource's export table on FiveM, where each resource has its own Lua state, and through the `rpf` global on Gmod, where every addon shares one. Only `rpf.api` is published, never the rest of `rpf` |
 

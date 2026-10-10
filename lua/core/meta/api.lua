@@ -733,7 +733,10 @@ function Interactions.request(name, payload, callback) end
 ---options it cannot show, `too_large` (server) for options each within
 ---bounds but together more than a client takes (64 KiB), `unsupported` where the engine has none
 ---(`rpf.capabilities()`), `busy` while one of its kind is open for the
----player, `not_found` (server) for a player not logged in here. The callback
+---player, `not_found` (server) for a player not logged in here, `inactive`
+---(server) from code of an addon activation that has ended. A wait is the
+---addon's, like a timer: when it stops, the wait goes and its callback is
+---never called. The callback
 ---runs once, later: with the result, or nil and why, `cancelled` when the
 ---player closed it, and on the server `timeout` (5 minutes, or a progress
 ---bar's length and 30 seconds), `gone` when the player left, `invalid` for
@@ -762,7 +765,7 @@ function Ui.notify(opts) end
 ---@param opts rpf.UiMenu The menu.
 ---@param callback fun(choice: any, err: string?) Called once.
 ---@return boolean? ok True once shown.
----@return "invalid"|"too_large"|"unsupported"|"busy"|"not_found"|"failed"|"unavailable"|nil err Why not.
+---@return "invalid"|"too_large"|"unsupported"|"busy"|"not_found"|"inactive"|"failed"|"unavailable"|nil err Why not.
 ---@overload fun(player: any, opts: rpf.UiMenu, callback: fun(choice: any, err: string?)): boolean?, string?
 function Ui.menu(opts, callback) end
 
@@ -772,7 +775,7 @@ function Ui.menu(opts, callback) end
 ---@param opts rpf.UiInput The dialog.
 ---@param callback fun(values: table<string, any>?, err: string?) Called once.
 ---@return boolean? ok True once shown.
----@return "invalid"|"too_large"|"unsupported"|"busy"|"not_found"|"failed"|"unavailable"|nil err Why not.
+---@return "invalid"|"too_large"|"unsupported"|"busy"|"not_found"|"inactive"|"failed"|"unavailable"|nil err Why not.
 ---@overload fun(player: any, opts: rpf.UiInput, callback: fun(values: table<string, any>?, err: string?)): boolean?, string?
 function Ui.input(opts, callback) end
 
@@ -783,7 +786,7 @@ function Ui.input(opts, callback) end
 ---@param opts rpf.UiProgress The bar.
 ---@param callback fun(completed: true?, err: string?) Called once.
 ---@return boolean? ok True once shown.
----@return "invalid"|"too_large"|"unsupported"|"busy"|"not_found"|"failed"|"unavailable"|nil err Why not.
+---@return "invalid"|"too_large"|"unsupported"|"busy"|"not_found"|"inactive"|"failed"|"unavailable"|nil err Why not.
 ---@overload fun(player: any, opts: rpf.UiProgress, callback: fun(completed: true?, err: string?)): boolean?, string?
 function Ui.progress(opts, callback) end
 
