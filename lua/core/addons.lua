@@ -154,6 +154,14 @@ local platform = nil
 ---@type fun(checked: table, handlers: rpf.addons.Handlers, origin: any): boolean?, table?
 local apply
 
+---How deep registrations made by handlers are being applied, each inside
+---the evaluation the one before set off: a `start` that registers its own
+---addon again would otherwise reload it for ever.
+local reloading = 0
+---How deep that may go: past it, a registration a handler makes is refused
+---in the log.
+local MAX_RELOADS = 16
+
 ---Whether an evaluation is running, and whether another was asked for
 ---while it ran (a handler registering an addon), with a retry or not.
 local evaluating = false
@@ -551,8 +559,17 @@ function addons.evaluate(retry)
       evaluating = false
       if registration.unload then
         ok, err = pcall(addons.unload_origin, registration.origin)
+      elseif reloading >= MAX_RELOADS then
+        log(
+          "error",
+          tostring(registration.manifest and registration.manifest.namespace)
+            .. " was not registered: handlers kept registering addons from inside each other's starts"
+        )
+        ok = true
       else
+        reloading = reloading + 1
         ok, err = pcall(apply, registration.manifest --[[@as table]], registration.handlers --[[@as rpf.addons.Handlers]], registration.origin)
+        reloading = reloading - 1
       end
       evaluating = true
     end

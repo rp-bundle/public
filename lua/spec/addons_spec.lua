@@ -482,6 +482,46 @@ describe("rpf.addons", function()
       assert.are.equal(before + 1, rpf.addons.owned_count())
     end)
 
+    it("refuses, in the log, an addon whose start keeps registering it again", function()
+      local starts = 0
+      local handlers
+      handlers = {
+        start = function()
+          starts = starts + 1
+          rpf.addons.register(manifest("acme_kit"), handlers)
+        end,
+      }
+      rpf.addons.register(manifest("acme_kit"), handlers)
+      support.connected(p)
+      configure(p, { installed(manifest("acme_kit")) })
+      assert.is_true(starts > 1 and starts <= 20, "bounded: " .. starts)
+      local refused = false
+      for _, line in ipairs(p.logs) do
+        refused = refused or line.message:find("kept registering", 1, true) ~= nil
+      end
+      assert.is_true(refused)
+    end)
+
+    it("forgets an event name once nothing a script subscribed to it is left", function()
+      support.connected(p)
+      local before = rpf.api_subscribed_names()
+      for i = 1, 50 do
+        rpf.api.events.once("scripts.once" .. i, function() end)
+        rpf.api.events.emit("scripts.once" .. i)
+      end
+      local handler = function() end
+      rpf.api.events.on("scripts.on", handler)
+      rpf.api.events.off("scripts.on", handler)
+      rpf.addons.register(manifest("acme_kit"), {
+        start = function()
+          rpf.api.events.on("scripts.owned", function() end)
+        end,
+      })
+      configure(p, { installed(manifest("acme_kit")) })
+      configure(p, { installed(manifest("acme_kit"), false) })
+      assert.are.equal(before, rpf.api_subscribed_names())
+    end)
+
     it("waits for an evaluation to end before it forgets an origin's addons", function()
       local ran = {}
       unloaded_ticks = 0

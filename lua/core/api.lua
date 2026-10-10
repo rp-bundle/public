@@ -91,13 +91,20 @@ local function subscribe(name, handler, once)
   end
   ---@type { fn: function, disown: fun() }
   local registration = { disown = function() end }
-  ---Forgets this registration in the map `off` reads, and its ownership.
+  ---Forgets this registration in the map `off` reads, the map itself once
+  ---it is empty, and its ownership.
   local function forget()
     local list = by_handler[handler]
     for i = #(list or {}), 1, -1 do
       if list[i] == registration then
         table.remove(list, i)
       end
+    end
+    if list and #list == 0 then
+      by_handler[handler] = nil
+    end
+    if next(by_handler) == nil and wrapped[name] == by_handler then
+      wrapped[name] = nil
     end
     registration.disown()
   end
@@ -136,6 +143,17 @@ local function subscribe(name, handler, once)
   return handler
 end
 
+---How many event names have a subscription a script made, for tests and
+---diagnostics: an unsubscribed name must not stay behind.
+---@return integer count The count.
+function rpf.api_subscribed_names()
+  local count = 0
+  for _ in pairs(wrapped) do
+    count = count + 1
+  end
+  return count
+end
+
 ---The top-level table behind `rpf.api`. `engine` is filled in at start.
 local surface = {
   VERSION = rpf.VERSION,
@@ -154,6 +172,9 @@ local surface = {
         return false
       end
       by_handler[handler] = nil
+      if next(by_handler) == nil then
+        wrapped[name] = nil
+      end
       for _, registration in ipairs(list) do
         events.off(name, registration.fn)
         registration.disown()

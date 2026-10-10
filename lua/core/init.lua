@@ -46,6 +46,7 @@
 ---@field start_server fun(platform: rpf.ServerPlatform, options: rpf.ServerOptions): rpf.Client Starts the game-server half. Defined below.
 ---@field start_client fun(platform: rpf.ClientPlatform, options: rpf.ClientStartOptions?): rpf.ClientPlatform Starts the player-client half. Defined below.
 ---@field publish fun(platform: rpf.ServerPlatform|rpf.ClientPlatform) Publishes the public API through the platform. Defined by `api.lua`, which loads last.
+---@field api_subscribed_names fun(): integer How many event names hold a script's subscription, for tests. Defined by `api.lua`.
 ---@field api_members fun(): table<string, string[]>, string[] The public API's member names and reserved names, for the test that holds `meta/api.lua` to them. Defined by `api.lua`.
 rpf = {}
 
