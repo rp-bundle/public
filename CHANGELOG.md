@@ -16,21 +16,16 @@ one-way door, a new environment variable. How to cut a release is in
 
 ## [Unreleased]
 
-**Protocol:** speaks protocol 2, and serves protocols 1 and 2. Protocol 2
+**Protocol:** speaks protocol 2, and serves protocol 2 only. Protocol 2
 adds the `restarting` notice (below), a character's job (D7), in-game
 staff (F9: `link_player`, `staff_action`, `player_linked` and
 `staff_permissions`), the `suspended` reject code (H5) and in-game config
 editing (E6: `config_changed`, `config_change_applied` and
-`config_change_discarded`), the `domain_external` reject code (K1), and an item's `image` hash in the config
-snapshot (P3), which a protocol 1 core ignores, and the profile (K1) in
-`hello` (optional: a core that leaves it out runs native) and `welcome`,
-which a protocol 1 core ignores; a game server on
-protocol 1 is served unchanged, and is simply closed where a protocol 2 one
-is told first, is never sent `staff_permissions`, and is refused
-`forbidden` where a protocol 2 one is refused `suspended`. A message newer
-than a connection's protocol is refused `malformed` at the socket. A protocol 1
-core ignores a held character's `job`, and its reports, which carry none,
-keep the job the portal has.
+`config_change_discarded`), the `domain_external` reject code (K1), an
+item's `image` hash in the config snapshot (P3), and the profile (K1) in
+`hello` (optional: a core that leaves it out runs native) and `welcome`. A
+message newer than a connection's protocol is refused `malformed` at the
+socket.
 
 ### Added
 
@@ -388,6 +383,17 @@ keep the job the portal has.
   `value` never leaves the server). `rpf.api.capabilities()` reports the
   four, now on the client too. The example addon's `/tags` picks a tag to
   scrub from a menu.
+
+### Removed
+
+- Protocol 1: never served by a released game-side build; dropped on the
+  repository owner's confirmation that nobody runs it (2026-10-09). A
+  `Hello` naming it is refused `malformed` with the upgrade message, like
+  any version below the served range, and the paths the portal kept for it
+  are gone: the drain's plain close, the `forbidden` answer to a suspended
+  guild, the `forbidden` stand-in for `domain_external`, and the refusals
+  of staff, config and addon frames on an older connection
+  ([Compatibility](docs/compatibility.md#changing-the-wire)).
 
 ### Database
 
