@@ -44,6 +44,7 @@
 ---@field bridge rpf.bridge The bridge to an existing RP framework on a companion server: its contract, lifecycle and the calls routed to it (K2).
 ---@field world rpf.world The game world through the adapter's capabilities (J3).
 ---@field interactions rpf.interactions Requests a player's client makes to an addon's registered handler (J3).
+---@field ui rpf.ui The UI an addon shows a player: notifications, menus, input dialogs and progress bars (J10).
 ---@field picker rpf.picker The client side of choosing a character.
 ---@field handoff rpf.handoff The login messages between server and client.
 ---@field join rpf.join The server side of a player's login.
@@ -118,6 +119,7 @@ rpf.files = {
     "facade.lua",
     "world.lua",
     "interactions.lua",
+    "ui.lua",
     "api.lua",
   },
   client = {
@@ -129,6 +131,7 @@ rpf.files = {
     "auth.lua",
     "picker.lua",
     "interactions.lua",
+    "ui.lua",
     "api.lua",
   },
 }
@@ -188,6 +191,7 @@ function rpf.start_server(platform, options)
   rpf.bridge.start(platform)
   rpf.world.start(platform)
   rpf.interactions.serve(platform)
+  rpf.ui.serve(platform)
   rpf.config.restore(platform)
   rpf.config.serve(platform, rpf.connection)
   rpf.publish(platform)
@@ -224,6 +228,7 @@ function rpf.start_client(platform, options)
   rpf.auth.start(platform, options and options.auth)
   rpf.picker.start(platform)
   rpf.interactions.start_client(platform)
+  rpf.ui.start_client(platform)
   return platform
 end
 

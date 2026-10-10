@@ -1,6 +1,8 @@
 ---acme_tags on a player's client: asking the server to spray, listing the
 ---player's own tags and scrubbing one, and telling the player how it went.
----Engine-neutral; the entry point binds the commands.
+---Engine-neutral: the UI is `rpf.ui`, which looks right on every engine
+---(ox_lib on FiveM, Derma on Gmod), with chat as the fallback where an
+---engine has none. The entry point binds the commands.
 acme_tags = acme_tags or {}
 
 ---The ids of the tags the last `show_mine` showed, by their number.
@@ -26,6 +28,82 @@ function acme_tags.ask(rpf, text, tell)
     end)
   end
   return rpf.interactions.send("acme_tags.spray", { text = text })
+end
+
+---A way to tell the player something: a notification where the engine shows
+---one, the entry point's own line (chat) where it does not.
+---@param rpf rpf.Api The API.
+---@param fallback fun(message: string) The entry point's way.
+---@return fun(message: string) tell Shows the player a line.
+function acme_tags.teller(rpf, fallback)
+  return function(message)
+    if not rpf.capabilities().notify or not rpf.ui.notify({ text = message, title = "Tags" }) then
+      fallback(message)
+    end
+  end
+end
+
+---How many tags one page of the menu shows: a menu has at most 32 options,
+---and the last is "More".
+acme_tags.PAGE = 31
+
+---Shows one page of the player's tags in a menu, the next behind "More",
+---and scrubs the one picked.
+---@param rpf rpf.Api The API.
+---@param tags { id: string, text: string }[] Every tag of theirs.
+---@param from integer The first to show.
+---@param tell fun(message: string) Shows the player a line.
+local function show_page(rpf, tags, from, tell)
+  local options = {}
+  for i = from, math.min(#tags, from + acme_tags.PAGE - 1) do
+    options[#options + 1] = { label = tostring(tags[i].text), description = "Scrub it off", value = tags[i].id }
+  end
+  local more = from + acme_tags.PAGE <= #tags
+  if more then
+    options[#options + 1] = { label = "More", value = false }
+  end
+  local shown, why = rpf.ui.menu({ title = "Your tags", options = options }, function(id)
+    if id == false then
+      show_page(rpf, tags, from + acme_tags.PAGE, tell)
+      return
+    end
+    if not id then
+      return -- closed
+    end
+    rpf.interactions.request("acme_tags.scrub", { id = id }, function(scrubbed, reason)
+      tell(scrubbed and "Scrubbed." or ("Not scrubbed: " .. tostring(reason)))
+    end)
+  end)
+  if not shown then
+    tell("Could not show your tags: " .. tostring(why))
+  end
+end
+
+---Lets the player pick one of their tags from a menu and scrubs it: the
+---server's list comes as data (`rpf.interactions.request`), the menu is
+---`rpf.ui.menu` with each tag's id as its option's value, a page at a
+---time, and the server checks the pick is the player's own, whatever id
+---this sends. Where the engine has no menu, it lists them numbered for
+---`ask_scrub` instead.
+---@param rpf rpf.Api The API.
+---@param tell fun(message: string) Shows the player a line.
+---@return boolean? sent True once asked.
+---@return string? err Why not.
+function acme_tags.pick_mine(rpf, tell)
+  if not rpf.capabilities().menu then
+    return acme_tags.show_mine(rpf, tell)
+  end
+  return rpf.interactions.request("acme_tags.mine", nil, function(ok, result)
+    if not ok then
+      tell("Could not list your tags: " .. tostring(result))
+      return
+    end
+    if #(result.tags or {}) == 0 then
+      tell("You have no tags up.")
+      return
+    end
+    show_page(rpf, result.tags, 1, tell)
+  end)
 end
 
 ---Lists the player's own tags, numbered, and keeps their ids for `ask_scrub`:

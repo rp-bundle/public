@@ -20,10 +20,10 @@
 ---The public API table.
 ---
 ---What is present follows the side: `players`, `staff`, `config`,
----`addons`, `records`, the facade, `world` and `capabilities` on the game
----server, `auth` on the player's client, and `VERSION`, `engine`, `events`,
----`time` and `interactions` on both (`register` on the server, `send` on the
----client). Every table in it is
+---`addons`, `records`, the facade and `world` on the game server, `auth` on
+---the player's client, and `VERSION`, `engine`, `events`, `time`,
+---`interactions` (`register` on the server, `send` and `request` on the
+---client), `ui` and `capabilities` on both. Every table in it is
 ---read-only; through FiveM's export it is a plain copy, which a script may
 ---change without changing the API anyone else holds.
 ---
@@ -45,7 +45,8 @@
 ---@field ops rpf.api.Ops Operation ids, which make the facade's commands safe to send again. Server only.
 ---@field world rpf.api.World The game world, through what the engine's adapter supports (J3). Server only.
 ---@field interactions rpf.api.Interactions Requests a player's client makes to an addon: `register` a handler on the server, `send` or `request` on the client (J3, J10).
----@field capabilities fun(): table<string, boolean> Which game-world capabilities this engine supports, by name: `position`, `model`, `zone`, `entity`. Ask before offering a player something that needs one. Server only.
+---@field capabilities fun(): table<string, boolean> What this engine supports, by name: the game world's `position`, `model`, `zone` and `entity` (server only), and the UI `notify`, `menu`, `input` and `progress` (both sides). Ask before offering a player something that needs one; a call to one that is missing says `unsupported`.
+---@field ui rpf.api.Ui Notifications, menus, input dialogs and progress bars that look right on every engine (J10): on the client for the player, on the server for a player you name.
 ---@field players rpf.api.Players? The players on this game server. Server only.
 ---@field staff rpf.api.Staff? In-game staff: what a linked staff member may do here, account linking, and staff actions for the audit log. Server only.
 ---@field config rpf.api.Config? Lookups over the config the portal pushed, and linked staff's edits of it in game. Server only.
@@ -709,6 +710,127 @@ function Interactions.send(name, payload) end
 ---@return boolean? ok True once sent; the callback runs only then.
 ---@return "invalid"|"too_large"|"too_many"|"unavailable"|nil err As for `send`, and `invalid` for a callback that cannot be called.
 function Interactions.request(name, payload, callback) end
+
+---UI an addon shows a player, the same on every engine (J10): over ox_lib
+---on FiveM, in Derma on Gmod. It holds what an addon for both engines
+---needs, not all of ox_lib; an addon for FiveM alone may call `lib.*` itself.
+---
+---```lua
+----- server: the player picks, and the server reads the pick
+---rpf.ui.menu(player.handle, {
+---  title = "Your tags",
+---  options = { { label = "hello", value = tag_id }, { label = "Close" } },
+---}, function(choice, err)
+---  if choice == tag_id then scrub(tag_id) end -- `value` never left the server
+---end)
+----- client
+---rpf.ui.notify("Sprayed.")
+---rpf.ui.input({ title = "Spray", fields = { { name = "text", label = "Text", required = true, max = 24 } } },
+---  function(values) if values then rpf.interactions.send("acme_tags.spray", values) end end)
+---```
+---
+---Each call returns `true` once it is shown, or nil and why: `invalid` for
+---options it cannot show, `too_large` (server) for options each within
+---bounds but together more than a client takes (64 KiB), `unsupported` where the engine has none
+---(`rpf.capabilities()`), `busy` while one of its kind is open for the
+---player, `not_found` (server) for a player not logged in here, `inactive`
+---(server) from code of an addon activation that has ended. A wait is the
+---addon's, like a timer: when it stops, the wait goes and its callback is
+---never called. The callback
+---runs once, later: with the result, or nil and why, `cancelled` when the
+---player closed it, and on the server `timeout` (5 minutes, or a progress
+---bar's length and 30 seconds), `gone` when the player left, `invalid` for
+---an answer their client was not offered, or the client's own refusal.
+---
+---**On the server, the client's answer is checked against what was
+---offered**: a menu answers one of its options, by number, and its `value`
+---stays on the server; an input dialog's values are of each field's kind and
+---within its bounds. It is still only what the player chose: check that
+---they may do what they picked before you do it.
+---
+---**Both sides:** on the server each call takes the player's handle first.
+---@class rpf.api.Ui
+local Ui = {}
+
+---Shows a notification. A string is the text alone.
+---@param opts rpf.UiNotice|string What to show.
+---@return boolean? ok True once shown (on the server, once sent).
+---@return "invalid"|"unsupported"|"not_found"|"failed"|"unavailable"|nil err Why not.
+---@overload fun(player: any, opts: rpf.UiNotice|string): boolean?, string?
+function Ui.notify(opts) end
+
+---Shows a menu to pick one option from. The callback gets the chosen
+---option's `value` (its number if it has none), or nil and `cancelled`
+---when the player closed it.
+---@param opts rpf.UiMenu The menu.
+---@param callback fun(choice: any, err: string?) Called once.
+---@return boolean? ok True once shown.
+---@return "invalid"|"too_large"|"unsupported"|"busy"|"not_found"|"inactive"|"failed"|"unavailable"|nil err Why not.
+---@overload fun(player: any, opts: rpf.UiMenu, callback: fun(choice: any, err: string?)): boolean?, string?
+function Ui.menu(opts, callback) end
+
+---Shows an input dialog. The callback gets the values by field name (a
+---select's chosen option's `value`, a checkbox's boolean, nothing for a
+---field left empty), or nil and `cancelled`.
+---@param opts rpf.UiInput The dialog.
+---@param callback fun(values: table<string, any>?, err: string?) Called once.
+---@return boolean? ok True once shown.
+---@return "invalid"|"too_large"|"unsupported"|"busy"|"not_found"|"inactive"|"failed"|"unavailable"|nil err Why not.
+---@overload fun(player: any, opts: rpf.UiInput, callback: fun(values: table<string, any>?, err: string?)): boolean?, string?
+function Ui.input(opts, callback) end
+
+---Shows a progress bar. The callback gets `true` when it ran to its end,
+---or nil and `cancelled` when the player cancelled it or something
+---interrupted it. On the server, `true` is only the client's word: time the
+---action yourself if it matters.
+---@param opts rpf.UiProgress The bar.
+---@param callback fun(completed: true?, err: string?) Called once.
+---@return boolean? ok True once shown.
+---@return "invalid"|"too_large"|"unsupported"|"busy"|"not_found"|"inactive"|"failed"|"unavailable"|nil err Why not.
+---@overload fun(player: any, opts: rpf.UiProgress, callback: fun(completed: true?, err: string?)): boolean?, string?
+function Ui.progress(opts, callback) end
+
+---A notification.
+---@class rpf.UiNotice
+---@field text string What it says, at most 256 bytes.
+---@field title string? A title above it, at most 128 bytes.
+---@field kind "info"|"success"|"warning"|"error"? How it looks: `info` unless given.
+---@field duration_ms integer? How long it shows: 5000 unless given, 1000 to 30000.
+
+---A menu.
+---@class rpf.UiMenu
+---@field title string Its title, at most 128 bytes.
+---@field options rpf.UiMenuOption[] Its options, 1 to 32, in order.
+
+---One menu option.
+---@class rpf.UiMenuOption
+---@field label string What it says, at most 128 bytes.
+---@field description string? A line under it.
+---@field disabled boolean? Shown, but cannot be picked.
+---@field value any? What the callback gets when it is picked: its number unless given. Never sent to the client.
+
+---An input dialog.
+---@class rpf.UiInput
+---@field title string Its title, at most 128 bytes.
+---@field fields rpf.UiField[] Its fields, 1 to 12, in order.
+
+---One input dialog field.
+---@class rpf.UiField
+---@field name string Its key in the values, `[A-Za-z_][A-Za-z0-9_]*`, unique in the dialog.
+---@field label string Its label, at most 128 bytes.
+---@field kind "text"|"number"|"checkbox"|"select"? What it takes: `text` unless given.
+---@field required boolean? Must be filled in; a checkbox, ticked.
+---@field placeholder string? Shown while it is empty.
+---@field min number? Text: the fewest bytes (0). Number: the least value.
+---@field max number? Text: the most bytes (128 unless given, at most 512). Number: the greatest value.
+---@field default any? What it starts as: text, a number, a boolean, or one of a select's option values.
+---@field options { label: string, value: any? }[]? A select's options, 1 to 32: each `value` (its number unless given) is what the values hold.
+
+---A progress bar.
+---@class rpf.UiProgress
+---@field label string What it says, at most 128 bytes.
+---@field duration_ms integer How long it runs, 100 to 600000.
+---@field cancel boolean? Whether the player may cancel it: yes unless `false`.
 
 ---What `interactions.result` carries.
 ---@class rpf.InteractionResult

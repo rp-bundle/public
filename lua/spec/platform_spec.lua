@@ -109,6 +109,7 @@ describe("rpf.platform", function()
       "on_client",
       "on_client_request",
       "random_hex",
+      "request_client",
       "send",
       "thread",
       "to_client",

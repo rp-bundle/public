@@ -9,7 +9,9 @@
 ---`rpf.picker`). The `interact` pair is J3's: a client asks an addon's
 ---registered interaction to run, and is told how it went
 ---(`rpf.interactions`), as a request and its answer, which the platform
----pairs (J10). They travel over the engine's own client messaging, not the
+---pairs (J10). The `ui` ones are J10's too: the server asks a client to show
+---an addon's menu, dialog or progress bar and hears what the player did,
+---or to show a notification (`rpf.ui`). They travel over the engine's own client messaging, not the
 ---portal protocol, and both halves ship in the same addon, so they are not
 ---an external contract and have no corpus. They are still hostile input on
 ---the server, where any client can send anything, so every payload is
@@ -30,8 +32,13 @@
 ---@field CHARACTER_RESULT string Server → client: how a create, select or deselect went.
 ---@field INTERACT string Client → server, as a request (`request_server`): run an addon's registered interaction, by name, with a payload (J3, J10).
 ---@field INTERACTION_RESULT string Server → client, as the answer to `INTERACT`: how it went, and the handler's data. Never a message of its own: the platform pairs it with its request.
+---@field UI string Server → client, as a request (`request_client`): show a menu, an input dialog or a progress bar an addon asked for (`rpf.ui`, J10).
+---@field UI_ANSWER string Client → server, as the answer to `UI`: what the player did, raw, for the server to read against what it offered. Never a message of its own.
+---@field UI_NOTIFY string Server → client: show a notification an addon asked for.
+---@field UI_CLOSE string Server → client: close what a `UI` request showed, by its id, because the addon that asked has stopped.
 ---@field MAX_PAYLOAD integer The longest payload decoded, in bytes, of every message but the list of characters. Real ones are a few hundred.
----@field MAX_LIST_PAYLOAD integer The longest list of characters, or answer to an interaction, decoded, in bytes. Only the client decodes either, from its own server; the server registers no handler for them, so a client cannot make the server decode one.
+---@field MAX_LIST_PAYLOAD integer The longest list of characters, answer to an interaction, or UI request, decoded, in bytes. Only the client decodes these, from its own server; the server registers no handler for them, so a client cannot make the server decode one.
+---@field MAX_UI_ANSWER integer The longest answer to a UI request decoded, in bytes: room for an input dialog's twelve fields of 512 bytes each, every byte escaped. The server decodes one only as the answer to a request it sent that player.
 ---@field schemas table<string, table<string, rpf.handoff.FieldKind>> Each message's fields and their kinds.
 local handoff = {}
 
@@ -52,14 +59,30 @@ handoff.CHARACTER_DESELECT = "rpf:character_deselect"
 handoff.CHARACTER_RESULT = "rpf:character_result"
 handoff.INTERACT = "rpf:interact"
 handoff.INTERACTION_RESULT = "rpf:interaction_result"
+handoff.UI = "rpf:ui"
+handoff.UI_ANSWER = "rpf:ui_answer"
+handoff.UI_NOTIFY = "rpf:ui_notify"
+handoff.UI_CLOSE = "rpf:ui_close"
 handoff.MAX_PAYLOAD = 4096
 handoff.MAX_LIST_PAYLOAD = 65536
+handoff.MAX_UI_ANSWER = 40960
+
+---The longest payload decoded for each message that may be longer than
+---`MAX_PAYLOAD`.
+---@type table<string, integer>
+local LIMITS = {
+  [handoff.CHARACTERS] = handoff.MAX_LIST_PAYLOAD,
+  [handoff.INTERACTION_RESULT] = handoff.MAX_LIST_PAYLOAD,
+  [handoff.UI] = handoff.MAX_LIST_PAYLOAD,
+  [handoff.UI_NOTIFY] = handoff.MAX_LIST_PAYLOAD,
+  [handoff.UI_ANSWER] = handoff.MAX_UI_ANSWER,
+}
 
 ---How one field is checked. A trailing `?` means it may be absent. A
 ---`table` is only checked to be one, so the module that reads it checks the
 ---rest; of what a client sends, only an interaction's payload is one, and
 ---`rpf.interactions` checks it is plain data before any handler sees it.
----@alias rpf.handoff.FieldKind "string"|"string?"|"number"|"boolean"|"boolean?"|"table"|"table?"
+---@alias rpf.handoff.FieldKind "string"|"string?"|"number"|"number?"|"boolean"|"boolean?"|"table"|"table?"
 
 handoff.schemas = {
   [handoff.CLIENT_READY] = {},
@@ -110,6 +133,24 @@ handoff.schemas = {
     ok = "boolean",
     reason = "string?",
     data = "table?",
+  },
+  [handoff.UI] = {
+    kind = "string",
+    id = "string?",
+    spec = "table",
+  },
+  [handoff.UI_ANSWER] = {
+    ok = "boolean",
+    reason = "string?",
+    index = "number?",
+    values = "table?",
+    done = "boolean?",
+  },
+  [handoff.UI_NOTIFY] = {
+    spec = "table",
+  },
+  [handoff.UI_CLOSE] = {
+    id = "string",
   },
 }
 
@@ -171,7 +212,7 @@ function handoff.decode(name, payload)
   if type(payload) ~= "string" then
     return nil, "the payload is not a string"
   end
-  if #payload > ((name == handoff.CHARACTERS or name == handoff.INTERACTION_RESULT) and handoff.MAX_LIST_PAYLOAD or handoff.MAX_PAYLOAD) then
+  if #payload > (LIMITS[name] or handoff.MAX_PAYLOAD) then
     return nil, "the payload is too long"
   end
   local value, err = json.decode(payload)

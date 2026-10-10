@@ -23,11 +23,15 @@
 ---- **The socket and HTTP are the host's.** It sends, and tells the mock what
 ---  happened (`socket_open`, `socket_message`, `socket_close`, `http_done`),
 ---  which is where its fault injection sits.
----- **Requests are messages.** A request and its answer (`request_server`,
----  `on_client_request`) cross the host as two messages under the
----  request's name, each `<id>\n<body>` (`mock.frame`), which is also how
----  the Gmod adapter and the FiveM fakes' `lib.callback` frame them, so a
----  harness plays any engine's client the same way.
+---- **Requests are messages.** A request and its answer (`request_server`
+---  and `on_client_request`, `request_client` and `on_server_request`)
+---  cross the host as two messages under the request's name, each
+---  `<id>\n<body>` (`mock.frame`), which is also how the Gmod adapter and
+---  the FiveM fakes' `lib.callback` frame them, so a harness plays any
+---  engine's client the same way.
+---- **UI is recorded.** The client's `ui` keeps what it was asked to show
+---  in `shown`, and the harness answers it (`answer_ui`), as a player
+---  would.
 ---
 ---No engine is involved, so this is not a game adapter: it does not wire
 ---engine events, and the harness calls `rpf.players.connected` and `dropped`
@@ -197,6 +201,7 @@ end
 ---@field players table<any, { name: string, identifiers: string[] }> What the engine knows about each connected player.
 ---@field client_handlers table<string, fun(player: any, payload: string)> Handlers registered with `on_client`, by name.
 ---@field request_handlers table<string, fun(player: any, payload: string, respond: fun(reply: string))> Answerers registered with `on_client_request`, by name.
+---@field asking table<string, table<integer, { player: any, callback: fun(reply: string?) }>> Requests sent to clients and not answered yet, by name and number.
 ---@field add_player fun(player: any, name: string, identifiers: string[]) Tells the mock about a player before the harness hands them to the core.
 ---@field remove_player fun(player: any) Forgets a player after the harness has told the core they left.
 ---@field positions table<any, { x: number, y: number, z: number }> Where each player is, as the harness sets it, for the `position` capability.
@@ -215,6 +220,7 @@ function mock.server(host, seed)
   p.players = {}
   p.client_handlers = {}
   p.request_handlers = {}
+  p.asking = {}
 
   ---No coroutines here: the harness runs everything on one thread.
   ---@return nil thread Always nil.
@@ -232,6 +238,10 @@ function mock.server(host, seed)
     model = false,
     zone = false,
     entity = false,
+    notify = true,
+    menu = true,
+    input = true,
+    progress = true,
   }
 
   -- MINSTD: every product stays below 2^53, so it is exact on LuaJIT too.
@@ -303,6 +313,13 @@ function mock.server(host, seed)
     p.request_handlers[name] = handler
   end
 
+  function p.request_client(player, name, payload, callback)
+    p.seq = p.seq + 1
+    p.asking[name] = p.asking[name] or {}
+    p.asking[name][p.seq] = { player = player, callback = callback }
+    host.to_client(player, name, mock.frame(p.seq, payload))
+  end
+
   function p.add_player(player, name, identifiers)
     p.players[player] = { name = name, identifiers = identifiers }
   end
@@ -348,6 +365,17 @@ function mock.server(host, seed)
     end
     local answerer = p.request_handlers[name]
     local id, body = mock.unframe(payload)
+    -- An answer to a request this server sent counts only from the player
+    -- it asked.
+    local asking = p.asking[name]
+    local asked = id and asking and asking[id]
+    if id and asking and asked then
+      if asked.player == player then
+        asking[id] = nil
+        asked.callback(body)
+      end
+      return
+    end
     if answerer and id then
       local answered = false
       answerer(player, body --[[@as string]], function(reply)
@@ -367,6 +395,10 @@ end
 ---@class rpf.mock.Client: rpf.ClientPlatform, rpf.mock.Common
 ---@field server_handlers table<string, fun(payload: string)> Handlers registered with `on_server`, by name.
 ---@field waiting table<string, table<integer, fun(reply: string?)>> Callbacks for requests the server has not answered, by name and number.
+---@field server_request_handlers table<string, fun(payload: string, respond: fun(reply: string))> Answerers registered with `on_server_request`, by name.
+---@field shown { kind: string, spec: table, done: fun(raw: any), answered: boolean }[] Every UI the core asked to show, in order.
+---@field closed string[] Every kind `ui.close` took away, in order.
+---@field answer_ui fun(n: integer, raw: any) Answers the `n`th UI shown, as the player would: a menu option's number, the values by field number, a progress bar's `true` or `false`, or nil to close it.
 ---@field from_server fun(name: string, payload: string) A message arrived from the game server: a message, or the answer to a request.
 
 ---Builds a mock player client platform.
@@ -377,6 +409,30 @@ function mock.client(host, seed)
   local p = common(host, seed) --[[@as rpf.mock.Client]]
   p.server_handlers = {}
   p.waiting = {}
+  p.server_request_handlers = {}
+  p.shown = {}
+  local ui = {}
+  for _, kind in ipairs({ "notify", "menu", "input", "progress" }) do
+    ui[kind] = function(spec, done)
+      p.shown[#p.shown + 1] = { kind = kind, spec = spec, done = done, answered = false }
+    end
+  end
+  ---@param kind string
+  ui.close = function(kind)
+    p.closed[#p.closed + 1] = kind
+  end
+  p.closed = {}
+  p.ui = ui
+
+  function p.answer_ui(n, raw)
+    local shown = assert(p.shown[n], "nothing was shown as number " .. tostring(n))
+    shown.answered = true
+    shown.done(raw)
+  end
+
+  function p.on_server_request(name, handler)
+    p.server_request_handlers[name] = handler
+  end
 
   function p.to_server(name, payload)
     host.to_server(name, payload)
@@ -400,7 +456,21 @@ function mock.client(host, seed)
       return
     end
     local id, body = mock.unframe(payload)
-    if not id or not p.waiting[name] then
+    if not id then
+      return
+    end
+    local answerer = p.server_request_handlers[name]
+    if answerer then
+      local answered = false
+      answerer(body --[[@as string]], function(reply)
+        if not answered then
+          answered = true
+          host.to_server(name, mock.frame(id, reply))
+        end
+      end)
+      return
+    end
+    if not p.waiting[name] then
       return
     end
     local callback = p.waiting[name][id]

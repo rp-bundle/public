@@ -546,6 +546,47 @@ describe("the FiveM adapter", function()
       assert.are.same({ ok = false, reason = "unknown" }, (rpf.json.decode(reply)))
     end)
 
+    it("asks a client with numbered events of its own, and takes the answer only from that player", function()
+      local driver, record = started_server()
+      local replies = {}
+      local function keep(reply)
+        replies[#replies + 1] = reply == nil and "nil" or reply
+      end
+      rpf.connection.platform.request_client(4, "rpf:ui", "{}", keep)
+      local sent = record.to_clients[#record.to_clients]
+      assert.are.same({ 4, "rpf:ui" }, { sent.player, sent.name })
+      assert.is_nil(driver.callbacks["rpf:ui"], "not over lib.callback, which never lets one go")
+      local number = sent.payload:match("^(%d+)\n")
+      driver.from_client(5, "rpf:ui", number .. "\nfrom someone else")
+      driver.from_client(4, "rpf:other", number .. "\nunder another name")
+      assert.are.same({}, replies)
+      driver.from_client(4, "rpf:ui", number .. "\npicked")
+      driver.from_client(4, "rpf:ui", number .. "\nagain")
+      assert.are.same({ "picked" }, replies)
+    end)
+
+    it("forgets what a player who left never answered, and what nobody answers", function()
+      local driver, record = started_server()
+      local replies = {}
+      local function keep(reply)
+        replies[#replies + 1] = reply == nil and "nil" or reply
+      end
+      driver.add_player(6, "Sam", { "license:6" })
+      driver.connect_player(6)
+      rpf.connection.platform.request_client(6, "rpf:ui", "{}", keep)
+      local number = record.to_clients[#record.to_clients].payload:match("^(%d+)\n")
+      driver.drop_player(6, "Exiting")
+      assert.are.same({ "nil" }, replies, "told none will come")
+      driver.add_player(6, "Next", { "license:66" })
+      driver.connect_player(6)
+      driver.from_client(6, "rpf:ui", number .. "\nlate")
+      assert.are.same({ "nil" }, replies, "the next player with the id cannot answer it")
+      rpf.connection.platform.request_client(6, "rpf:ui", "{}", keep)
+      record.time = record.time + rpf.fivem.server.ANSWER_TTL
+      driver.run_due()
+      assert.are.same({ "nil", "nil" }, replies)
+    end)
+
     it("kicks, notifies and messages a player through the engine", function()
       local _, record = started_server()
       local platform = rpf.connection.platform
@@ -841,6 +882,224 @@ describe("the FiveM adapter", function()
       local before = #record.to_server
       ox.request_server("rpf:test", "{}", function() end)
       assert.are.equal(before + 1, #record.to_server, "sent again once one was answered")
+    end)
+
+    it("builds an addon's notification and menu on ox_lib", function()
+      local driver = load_side("client")
+      driver.start()
+      assert.is_true(rpf.api.ui.notify({ text = "Sprayed.", title = "Tags", kind = "success", duration_ms = 2000 }))
+      assert.are.same({ title = "Tags", description = "Sprayed.", type = "success", duration = 2000 }, driver.notices[1])
+      local got = {}
+      local keep = function(choice, err)
+        got[#got + 1] = { choice, err }
+      end
+      assert.is_true(rpf.api.ui.menu({ title = "Pick", options = { { label = "a", value = "A" }, { label = "b", disabled = true } } }, keep))
+      local context = driver.contexts[rpf.fivem.ox.MENU_ID]
+      assert.are.same({ "Pick", "a", "b", true }, { context.title, context.options[1].title, context.options[2].title, context.options[2].disabled })
+      driver.pick(1)
+      assert.are.same({ { "A" } }, got)
+      rpf.api.ui.menu({ title = "Pick", options = { { label = "a" } } }, keep)
+      driver.close_context()
+      driver.run_due()
+      assert.are.same({ nil, "cancelled" }, got[2])
+    end)
+
+    it("tells a menu it was closed once ox_lib has finished closing, so its callback may open the next", function()
+      local driver, record = load_side("client")
+      driver.start()
+      local got = {}
+      rpf.api.ui.menu({ title = "First", options = { { label = "a" } } }, function(_, err)
+        got[#got + 1] = "first:" .. tostring(err)
+        rpf.api.ui.menu({ title = "Second", options = { { label = "b" } } }, function(choice, second_err)
+          got[#got + 1] = "second:" .. tostring(choice) .. ":" .. tostring(second_err)
+        end)
+      end)
+      driver.close_context()
+      driver.run_due()
+      assert.are.equal(rpf.fivem.ox.MENU_ID, driver.open_context, "the second is on show")
+      assert.are.equal("Second", driver.contexts[rpf.fivem.ox.MENU_ID].title)
+      record.time = record.time + rpf.fivem.ox.WATCH_MS
+      driver.run_due()
+      driver.pick(1)
+      assert.are.same({ "first:cancelled", "second:1:nil" }, got)
+    end)
+
+    it("takes away what an addon that stopped had on show", function()
+      local driver = load_side("client")
+      driver.start()
+      local close = rpf.fivem.ox.ui.close
+      rpf.api.ui.menu({ title = "Pick", options = { { label = "a" } } }, function() end)
+      close("menu")
+      assert.is_nil(driver.open_context)
+      rpf.api.ui.input({ title = "Spray", fields = { { name = "a", label = "A" } } }, function() end)
+      close("input")
+      assert.is_nil(driver.dialog)
+      rpf.api.ui.progress({ label = "x", duration_ms = 1000 }, function() end)
+      close("progress")
+      assert.is_nil(driver.bar)
+      close("progress")
+    end)
+
+    it("cancels its own bar on close, even one that replaced a bar still ending", function()
+      local driver = load_side("client")
+      driver.start()
+      local ui = rpf.fivem.ox.ui
+      local ended = {}
+      ui.progress({ label = "first", duration_ms = 1000, cancel = true }, function(done)
+        ended[#ended + 1] = "first:" .. tostring(done)
+      end)
+      ui.close("progress")
+      ui.progress({ label = "second", duration_ms = 1000, cancel = true }, function(done)
+        ended[#ended + 1] = "second:" .. tostring(done)
+      end)
+      driver.run_due()
+      assert.are.equal("second", driver.bar.data.label, "the second started once the first ended")
+      ui.close("progress")
+      driver.run_due()
+      assert.are.same({ "first:false", "second:false" }, ended)
+    end)
+
+    it("leaves another resource's progress bar alone: not queued behind, never cancelled", function()
+      local driver = load_side("client")
+      driver.start()
+      local theirs = { data = { label = "theirs" }, finish = function() end }
+      driver.bar = theirs
+      local got
+      rpf.api.ui.progress({ label = "ours", duration_ms = 1000 }, function(done, err)
+        got = { done, err }
+      end)
+      assert.are.same({ nil, "cancelled" }, got, "refused at once, not queued")
+      rpf.fivem.ox.ui.close("progress")
+      assert.are.equal(theirs, driver.bar, "theirs still running")
+    end)
+
+    it("stops watching a menu once it is over, however soon the next opens", function()
+      local driver, record = load_side("client")
+      driver.start()
+      local function open()
+        rpf.api.ui.menu({ title = "Pick", options = { { label = "a" } } }, function() end)
+      end
+      open()
+      local baseline = #driver.timers
+      for _ = 1, 5 do
+        driver.pick(1)
+        open()
+        record.time = record.time + rpf.fivem.ox.WATCH_MS
+        driver.run_due()
+      end
+      assert.are.equal(baseline, #driver.timers, "one watch, the open menu's")
+    end)
+
+    it("stops watching a menu it closed, however soon the next opens", function()
+      local driver, record = load_side("client")
+      driver.start()
+      local ui = rpf.fivem.ox.ui
+      local function open()
+        ui.menu({ title = "Pick", options = { { label = "a" } } }, function() end)
+      end
+      open()
+      local baseline = #driver.timers
+      for _ = 1, 5 do
+        ui.close("menu")
+        open()
+        record.time = record.time + rpf.fivem.ox.WATCH_MS
+        driver.run_due()
+      end
+      assert.are.equal(baseline, #driver.timers, "one watch, the open menu's")
+    end)
+
+    it("counts a menu another resource's replaced as closed", function()
+      local driver, record = load_side("client")
+      driver.start()
+      local got
+      rpf.api.ui.menu({ title = "Pick", options = { { label = "a" } } }, function(choice, err)
+        got = { choice, err }
+      end)
+      driver.run_due()
+      assert.is_nil(got)
+      driver.contexts.someone_else = { id = "someone_else", options = {} }
+      driver.open_context = "someone_else"
+      record.time = record.time + rpf.fivem.ox.WATCH_MS
+      driver.run_due()
+      assert.are.same({ nil, "cancelled" }, got)
+      assert.is_true(rpf.api.ui.menu({ title = "Again", options = { { label = "a" } } }, function() end), "free again")
+    end)
+
+    it("builds an input dialog on ox_lib, with a select by number and an empty field as nothing", function()
+      local driver = load_side("client")
+      driver.start()
+      local got
+      rpf.api.ui.input({
+        title = "Spray",
+        fields = {
+          { name = "text", label = "Text", required = true, max = 24, placeholder = "Say something" },
+          { name = "size", label = "Size", kind = "number", min = 1, max = 3 },
+          { name = "glow", label = "Glow", kind = "checkbox", default = true },
+          { name = "colour", label = "Colour", kind = "select", default = "blue", options = { { label = "Red", value = "red" }, { label = "Blue", value = "blue" } } },
+          { name = "note", label = "Note" },
+        },
+      }, function(values, err)
+        got = { values, err }
+      end)
+      local dialog = assert(driver.dialog, "the dialog is on show")
+      assert.are.equal("Spray", dialog.heading)
+      assert.are.same({ type = "input", label = "Text", placeholder = "Say something", required = true, max = 24 }, dialog.rows[1])
+      assert.are.same({ type = "number", label = "Size", min = 1, max = 3, precision = 6 }, dialog.rows[2], "decimals, as rpf.ui takes any number")
+      assert.are.same({ type = "checkbox", label = "Glow", checked = true }, dialog.rows[3])
+      assert.are.same({ { value = "1", label = "Red" }, { value = "2", label = "Blue" } }, dialog.rows[4].options)
+      assert.are.equal("2", dialog.rows[4].default)
+      assert.is_true(dialog.options.allowCancel)
+      dialog.answer({ "hi", 2, true, "1", "" })
+      assert.are.same({ { text = "hi", size = 2, glow = true, colour = "red" } }, got)
+      rpf.api.ui.input({ title = "Again", fields = { { name = "a", label = "A" } } }, function(values, err)
+        got = { values, err }
+      end)
+      driver.dialog.answer(nil)
+      assert.are.same({ nil, "cancelled" }, got)
+    end)
+
+    it("shows a dialog again, as the player left it, while text is out of its bounds in bytes", function()
+      local driver = load_side("client")
+      driver.start()
+      local got
+      rpf.api.ui.input({ title = "Spray", fields = { { name = "text", label = "Text", max = 4 } } }, function(values, err)
+        got = { values, err }
+      end)
+      driver.dialog.answer({ "ééé" })
+      assert.is_nil(got, "six bytes is too long for four, though three letters")
+      assert.are.same({ "ééé", "Too long: at most 4 bytes." }, { driver.dialog.rows[1].default, driver.dialog.rows[1].description })
+      driver.dialog.answer({ "éé" })
+      assert.are.same({ { text = "éé" } }, got)
+    end)
+
+    it("builds a progress bar on ox_lib, done only when it ran to its end", function()
+      local driver = load_side("client")
+      driver.start()
+      local got = {}
+      local keep = function(done, err)
+        got[#got + 1] = { done, err }
+      end
+      rpf.api.ui.progress({ label = "Spraying", duration_ms = 3000, cancel = false }, keep)
+      assert.are.same({ duration = 3000, label = "Spraying", canCancel = false, useWhileDead = false }, driver.bar.data)
+      driver.bar.finish(true)
+      rpf.api.ui.progress({ label = "Spraying", duration_ms = 3000 }, keep)
+      driver.bar.finish(nil)
+      assert.are.same({ { true }, { nil, "cancelled" } }, got)
+    end)
+
+    it("answers its server's UI request under its number once the player has picked", function()
+      local driver, record = load_side("client")
+      driver.start()
+      local spec = rpf.ui.spec("menu", { title = "Pick", options = { { label = "a" }, { label = "b" } } })
+      local request = rpf.handoff.encode("rpf:ui", { kind = "menu", spec = rpf.json.object(rpf.json.copy(spec)) })
+      driver.from_server("rpf:ui", "5\n" .. request)
+      assert.is_nil(record.to_server[#record.to_server] and record.to_server[#record.to_server].name == "rpf:ui" or nil, "waits for the player")
+      driver.pick(2)
+      local sent = record.to_server[#record.to_server]
+      assert.are.equal("rpf:ui", sent.name)
+      local number, reply = sent.payload:match("^(%d+)\n(.*)$")
+      assert.are.equal("5", number)
+      assert.are.same({ true, 2 }, { rpf.json.decode(reply).ok, rpf.json.decode(reply).index })
     end)
 
     it("is a complete client platform", function()

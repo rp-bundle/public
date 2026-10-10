@@ -18,7 +18,7 @@ local platform = {}
 
 ---Members that are not functions, and what they are.
 ---@type table<string, "string"|"table">
-local KINDS = { engine = "string", capabilities = "table" }
+local KINDS = { engine = "string", capabilities = "table", ui = "table" }
 
 ---Builds a member list from names, all functions but those `KINDS` names.
 ---@param names string[] The member names, in the order the README lists them.
@@ -50,6 +50,7 @@ platform.SERVER = members({
   "to_client",
   "on_client",
   "on_client_request",
+  "request_client",
   "log",
   "expose",
   "capabilities",
@@ -65,8 +66,10 @@ platform.CLIENT = members({
   "to_server",
   "on_server",
   "request_server",
+  "on_server_request",
   "log",
   "expose",
+  "ui",
 })
 
 ---Lists what a platform table lacks for one side. `engine` must also be a

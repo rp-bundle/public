@@ -23,7 +23,7 @@
 ---What a side gets follows what it loaded: `players`, `staff`, `config`,
 ---`addons`, `records`, the facade (`characters`, `money`, `inventory`,
 ---`jobs`, `ops`) and `bridge` on the server, `auth` on the client, and `events`, `time`,
----`engine` and `VERSION` on both.
+---`ui`, `capabilities`, `engine` and `VERSION` on both.
 local rpf = rpf
 local events = rpf.events
 
@@ -342,12 +342,23 @@ if bridge then
 end
 
 local world = rpf.world
-if world then
-  ---Which game-world capabilities this engine supports.
-  ---@return table<string, boolean> supported By name.
-  surface.capabilities = function()
-    return world.capabilities()
+local ui = rpf.ui
+---What this engine supports: the game world's capabilities on the server,
+---and the UI an addon can show on both sides.
+---@return table<string, boolean> supported By name.
+surface.capabilities = function()
+  local out = world and world.capabilities() or {}
+  if ui then
+    for name, supported in pairs(ui.capabilities()) do
+      out[name] = supported
+    end
   end
+  return out
+end
+if ui then
+  surface.ui = freeze(ui.members(), "rpf.ui")
+end
+if world then
   surface.world = freeze({
     position = function(player)
       return world.position(player)

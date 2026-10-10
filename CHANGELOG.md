@@ -317,6 +317,15 @@ keep the job the portal has.
   **A FiveM server needs ox_lib 3.40.0 or newer**, ensured before `rpf`
   ([Installing](docs/installing.md#fivem)); the txAdmin recipe installs it.
   It is LGPL-3.0 and never part of the release's zip.
+- Portable UI for addons (J10, #239, part 2). `rpf.api.ui` has `notify`,
+  `menu`, `input` (text, number, checkbox and select fields) and
+  `progress`, the same call on both engines: built on ox_lib on FiveM and
+  in Derma on Garry's Mod. On the client they show what the player's own
+  client asks; on the server each takes the player first, and the
+  client's answer is read against what was offered (a menu option's
+  `value` never leaves the server). `rpf.api.capabilities()` reports the
+  four, now on the client too. The example addon's `/tags` picks a tag to
+  scrub from a menu.
 
 ### Database
 

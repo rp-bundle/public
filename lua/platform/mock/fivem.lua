@@ -25,7 +25,9 @@
 ---- **ox_lib, as far as the adapter uses it** (J10): `lib.callback` and
 ---  `lib.callback.register`, with `promise` and `Citizen.Await` to wait on
 ---  an answer from inside a callback, which runs on a thread of its own as
----  ox_lib's do. Its wire is not ox_lib's: a request and its answer cross
+---  ox_lib's do; and on the client the UI addons show, recorded for a test
+---  to answer as a player would (`notify`, the context menu, `inputDialog`
+---  and `progressBar`, which wait on their thread as ox_lib's do). Its wire is not ox_lib's: a request and its answer cross
 ---  the host as the mock platform frames them (`mock.frame`), under the
 ---  request's name, so a harness plays a client of any engine alike.
 ---  `ox_lib` is a started resource at version 3.40.0 unless a test says
@@ -654,6 +656,15 @@ function fivem.client(env, host, seed, convars)
   ---@field nui fun(name: string, data: any): any Calls an NUI callback as the page does, and returns its answer.
   ---@field from_server fun(name: string, payload: any) The server triggered a net event.
   ---@field callbacks table<string, function> What the adapter registered with `lib.callback.register`, by name.
+  ---@field notices table[] Every `lib.notify`, as it was given.
+  ---@field contexts table<string, table> Every context menu registered, by id.
+  ---@field open_context string? The context menu on show, as `lib.getOpenContextMenu` reports it.
+  ---@field dialog { heading: string, rows: table[], options: table?, answer: fun(values: table?) }? The input dialog on show; `answer` is the player submitting (or nil, cancelling).
+  ---@field bar { data: table, finish: fun(completed: boolean?) }? The progress bar on show; `finish` is it ending.
+  ---@field bar_ending { data: table, finish: fun(completed: boolean?) }? A bar cancelled, which ends on the next tick.
+  ---@field pick fun(n: integer) The player picks the open context menu's `n`th option.
+  ---@field timers table[] The timers pending, as the mock platform keeps them.
+  ---@field close_context fun() The player closes the open context menu.
   ---@field start fun() `onClientResourceStart` for this resource.
   ---@field stop fun() `onClientResourceStop` for this resource.
   ---@field run_due fun() Runs every timer due.
@@ -678,6 +689,105 @@ function fivem.client(env, host, seed, convars)
   env.lib.callback, driver.callbacks = fake_callback(env, function(_, name, text)
     host.to_server(name, text)
   end)
+  env.CreateThread = thread
+  driver.notices, driver.contexts = {}, {}
+  env.lib.notify = function(data)
+    driver.notices[#driver.notices + 1] = data
+  end
+  env.lib.registerContext = function(context)
+    driver.contexts[context.id] = context
+  end
+  env.lib.showContext = function(id)
+    assert(driver.contexts[id], "No context menu of such id found.")
+    driver.open_context = id
+  end
+  env.lib.getOpenContextMenu = function()
+    return driver.open_context
+  end
+  -- As ox_lib's: a pick closes the menu without `onExit`; a close runs it.
+  function driver.pick(n)
+    local context = driver.contexts[assert(driver.open_context, "no context menu is open")]
+    driver.open_context = nil
+    local option = context.options[n]
+    if option.onSelect then
+      option.onSelect(option.args)
+    end
+  end
+  -- ox_lib's order: `onExit` runs first, and only then is the open menu
+  -- forgotten, whatever `onExit` opened.
+  function driver.close_context()
+    local context = driver.contexts[assert(driver.open_context, "no context menu is open")]
+    if context.onExit then
+      context.onExit()
+    end
+    driver.open_context = nil
+  end
+  env.lib.hideContext = function(on_exit)
+    if on_exit then
+      driver.close_context()
+    else
+      driver.open_context = nil
+    end
+  end
+  env.lib.closeInputDialog = function()
+    if driver.dialog then
+      driver.dialog.answer(nil)
+    end
+  end
+  env.lib.progressActive = function()
+    return driver.bar and true or nil
+  end
+  -- As ox_lib's: a cancelled bar is no longer active at once, but ends, and
+  -- lets the next start, only on the next tick.
+  env.lib.cancelProgress = function()
+    local bar = assert(driver.bar, "No progress bar is active")
+    driver.bar = nil
+    driver.bar_ending = bar
+    env.Citizen.SetTimeout(0, function()
+      driver.bar_ending = nil
+      bar.finish(false)
+    end)
+  end
+  -- One dialog and one bar at a time, as ox_lib's: another dialog while one
+  -- is on show answers nil at once, and another bar waits for the one on
+  -- show to end before it starts.
+  env.lib.inputDialog = function(heading, rows, options)
+    if driver.dialog then
+      return nil
+    end
+    local answer = env.promise.new()
+    driver.dialog = {
+      heading = heading,
+      rows = rows,
+      options = options,
+      answer = function(values)
+        driver.dialog = nil
+        answer:resolve(values)
+      end,
+    }
+    return env.Citizen.Await(answer)
+  end
+  env.lib.progressBar = function(data)
+    while driver.bar or driver.bar_ending do
+      local before = env.promise.new()
+      local running = assert(driver.bar or driver.bar_ending)
+      local finish = running.finish
+      running.finish = function(completed)
+        finish(completed)
+        before:resolve(true)
+      end
+      env.Citizen.Await(before)
+    end
+    local ended = env.promise.new()
+    driver.bar = {
+      data = data,
+      finish = function(completed)
+        driver.bar = nil
+        ended:resolve(completed)
+      end,
+    }
+    return env.Citizen.Await(ended)
+  end
   env.RegisterNUICallback = function(name, handler)
     nui[name] = handler
   end
@@ -733,6 +843,7 @@ function fivem.client(env, host, seed, convars)
     fire("onClientResourceStop", "", "rpf")
   end
 
+  driver.timers = p.timers
   driver.run_due = p.run_due
   driver.next_due = p.next_due
   return driver

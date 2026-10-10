@@ -112,6 +112,20 @@ function ToClients.on_client(name, handler) end
 ---@param handler fun(player: rpf.PlayerHandle, payload: string, respond: fun(reply: string)) Called for each request. The payload is hostile input. The handler calls `respond` exactly once, with the answer encoded; the core always answers, so a client's request never holds anything open.
 function ToClients.on_client_request(name, handler) end
 
+---Asks one player's client something and hears its one answer: the other
+---half of the client's `on_server_request` (J10), for the UI an addon
+---shows a player from the server (`rpf.ui`). Numbered messages on both
+---engines (net events on FiveM, `net` on Gmod), not ox_lib's callbacks,
+---which keep a request nobody answers for good: the platform forgets one
+---when the player leaves or after a while, and takes an answer only from
+---the player it asked. The core keeps its own timeout, and checks the
+---answer as hostile input.
+---@param player rpf.PlayerHandle The player.
+---@param name string The request's name, namespaced `rpf:`.
+---@param payload string The request, already encoded.
+---@param callback fun(reply: string?) Called at most once, with the client's answer, or nil if the platform knows none will come. Never inside the call.
+function ToClients.request_client(player, name, payload, callback) end
+
 ---What the engine can do with the game world for addons (J3), each a
 ---function, or `false` where this adapter does not support it: the core
 ---never branches on the engine, so an engine difference is one of these.
@@ -119,13 +133,19 @@ function ToClients.on_client_request(name, handler) end
 ---@class rpf.platform.World
 ---@field capabilities rpf.Capabilities What it can do.
 
----The game-world capabilities an adapter declares (J3). A capability not
----supported is `false`, never missing, so an adapter says so on purpose.
+---The game-world capabilities an adapter declares (J3), each a function or
+---`false`, and the UI its clients show (J10), each `true` or `false`. One
+---not supported is `false`, never missing, so an adapter says so on
+---purpose.
 ---@class rpf.Capabilities
 ---@field position (fun(player: rpf.PlayerHandle): { x: number, y: number, z: number }?)|false A player's position in the world, in the engine's units, or nil while they have none (not spawned).
 ---@field model false Spawning and placing models: J4's (#81), unsupported until then.
 ---@field zone false Zones a player is in: J4's, unsupported until then.
 ---@field entity false A record's entity in the world: J4's, unsupported until then.
+---@field notify boolean Whether this engine's clients show an addon's notification (`rpf.ui`, J10). The client's adapter builds it (`rpf.ClientPlatform.ui`); the server only says whether it can.
+---@field menu boolean Whether they show a menu to pick from.
+---@field input boolean Whether they show an input dialog.
+---@field progress boolean Whether they show a progress bar.
 
 ---Everything the game-server half of the core needs from its engine.
 ---`rpf.start_server` refuses a table missing any of it.

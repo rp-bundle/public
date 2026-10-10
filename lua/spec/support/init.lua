@@ -95,6 +95,7 @@ function support.fake_platform(opts)
   ---@field to_clients { player: any, name: string, payload: string }[] Every message sent to a client, in order.
   ---@field client_handlers table<string, fun(player: any, payload: string)> Handlers registered with `on_client`, by name.
   ---@field request_handlers table<string, fun(player: any, payload: string, respond: fun(reply: string))> Answerers registered with `on_client_request`, by name.
+  ---@field client_requests { player: any, name: string, payload: string, callback: fun(reply: string?) }[] Every request sent to a client, in order, unanswered until the test answers it.
   ---@field bookkeeping table<string, true> Sent texts `support.wire` leaves out: the declaration after a `Welcome` and the ack of its answer.
   local p = {
     engine = "mock",
@@ -112,6 +113,7 @@ function support.fake_platform(opts)
     to_clients = {},
     client_handlers = {},
     request_handlers = {},
+    client_requests = {},
     bookkeeping = {},
   }
 
@@ -144,6 +146,10 @@ function support.fake_platform(opts)
     model = false,
     zone = false,
     entity = false,
+    notify = true,
+    menu = true,
+    input = true,
+    progress = true,
   }
 
   -- MINSTD: every product stays below 2^53, so it is exact on LuaJIT too.
@@ -211,6 +217,10 @@ function support.fake_platform(opts)
 
   function p.on_client_request(name, handler)
     p.request_handlers[name] = handler
+  end
+
+  function p.request_client(player, name, payload, callback)
+    p.client_requests[#p.client_requests + 1] = { player = player, name = name, payload = payload, callback = callback }
   end
 
   function p.log(level, message)
@@ -373,6 +383,9 @@ function support.fake_client_platform(opts)
   ---@field to_servers { name: string, payload: string }[] Every message sent to the server, in order.
   ---@field server_handlers table<string, fun(payload: string)> Handlers registered with `on_server`, by name.
   ---@field asked { name: string, payload: string, callback: fun(reply: string?) }[] Every request sent to the server, in order, unanswered until the test answers it.
+  ---@field server_request_handlers table<string, fun(payload: string, respond: fun(reply: string))> Answerers registered with `on_server_request`, by name.
+  ---@field shown { kind: string, spec: table, done: fun(raw: any) }[] Every UI the core asked the platform to show, in order; a test answers with `done`.
+  ---@field closed string[] Every kind `ui.close` took away, in order.
   ---@field logs { level: string, message: string }[] Every log line.
   ---@field exposed table? What `expose` was given.
   local c = {
@@ -385,8 +398,23 @@ function support.fake_client_platform(opts)
     to_servers = {},
     server_handlers = {},
     asked = {},
+    server_request_handlers = {},
+    shown = {},
     logs = {},
   }
+  local ui = {}
+  for _, kind in ipairs({ "notify", "menu", "input", "progress" }) do
+    ui[kind] = function(spec, done)
+      c.shown[#c.shown + 1] = { kind = kind, spec = spec, done = done }
+    end
+  end
+  ---Records a close.
+  ---@param kind string Which.
+  ui.close = function(kind)
+    c.closed[#c.closed + 1] = kind
+  end
+  c.closed = {}
+  c.ui = ui
 
   function c.now()
     return c.time
@@ -420,6 +448,10 @@ function support.fake_client_platform(opts)
 
   function c.request_server(name, payload, callback)
     c.asked[#c.asked + 1] = { name = name, payload = payload, callback = callback }
+  end
+
+  function c.on_server_request(name, handler)
+    c.server_request_handlers[name] = handler
   end
 
   function c.log(level, message)
