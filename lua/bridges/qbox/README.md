@@ -58,8 +58,12 @@ the companion profile.
 - **The `money` item is refused** (`money_item`). It is qbx_core's cash,
   synced into ox_inventory (the `inventory:accounts` convar), so moving it
   is moving money, which goes through `rpf.money` with `cash`.
-- **ox_inventory stopping on its own** makes item calls `unavailable`, and
-  money keeps working. qbx_core stopping makes every call `unavailable`.
+- **ox_inventory stopping on its own** makes item calls `unavailable`,
+  and debits and credits of `cash` too. qbx_core sets cash in ox_inventory,
+  as the `money` item, after it has changed the balance, and that throws
+  while ox_inventory is stopped. The same goes for any other money type
+  `inventory:accounts` names. Balances, and `bank` and `crypto`, keep
+  working. qbx_core stopping makes every call `unavailable`.
   Its players go back to `character_select`, since qbx_core loses them with
   its state, and the selection is shown again when it starts.
 

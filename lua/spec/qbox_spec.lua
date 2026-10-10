@@ -276,7 +276,7 @@ local cases = {
     end,
   },
   {
-    name = "answers item calls unavailable while ox_inventory alone is stopped",
+    name = "answers item calls, and cash moves, unavailable while ox_inventory alone is stopped",
     run = function(world)
       local fw = framework()
       boot(world, fw)
@@ -285,9 +285,18 @@ local cases = {
       fw:stop_inventory()
       assert.are.same({ nil, "unavailable" }, { api.inventory.count(handle, "water") })
       assert.are.same({ nil, "unavailable" }, { api.inventory.give(handle, "water", 1, api.ops.new()) })
-      assert.are.equal(500, api.money.balance(handle, "cash"), "money is qbx_core's, which runs")
-      assert.is_true(api.money.debit(handle, "cash", 5, "x", api.ops.new()))
+      assert.are.equal(500, api.money.balance(handle, "cash"), "qbx_core answers what it holds")
+      -- qbx_core sets cash in ox_inventory after it changed the balance, and
+      -- that throws while ox_inventory is stopped: asked first, never begun.
+      local op = api.ops.new()
+      assert.are.same({ nil, "unavailable" }, { api.money.debit(handle, "cash", 5, "x", op) })
+      assert.are.same({ nil, "unavailable" }, { api.money.credit(handle, "cash", 5, "x", api.ops.new()) })
+      assert.are.equal(500, fw:balance("CIT-JANE", "cash"))
+      assert.is_true(api.money.debit(handle, "bank", 5, "x", api.ops.new()), "bank is qbx_core's alone")
+      assert.are.same({}, api.ops.unknown())
       fw:start_inventory()
+      assert.is_true(api.money.debit(handle, "cash", 5, "x", op), "the same op id goes once it is back")
+      assert.are.equal(495, fw:balance("CIT-JANE", "cash"))
       assert.is_true(api.inventory.give(handle, "water", 1, api.ops.new()))
       assert.are.equal(4, api.inventory.count(handle, "water"))
     end,

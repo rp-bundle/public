@@ -228,6 +228,19 @@ function fake:logout(player)
   end
 end
 
+---qbx_core's `emitMoneyEvents`, after a balance changed: an account
+---ox_inventory keeps as an item (`cash`, as `money`) is set there through
+---its export, which throws while ox_inventory is stopped.
+---@param answer any What the change answered.
+---@param kind string The money type.
+---@return any answer The answer, once the item is set.
+function fake:sync_money(answer, kind)
+  if kind == "cash" and not self.inventory_running then
+    error("No such export SetItem in resource ox_inventory")
+  end
+  return answer
+end
+
 ---qbx_core's exports, as `exports.qbx_core` hands them to another resource.
 ---@return table exports The exports, called with `:`.
 function fake:qbx()
@@ -257,9 +270,9 @@ function fake:qbx()
       if (kind == "cash" or kind == "crypto") and data.money[kind] - amount < 0 then
         return false
       end
-      return fw:mutate("money.debit", function()
+      return fw:sync_money(fw:mutate("money.debit", function()
         data.money[kind] = data.money[kind] - amount
-      end, true)
+      end, true), kind)
     end,
     AddMoney = function(_, id, kind, amount)
       local data = fw:resolve(id)
@@ -269,9 +282,9 @@ function fake:qbx()
       if fw.veto then
         return false
       end
-      return fw:mutate("money.credit", function()
+      return fw:sync_money(fw:mutate("money.credit", function()
         data.money[kind] = data.money[kind] + amount
-      end, true)
+      end, true), kind)
     end,
     Login = function(_, player, citizenid, new)
       return fw:login(player, citizenid, new)

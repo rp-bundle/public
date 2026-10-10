@@ -317,6 +317,26 @@ function qbox.register(api, fx)
     return false
   end
 
+  ---Whether qbx_core keeps an account in ox_inventory too, as an item
+  ---(`cash` as `money`, and any other money type `inventory:accounts`
+  ---names). Changing one, qbx_core sets that item through ox_inventory's
+  ---export after it has changed the balance, which throws while
+  ---ox_inventory is stopped.
+  ---@param account string The money type.
+  ---@return boolean backed True if it does.
+  local function inventory_backed(account)
+    return is_money(account == "cash" and "money" or account)
+  end
+
+  ---Why a money command cannot be asked now, if it cannot: one that would
+  ---change an account ox_inventory keeps too, while ox_inventory is stopped.
+  ---Nothing has changed yet, so the same op id may go again later.
+  ---@param account string The money type.
+  ---@return boolean unavailable True if it cannot.
+  local function money_unavailable(account)
+    return inventory_backed(account) and not started(qbox.INVENTORY)
+  end
+
   ---Why an item call cannot be asked now, if it cannot.
   ---@param item string The item.
   ---@return string? status `unavailable` while ox_inventory is not started.
@@ -565,6 +585,9 @@ function qbox.register(api, fx)
         if balance < amount then
           return nil, "refused", "insufficient_funds"
         end
+        if money_unavailable(account) then
+          return nil, "unavailable"
+        end
         local done = fx.qbx:RemoveMoney(handle, account, amount, reason .. " (rpf " .. op_id .. ")")
         if done == true then
           return true
@@ -580,6 +603,9 @@ function qbox.register(api, fx)
         end
         if type(fx.qbx:GetMoney(handle, account)) ~= "number" then
           return nil, "refused", "no_account"
+        end
+        if money_unavailable(account) then
+          return nil, "unavailable"
         end
         local done = fx.qbx:AddMoney(handle, account, amount, reason .. " (rpf " .. op_id .. ")")
         if done == true then
