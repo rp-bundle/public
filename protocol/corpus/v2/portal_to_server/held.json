@@ -67,6 +67,22 @@
           }
         ]
       }
+    },
+    {
+      "kind": "addon_record",
+      "revision": 4,
+      "record": {
+        "id": "0000000d-0000-4000-8000-00000000000d",
+        "type": "acme_garden.plant",
+        "owner": {
+          "kind": "character",
+          "id": "00000003-0000-4000-8000-000000000003"
+        },
+        "fields": {
+          "species": "fern",
+          "water": 50
+        }
+      }
     }
   ]
 }

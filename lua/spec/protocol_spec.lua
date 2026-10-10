@@ -59,6 +59,15 @@ local OPAQUE = {
   -- The manifests an addon declaration carries (J2): the addon contract's,
   -- checked by `rpf.manifest`, not protocol types.
   manifests = true,
+  -- An addon record's fields and patches, however they travel (J2).
+  ["records.record.fields"] = true,
+  ["records.fields"] = true,
+  ["changes.fields"] = true,
+  ["changes.patch"] = true,
+  ["command.patch"] = true,
+  patch = true,
+  query = true,
+  next = true,
 }
 
 ---Adds a field to every object at every depth, as crates/rpf-protocol/tests/protocol.rs does,
@@ -381,6 +390,7 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
         staff_action = "ack",
         config_changed = "reply",
         declare_addons = "ack",
+        query_records = "reply",
         ack = "nothing",
       },
       portal_to_server = {
@@ -399,6 +409,7 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
         config_change_discarded = "ack",
         staff_permissions = "ack",
         restarting = "nothing",
+        records_queried = "ack",
         ack = "nothing",
       },
     }

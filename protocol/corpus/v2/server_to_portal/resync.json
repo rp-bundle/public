@@ -27,6 +27,15 @@
           "description": "Groceries."
         }
       ]
+    },
+    {
+      "kind": "addon_record",
+      "id": "0000000d-0000-4000-8000-00000000000d",
+      "revision": 7,
+      "fields": {
+        "species": "fern",
+        "water": 80
+      }
     }
   ]
 }

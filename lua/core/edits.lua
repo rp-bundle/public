@@ -1,5 +1,6 @@
 ---Staff edits of held records (F5): the commands the portal sends to change
----a character, an account or a container this server holds.
+---a character, an account, a container or a live addon record (J2) this
+---server holds.
 ---
 ---While this server holds a record it is the record's only writer (C7), so
 ---the portal cannot change it directly: it sends a command, and this module
@@ -39,6 +40,8 @@ edits.REASONS = {
   outbox_full = "this server cannot report to the portal right now; try again shortly",
   too_large = "its records are too large to hand back to the portal",
   backlog = "it has payments still to report; try again shortly",
+  inactive = "its addon is not active on this server",
+  creating = "it was only just created here; try again in a moment",
 }
 
 ---A refusal as the portal shows it to staff.
@@ -189,6 +192,42 @@ function edits.delete_character(command)
   return true
 end
 
+---`edit_addon_record`: set fields of a held addon record (J2), checked
+---whole against its type's installed definition, as a script's write is.
+---@param command table The decoded command.
+---@return boolean applied False if refused.
+---@return string? reason Why, for staff.
+function edits.edit_addon_record(command)
+  local ok, why = at("addon_record", command.record_id, command.base_revision)
+  if not ok then
+    return false, why
+  end
+  local done, err, refusal = rpf.records.set_addon_fields(command.record_id, command.patch)
+  if not done then
+    return false, reason(err, refusal)
+  end
+  report()
+  return true
+end
+
+---`delete_addon_record`: let a held addon record go, with its final state,
+---for the portal to delete as a record nobody holds (J2). The release is
+---queued ahead of the answer, so the portal has the final state first.
+---@param command table The decoded command.
+---@return boolean applied False if refused.
+---@return string? reason Why, for staff.
+function edits.delete_addon_record(command)
+  local ok, why = at("addon_record", command.record_id, command.base_revision)
+  if not ok then
+    return false, why
+  end
+  local done, err = rpf.sync.release({ { kind = "addon_record", id = command.record_id } })
+  if not done then
+    return false, reason(err)
+  end
+  return true
+end
+
 ---Registers the record commands. Called by `rpf.start_server`.
 function edits.start()
   for _, name in ipairs({
@@ -198,6 +237,8 @@ function edits.start()
     "move_item",
     "edit_character",
     "delete_character",
+    "edit_addon_record",
+    "delete_addon_record",
   }) do
     rpf.commands.register(name, edits[name])
   end

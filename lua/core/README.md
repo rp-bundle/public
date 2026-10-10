@@ -949,6 +949,26 @@ Handlers run under `pcall`: one that throws is logged, and a `start` that
 throws leaves the addon `failed`, retried on the next config change or
 registration. Addons start in dependency order and stop in reverse.
 
+### Live addon records (`rpf.records`, J2)
+
+Held like any record (`kind = "addon_record"`, its data `{ id, type, owner,
+fields }`), and written only through these calls, each checked whole
+against the type's installed definition (`rpf.addons.definition`) with
+`rpf.manifest`:
+
+| Call | Does |
+|---|---|
+| `create_addon_record(type, owner, fields, id?)` | A record of an active addon's live type, held from the start; reported as `addon_record_created` with every field, never whole, until the portal has it (a create lands even in a frame answered `resync_required`; one in a refused frame goes again as a create) |
+| `set_addon_fields(id, patch)` | Fields of a held record, `json.null` clearing one; reported as the patch, the changes since the last report merged |
+| `delete_addon_record(id)` | Reported as `addon_record_deleted`, forgotten once applied; a create that has not left yet is just dropped; a deletion the portal refuses (another record refers to it) is undone and the record reported whole |
+| `query_addon_records(type, query, callback)` | `query_records`: a page of a type's live records, each with its revision and whether this server holds it, to hold before changing |
+
+A disabled addon's held records can still be changed and released (the
+drain); creating and querying need it active. Staff edits arrive as
+`edit_addon_record` and `delete_addon_record` commands (`rpf.edits`): the
+first applies the patch at the revision staff saw, the second releases the
+record, with its final state, for the portal to delete.
+
 ### Characters (`rpf.characters`, `rpf.picker`)
 
 A logged-in player's characters (D5): list, create, select and switch. Server

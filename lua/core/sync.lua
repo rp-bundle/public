@@ -219,10 +219,21 @@ local function full_report(entry)
       end
       report.transactions[#report.transactions + 1] = wire_transaction(tx)
     end
+  elseif entry.kind == "addon_record" then
+    report.fields = entry.data.fields
   else
     report.contents = entry.data.contents
   end
   return report
+end
+
+---Whether an addon record is reported only as its create or its deletion,
+---never whole: the portal has not had the one, and must not be handed the
+---record again after the other.
+---@param entry rpf.records.Entry The record.
+---@return boolean pending True while its create or deletion is unreported.
+local function addon_pending(entry)
+  return entry.created ~= nil or entry.deleted == true
 end
 
 ---What changed in a record since its last report, as `state_changed` names
@@ -258,6 +269,31 @@ local function change_of(entry)
     if #change.transactions == 0 then
       return nil
     end
+  elseif entry.kind == "addon_record" then
+    -- A create carries every field as it is now, so the changes made since
+    -- go with it; a deletion carries nothing else.
+    if entry.created == "pending" then
+      return {
+        kind = "addon_record_created",
+        id = entry.id,
+        type = entry.data.type,
+        owner = entry.data.owner,
+        fields = entry.data.fields,
+      }
+    end
+    if entry.created then
+      return nil
+    end
+    if entry.deleted then
+      if entry.delete_sent then
+        return nil
+      end
+      return { kind = "addon_record_deleted", id = entry.id, base_revision = entry.revision }
+    end
+    if not entry.changed.fields or not entry.patch then
+      return nil
+    end
+    change.patch = entry.patch
   else
     if not entry.changed.contents then
       return nil
@@ -313,6 +349,65 @@ local function stale_map(reply)
   return stale
 end
 
+---Settles the addon records' creates and deletions a frame carried (J2),
+---by what the frame carried rather than by what the records are marked as
+---now: a later frame may carry a record's deletion while an earlier one,
+---with a change, is answered.
+---
+--- - `applied`: a create has landed; a deletion has, and the record is
+---   forgotten.
+--- - `resync`: a create has landed all the same; a deletion has not, and
+---   goes again on the revision the portal has (`stale`) or the one it
+---   named.
+--- - `refused`: a create goes again as a create, with every field; a
+---   deletion is undone, and the record reported whole.
+--- - `lost`: neither is known to have landed: a create goes again (a resend
+---   of one that did is a replay), and so does a deletion.
+---@param sent table The frame's bookkeeping, with `creates` and `deletes`.
+---@param outcome "applied"|"resync"|"refused"|"lost" How it was answered.
+---@param stale table<string, number>? For `resync`, the portal's revisions by key.
+local function settle_addons(sent, outcome, stale)
+  local again = false
+  for key in pairs(sent.creates or {}) do
+    local entry = records.entries[key]
+    if entry and entry.created == "sent" then
+      if outcome == "applied" or outcome == "resync" then
+        entry.created = nil
+        -- Changes or a deletion made while it was in flight go now, and so
+        -- does the whole report a refused frame left it owing.
+        again = again or entry.changed.fields == true or entry.deleted == true or entry.resync
+      else
+        entry.created = "pending"
+        entry.revision = 0
+        entry.patch = nil
+        entry.changed = {}
+        -- A lost create goes again at once; a refused one waits for the
+        -- next flush, as every record refused alone does, so a create the
+        -- portal keeps refusing is not resent in a loop.
+        again = again or outcome == "lost"
+      end
+    end
+  end
+  for key, base in pairs(sent.deletes or {}) do
+    local entry = records.entries[key]
+    if entry and entry.delete_sent then
+      if outcome == "applied" then
+        records.entries[key] = nil
+      elseif outcome == "refused" then
+        entry.deleted, entry.delete_sent = nil, nil
+        entry.revision = base
+      else
+        entry.delete_sent = nil
+        entry.revision = (stale and stale[key]) or base
+        again = true
+      end
+    end
+  end
+  if again then
+    sync.schedule()
+  end
+end
+
 ---Settles a `state_changed` or `resync` from its answer.
 ---@param id string? The frame's id; nil when the outbox refused it before it had one.
 ---@param reply table? The answer.
@@ -334,10 +429,12 @@ local function settle_report(id, reply, err)
   if not reply then
     -- Never reached the portal: report the whole records again.
     log("warn", "a state report was not delivered (" .. tostring(err) .. "); resyncing its records")
+    settle_addons(sent, "lost")
     resync(sent.keys, {})
     return
   end
   if reply.type == "state_applied" then
+    settle_addons(sent, "applied")
     for _, key in ipairs(sent.keys) do
       local entry = records.entries[key]
       if entry then
@@ -359,7 +456,10 @@ local function settle_report(id, reply, err)
     end
   elseif reply.type == "resync_required" then
     records.lose(reply.released, "the portal says this server does not hold them")
-    resync(sent.keys, stale_map(reply))
+    -- Before the resync's flush, so a create that landed goes whole.
+    local stale = stale_map(reply)
+    settle_addons(sent, "resync", stale)
+    resync(sent.keys, stale)
   else
     -- A final refusal: the portal took nothing, and the frame, the only
     -- durable copy of what it carried, has left the outbox. So every record
@@ -382,6 +482,7 @@ local function settle_report(id, reply, err)
         entry.recovering = #sent.keys > 1 or nil
       end
     end
+    settle_addons(sent, "refused")
     if #sent.keys > 1 then
       sync.flush()
     end
@@ -438,7 +539,21 @@ local function send_batch(tag, entries, build, sent)
     return false
   end
   id = result
-  inflight[id] = { keys = keys, transactions = transactions, whole = tag == "resync" }
+  local creates, deletes = {}, {}
+  for i, item in ipairs(items) do
+    if item.kind == "addon_record_created" then
+      creates[keys[i]] = true
+    elseif item.kind == "addon_record_deleted" then
+      deletes[keys[i]] = item.base_revision
+    end
+  end
+  inflight[id] = {
+    keys = keys,
+    transactions = transactions,
+    whole = tag == "resync",
+    creates = creates,
+    deletes = deletes,
+  }
   for i, entry in ipairs(entries) do
     sent(entry, items[i])
     if tag == "resync" then
@@ -510,6 +625,13 @@ end
 local function change_sent(entry, change)
   entry.revision = entry.revision + 1
   entry.changed = {}
+  if change.kind == "addon_record_created" then
+    entry.created = "sent"
+  elseif change.kind == "addon_record_deleted" then
+    entry.delete_sent = true
+  elseif change.kind == "addon_record" then
+    entry.patch = nil
+  end
   mark_carried(entry, change)
   entry.more = false
   for _, tx in ipairs(entry.transactions) do
@@ -557,14 +679,14 @@ function sync.flush()
   local ok = send_all(
     "resync",
     select_entries(function(entry)
-      return entry.resync and not entry.awaiting
+      return entry.resync and not entry.awaiting and not addon_pending(entry)
     end),
     full_report,
     whole_sent
   )
   if ok then
     ok = send_changes(function(entry)
-      return not entry.resync and change_of(entry) ~= nil
+      return (not entry.resync or addon_pending(entry)) and change_of(entry) ~= nil
     end, function(entry)
       return change_of(entry) --[[@as table]]
     end, change_sent)
@@ -600,7 +722,7 @@ end
 ---@param record table One of the reply's records.
 ---@return string key Its `records.key`.
 local function held_key(record)
-  local data = record.character or record.account or record.container
+  local data = record.character or record.account or record.container or record.record
   return records.key(record.kind, data.id)
 end
 
@@ -630,7 +752,7 @@ local function send_hold(hold)
       for _, record in ipairs(reply.records) do
         local key = held_key(record)
         if not records.entries[key] and (released_at[key] or 0) > sent_at then
-          local data = record.character or record.account or record.container
+          local data = record.character or record.account or record.container or record.record
           superseded[#superseded + 1] = { kind = record.kind, id = data.id }
         end
       end
@@ -643,7 +765,7 @@ local function send_hold(hold)
       end
       views = {}
       for _, record in ipairs(reply.records) do
-        local data = record.character or record.account or record.container
+        local data = record.character or record.account or record.container or record.record
         views[#views + 1] = records.get(record.kind, data.id)
       end
       events.emit("records.held", views)
@@ -796,7 +918,7 @@ end
 ---@param refs rpf.RecordRef[] The records.
 ---@param callback fun(reply: table?, err: string?)? Called with the portal's answer: once, unless the final states were over the frame limit together and went in several frames, when it is called for each.
 ---@return boolean? ok True if every held record named was released.
----@return string? err Why not: `"outbox_full"`, `"too_large"` for a record no frame can carry, or `"backlog"` for an account with more unacknowledged ledger entries than one report carries, which can be released once the portal has acknowledged enough of them. Records that could be queued were released all the same.
+---@return string? err Why not: `"outbox_full"`, `"too_large"` for a record no frame can carry, `"backlog"` for an account with more unacknowledged ledger entries than one report carries, which can be released once the portal has acknowledged enough of them, or `"creating"` for an addon record the portal has not had the create of yet, which can be released once it has. Records that could be queued were released all the same.
 function sync.release(refs, callback)
   if not sync.flush() then
     -- A report that could not be queued may be a payment to one of these
@@ -804,13 +926,18 @@ function sync.release(refs, callback)
     -- lands, and handed back without it.
     return nil, "outbox_full"
   end
-  local entries, seen, backlog = {}, {}, false
+  local entries, seen, backlog, creating = {}, {}, false, false
   for _, ref in ipairs(refs) do
     local key = records.key(ref.kind, ref.id)
     local entry = records.entries[key]
     if entry and not seen[key] then
       seen[key] = true
-      if #entry.transactions > sync.options.max_transactions_per_report then
+      if entry.created then
+        -- An addon record the portal does not have yet (J2): its release
+        -- could only be refused, and this server would have forgotten it.
+        -- It waits for its create, as a backlog waits for its entries.
+        creating = true
+      elseif #entry.transactions > sync.options.max_transactions_per_report then
         -- Its final state would not carry every entry in doubt. The flush
         -- above sent them; it can go once enough are acknowledged.
         backlog = true
@@ -831,6 +958,9 @@ function sync.release(refs, callback)
   end
   if backlog then
     return nil, "backlog"
+  end
+  if creating then
+    return nil, "creating"
   end
   return true
 end
@@ -944,7 +1074,13 @@ function sync.check_declaration()
   end
   local held = {}
   for _, ref in ipairs(records.held()) do
-    held[#held + 1] = { kind = ref.kind, id = ref.id, revision = records.revision(ref.kind, ref.id) }
+    -- An addon record whose create the portal has not had is not one it
+    -- could say this server holds: declared, it would come back released,
+    -- and be forgotten before its create went (J2). Its create is its hold.
+    local entry = records.entries[records.key(ref.kind, ref.id)]
+    if not (entry and entry.created) then
+      held[#held + 1] = { kind = ref.kind, id = ref.id, revision = records.revision(ref.kind, ref.id) }
+    end
   end
   local id
   id = connection:send("declare_holds", { records = held }, function(reply, err)
