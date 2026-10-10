@@ -599,6 +599,34 @@ describe("the Gmod adapter's platform members", function()
     assert.are.equal(2, #record.connects)
   end)
 
+  it("reports a close, and reconnects after a backoff, when GWSockets raises on open", function()
+    local world, record = boot("server")
+    local create = _G.GWSockets.createWebSocket
+    local raised = false
+    _G.GWSockets.createWebSocket = function(...)
+      local socket = create(...)
+      local open = socket.open
+      socket.open = function(self)
+        if not raised then
+          raised = true
+          error("no such host", 0)
+        end
+        return open(self)
+      end
+      return socket
+    end
+    world:socket_close(record.connects[1].id, "gone")
+    record.time = record.time + 120000
+    local ran, err = pcall(world.run_due, world)
+    assert.is_true(ran, tostring(err))
+    assert.is_true(raised)
+    assert.are.equal(1, logged(record, "warn", "GWSockets could not open the websocket: no such host"))
+    assert.are.equal(1, #record.connects, "nothing reached the host for the failed attempt")
+    record.time = record.time + 120000
+    world:run_due()
+    assert.are.equal(2, #record.connects, "the core backed off and tried again")
+  end)
+
   it("logs why a close failed, and still reports the close once", function()
     local world, record = boot("server")
     welcome(world, record)

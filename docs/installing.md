@@ -440,7 +440,9 @@ once per connection. The core treats the connection as dead and reconnects
 with a growing delay, so a `disconnected` line follows. On FiveM it usually
 means `rpf-ws` was stopped or restarted while `rpf` kept running: `ensure
 rpf-ws`, then `restart rpf`. A `could not close …` line is the same for the
-call that closes a socket.
+call that closes a socket, and on Garry's Mod `rpf: GWSockets could not open
+the websocket: …` is the same for the call that starts one; the core then
+retries after the normal backoff.
 
 **`rpf: stopped: the portal refused Hello (duplicate_instance): another live instance is connected`**:
 another game server process is connected with this server's key, and the
