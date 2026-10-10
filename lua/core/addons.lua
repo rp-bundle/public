@@ -104,6 +104,7 @@ addons.STATES = {
 ---@field namespace string? The addon whose handler, timer or event handler the core is running.
 ---@field origin any The engine's name for the calling code (a FiveM resource), or nil where the engine cannot say.
 ---@field run integer? The addon's activation the code belongs to, so a callback that outlives it (one that yielded across a disable or a reload) can be told apart.
+---@field inferred boolean? Set for a call from a resource's own code outside any handler (`addons.from`): `namespace` is only the addon it registered, for `may_use`; what it sets up is the resource's, not an activation's.
 
 ---One thing an addon or a resource set up, and how to take it down.
 ---@class rpf.addons.Owned
@@ -350,21 +351,24 @@ function addons.context()
   if not context then
     return nil
   end
-  return { namespace = context.namespace, origin = context.origin, run = context.run }
+  return { namespace = context.namespace, origin = context.origin, run = context.run, inferred = context.inferred }
 end
 
----Whether the code now running belongs to an activation of its addon that
----has ended: a callback that yielded across a disable or a reload, or a
----timer or handler of an addon gone since. Such code may still run to its
----end, but sets nothing up: what it would make could never be taken down.
+---Whether the code now running is an addon's outside a running activation
+---of it: a callback that yielded across a disable or a reload, a timer or
+---handler of an addon gone since, or a `state` handler while the addon is
+---not active. Such code may still run to its end, but sets nothing up: what
+---it would make would outlive the teardown meant to take it down. A
+---resource's own code outside any handler is not an addon's, and is never
+---stale; what it sets up goes with the resource.
 ---@return boolean stale True if it is.
 function addons.stale()
   local context = current()
-  if not context or not context.namespace then
+  if not context or not context.namespace or context.inferred then
     return false
   end
   local addon = loaded[context.namespace]
-  return addon == nil or addon.gone == true or addon.run ~= context.run
+  return addon == nil or addon.gone == true or addon.run == nil or addon.run ~= context.run
 end
 
 ---Rethrows after the context is back, or passes results through.
@@ -406,7 +410,7 @@ function addons.from(origin, fn, ...)
       sole = namespace
     end
   end
-  set(key, { namespace = sole or nil, origin = origin, run = sole and loaded[sole].run or nil })
+  set(key, { namespace = sole or nil, origin = origin, inferred = true })
   return finish(key, context, pcall(fn, ...))
 end
 
@@ -461,6 +465,9 @@ function addons.own(cleanup)
   if not context or (context.namespace == nil and context.origin == nil) then
     return function() end
   end
+  if context.inferred and context.origin == nil then
+    return function() end
+  end
   if addons.stale() then
     -- Its addon's activation has ended, and its teardown with it: whatever
     -- was just made goes at once. The callers refuse first (`inactive`);
@@ -471,8 +478,14 @@ function addons.own(cleanup)
     end
     return function() end
   end
+  -- A resource's own code is the resource's: what it sets up goes with it,
+  -- not with the addon it registered.
   ---@type rpf.addons.Owned
-  local entry = { namespace = context.namespace, origin = context.origin, cleanup = cleanup }
+  local entry = {
+    namespace = not context.inferred and context.namespace or nil,
+    origin = context.origin,
+    cleanup = cleanup,
+  }
   owned_count = owned_count + 1
   owned[entry] = owned_count
   return function()

@@ -595,6 +595,25 @@ describe("rpf.addons", function()
       assert.is_false(rpf.addons.call("acme_kit.f"))
     end)
 
+    it("lets a state handler set nothing up while its addon is not active", function()
+      local ticks, got = 0, {}
+      rpf.addons.register(manifest("acme_kit"), {
+        state = function(state)
+          if state ~= "active" then
+            got[#got + 1] = { rpf.time.every(1000, function()
+              ticks = ticks + 1
+            end) }
+          end
+        end,
+      })
+      support.connected(p)
+      configure(p, { installed(manifest("acme_kit")) })
+      configure(p, { installed(manifest("acme_kit"), false) })
+      p.advance(5000)
+      assert.are.equal(0, ticks)
+      assert.are.same({ nil, "inactive" }, got[#got])
+    end)
+
     it("waits for an evaluation to end before it forgets an origin's addons", function()
       local ran = {}
       unloaded_ticks = 0
