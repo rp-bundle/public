@@ -109,6 +109,9 @@ local function start(ms, fn, period)
   if not in_range(ms, period and time.MIN_INTERVAL_MS or 0) or not rpf.callable(fn) then
     return nil, "invalid"
   end
+  if rpf.addons and rpf.addons.stale() then
+    return nil, "inactive"
+  end
   made = made + 1
   local id = "rpf-timer-" .. made
   local disown = function() end
@@ -133,7 +136,7 @@ end
 ---@param delay_ms any Milliseconds, a whole number from 0 to `MAX_DELAY_MS`.
 ---@param fn any The function, or a FiveM function reference.
 ---@return string? id The timer, for `cancel`.
----@return string? err `invalid` for a delay or function that is not one, `unavailable` before a platform is bound.
+---@return string? err `invalid` for a delay or function that is not one, `unavailable` before a platform is bound, `inactive` from code of an addon activation that has ended.
 function time.after(delay_ms, fn)
   return start(delay_ms, fn, false)
 end

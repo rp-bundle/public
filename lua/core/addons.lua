@@ -97,11 +97,13 @@ addons.STATES = {
 ---@field starting boolean? True while its `start` handler runs, which may read its config records.
 ---@field leaving string? Set while it is being taken out, with why: a new registration takes its place, or its code is gone. It and its dependents stop in order first.
 ---@field gone boolean? Set when its code is gone (its resource stopped), so none of its handlers is called again.
+---@field run integer? Which activation is running: set as its `start` is called, cleared once it stops. Code of an earlier one is stale (`addons.stale`).
 
 ---Whose code is running: what the registry knows of the caller.
 ---@class rpf.addons.Context
 ---@field namespace string? The addon whose handler, timer or event handler the core is running.
 ---@field origin any The engine's name for the calling code (a FiveM resource), or nil where the engine cannot say.
+---@field run integer? The addon's activation the code belongs to, so a callback that outlives it (one that yielded across a disable or a reload) can be told apart.
 
 ---One thing an addon or a resource set up, and how to take it down.
 ---@class rpf.addons.Owned
@@ -161,6 +163,9 @@ local reloading = 0
 ---How deep that may go: past it, a registration a handler makes is refused
 ---in the log.
 local MAX_RELOADS = 16
+---How many activations have begun, to number each (`Loaded.run`).
+local runs = 0
+
 ---How many takings-out are under way. While one is, registrations its
 ---handlers make (a `stop` registering its addon again) wait in `deferred`
 ---until it has finished, so no registration is started and then forgotten
@@ -345,7 +350,21 @@ function addons.context()
   if not context then
     return nil
   end
-  return { namespace = context.namespace, origin = context.origin }
+  return { namespace = context.namespace, origin = context.origin, run = context.run }
+end
+
+---Whether the code now running belongs to an activation of its addon that
+---has ended: a callback that yielded across a disable or a reload, or a
+---timer or handler of an addon gone since. Such code may still run to its
+---end, but sets nothing up: what it would make could never be taken down.
+---@return boolean stale True if it is.
+function addons.stale()
+  local context = current()
+  if not context or not context.namespace then
+    return false
+  end
+  local addon = loaded[context.namespace]
+  return addon == nil or addon.gone == true or addon.run ~= context.run
 end
 
 ---Rethrows after the context is back, or passes results through.
@@ -387,7 +406,7 @@ function addons.from(origin, fn, ...)
       sole = namespace
     end
   end
-  set(key, { namespace = sole or nil, origin = origin })
+  set(key, { namespace = sole or nil, origin = origin, run = sole and loaded[sole].run or nil })
   return finish(key, context, pcall(fn, ...))
 end
 
@@ -440,6 +459,16 @@ end
 function addons.own(cleanup)
   local context = current()
   if not context or (context.namespace == nil and context.origin == nil) then
+    return function() end
+  end
+  if addons.stale() then
+    -- Its addon's activation has ended, and its teardown with it: whatever
+    -- was just made goes at once. The callers refuse first (`inactive`);
+    -- this is the net under them.
+    local ok, err = pcall(cleanup)
+    if not ok then
+      log("error", "could not take down something a stale callback set up: " .. tostring(err))
+    end
     return function() end
   end
   ---@type rpf.addons.Owned
@@ -499,7 +528,7 @@ local function call(namespace, name, ...)
   if not rpf.callable(handler) then
     return true
   end
-  local ok, err = addons.run({ namespace = namespace, origin = addon.origin }, handler, ...)
+  local ok, err = addons.run({ namespace = namespace, origin = addon.origin, run = addon.run }, handler, ...)
   if not ok then
     log("error", "the " .. name .. " handler of " .. namespace .. " failed: " .. tostring(err))
   end
@@ -519,10 +548,12 @@ local function move(namespace, state, reason)
   if addon.state == "active" and state ~= "active" then
     call(namespace, "stop", reason or state)
     -- Whatever its code set up while it ran goes with it, after its own
-    -- `stop` had the chance to take it down itself.
+    -- `stop` had the chance to take it down itself, and its activation
+    -- ends: code of it still suspended somewhere is stale from now on.
     take_down(function(entry)
       return entry.namespace == namespace
     end)
+    addon.run = nil
   end
   addon.state, addon.reason = state, reason
   if state ~= "active" then
@@ -664,6 +695,8 @@ function addons.evaluate_once(retry)
         move(namespace, "requires", "it requires " .. blocked .. ", which is not active here")
       else
         local addon = loaded[namespace]
+        runs = runs + 1
+        addon.run = runs
         addon.starting = true
         local started = call(namespace, "start")
         addon.starting = nil
@@ -674,6 +707,7 @@ function addons.evaluate_once(retry)
           take_down(function(entry)
             return entry.namespace == namespace
           end)
+          addon.run = nil
           move(namespace, "failed", "its start handler failed")
         end
       end
@@ -886,7 +920,7 @@ end
 ---@param name any The export's full name.
 ---@param fn any The function, or a FiveM function reference.
 ---@return boolean? ok True once provided.
----@return string? err `invalid` for a name that is not `<namespace>.<identifier>` or a value that cannot be called, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace.
+---@return string? err `invalid` for a name that is not `<namespace>.<identifier>` or a value that cannot be called, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an activation that has ended.
 function addons.provide(name, fn)
   if type(name) ~= "string" or not rpf.callable(fn) then
     return nil, "invalid"
@@ -900,6 +934,9 @@ function addons.provide(name, fn)
   end
   if not addons.may_use(name) then
     return nil, "forbidden"
+  end
+  if addons.stale() then
+    return nil, "inactive"
   end
   local previous = provided[name]
   if previous then
@@ -946,7 +983,7 @@ function addons.call(name, ...)
   if not addon or addon.state ~= "active" or addon.gone then
     return false, "inactive"
   end
-  return answer(name, addons.run({ namespace = export.namespace, origin = addon.origin }, export.fn, ...))
+  return answer(name, addons.run({ namespace = export.namespace, origin = addon.origin, run = addon.run }, export.fn, ...))
 end
 
 ---An addon's state, and why it is in it.

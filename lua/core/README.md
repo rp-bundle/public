@@ -1016,6 +1016,11 @@ long-running addon's finished timers do not add up. From it:
 - **Context follows the code.** A timer runs in the context it was made in,
   and so does an event handler, so what they set up and emit is attributed
   to the same addon.
+- **An activation ends.** Each start of an addon is numbered (`run`), and
+  the context carries it. Code of an activation that has ended (a callback
+  that yielded across a disable or a reload) may run to its end, but
+  `addons.stale()` is true for it and it sets nothing up: a timer, an event
+  handler or an export from it is refused `inactive`.
 
 ### Live addon records (`rpf.records`, J2)
 

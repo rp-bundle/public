@@ -105,6 +105,22 @@ end
 ---@type integer
 local unloaded_ticks = 0
 
+---Registers `acme_kit`, connects, installs it, and gives the context its
+---`start` ran in: what an active addon's code runs in.
+---@param p spec.FakePlatform The platform.
+---@return rpf.addons.Context ctx The context.
+local function running_context(p)
+  local ctx
+  rpf.addons.register(manifest("acme_kit"), {
+    start = function()
+      ctx = rpf.addons.context()
+    end,
+  })
+  support.connected(p)
+  configure(p, { installed(manifest("acme_kit")) })
+  return assert(ctx)
+end
+
 describe("rpf.addons", function()
   local p
 
@@ -427,9 +443,9 @@ describe("rpf.addons", function()
     end)
 
     it("forgets a finished timer's ownership at once, so a long-running addon's do not add up", function()
-      support.connected(p)
+      local ctx = running_context(p)
       local before = rpf.addons.owned_count()
-      rpf.addons.run({ namespace = "acme_kit" }, function()
+      rpf.addons.run(ctx, function()
         for _ = 1, 100 do
           rpf.time.after(10, function() end)
         end
@@ -441,10 +457,10 @@ describe("rpf.addons", function()
     end)
 
     it("forgets an event handler's ownership once it fires or is removed", function()
-      support.connected(p)
+      local ctx = running_context(p)
       local before = rpf.addons.owned_count()
       local handler = function() end
-      rpf.addons.run({ namespace = "acme_kit" }, function()
+      rpf.addons.run(ctx, function()
         for _ = 1, 100 do
           rpf.api.events.once("scripts.ping", function() end)
         end
@@ -469,10 +485,9 @@ describe("rpf.addons", function()
     end)
 
     it("forgets a replaced export's ownership at once", function()
-      rpf.addons.register(manifest("acme_kit"))
-      support.connected(p)
+      local ctx = running_context(p)
       local before = rpf.addons.owned_count()
-      rpf.addons.run({ namespace = "acme_kit" }, function()
+      rpf.addons.run(ctx, function()
         for i = 1, 100 do
           rpf.addons.provide("acme_kit.f", function()
             return i
@@ -549,6 +564,35 @@ describe("rpf.addons", function()
         "start from stop",
       }, ran, "every start is stopped before the next")
       assert.are.equal("active", (rpf.addons.state("acme_kit")))
+    end)
+
+    it("lets a callback that outlived its activation set nothing up", function()
+      local saved
+      rpf.addons.register(manifest("acme_kit"), {
+        start = function()
+          saved = saved or rpf.addons.context()
+        end,
+      })
+      support.connected(p)
+      configure(p, { installed(manifest("acme_kit")) })
+      local function later()
+        local timer = { rpf.time.every(1000, function() end) }
+        local handler = { rpf.api.events.on("scripts.ping", function() end) }
+        local export = { rpf.addons.provide("acme_kit.f", function() end) }
+        return timer, handler, export
+      end
+      -- Disabled while the callback was suspended.
+      configure(p, { installed(manifest("acme_kit"), false) })
+      local ok, timer, handler, export = rpf.addons.run(saved, later)
+      assert.is_true(ok)
+      assert.are.same({ nil, "inactive" }, timer)
+      assert.are.same({ nil, "inactive" }, handler)
+      assert.are.same({ nil, "inactive" }, export)
+      -- Enabled again: a new activation; the old callback is still stale.
+      configure(p, { installed(manifest("acme_kit")) })
+      ok, timer = rpf.addons.run(saved, later)
+      assert.are.same({ nil, "inactive" }, timer)
+      assert.is_false(rpf.addons.call("acme_kit.f"))
     end)
 
     it("waits for an evaluation to end before it forgets an origin's addons", function()

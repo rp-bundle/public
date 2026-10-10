@@ -77,12 +77,15 @@ local wrapped = {}
 ---@param handler any The handler: a function, or a FiveM function reference.
 ---@param once boolean Whether it runs once.
 ---@return any handler The same handler, for `off`; nil if refused.
----@return string? err `invalid` for a name that is not a non-empty string or a handler that cannot be called.
+---@return string? err `invalid` for a name that is not a non-empty string or a handler that cannot be called, `inactive` from code of an addon activation that has ended.
 local function subscribe(name, handler, once)
   if type(name) ~= "string" or name == "" or not rpf.callable(handler) then
     return nil, "invalid"
   end
   local addons = rpf.addons
+  if addons and addons.stale() then
+    return nil, "inactive"
+  end
   local ctx = addons and addons.context()
   local by_handler = wrapped[name]
   if not by_handler then
