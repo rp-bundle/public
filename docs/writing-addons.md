@@ -9,7 +9,8 @@ and items, and the rules that keep a game server's data consistent with the
 portal's.
 
 This page is the guide. The decisions behind it are in
-[Addons](architecture/addons.md); the complete, typed reference is
+[Addons](architecture/addons.md); the complete, typed reference is the
+[Lua API reference](luadoc/docs/index.md), generated from
 [`lua/core/meta/api.lua`](../lua/core/meta/api.lua), which your editor reads
 for completion (below). The worked example,
 [`lua/examples/acme_tags/`](../lua/examples/acme_tags/), is a small addon

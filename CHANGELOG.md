@@ -63,6 +63,14 @@ keep the job the portal has.
   switcher on every page. The Release's notes link it. CI builds the site
   strictly on every pull request, so a broken link fails there
   ([Deployment](docs/deployment.md#the-docs-site)).
+- A browsable Lua API reference (J9, #191): a page for `rpf.Api` and each of
+  its tables and types, with what every call takes and returns, which side
+  it runs on, examples on the calls an addon reaches for first, linked
+  types and search, generated from the annotations so it cannot drift from
+  the code. The core's own modules are under a labelled Internals section.
+  It is in each release's docs site, and `dev/luadoc` builds it to open from
+  disk. The annotations now list the `inactive` refusals `events.on`,
+  `events.once`, the timers and `addons.provide` already returned.
 - Setup (H7, #56). [Installing](docs/installing.md) takes an owner from a
   stock server to a connected one on FiveM and Garry's Mod, with a
   troubleshooting section keyed by the console lines. Each release also
