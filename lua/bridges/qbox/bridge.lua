@@ -460,13 +460,24 @@ function qbox.register(api, fx)
 
   fx.callback(qbox.CHARACTERS, function(source)
     local handle = tonumber(source)
-    if not active or not handle or rpf_state(handle) ~= "character_select" then
+    if not active or not handle then
+      return { error = "not_selecting" }
+    end
+    local state, serial = rpf_state(handle)
+    if state ~= "character_select" then
       return { error = "not_selecting" }
     end
     if not started(qbox.CORE) then
       return { error = "unavailable" }
     end
-    return { characters = characters(handle) }
+    local list = characters(handle)
+    -- The search waited on the database: the answer goes to whoever has
+    -- this server id now, so only to the connection that asked.
+    local now, now_serial = rpf_state(handle)
+    if now ~= "character_select" or now_serial ~= serial then
+      return { error = "not_selecting" }
+    end
+    return { characters = list }
   end)
 
   fx.callback(qbox.LOAD, function(source, citizenid)

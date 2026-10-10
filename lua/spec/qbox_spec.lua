@@ -192,6 +192,26 @@ local cases = {
     end,
   },
   {
+    name = "lists characters only to the connection that asked, though the search waits",
+    run = function(world)
+      local fw = framework()
+      boot(world, fw)
+      local handle = world:login(1, PLAYER)
+      fw.db["CIT-JANE"].license = "license2:" .. tostring(handle)
+      -- Jane's player leaves while qbx_core searches, and someone else
+      -- takes the server id and logs in.
+      fw.searching = function()
+        assert(world.core.players.dropped(handle, "left"))
+        world:pump()
+        local again = world.join(1)
+        assert(world.core.players.authenticating(again))
+        assert(world.core.players.register(again, { player_id = OTHER, username = "other" }))
+        world:pump()
+      end
+      assert.are.same({ error = "not_selecting" }, fw:request(handle, "rpf-qbox:characters"))
+    end,
+  },
+  {
     name = "does not report again a character qbx_core is still logging out",
     run = function(world)
       local fw = framework()
