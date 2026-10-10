@@ -30,9 +30,30 @@
 ---handler; every move runs its `state` handler and emits `addons.state`.
 ---Every handler runs under `pcall`, so an addon cannot stop the core or
 ---another addon. Addons start in dependency order and stop in reverse.
+---
+---**Whose code is running (J3).** The registry keeps a context: the addon
+---whose handler, timer or event handler the core is running, and the
+---engine's name for the code that called the public API (`origin`: a FiveM
+---resource, which the adapter names on every export call; nil on Gmod,
+---where every addon shares one Lua state). Three things follow from it:
+---
+--- - **What an addon set up is taken down when it stops.** A timer, an event
+---   subscription or an export made while an addon's code runs is owned by
+---   it (`addons.own`) and removed when it stops, so an addon restarted by a
+---   reload or a re-enable starts clean rather than twice. One made by a
+---   resource's code outside any handler is owned by the resource, and goes
+---   when the resource stops (`addons.unload_origin`).
+--- - **An addon's namespace is its own.** Code known to be another addon's
+---   cannot emit events or provide exports under it (`addons.may_use`).
+--- - **Reloading is registering again.** A second registration of a
+---   namespace stops the first (and whatever requires it), then starts the
+---   new code, whether or not the manifest changed.
 ---@class rpf.addons
 ---@field MAX_MANIFESTS_PER_DECLARE integer Manifests one `declare_addons` frame carries: `limits::MAX_MANIFESTS_PER_DECLARE`.
----@field API_MAJORS table<integer, true> The addon API majors this core serves.
+---@field API integer The newest addon API major this core serves, which a new addon writes as its manifest's `api`.
+---@field API_MIN integer The oldest addon API major this core still serves (`docs/compatibility.md`).
+---@field API_MAJORS table<integer, true> Every addon API major this core serves: `API_MIN` to `API`.
+---@field HANDLERS table<string, true> The handlers an addon may pass with its manifest.
 ---@field STATES string[] Every state an addon can be in.
 local addons = {}
 
@@ -41,7 +62,13 @@ local json = rpf.json
 local events = rpf.events
 
 addons.MAX_MANIFESTS_PER_DECLARE = 8
-addons.API_MAJORS = { [1] = true }
+addons.API = 1
+addons.API_MIN = 1
+addons.API_MAJORS = {}
+for major = addons.API_MIN, addons.API do
+  addons.API_MAJORS[major] = true
+end
+addons.HANDLERS = { start = true, stop = true, state = true }
 addons.STATES = {
   "active",
   "not_installed",
@@ -54,6 +81,7 @@ addons.STATES = {
 }
 
 ---What an addon passes with its manifest: the code the core runs for it.
+---Each is a function, or another FiveM resource's function reference.
 ---@class rpf.addons.Handlers
 ---@field start fun()? Runs when the addon becomes active.
 ---@field stop fun(reason: string)? Runs when it stops being active, with why.
@@ -63,10 +91,24 @@ addons.STATES = {
 ---@class rpf.addons.Loaded
 ---@field manifest table Its manifest, as `rpf.manifest.check` returned it.
 ---@field handlers rpf.addons.Handlers What to run for it.
+---@field origin any The engine's name for the code that registered it (a FiveM resource), or nil.
 ---@field state string Its state, one of `addons.STATES`.
 ---@field reason string? Why it is in that state, for the log and its handler.
 ---@field starting boolean? True while its `start` handler runs, which may read its config records.
----@field replaced boolean? True while a new registration takes its place, so it and its dependents stop in order first.
+---@field leaving string? Set while it is being taken out, with why: a new registration takes its place, or its code is gone. It and its dependents stop in order first.
+---@field gone boolean? Set when its code is gone (its resource stopped), so none of its handlers is called again.
+
+---Whose code is running: what the registry knows of the caller.
+---@class rpf.addons.Context
+---@field namespace string? The addon whose handler, timer or event handler the core is running.
+---@field origin any The engine's name for the calling code (a FiveM resource), or nil where the engine cannot say.
+
+---One thing an addon or a resource set up, and how to take it down.
+---@class rpf.addons.Owned
+---@field namespace string? The addon that owns it, if one was running.
+---@field origin any The resource that owns it, if known.
+---@field cleanup fun() Takes it down.
+---@field done boolean? Set once it has been taken down or disowned.
 
 ---A state change, as `addons.state` emits it.
 ---@class rpf.addons.StateChange
@@ -76,6 +118,20 @@ addons.STATES = {
 
 ---@type table<string, rpf.addons.Loaded>
 local loaded = {}
+---The context the code now running was called in, or nil for the core's own.
+---@type rpf.addons.Context?
+local context = nil
+---What addons and resources set up, oldest first.
+---@type rpf.addons.Owned[]
+local owned = {}
+---Each export an addon provides, by its full name.
+---@type table<string, { fn: any, namespace: string }>
+local provided = {}
+---Log lines from before a platform was bound, at most 32, written out by
+---`start`: a manifest refused while Gmod loads addons, before the core starts,
+---must still reach the console.
+---@type { level: string, message: string }[]
+local early = {}
 ---Namespaces a declaration the portal acknowledged has named, this run.
 ---@type table<string, true>
 local declared = {}
@@ -84,7 +140,7 @@ local connection = nil
 ---@type rpf.ServerPlatform?
 local platform = nil
 ---Applies a checked registration; defined beside `register`.
----@type fun(checked: table, handlers: rpf.addons.Handlers?): boolean?, table?
+---@type fun(checked: table, handlers: rpf.addons.Handlers, origin: any): boolean?, table?
 local apply
 
 ---Whether an evaluation is running, and whether another was asked for
@@ -95,15 +151,17 @@ local pending_retry = nil
 ---Registrations made while an evaluation ran (by a handler), applied once
 ---it ends, in order, so none replaces an addon whose old registration is
 ---still being stopped or started.
----@type { manifest: table, handlers: rpf.addons.Handlers? }[]
+---@type { manifest: table, handlers: rpf.addons.Handlers, origin: any }[]
 local deferred = {}
 
----Logs through the platform, when there is one.
+---Logs through the platform, or keeps the line until there is one.
 ---@param level string The level.
 ---@param message string The message.
 local function log(level, message)
   if platform then
     platform.log(level, "rpf.addons: " .. message)
+  elseif #early < 32 then
+    early[#early + 1] = { level = level, message = "rpf.addons: " .. message }
   end
 end
 
@@ -177,8 +235,8 @@ end
 ---@return string? reason Why.
 local function own_state(namespace, addon)
   local manifest = addon.manifest
-  if addon.replaced then
-    return "not_installed", "the addon registered another manifest"
+  if addon.leaving then
+    return "not_installed", addon.leaving
   end
   if not addons.API_MAJORS[manifest.api] then
     return "api", "it is written for addon API " .. tostring(manifest.api) .. ", which this core does not serve"
@@ -206,17 +264,171 @@ local function own_state(namespace, addon)
   return "active", nil
 end
 
----Calls one of an addon's handlers under `pcall`, logging a throw.
+---Puts the context back after a call, passing its results through.
+---@param saved rpf.addons.Context? The context before the call.
+---@param ... any `pcall`'s results.
+---@return any ... The same results.
+local function restore(saved, ...)
+  context = saved
+  return ...
+end
+
+---Runs a function in a context, under `pcall`, and puts the context back
+---whatever it does.
+---@param ctx rpf.addons.Context? Whose code it is.
+---@param fn any The function, or a FiveM function reference.
+---@param ... any Its arguments.
+---@return boolean ok False if it threw.
+---@return any ... Its results, or the error.
+function addons.run(ctx, fn, ...)
+  local saved = context
+  context = ctx
+  return restore(saved, pcall(fn, ...))
+end
+
+---The context code is running in now.
+---@return rpf.addons.Context? context A copy, or nil for the core's own code.
+function addons.context()
+  if not context then
+    return nil
+  end
+  return { namespace = context.namespace, origin = context.origin }
+end
+
+---Rethrows after the context is back, or passes results through.
+---@param saved rpf.addons.Context? The context before the call.
+---@param ok boolean `pcall`'s first result.
+---@param ... any The rest.
+---@return any ... The results.
+local function finish(saved, ok, ...)
+  context = saved
+  if not ok then
+    error((...), 0)
+  end
+  return ...
+end
+
+---Runs a call into the public API made by code from `origin`, the engine's
+---name for it (a FiveM resource, which the adapter reads on every export
+---call). Inside a handler the core runs for one of that origin's addons, the
+---context already names the addon and is kept; otherwise the call runs as
+---the origin's, naming its addon when it registered exactly one.
+---@param origin any The caller's origin, or nil if the engine cannot say.
+---@param fn function The API function.
+---@param ... any Its arguments.
+---@return any ... Its results. An error it throws is thrown again.
+function addons.from(origin, fn, ...)
+  if origin == nil or (context and context.origin == origin) then
+    return fn(...)
+  end
+  local sole = nil
+  for namespace, addon in pairs(loaded) do
+    if addon.origin == origin then
+      if sole then
+        sole = false
+        break
+      end
+      sole = namespace
+    end
+  end
+  local saved = context
+  context = { namespace = sole or nil, origin = origin }
+  return finish(saved, pcall(fn, ...))
+end
+
+---The namespaces the code now running is known to belong to: the addon
+---whose handler runs, or every addon its origin registered. Nil when
+---nothing is known (the core's own code, or a Gmod script outside any
+---handler), which `may_use` lets through.
+---@return table<string, true>? namespaces The set.
+local function caller_namespaces()
+  if not context then
+    return nil
+  end
+  if context.namespace then
+    return { [context.namespace] = true }
+  end
+  if context.origin == nil then
+    return nil
+  end
+  local out = {}
+  for namespace, addon in pairs(loaded) do
+    if addon.origin == context.origin then
+      out[namespace] = true
+    end
+  end
+  return out
+end
+
+---Whether the code now running may act under a name's namespace (emit an
+---event, provide an export): yes, unless the namespace is a loaded addon's
+---and the caller is known to be some other code. A Gmod script outside any
+---handler is not known, and is let through: on Gmod every addon shares one
+---Lua state, and the rule stops mistakes, not the server owner's own code.
+---@param name string The name, `<namespace>.<rest>`.
+---@return boolean allowed True if it may.
+function addons.may_use(name)
+  local namespace = string.match(name, "^([^.]+)%.")
+  if not namespace or not loaded[namespace] then
+    return true
+  end
+  local mine = caller_namespaces()
+  return mine == nil or mine[namespace] == true
+end
+
+---Owns something the code now running set up, so it is taken down when its
+---addon stops, or its resource goes. Something the core's own code set up,
+---or a Gmod script's outside any handler, has no owner and is kept.
+---@param cleanup fun() Takes it down. Called at most once.
+---@return fun() disown Forgets it without taking it down, for something its maker took down itself.
+function addons.own(cleanup)
+  if not context or (context.namespace == nil and context.origin == nil) then
+    return function() end
+  end
+  ---@type rpf.addons.Owned
+  local entry = { namespace = context.namespace, origin = context.origin, cleanup = cleanup }
+  owned[#owned + 1] = entry
+  return function()
+    entry.done = true
+  end
+end
+
+---Takes down everything owned that `test` picks, oldest first, and forgets it.
+---@param test fun(entry: rpf.addons.Owned): boolean Which.
+local function take_down(test)
+  local kept, due = {}, {}
+  for _, entry in ipairs(owned) do
+    if not entry.done then
+      if test(entry) then
+        due[#due + 1] = entry
+      else
+        kept[#kept + 1] = entry
+      end
+    end
+  end
+  owned = kept
+  for _, entry in ipairs(due) do
+    entry.done = true
+    local ok, err = pcall(entry.cleanup)
+    if not ok then
+      log("error", "could not take down something an addon set up: " .. tostring(err))
+    end
+  end
+end
+
+---Calls one of an addon's handlers under `pcall`, in the addon's context,
+---logging a throw. An addon whose code is gone has nothing to call.
 ---@param namespace string The addon.
 ---@param name string The handler's name.
 ---@param ... any Its arguments.
 ---@return boolean ok False if it threw.
 local function call(namespace, name, ...)
-  local handler = loaded[namespace] and loaded[namespace].handlers[name]
-  if type(handler) ~= "function" then
+  local addon = loaded[namespace]
+  local handler = addon and not addon.gone and addon.handlers[name]
+  if not rpf.callable(handler) then
     return true
   end
-  local ok, err = pcall(handler, ...)
+  local ok, err = addons.run({ namespace = namespace, origin = addon.origin }, handler, ...)
   if not ok then
     log("error", "the " .. name .. " handler of " .. namespace .. " failed: " .. tostring(err))
   end
@@ -235,6 +447,11 @@ local function move(namespace, state, reason)
   end
   if addon.state == "active" and state ~= "active" then
     call(namespace, "stop", reason or state)
+    -- Whatever its code set up while it ran goes with it, after its own
+    -- `stop` had the chance to take it down itself.
+    take_down(function(entry)
+      return entry.namespace == namespace
+    end)
   end
   addon.state, addon.reason = state, reason
   if state ~= "active" then
@@ -274,7 +491,7 @@ function addons.evaluate(retry)
       -- Applied outside the evaluation, which runs its own.
       local registration = table.remove(deferred, 1)
       evaluating = false
-      ok, err = pcall(apply, registration.manifest, registration.handlers)
+      ok, err = pcall(apply, registration.manifest, registration.handlers, registration.origin)
       evaluating = true
     end
   end
@@ -366,6 +583,10 @@ function addons.evaluate_once(retry)
         if started then
           move(namespace, "active", nil)
         else
+          -- What it set up before it threw goes, so the retry starts clean.
+          take_down(function(entry)
+            return entry.namespace == namespace
+          end)
           move(namespace, "failed", "its start handler failed")
         end
       end
@@ -373,16 +594,41 @@ function addons.evaluate_once(retry)
   end
 end
 
----Registers an addon: checks its manifest, keeps it, recomputes its state,
----and declares it to the portal if the connection is up.
+---Checks the handlers an addon passes: nil, or a table of `start`, `stop`
+---and `state`, each callable (a FiveM function reference is). Anything else
+---is refused, so a misspelt handler fails at registration rather than
+---never running.
+---@param handlers any What was passed.
+---@return table? refusal `{ error = "handler", path = "handlers.<name>" }`, or `"handlers"` for something that is not a table; nil if they are fine.
+local function check_handlers(handlers)
+  if handlers == nil then
+    return nil
+  end
+  if type(handlers) ~= "table" or rpf.callable(handlers) then
+    return { error = "handlers", path = "handlers" }
+  end
+  for name, handler in pairs(handlers) do
+    if not addons.HANDLERS[name] or not rpf.callable(handler) then
+      return { error = "handler", path = "handlers." .. tostring(name) }
+    end
+  end
+  return nil
+end
+
+---Registers an addon: checks its manifest and handlers, keeps them,
+---recomputes its state, and declares it to the portal if the connection is
+---up. The registration belongs to the calling code's origin (`addons.from`),
+---so it goes when that code does.
 ---
----Registering the same namespace again replaces the manifest and the
----handlers; an addon that was running is stopped first if the manifest
----changed. Nothing throws: a manifest the shared rules refuse, or one more
----addon than a server may install, is refused with why. A registration a
----handler makes while the core is starting or stopping addons is applied
----once that ends, so it never replaces an addon mid-change; one past the
----addon limit is then refused in the log.
+---Registering the same namespace again is a reload: the old registration is
+---stopped (after whatever requires it), whatever its code set up is taken
+---down, and the new one starts if it may, whether or not the manifest
+---changed. Nothing throws: a manifest the shared rules refuse, handlers
+---that are not handlers, or one more addon than a server may install, is
+---refused with why. A registration a handler makes while the core is
+---starting or stopping addons is applied once that ends, so it never
+---replaces an addon mid-change; one past the addon limit is then refused in
+---the log.
 ---@param manifest table The manifest, as the addon wrote it.
 ---@param handlers rpf.addons.Handlers? What to run for it.
 ---@return boolean? ok True once registered.
@@ -394,37 +640,72 @@ function addons.register(manifest, handlers)
     log("error", "an addon's manifest was refused: " .. tostring(refusal.error) .. " at " .. tostring(refusal.path))
     return nil, refusal
   end
+  refusal = check_handlers(handlers)
+  if refusal then
+    log("error", checked.namespace .. "'s handlers were refused: " .. refusal.error .. " at " .. refusal.path)
+    return nil, refusal
+  end
+  local copy = {}
+  for name, handler in pairs(handlers or {}) do
+    copy[name] = handler
+  end
+  local origin = context and context.origin
   if evaluating then
-    deferred[#deferred + 1] = { manifest = checked, handlers = handlers }
+    deferred[#deferred + 1] = { manifest = checked, handlers = copy, origin = origin }
     return true, nil
   end
-  return apply(checked, handlers)
+  return apply(checked, copy, origin)
 end
 
----Applies a registration whose manifest was checked: what `register` does
----once no evaluation is running.
+---Takes an addon out: stops it and whatever requires it, in order, takes
+---down what it set up, and forgets it. What stays is the portal's: its
+---installation and records.
+---@param namespace string The addon.
+---@param reason string Why, for the log and its handlers.
+---@param gone boolean? Whether its code is gone, so none of its handlers may be called.
+local function take_out(namespace, reason, gone)
+  local addon = loaded[namespace]
+  addon.leaving, addon.gone = reason, gone or nil
+  addons.evaluate(false)
+  loaded[namespace] = nil
+  declared[namespace] = nil
+  for name, export in pairs(provided) do
+    if export.namespace == namespace then
+      provided[name] = nil
+    end
+  end
+  take_down(function(entry)
+    return entry.namespace == namespace
+  end)
+end
+
+---Applies a registration whose manifest and handlers were checked: what
+---`register` does once no evaluation is running.
 ---@param checked table The manifest, as `rpf.manifest.check` returned it.
----@param handlers rpf.addons.Handlers? What to run for it.
+---@param handlers rpf.addons.Handlers What to run for it.
+---@param origin any The engine's name for the code that registered it.
 ---@return boolean? ok True once registered.
 ---@return table? refusal `{ error = "too_many", path = "" }` past the addon limit.
-apply = function(checked, handlers)
+apply = function(checked, handlers, origin)
   local namespace = checked.namespace
   local previous = loaded[namespace]
   if not previous and #names() >= rpf.manifest.MAX_ADDONS_PER_SERVER then
     log("error", "an addon was refused: this server already has as many addons as it may")
     return nil, { error = "too_many", path = "" }
   end
-  if previous and not addons.same(previous.manifest, checked) then
-    -- Another release under the same name: what ran was the old one, and
-    -- it stops as any addon does, after whatever requires it.
-    previous.replaced = true
-    addons.evaluate(false)
-    previous.replaced = nil
-    declared[namespace] = nil
+  local was_declared = declared[namespace]
+  if previous then
+    -- A reload, or another release under the same name: what ran was the
+    -- old code, and it stops as any addon does, after whatever requires it.
+    take_out(namespace, "the addon registered again")
+    if addons.same(previous.manifest, checked) then
+      declared[namespace] = was_declared
+    end
   end
   loaded[namespace] = {
     manifest = checked,
-    handlers = handlers or {},
+    handlers = handlers,
+    origin = origin,
     state = previous and previous.state or "not_installed",
     reason = previous and previous.reason,
   }
@@ -433,6 +714,102 @@ apply = function(checked, handlers)
     addons.declare()
   end
   return true, nil
+end
+
+---Forgets every addon an origin registered, and takes down whatever that
+---origin's code set up: its code is gone (on FiveM, its resource stopped).
+---Its addons stop, in order, without their handlers being called, since
+---there is no code left to call. The portal is told they are no longer
+---loaded; their installations and records stay.
+---@param origin any The origin, as the adapter names it.
+function addons.unload_origin(origin)
+  if origin == nil then
+    return
+  end
+  local gone = {}
+  for _, namespace in ipairs(names()) do
+    if loaded[namespace].origin == origin then
+      gone[#gone + 1] = namespace
+    end
+  end
+  for _, namespace in ipairs(gone) do
+    log("info", namespace .. " is unloaded: its code stopped")
+    take_out(namespace, "its code stopped", true)
+  end
+  take_down(function(entry)
+    return entry.origin == origin
+  end)
+  if #gone > 0 then
+    addons.evaluate(true)
+    if connection and connection.state == "ready" then
+      addons.declare()
+    end
+  end
+end
+
+---Provides an export other addons call by name, `<namespace>.<name>`, under
+---an addon loaded here. The namespace must be the caller's own when the
+---caller is known (`may_use`). One provided while the addon's code runs is
+---taken down when it stops; providing a name again replaces it.
+---@param name any The export's full name.
+---@param fn any The function, or a FiveM function reference.
+---@return boolean? ok True once provided.
+---@return string? err `invalid` for a name that is not `<namespace>.<identifier>` or a value that cannot be called, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace.
+function addons.provide(name, fn)
+  if type(name) ~= "string" or not rpf.callable(fn) then
+    return nil, "invalid"
+  end
+  local namespace, rest = string.match(name, "^([a-z][a-z0-9_]*)%.([a-z][a-z0-9_]*)$")
+  if not namespace or #rest > 32 then
+    return nil, "invalid"
+  end
+  if not loaded[namespace] then
+    return nil, "not_found"
+  end
+  if not addons.may_use(name) then
+    return nil, "forbidden"
+  end
+  local export = { fn = fn, namespace = namespace }
+  provided[name] = export
+  addons.own(function()
+    if provided[name] == export then
+      provided[name] = nil
+    end
+  end)
+  return true
+end
+
+---Turns an export's `pcall` results into `call`'s: logged and `failed` on a
+---throw, passed through otherwise.
+---@param name string The export.
+---@param ok boolean Whether it ran.
+---@param ... any Its results, or the error.
+---@return boolean ok The same.
+---@return any ... Its results, or `"failed"`.
+local function answer(name, ok, ...)
+  if ok then
+    return true, ...
+  end
+  log("error", "the export " .. name .. " failed: " .. tostring((...)))
+  return false, "failed"
+end
+
+---Calls another addon's export, in that addon's context, under `pcall`.
+---It answers only while the addon that provided it is active.
+---@param name any The export's full name.
+---@param ... any Its arguments, as they are.
+---@return boolean ok True if it ran.
+---@return any ... Its results; or, when `ok` is false, why: `not_found` (nothing provides that name), `inactive` (its addon is not active here) or `failed` (it threw, which is logged).
+function addons.call(name, ...)
+  local export = type(name) == "string" and provided[name] or nil
+  if not export then
+    return false, "not_found"
+  end
+  local addon = loaded[export.namespace]
+  if not addon or addon.state ~= "active" then
+    return false, "inactive"
+  end
+  return answer(name, addons.run({ namespace = export.namespace, origin = addon.origin }, export.fn, ...))
 end
 
 ---An addon's state, and why it is in it.
@@ -548,6 +925,10 @@ function addons.start(p, client)
   platform = p
   connection = client
   declared = {}
+  for _, line in ipairs(early) do
+    p.log(line.level, line.message)
+  end
+  early = {}
   local ready = client.on_ready
   ---Runs at every `Welcome`: whatever was set before, then the declaration.
   ---@param c rpf.Client The connection, now ready.

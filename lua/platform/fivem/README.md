@@ -73,6 +73,15 @@ reference to it), so through the export `events.on` and `events.once` return
 a subscription id, a string, and `events.off` takes that id rather than the
 function.
 
+Every call through the export names the resource that made it
+(`GetInvokingResource`, `shared.from_caller`), so the core knows whose code
+is calling: an addon registered from a resource is that resource's, what it
+sets up through the API (timers, event handlers, exports) is taken down when
+it stops (`onResourceStop` hands its name to `rpf.addons.unload_origin`),
+and one addon's resource cannot emit events under another addon's
+namespace. A handler an addon passes (`start`, a timer, an event handler)
+arrives as a function reference, which the core calls like a function.
+
 ## How each part is done
 
 | Platform member | On FiveM | File |

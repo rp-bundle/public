@@ -255,9 +255,7 @@ describe("rpf.jobs", function()
 
     it("refuses its events to scripts", function()
       for _, name in ipairs({ "jobs.changed", "jobs.duty", "jobs.paid" }) do
-        assert.has_error(function()
-          rpf.api.events.emit(name, JANE)
-        end, nil, name)
+        assert.are.same({ nil, "reserved" }, { rpf.api.events.emit(name, JANE) }, name)
       end
     end)
 

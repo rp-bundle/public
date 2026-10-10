@@ -546,7 +546,24 @@ hears exactly what the core's own modules hear.
   a stack overflow.
 - **Core event names are reserved.** The public `emit` refuses anything under
   `players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `addons.` or `rpf.`, so a
-  script cannot forge a lifecycle event other scripts would believe.
+  script cannot forge a lifecycle event other scripts would believe. It
+  returns `nil, "reserved"` rather than throwing, and `nil, "forbidden"` for
+  a name under another loaded addon's namespace (`rpf.addons.may_use`).
+
+### `rpf.time`
+
+RFC 3339 parsing (`time.parse`, for the portal's timestamps), and the clock
+and timers scripts use (J3), on both sides: `now()`, `after(delay_ms, fn)`,
+`every(period_ms, fn)` and `cancel(id)`. They run on the platform's clock
+(`now`, `after`), bound when the API is published, which on Gmod is as the
+adapter loads, so an addon loading then can set a timer. Delays are whole
+milliseconds up to `MAX_DELAY_MS` (2^31 − 1, which every engine's timer
+holds), and a period at least `MIN_INTERVAL_MS` (10), so a mistake cannot
+spin the server's thread; anything else is `invalid`. Ids are strings, so
+they cross a FiveM export unchanged. A callback runs under `pcall` in the
+context it was made in (`rpf.addons`): one that throws is logged, and an
+`every` keeps going. A timer an addon makes while its code runs is its own,
+and is cancelled when it stops.
 
 ### `rpf.players`
 
@@ -924,13 +941,18 @@ it cannot tell the shape of is refused.
 
 ### `rpf.addons`
 
-The addons loaded on this server, and whether each may run (J2). Server
-only, and internal until J3 publishes `rpf.api.addons` over it.
+The addons loaded on this server, and whether each may run (J2), and whose
+code is running (J3). Server only; `rpf.api.addons` fronts `register`,
+`state`, `provide`, `call`, `API` and `API_MIN` (The public API, below).
 
 | Call | Does |
 |---|---|
-| `register(manifest, handlers)` | Checks the manifest with `rpf.manifest.check`, keeps it, and declares it if connected. `handlers` may hold `start()`, `stop(reason)` and `state(state, reason)`. Returns true, or nil and `{ error, path }`; one addon past `MAX_ADDONS_PER_SERVER` is `too_many` |
+| `register(manifest, handlers)` | Checks the manifest with `rpf.manifest.check` and the handlers (nil, or a table of `start()`, `stop(reason)` and `state(state, reason)`, each callable: a FiveM function reference is), keeps them, and declares the addon if connected. Returns true, or nil and `{ error, path }`: a manifest rule, `handlers`/`handler` (`handlers.strat`), or `too_many` past `MAX_ADDONS_PER_SERVER`. Registering a namespace again is a reload |
 | `state(namespace)` | The addon's state and why: `active`, `not_installed`, `pending`, `mismatch`, `disabled`, `api`, `requires` or `failed` |
+| `provide(name, fn)`, `call(name, ...)` | Exports between addons, `<namespace>.<name>`: `call` answers `true, …results` while the providing addon is active, else `false` and `not_found`, `inactive` or `failed` (it threw, logged) |
+| `unload_origin(origin)` | Forgets every addon an origin registered, without calling their handlers (their code is gone), takes down what that origin set up, and declares again. The FiveM adapter calls it from `onResourceStop` |
+| `from(origin, fn, ...)`, `run(context, fn, ...)`, `context()` | The context below: a public call from an origin, a call into an addon's code |
+| `own(cleanup)`, `may_use(name)` | Ownership and namespaces, below |
 | `definition(type)` | A type's installed definition: the config's own for a kept or ahead type, else the manifest's |
 | `config_records(type)` | The records of a config type, as the config carries them, while their addon is active |
 | `declare()` | Sends `declare_addons`; run after each `Welcome` and on each registration |
@@ -948,13 +970,48 @@ addons are `pending` until staff install them.
 (`config.addon(namespace)`) has it installed and enabled with exactly the
 manifest it registered, compared value for value by `addons.same` (the
 portal's hash is over the same content, and Lua has no SHA-256), for an API
-major in `API_MAJORS`, and with everything it `requires` active. States are
-recomputed on every `config.changed` naming `addons` and every
-registration. Moving into `active` runs `start`, out of it `stop`; every
-move runs `state` and emits `addons.state` (`{ namespace, state, reason }`).
-Handlers run under `pcall`: one that throws is logged, and a `start` that
-throws leaves the addon `failed`, retried on the next config change or
-registration. Addons start in dependency order and stop in reverse.
+major from `API_MIN` to `API` (`API_MAJORS`; 1 to 1 now), and with
+everything it `requires` active. States are recomputed on every
+`config.changed` naming `addons` and every registration. Moving into
+`active` runs `start`, out of it `stop`; every move runs `state` and emits
+`addons.state` (`{ namespace, state, reason }`). Handlers run under `pcall`:
+one that throws is logged, and a `start` that throws leaves the addon
+`failed`, retried on the next config change or registration. Addons start
+in dependency order and stop in reverse. A refusal logged before the core
+starts (Gmod loads addons before the convars are read) is kept and written
+out at start.
+
+**Reloading.** Registering a namespace that is already loaded stops the old
+registration (after whatever requires it), then registers and starts the new
+one if it may, whether or not the manifest changed: a Gmod Lua refresh, or a
+FiveM resource restarted, runs the addon's file again, and its new code must
+start rather than be skipped because the manifest is the same.
+
+**Whose code is running.** The registry keeps a context, `{ namespace,
+origin }`: the addon whose handler, timer, event handler or export the core
+is running, and the engine's name for the code that called the public API.
+On FiveM the adapter names the calling resource on every export call
+(`addons.from(GetInvokingResource(), …)`), and a registration belongs to
+its resource; on Gmod every addon shares one Lua state and the origin is
+nil. From it:
+
+- **Ownership.** A timer (`rpf.time`), an event subscription
+  (`rpf.api.events.on`) or an export made while an addon's code runs is the
+  addon's (`addons.own`), and is taken down when it stops (after its own
+  `stop` ran) or its `start` throws, so an addon that starts `every` in
+  `start` has exactly one however often it restarts. One made by a
+  resource's code outside any handler is the resource's, and goes in
+  `unload_origin`. Something the core or a Gmod script sets up outside any
+  handler has no owner and stays.
+- **Namespaces.** `may_use(name)`: code known to be one addon's (its
+  context, or a resource that registered other addons) may not emit an
+  event or provide an export under another loaded addon's namespace. Code
+  that cannot be named (a Gmod script outside any handler) is let through:
+  the rule stops mistakes, not the owner's own code, which on Gmod can
+  reach past anything with `rawset` anyway.
+- **Context follows the code.** A timer runs in the context it was made in,
+  and so does an event handler, so what they set up and emit is attributed
+  to the same addon.
 
 ### Live addon records (`rpf.records`, J2)
 
@@ -1311,12 +1368,20 @@ internal.
 | Member | Side | What |
 |---|---|---|
 | `VERSION`, `engine` | both | The core's version, and the engine (`"fivem"`, `"gmod"` or `"mock"`) for owners' scripts. The core never branches on it |
-| `events` | both | `on`, `once`, `off`, `emit` (core names refused) |
+| `events` | both | `on`, `once`, `off`, `emit`. `emit` refuses a core name (`reserved`) or another addon's namespace (`forbidden`) |
+| `time` | both | `now`, `after`, `every`, `cancel`: `rpf.time`'s timers |
+| `addons` | server | `API`, `API_MIN`, `register`, `state`, `provide`, `call` (`rpf.addons` above) |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
 | `staff` | server | `can`, `permissions`, `link`, `record` (F9, `rpf.staff` above) |
 | `config` | server | `item`, `item_base`, `item_defaults`, `employer`, `department`, `job`, `starting_accounts`, `default_job`, `setting`, `version`, and `edit` (E6, above) |
 | `auth` | client | `login`, `register`, `change_password`, `delete_account`, `logout`, `state`, `account`, `api_token`, `PASSWORD_REUSE_WARNING` |
 | `bridge` | — | Reserved for K2 (Milestone 2), nil now |
+
+**Nothing in it throws** (J1's rule for addons, `docs/architecture/addons.md`):
+a call that cannot do what it was asked returns nil (or false) and a reason
+string, documented on the call in `meta/api.lua`, and a handler that takes a
+function from a script takes a FiveM function reference too
+(`rpf.callable`). A handler the API runs for a script runs under `pcall`.
 
 Every member is a closure over its module or a plain value, never a module
 table, the connection or the platform, so nothing internal is reachable, and

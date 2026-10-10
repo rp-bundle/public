@@ -19,13 +19,21 @@
 
 ---The public API table.
 ---
----What is present follows the side: `players`, `staff` and `config` on the
----game server, `auth` on the player's client, and `VERSION`, `engine` and
----`events` on both. Every table in it is read-only.
+---What is present follows the side: `players`, `staff`, `config` and
+---`addons` on the game server, `auth` on the player's client, and
+---`VERSION`, `engine`, `events` and `time` on both. Every table in it is
+---read-only.
+---
+---**Nothing in it throws.** A call that cannot do what was asked returns nil
+---(or false) and a reason, a short string such as `"invalid"`, documented on
+---each call, so an addon's mistake is a value it can log, never an error in
+---the middle of a player's join.
 ---@class rpf.Api
 ---@field VERSION string The core's version. Informational: compatibility with the portal is the protocol version's business, not this.
 ---@field engine string Which engine is running: `"fivem"`, `"gmod"` or `"mock"`. Read-only, for server owners' scripts that must differ per engine; the core itself never branches on it.
 ---@field events rpf.api.Events The event bus. The only way scripts hear what the core does.
+---@field time rpf.api.Time The clock, and timers that run on every engine alike.
+---@field addons rpf.api.Addons Lua addons: registering one with its manifest, its state, and exports between addons (J1–J3). Server only.
 ---@field players rpf.api.Players? The players on this game server. Server only.
 ---@field staff rpf.api.Staff? In-game staff: what a linked staff member may do here, account linking, and staff actions for the audit log. Server only.
 ---@field config rpf.api.Config? Lookups over the config the portal pushed, and linked staff's edits of it in game. Server only.
@@ -53,6 +61,9 @@
 ---   `config.edit_refused(failure)`, an `rpf.ConfigEditFailure`, when it
 ---   refused one or never answered. The staff member has been told either
 ---   way. Server only.
+--- - `addons.state(change)`, an `rpf.AddonStateChange`, whenever a loaded
+---   addon's state changes (it started, it stopped, staff disabled it, …).
+---   Server only.
 --- - `staff.changed(change)`, an `rpf.StaffChange`, once for each player
 ---   whose staff permissions here changed: a push from the portal gave them
 ---   new ones or took some away, or they left. Server only.
@@ -69,16 +80,21 @@
 ---@class rpf.api.Events
 local Events = {}
 
----Registers a handler, called on every later emit of the name.
+---Registers a handler, called on every later emit of the name. A handler
+---an addon registers while its code runs (its `start`, a timer, another
+---handler) is the addon's, and is removed when the addon stops, so an addon
+---that subscribes in `start` is subscribed once however often it restarts.
 ---@param name string The event name, namespaced like `players.active`. Scripts use their own prefix for their own events.
 ---@param handler function Called with whatever the emit passes.
----@return function|string handler The same handler, for `off`. Through FiveM's export, a subscription id instead, since a function does not keep its identity across that boundary (`lua/platform/fivem/README.md`).
+---@return function|string|nil handler The same handler, for `off`. Through FiveM's export, a subscription id instead, since a function does not keep its identity across that boundary (`lua/platform/fivem/README.md`). Nil if refused.
+---@return "invalid"? err A name that is not a non-empty string, or a handler that is not a function.
 function Events.on(name, handler) end
 
 ---Registers a handler for the next emit of the name only.
 ---@param name string The event name.
 ---@param handler function Called once.
----@return function|string handler The same handler, so it can be removed with `off` before it fires. A subscription id through FiveM's export.
+---@return function|string|nil handler The same handler, so it can be removed with `off` before it fires. A subscription id through FiveM's export. Nil if refused.
+---@return "invalid"? err As for `on`.
 function Events.once(name, handler) end
 
 ---Removes every registration of a handler for a name. The function is the
@@ -89,12 +105,194 @@ function Events.once(name, handler) end
 function Events.off(name, handler) end
 
 ---Calls every handler for a name with the given arguments. Names under the
----core's prefixes (`players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `addons.`, `rpf.`) are refused with an
----error, so no script can forge a lifecycle event other scripts would believe.
+---core's prefixes (`players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `addons.`, `rpf.`) are refused,
+---so no script can forge a lifecycle event other scripts would believe; so
+---is a name under a loaded addon's namespace when the caller is known to be
+---another addon (a handler the core runs for one, or, on FiveM, any call
+---from another addon's resource), so one addon cannot forge another's
+---events.
 ---@param name string The event name.
 ---@param ... any Passed to every handler as is.
----@return integer failed How many handlers threw.
+---@return integer? failed How many handlers threw, or nil if refused.
+---@return rpf.EmitRefusal? err Why it was refused.
 function Events.emit(name, ...) end
+
+---Why `events.emit` refused.
+---@alias rpf.EmitRefusal
+---| "invalid" # The name is not a non-empty string.
+---| "reserved" # The name is under one of the core's prefixes.
+---| "forbidden" # The name is under another loaded addon's namespace.
+
+---The clock, and timers on the platform's clock, so a script's timer
+---behaves alike on every engine. A timer an addon starts while its code
+---runs is the addon's, and is cancelled when it stops. A callback that
+---throws is logged; an `every` keeps going. On FiveM, where a function
+---crossing an export becomes a reference, ids are strings for that reason.
+---@class rpf.api.Time
+local Time = {}
+
+---The wall clock.
+---@return number? now Milliseconds since the Unix epoch, an integer; nil only before the adapter has loaded.
+function Time.now() end
+
+---Runs a function once, later.
+---@param delay_ms integer Milliseconds, a whole number from 0 to 2147483647 (about 24.8 days).
+---@param fn function What to run.
+---@return string? id The timer, for `cancel`.
+---@return rpf.TimerRefusal? err Why not.
+function Time.after(delay_ms, fn) end
+
+---Runs a function every period, the first time one period from now, until
+---cancelled or its addon stops.
+---@param period_ms integer Milliseconds, a whole number from 10 to 2147483647.
+---@param fn function What to run.
+---@return string? id The timer, for `cancel`.
+---@return rpf.TimerRefusal? err Why not.
+function Time.every(period_ms, fn) end
+
+---Cancels a timer. Cancelling one that already ran or was cancelled is
+---harmless.
+---@param id string The id `after` or `every` returned.
+---@return boolean cancelled True if it was still to run.
+function Time.cancel(id) end
+
+---Why `time.after` or `time.every` refused.
+---@alias rpf.TimerRefusal
+---| "invalid" # The delay or period is not a whole number in range, or `fn` is not a function.
+---| "unavailable" # The adapter has not loaded yet.
+
+---Lua addons (`docs/architecture/addons.md`). An addon is a package with a
+---manifest: the types, fields and permissions it declares. It registers the
+---manifest here when it loads; the game server proposes it to the portal,
+---staff install it there, and only then does it run: its `start` handler is
+---called once the portal has it installed and enabled at exactly the
+---manifest it registered, with everything it `requires` running.
+---
+---```lua
+----- `rpf` is the API: the `rpf` resource's `api` export on FiveM, a global on Gmod
+---rpf.addons.register(MANIFEST, {
+---  start = function() rpf.time.every(60000, fade) end, -- stopped for you when it stops
+---  stop = function(reason) save_scores(reason) end,
+---})
+---```
+---
+---Registering the same namespace again is a reload: the old code stops and
+---the new starts. On FiveM an addon whose resource stops is unloaded with
+---it. Whatever an addon set up while its code ran (timers, event handlers,
+---exports) is taken down when it stops.
+---@class rpf.api.Addons
+---@field API integer The newest addon API major this core serves: what a new addon writes as its manifest's `api`.
+---@field API_MIN integer The oldest addon API major it still serves. An addon written for a major outside `API_MIN`..`API` stays in state `api` (`docs/compatibility.md`).
+local Addons = {}
+
+---Registers an addon with its manifest and the handlers the core runs for
+---it. Never throws: a manifest the shared rules refuse comes back with the
+---rule it breaks and where.
+---@param manifest rpf.AddonManifest The manifest.
+---@param handlers rpf.AddonHandlers? What to run when it starts, stops or changes state.
+---@return boolean? ok True once registered, which is not running: see `state`.
+---@return rpf.AddonRefusal? refusal Why not.
+function Addons.register(manifest, handlers) end
+
+---Where an addon is, and why.
+---@param namespace string The addon's namespace.
+---@return rpf.AddonState? state Nil if no addon of that namespace is loaded here.
+---@return string? reason Why, written for a server owner; nil when active.
+function Addons.state(namespace) end
+
+---Provides a function other addons call by name (`call`), so addons on
+---either engine share code the same way. The name is under the addon's own
+---namespace; one provided while its code runs goes when it stops.
+---@param name string `<namespace>.<name>`, both identifiers.
+---@param fn function The function. It runs in the providing addon's context; what it returns goes back to the caller (copied, through FiveM's export).
+---@return boolean? ok True once provided.
+---@return "invalid"|"not_found"|"forbidden"|nil err `invalid` for a bad name or a value that is not a function, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace.
+function Addons.provide(name, fn) end
+
+---Calls a function another addon provides, while that addon is active.
+---Never throws: a function that throws is logged and comes back as
+---`false, "failed"`.
+---@param name string `<namespace>.<name>`.
+---@param ... any Its arguments.
+---@return boolean ok True if it ran.
+---@return any ... What it returned; or, when `ok` is false, why: `"not_found"`, `"inactive"` or `"failed"`.
+function Addons.call(name, ...) end
+
+---Where an addon is.
+---@alias rpf.AddonState
+---| "active" # Installed, enabled, matching, its requirements active; its `start` ran.
+---| "not_installed" # The portal has not installed it, and it has not been proposed yet.
+---| "pending" # Proposed to the portal; staff have not installed it.
+---| "mismatch" # Installed with another manifest: the files on the server and the portal disagree.
+---| "disabled" # Staff disabled it in the portal.
+---| "api" # Written for an addon API major this core does not serve.
+---| "requires" # An addon it requires is not active here.
+---| "failed" # Its `start` handler threw. Tried again on the next config change or registration.
+
+---What an addon passes with its manifest. Each is optional.
+---@class rpf.AddonHandlers
+---@field start fun()? Runs when it becomes active. Set up timers and handlers here: they are taken down when it stops.
+---@field stop fun(reason: string)? Runs when it stops being active: disabled, a mismatch, reloaded, a config that no longer installs it.
+---@field state fun(state: rpf.AddonState, reason: string?)? Runs on every change of state.
+
+---Why `addons.register` refused, as the portal names the same rule.
+---@class rpf.AddonRefusal
+---@field error string The rule: a manifest rule (`version`, `bound`, `unknown`, …), `handlers` or `handler` for handlers that are not, `too_many` past the addons a server may load.
+---@field path string Where, like `types.tag.fields.text.max_len` or `handlers.strat`.
+
+---What `addons.state` carries.
+---@class rpf.AddonStateChange
+---@field namespace string The addon.
+---@field state rpf.AddonState Its new state.
+---@field reason string? Why.
+
+---An addon's manifest (`docs/architecture/addons.md`, "The manifest"):
+---data, never code, checked by the same rules here and in the portal.
+---Every key not listed is refused, so a typo fails at registration.
+---@class rpf.AddonManifest
+---@field namespace string `[a-z][a-z0-9_]{2,31}`, not reserved. Everything the addon declares is under it.
+---@field version string Its release, `MAJOR.MINOR.PATCH`.
+---@field api integer The addon API major it was written for: `rpf.addons.API` when written.
+---@field title string Shown to staff, at most 64 bytes.
+---@field requires table<string, string>? Other addons by namespace, each with a semver range (`^1.0`, `>=1.2.0`, `*`).
+---@field permissions table<string, string>? Its own flags, `addon.<namespace>.<name>`, each with a description for staff.
+---@field types table<string, rpf.AddonType>? Its types, by name.
+
+---One type an addon declares.
+---@class rpf.AddonType
+---@field schema integer Moves on every change to `fields`.
+---@field authority "config"|"live" `config`: staff write its records in the portal, and the server reads them. `live`: game state this server holds and writes.
+---@field owners ("player"|"character"|"employer"|"server")[]? Who may own a live type's records.
+---@field hold "owner"|"server"? When a live type's records are held (J6).
+---@field title string? Shown to staff.
+---@field fields table<string, rpf.AddonField> Its fields, by name: at least one, at most 64.
+---@field list string[]? The fields the portal's list shows.
+---@field actions table<string, string|false>? `view`, `create`, `edit`, `delete`, each the flag staff need, or false to offer none.
+---@field limit integer? The most records of it on a server, at most 50000.
+
+---One field of a type: its kind and its bounds.
+---@class rpf.AddonField
+---@field type "string"|"text"|"integer"|"number"|"boolean"|"enum"|"timestamp"|"vector3"|"ref"|"list"|"json" Its kind.
+---@field required boolean? Must have a value.
+---@field nullable boolean? May be cleared.
+---@field default any? What a record without it reads as.
+---@field index boolean? Queries may filter and order on it.
+---@field unique boolean? No two records share a value (an indexed field only).
+---@field title string? Shown to staff.
+---@field help string? Shown to staff under the input.
+---@field hidden boolean? Never shown in the portal.
+---@field read_only boolean? Shown, not editable by staff.
+---@field engine boolean? Engine-specific data (a model), stored as is.
+---@field max_len integer? A string's or text's most bytes.
+---@field min_len integer? A string's fewest bytes.
+---@field charset "identifier"|"printable"|"any"? What a string may hold.
+---@field min number? The least a number may be.
+---@field max number? The most a number may be.
+---@field values string[]? An enum's values.
+---@field to string? What a `ref` names: a type, or `player`, `character`, `employer`, `server`, `item`, `job`.
+---@field of string? A list's item kind.
+---@field max_items integer? A list's most items.
+---@field max_bytes integer? A json field's most bytes.
 
 ---The players on this game server. Read-only: players are moved by the core
 ---(the login flow) and by whichever module owns characters on the server.

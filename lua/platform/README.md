@@ -42,7 +42,11 @@ function.
    - `expose` publishes `rpf.api` the way scripts on this engine share code.
      Where each resource has its own Lua state, that is an export of a plain
      copy: read-only views do not survive serialisation, and neither does a
-     function's identity (FiveM's `shared.lua`).
+     function's identity (FiveM's `shared.lua`). Where the engine can say
+     which code is calling (a resource), each exported call names it to the
+     core (`rpf.addons.from`), and code that stops is unloaded
+     (`rpf.addons.unload_origin`), so an addon's timers and handlers go with
+     it.
 2. **The client platform table**, every member of `rpf.ClientPlatform`
    (`meta/platform_client.lua`), with the same rules where they overlap.
 3. **The engine events**, two lines each: a player handed over calls

@@ -178,6 +178,18 @@ keep the job the portal has.
   a session off after taking an account back at Rauthy, which does not end
   the portal's own sessions. Each guild the account is staff in logs it as
   `staff.sessions.end`, with how many sessions ended.
+- The addon API, part 1 (J3, #80). `rpf.api.addons` registers a Lua addon
+  with its manifest and `start`, `stop` and `state` handlers, reports its
+  state, serves addon API majors as a range (`API_MIN` to `API`), and lets
+  addons share functions by namespaced name (`provide`, `call`).
+  `rpf.api.time` has the clock and timers (`now`, `after`, `every`,
+  `cancel`) on every engine alike. Timers, event handlers and exports an
+  addon sets up while its code runs are taken down when it stops;
+  registering again reloads it; on FiveM a stopped resource's addons are
+  unloaded with it, and a handler may be another resource's function
+  reference. Nothing in `rpf.api` throws any more: `events.emit` of a core
+  name, or of another addon's namespace, returns `nil` and a reason rather
+  than raising ([Addons](docs/architecture/addons.md#the-lua-api)).
 
 ### Database
 

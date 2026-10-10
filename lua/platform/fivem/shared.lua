@@ -108,6 +108,22 @@ function shared.logger(verbose)
   end
 end
 
+---An API function as another resource calls it: the core is told which
+---resource is calling (`GetInvokingResource`), so what an addon's resource
+---sets up is its own, goes when the resource stops, and may not act under
+---another addon's namespace (`rpf.addons.from`). The client has no addons,
+---and calls straight through.
+---@param fn function The API function.
+---@return function wrapped The same call, naming its caller.
+function shared.from_caller(fn)
+  return function(...)
+    if not rpf.addons then
+      return fn(...)
+    end
+    return rpf.addons.from(GetInvokingResource(), fn, ...)
+  end
+end
+
 ---A plain copy of the public API, the shape an export can carry.
 ---
 ---`rpf.api` is read-only views, and FiveM serialises an export's result with
@@ -115,7 +131,8 @@ end
 ---tables. The member names come from `rpf.api_members`, which reads the
 ---tables behind the views, so the copy is whole on Lua 5.4 and LuaJIT alike.
 ---Functions in it cross as references, and calling one runs the closure in
----this resource's Lua state, where the core is.
+---this resource's Lua state, where the core is, naming the resource that
+---called it (`from_caller`).
 ---@param api rpf.Api The public API.
 ---@return table copy Plain tables, with the same members.
 function shared.export_copy(api)
@@ -127,7 +144,8 @@ function shared.export_copy(api)
     if nested then
       local inner = {}
       for _, key in ipairs(nested) do
-        inner[key] = value[key]
+        local member = value[key]
+        inner[key] = type(member) == "function" and shared.from_caller(member) or member
       end
       value = inner
     end
@@ -174,7 +192,8 @@ function shared.export_events(events)
   ---@param name string The event name.
   ---@param handler any What the other resource passed.
   ---@param one_shot boolean Whether the id goes once the handler has run.
-  ---@return string id The subscription's id, for `off`.
+  ---@return string? id The subscription's id, for `off`; nil if refused.
+  ---@return string? err Why it was refused.
   local function subscribe(register, name, handler, one_shot)
     count = count + 1
     local id = "rpf-subscription-" .. count
@@ -186,29 +205,29 @@ function shared.export_events(events)
         return call(...)
       end
     end
-    register(name, registered)
+    local ok, err = register(name, registered)
+    if not ok then
+      return nil, err
+    end
     subscriptions[id] = registered
     return id
   end
 
   return {
-    on = function(name, handler)
+    on = shared.from_caller(function(name, handler)
       return subscribe(events.on, name, handler, false)
-    end,
-    once = function(name, handler)
+    end),
+    once = shared.from_caller(function(name, handler)
       return subscribe(events.once, name, handler, true)
-    end,
-    off = function(name, id)
+    end),
+    off = shared.from_caller(function(name, id)
       local registered = subscriptions[id]
-      if not registered or not events.off(name, registered) then
-        return false
-      end
       subscriptions[id] = nil
-      return true
-    end,
-    emit = function(name, ...)
+      return registered ~= nil and events.off(name, registered)
+    end),
+    emit = shared.from_caller(function(name, ...)
       return events.emit(name, ...)
-    end,
+    end),
   }
 end
 

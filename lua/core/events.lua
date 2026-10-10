@@ -12,8 +12,9 @@
 --- - **A handler that throws is logged and skipped.** The handlers after it
 ---   still run, so one broken script cannot stop a player's join.
 --- - **Core event names are reserved.** Anything under `players.`, `config.`,
----   `auth.`, `records.`, `characters.`, `jobs.`, `staff.` or `rpf.` is emitted only by the core, so a
----   script cannot forge a lifecycle event that other scripts would believe.
+---   `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `addons.` or `rpf.` is emitted only by the core, so a
+---   script cannot forge a lifecycle event that other scripts would believe,
+---   and an addon's namespace is its own (`emit_public`).
 ---@class rpf.events
 ---@field RESERVED string[] Name prefixes only the core may emit. The public `emit` refuses them.
 ---@field MAX_DEPTH integer How deeply emits may nest (a handler emitting, whose handler emits, …) before the bus refuses, so a cycle is an error in the log rather than a stack overflow.
@@ -201,15 +202,24 @@ function events.emit(name, ...)
   return failed
 end
 
----The emit scripts get through the public API: the same, except that a
----reserved name is refused, so only the core can announce a lifecycle event.
----@param name string The event name. Not under a reserved prefix.
+---The emit scripts get through the public API: the same, except that it
+---never throws, and refuses what a script may not announce. A core name is
+---reserved, so only the core can announce a lifecycle event; a name under
+---a loaded addon's namespace is refused to code known to be someone else's
+---(`rpf.addons.may_use`, J3), so one addon cannot forge another's events.
+---@param name any The event name.
 ---@param ... any Passed to every handler.
----@return integer failed How many handlers threw.
+---@return integer? failed How many handlers threw, or nil if refused.
+---@return string? err `invalid` for a name that is not a non-empty string, `reserved` for a core name, `forbidden` for another addon's namespace.
 function events.emit_public(name, ...)
-  check_name(name, 3)
+  if type(name) ~= "string" or name == "" then
+    return nil, "invalid"
+  end
   if events.reserved(name) then
-    error("rpf: " .. name .. " is a core event; scripts cannot emit it", 2)
+    return nil, "reserved"
+  end
+  if rpf.addons and not rpf.addons.may_use(name) then
+    return nil, "forbidden"
   end
   return events.emit(name, ...)
 end

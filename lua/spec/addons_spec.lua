@@ -327,6 +327,83 @@ describe("rpf.addons", function()
       assert.are.equal("requires", (rpf.addons.state("acme_zoo")))
     end)
 
+    it("restarts what requires an addon after the addon reloads with the same manifest", function()
+      local ran = {}
+      rpf.addons.register(manifest("acme_zoo", nil, { acme_base = "^1.0.0" }), recording("acme_zoo", ran))
+      rpf.addons.register(manifest("acme_base"), recording("acme_base", ran))
+      support.connected(p)
+      configure(p, {
+        installed(manifest("acme_base")),
+        installed(manifest("acme_zoo", nil, { acme_base = "^1.0.0" })),
+      })
+      rpf.addons.register(manifest("acme_base"), recording("acme_base again", ran))
+      assert.are.same({
+        "start acme_base",
+        "start acme_zoo",
+        "stop acme_zoo",
+        "stop acme_base",
+        "start acme_base again",
+        "start acme_zoo",
+      }, ran)
+      assert.are.equal("active", (rpf.addons.state("acme_zoo")))
+      assert.are.equal(1, #declarations(p) - 1, "a reload of the same manifest is declared again, once")
+    end)
+
+    it("calls a FiveM function reference as a handler, and never skips one", function()
+      local started = 0
+      local reference = setmetatable({ __cfx_functionReference = "other:1" }, {
+        __call = function()
+          started = started + 1
+        end,
+      })
+      assert.is_true(rpf.addons.register(manifest("acme_kit"), { start = reference --[[@as fun()]] }))
+      support.connected(p)
+      configure(p, { installed(manifest("acme_kit")) })
+      assert.are.equal(1, started)
+    end)
+
+    it("keeps a refusal logged before the core started, and writes it out at start", function()
+      support.load_core()
+      local bad = manifest("acme_kit")
+      bad.version = "1"
+      assert.is_nil(rpf.addons.register(bad))
+      local fresh = support.fake_platform()
+      rpf.start_server(fresh, { url = "ws://portal", api_key = "rpf_test_secret" })
+      local found = false
+      for _, line in ipairs(fresh.logs) do
+        found = found or (line.level == "error" and line.message:find("manifest was refused", 1, true) ~= nil)
+      end
+      assert.is_true(found)
+    end)
+
+    it("keeps the origin of a registration a handler makes, and unloads it with the origin", function()
+      rpf.addons.from("acme_res", function()
+        rpf.addons.register(manifest("acme_kit"), {
+          start = function()
+            rpf.addons.register(manifest("acme_late"))
+          end,
+        })
+      end)
+      support.connected(p)
+      configure(p, { installed(manifest("acme_kit")), installed(manifest("acme_late")) })
+      assert.are.equal("active", (rpf.addons.state("acme_late")))
+      rpf.addons.unload_origin("acme_res")
+      assert.is_nil(rpf.addons.state("acme_kit"))
+      assert.is_nil(rpf.addons.state("acme_late"))
+      local last = declarations(p)[#declarations(p)]
+      assert.are.same({}, last.loaded, "the portal is told they are gone")
+    end)
+
+    it("lets code nobody can name act under any namespace, and an addon's code only under its own", function()
+      rpf.addons.register(manifest("acme_kit"))
+      assert.is_true(rpf.addons.may_use("acme_kit.ping"))
+      assert.is_true(rpf.addons.may_use("scripts.ping"))
+      rpf.addons.from("acme_other", function()
+        assert.is_false(rpf.addons.may_use("acme_kit.ping"))
+        assert.is_true(rpf.addons.may_use("acme_free.ping"), "not a loaded addon's")
+      end)
+    end)
+
     it("gives an active addon's types and config records, and nothing while it is not", function()
       rpf.addons.register(manifest("acme_kit"))
       support.connected(p)
