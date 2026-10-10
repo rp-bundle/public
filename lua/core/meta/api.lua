@@ -1445,7 +1445,7 @@ local Bridge = {}
 ---changes nothing.
 ---@param bridge rpf.BridgeDefinition The bridge.
 ---@return boolean? ok True once registered: active, or waiting for the profile.
----@return "invalid"|"contract"|"registered"|nil err `invalid` for a field the contract does not allow (the third value names it), `contract` for another major, `registered` when a bridge is already.
+---@return "invalid"|"contract"|"registered"|"start"|nil err `invalid` for a field the contract does not allow (the third value names it), `contract` for another major, `registered` when a bridge is already, `start` when it activated at once and its `start` threw, which withdrew it (logged).
 ---@return string? field For `invalid`, which field.
 function Bridge.register(bridge) end
 
@@ -1455,7 +1455,7 @@ function Bridge.register(bridge) end
 ---@param player any The engine's handle.
 ---@param character rpf.BridgeCharacter The character: the framework's key and its name.
 ---@return boolean? ok True once the player is active with it.
----@return "forbidden"|"inactive"|"invalid"|"not_found"|"not_registered"|"superseded"|nil err `forbidden` from code other than the bridge's, `inactive` while it is not active, `invalid` for a key or name that is not one, `not_found` for a player not here, `not_registered` for one who has not logged in to RPF (the framework loaded a character past RPF's gate; logged), `superseded` when the bridge reported another character while this one was moving the player (answering `players.character_select` at once), which stands.
+---@return "forbidden"|"inactive"|"unavailable"|"invalid"|"not_found"|"not_registered"|"superseded"|nil err `forbidden` from code other than the bridge's, `inactive` while it is not active, `unavailable` while the bridge says its framework is (the player stays where they are: report the character again once it is `available`), `invalid` for a key or name that is not one, `not_found` for a player not here, `not_registered` for one who has not logged in to RPF (the framework loaded a character past RPF's gate; logged), `superseded` when the bridge reported another character while this one was moving the player (answering `players.character_select` at once), which stands.
 function Bridge.character_loaded(player, character) end
 
 ---Reports that a player's framework character is unloaded: the player
