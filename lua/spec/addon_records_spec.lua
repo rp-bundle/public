@@ -241,6 +241,30 @@ describe("live addon records", function()
     assert.are.equal(record.id, whole.records[#whole.records].id)
   end)
 
+  it("leave a record whose create has not gone out of the declaration after a reconnect", function()
+    local p = farmed()
+    local record = assert(rpf.records.create_addon_record(
+      "acme_farm.field",
+      { kind = "player", id = PLAYER },
+      { label = "Before the flush" }
+    ))
+    p.drop("gone")
+    p.advance(2 * 60 * 1000)
+    p.open()
+    local hellos = sent_of(p, "hello")
+    p.deliver(support.portal_frame("welcome", {
+      re = hellos[#hellos].id,
+      protocol = rpf.protocol.VERSION,
+      server_id = "00000001-0000-4000-8000-000000000001",
+    }))
+    p.advance(FLUSH)
+    local declared = last_of(p, "declare_holds")
+    for _, ref in ipairs(declared.records) do
+      assert.are_not.equal(record.id, ref.id)
+    end
+    assert.is_true(rpf.records.is_held("addon_record", record.id))
+  end)
+
   it("refuse a create of a type the server does not run, or for an owner it does not take", function()
     farmed()
     assert.are.equal(

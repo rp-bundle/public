@@ -1074,7 +1074,13 @@ function sync.check_declaration()
   end
   local held = {}
   for _, ref in ipairs(records.held()) do
-    held[#held + 1] = { kind = ref.kind, id = ref.id, revision = records.revision(ref.kind, ref.id) }
+    -- An addon record whose create the portal has not had is not one it
+    -- could say this server holds: declared, it would come back released,
+    -- and be forgotten before its create went (J2). Its create is its hold.
+    local entry = records.entries[records.key(ref.kind, ref.id)]
+    if not (entry and entry.created) then
+      held[#held + 1] = { kind = ref.kind, id = ref.id, revision = records.revision(ref.kind, ref.id) }
+    end
   end
   local id
   id = connection:send("declare_holds", { records = held }, function(reply, err)
