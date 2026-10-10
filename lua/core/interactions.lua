@@ -91,6 +91,15 @@ local function copy(value)
   return out
 end
 
+---Whether a value is a name an addon could register an interaction under:
+---`<namespace>.<name>`, identifiers, at most 64 bytes. The one rule the
+---server registers by, answers by, and the client sends by.
+---@param name any The value.
+---@return boolean ok True if it is one.
+function interactions.is_name(name)
+  return type(name) == "string" and #name <= 64 and name:match("^[a-z][a-z0-9_]*%.[a-z][a-z0-9_]*$") ~= nil
+end
+
 -- The server ----------------------------------------------------------------
 
 ---Registers an addon's interaction. Registering a name again replaces it;
@@ -103,13 +112,10 @@ function interactions.register(name, handler)
   if not rpf.addons then
     return nil, "invalid"
   end
-  if type(name) ~= "string" or #name > 64 or not rpf.callable(handler) then
+  if not interactions.is_name(name) or not rpf.callable(handler) then
     return nil, "invalid"
   end
-  local namespace = name:match("^([a-z][a-z0-9_]*)%.[a-z][a-z0-9_]*$")
-  if not namespace then
-    return nil, "invalid"
-  end
+  local namespace = name:match("^([^.]+)%.")
   if rpf.addons.state(namespace) == nil then
     return nil, "not_found"
   end
@@ -204,7 +210,7 @@ local function on_interact(player, payload)
   local name = request.name
   -- Only a name an addon could have registered gets an answer, which
   -- echoes it: anything else is dropped here.
-  if #name > 64 or not name:match("^[a-z][a-z0-9_]*%.[a-z][a-z0-9_]*$") then
+  if not interactions.is_name(name) then
     p.log("debug", "rpf: dropped an interaction with a name no addon can register")
     return
   end
@@ -255,13 +261,13 @@ end
 ---@param name any The interaction's name.
 ---@param payload any? A table of plain data, at most `handoff.MAX_PAYLOAD` bytes encoded.
 ---@return boolean? ok True once sent.
----@return string? err `invalid` for a name or payload that is not one, `too_large`, or `unavailable` before the client has started.
+---@return string? err `invalid` for a name that is not `<namespace>.<name>` or a payload that is not plain data, `too_large`, or `unavailable` before the client has started.
 function interactions.send(name, payload)
   local p = platform --[[@as rpf.ClientPlatform?]]
   if not p or not p.to_server then
     return nil, "unavailable"
   end
-  if type(name) ~= "string" or #name > 64 or (payload ~= nil and (type(payload) ~= "table" or not plain(payload, 0))) then
+  if not interactions.is_name(name) or (payload ~= nil and (type(payload) ~= "table" or not plain(payload, 0))) then
     return nil, "invalid"
   end
   local fields = { name = name }

@@ -48,12 +48,21 @@ describe("rpf.interactions", function()
       wrong = "text"
       assert.are.same({ nil, "invalid" }, { rpf.api.interactions.send("acme_tags.spray", wrong) })
       assert.are.same({ nil, "invalid" }, { rpf.api.interactions.send("acme_tags.spray", { fn = print }) })
+      assert.are.same({ nil, "invalid" }, { rpf.api.interactions.send("spray", {}) }, "not a namespaced name")
+      assert.are.same({ nil, "invalid" }, { rpf.api.interactions.send("", {}) })
       assert.are.same({ nil, "too_large" }, { rpf.api.interactions.send("acme_tags.spray", { text = string.rep("x", 5000) }) })
       assert.are.equal(before, #c.to_servers)
     end)
 
     it("reserves its event: a script cannot forge an answer", function()
       assert.are.same({ nil, "reserved" }, { rpf.api.events.emit("interactions.result", {}) })
+    end)
+
+    it("reserves its event area as a namespace no addon may take", function()
+      support.load_core("server")
+      local refused, why = rpf.manifest.check({ namespace = "interactions", version = "1.0.0", api = 1, title = "x" })
+      assert.is_nil(refused)
+      assert.are.equal("reserved", assert(why).error)
     end)
   end)
 
