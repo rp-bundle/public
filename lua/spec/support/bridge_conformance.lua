@@ -50,6 +50,7 @@ local COMPANION = { characters = "external", money = "external", inventory = "ex
 ---@field accounts string[] The account names the bridge lists; the cases use the first two, or the one twice (DarkRP's `wallet`).
 ---@field item string? An item the framework knows, for the inventory cases; nil when the bridge supports no item call.
 ---@field job boolean Whether the bridge reads jobs.
+---@field platforms string[]? The platforms it runs on, when it is one engine's: a FiveM bridge's players are server ids, never a Gmod `Player`, so it runs on `fivem` and on `mock`, whose handles are numbers too. Every platform unless given.
 
 ---What the cases do to the framework: the same for every bridge's fake.
 ---Call names are the facade's (`money.debit`), whatever the framework's own.
@@ -66,6 +67,7 @@ local COMPANION = { characters = "external", money = "external", inventory = "ex
 ---@field inside_next fun(self, call: string, fn: fun()) Runs `fn` inside the next call, once it changed the state: where a crash goes.
 ---@field forget_listeners fun(self) The bridge's resource restarted: the event handlers its old code subscribed go.
 ---@field shown table<any, integer> How many times the framework's character selection was shown to each player.
+---@field loaded fun(self, player: any): string? The key of the character the framework has loaded for a player, if any.
 
 ---An addon a composite operation grants a record of: badges a player owns.
 ---@return table manifest The manifest.
@@ -178,9 +180,20 @@ function suite.cases(kit)
         assert(world.core.players.authenticating(handle))
         assert.is_nil(fw.shown[handle], "no selection before the RPF login")
         fw:load(handle, "CIT-JANE", "Jane Doe")
-        assert.are.equal("authenticating", world.api.players.get(handle).state)
-        assert.are.same({ nil, "not_logged_in" }, { world.api.characters.current(handle) })
-        assert.are.equal(1, world:logged("warn", "its login gate is not holding"))
+        local api = world.api
+        assert.are.equal("authenticating", api.players.get(handle).state)
+        assert.are.same({ nil, "not_logged_in" }, { api.characters.current(handle) })
+        assert.are.same({ nil, "not_logged_in" }, { api.money.balance(handle, kit.accounts[1]) })
+        assert.are.same({ nil, "refused", "not_logged_in" }, { api.money.debit(handle, kit.accounts[1], 1, "x", api.ops.new()) })
+        assert.is_nil(fw.changes["money.debit"])
+        if fw:loaded(handle) then
+          -- The framework loaded it past the bridge: the core refuses it,
+          -- and says the gate is not holding.
+          assert.are.equal(1, world:logged("warn", "its login gate is not holding"))
+        else
+          -- The bridge held the gate itself: nothing was loaded to refuse.
+          assert.are.equal(0, world:logged("warn", "its login gate is not holding"))
+        end
       end,
     },
     {
@@ -454,11 +467,11 @@ function suite.cases(kit)
   }
 end
 
----Runs every case for a bridge on every platform.
+---Runs every case for a bridge on every platform it runs on.
 ---@param busted spec.Busted The spec file's busted functions.
 ---@param kit spec.BridgeKit The bridge.
 function suite.run(busted, kit)
-  conformance.run(busted, "the " .. kit.name .. " bridge", suite.cases(kit))
+  conformance.run(busted, "the " .. kit.name .. " bridge", suite.cases(kit), kit.platforms)
 end
 
 return suite
