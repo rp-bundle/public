@@ -558,6 +558,42 @@ conformance.run(busted, "addon records", {
     end,
   },
   {
+    name = "answers a create whatever its event's listeners do to the record",
+    run = function(world)
+      local api = installed(world)
+      api.events.on("records.created", function(change)
+        api.records.delete(change.type, change.id)
+      end)
+      local record, err = api.records.create("acme_tags.tag", tag("brief"), OWNER)
+      assert.is_nil(err)
+      assert.are.equal("brief", record.fields.text)
+      assert.are.same({ nil, "not_held" }, { api.records.get("acme_tags.tag", record.id) })
+    end,
+  },
+  {
+    name = "hands a query's json fields over whole, as get does",
+    run = function(world)
+      local api = installed(world)
+      local json = world.core.json
+      world.portal.records[TAG] = {
+        id = TAG,
+        type = "acme_tags.mark",
+        owner = { kind = "player", id = PLAYER },
+        revision = 1,
+        fields = { label = "m", meta = json.object({ gap = json.array({ json.null, 1 }) }) },
+        held = false,
+      }
+      local page
+      assert(api.records.query("acme_tags.mark", {}, function(found)
+        page = found
+      end))
+      world:pump()
+      local gap = page[1].fields.meta.gap
+      assert.are.equal(2, #gap, "no hole where the null was")
+      assert.are.equal(1, gap[2])
+    end,
+  },
+  {
     name = "lets a start handler write the records of its own addon",
     run = function(world)
       local m = tags()

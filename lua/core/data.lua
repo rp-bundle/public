@@ -502,7 +502,9 @@ function data.query(type_name, query, callback)
     if found then
       page = {}
       for i, record in ipairs(found) do
-        page[i] = plain(record)
+        local copy = plain(record)
+        copy.fields = fields_of(def, record.fields)
+        page[i] = copy
       end
     end
     local ran, thrown = rpf.addons.run(ctx, callback, page, plain(next_page), failure)
@@ -731,9 +733,11 @@ function data.create(type_name, fields, opts)
   if not made then
     return nil, failed, rule
   end
-  local record = assert(data.get(type_name, made.id))
-  data.announce("records.created", { type = type_name, id = made.id, record = record, by = "addon" })
-  return assert(data.get(type_name, made.id))
+  -- Taken before the event: a listener may delete the record, or stop its
+  -- addon, and the create has happened either way.
+  local result = assert(data.get(type_name, made.id))
+  data.announce("records.created", { type = type_name, id = made.id, record = data.get(type_name, made.id), by = "addon" })
+  return result
 end
 
 ---A value a script wrote, with every empty table it holds marked as the
@@ -854,9 +858,9 @@ function data.update(type_name, id, patch, opts)
   if not done then
     return nil, failed, rule
   end
-  local record = view_of(plan.entry)
-  data.announce("records.changed", { type = type_name, id = plan.entry.id, record = record, by = "addon" })
-  return view_of(plan.entry)
+  local result = view_of(plan.entry)
+  data.announce("records.changed", { type = type_name, id = plan.entry.id, record = view_of(plan.entry), by = "addon" })
+  return result
 end
 
 ---Checks a deletion without making it.
