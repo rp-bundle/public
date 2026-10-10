@@ -221,7 +221,12 @@ its connection's protocol `malformed` before dispatch
 (`ServerToPortal::protocol`, exhaustive, so a new message says which version
 it is new in), and no handler is reached by one;
 `a_core_on_the_previous_protocol_cannot_edit_config` (the fake game server)
-holds it. The next message or nested variant the portal gains follows the
+holds it. Addons (J2, protocol 2, `protocol::ADDONS_PROTOCOL`) are the
+fifth, both ways: `declare_addons` and `query_records`, and any record frame
+naming an addon record, are refused on an older connection at the socket;
+the portal hands no addon record to one (a hold of an owner leaves them
+out) and sends it no addon command (the registry treats it as offline for
+one). The next message or nested variant the portal gains follows the
 same pattern: a `<NAME>_PROTOCOL` constant beside the type, and the check in
 the one place that sends it, or for a message a game server sends, its
 version in `ServerToPortal::protocol`.

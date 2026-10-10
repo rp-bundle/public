@@ -219,10 +219,21 @@ local function full_report(entry)
       end
       report.transactions[#report.transactions + 1] = wire_transaction(tx)
     end
+  elseif entry.kind == "addon_record" then
+    report.fields = entry.data.fields
   else
     report.contents = entry.data.contents
   end
   return report
+end
+
+---Whether an addon record is reported only as its create or its deletion,
+---never whole: the portal has not had the one, and must not be handed the
+---record again after the other.
+---@param entry rpf.records.Entry The record.
+---@return boolean pending True while its create or deletion is unreported.
+local function addon_pending(entry)
+  return entry.created ~= nil or entry.deleted == true
 end
 
 ---What changed in a record since its last report, as `state_changed` names
@@ -258,6 +269,31 @@ local function change_of(entry)
     if #change.transactions == 0 then
       return nil
     end
+  elseif entry.kind == "addon_record" then
+    -- A create carries every field as it is now, so the changes made since
+    -- go with it; a deletion carries nothing else.
+    if entry.created == "pending" then
+      return {
+        kind = "addon_record_created",
+        id = entry.id,
+        type = entry.data.type,
+        owner = entry.data.owner,
+        fields = entry.data.fields,
+      }
+    end
+    if entry.created then
+      return nil
+    end
+    if entry.deleted then
+      if entry.delete_sent then
+        return nil
+      end
+      return { kind = "addon_record_deleted", id = entry.id, base_revision = entry.revision }
+    end
+    if not entry.changed.fields or not entry.patch then
+      return nil
+    end
+    change.patch = entry.patch
   else
     if not entry.changed.contents then
       return nil
@@ -337,6 +373,21 @@ local function settle_report(id, reply, err)
     resync(sent.keys, {})
     return
   end
+  if reply.type == "state_applied" or reply.type == "resync_required" then
+    -- A create lands whatever the frame is answered with; a deletion only
+    -- with the frame.
+    for _, key in ipairs(sent.keys) do
+      local entry = records.entries[key]
+      if entry and entry.created == "sent" then
+        entry.created = nil
+      end
+      if entry and entry.delete_sent and reply.type == "state_applied" then
+        records.entries[key] = nil
+      elseif entry and entry.delete_sent then
+        entry.delete_sent = nil
+      end
+    end
+  end
   if reply.type == "state_applied" then
     for _, key in ipairs(sent.keys) do
       local entry = records.entries[key]
@@ -380,6 +431,16 @@ local function settle_report(id, reply, err)
         entry.alone = true
         entry.resync = true
         entry.recovering = #sent.keys > 1 or nil
+        -- An addon record's create goes again as a create; a deletion the
+        -- portal refused (another record refers to it) is undone here,
+        -- and the record reported whole.
+        if entry.created == "sent" then
+          entry.created = "pending"
+          entry.revision = 0
+        end
+        if entry.delete_sent then
+          entry.deleted, entry.delete_sent = nil, nil
+        end
       end
     end
     if #sent.keys > 1 then
@@ -510,6 +571,13 @@ end
 local function change_sent(entry, change)
   entry.revision = entry.revision + 1
   entry.changed = {}
+  if change.kind == "addon_record_created" then
+    entry.created = "sent"
+  elseif change.kind == "addon_record_deleted" then
+    entry.delete_sent = true
+  elseif change.kind == "addon_record" then
+    entry.patch = nil
+  end
   mark_carried(entry, change)
   entry.more = false
   for _, tx in ipairs(entry.transactions) do
@@ -557,14 +625,14 @@ function sync.flush()
   local ok = send_all(
     "resync",
     select_entries(function(entry)
-      return entry.resync and not entry.awaiting
+      return entry.resync and not entry.awaiting and not addon_pending(entry)
     end),
     full_report,
     whole_sent
   )
   if ok then
     ok = send_changes(function(entry)
-      return not entry.resync and change_of(entry) ~= nil
+      return (not entry.resync or addon_pending(entry)) and change_of(entry) ~= nil
     end, function(entry)
       return change_of(entry) --[[@as table]]
     end, change_sent)
@@ -600,7 +668,7 @@ end
 ---@param record table One of the reply's records.
 ---@return string key Its `records.key`.
 local function held_key(record)
-  local data = record.character or record.account or record.container
+  local data = record.character or record.account or record.container or record.record
   return records.key(record.kind, data.id)
 end
 
@@ -630,7 +698,7 @@ local function send_hold(hold)
       for _, record in ipairs(reply.records) do
         local key = held_key(record)
         if not records.entries[key] and (released_at[key] or 0) > sent_at then
-          local data = record.character or record.account or record.container
+          local data = record.character or record.account or record.container or record.record
           superseded[#superseded + 1] = { kind = record.kind, id = data.id }
         end
       end
@@ -643,7 +711,7 @@ local function send_hold(hold)
       end
       views = {}
       for _, record in ipairs(reply.records) do
-        local data = record.character or record.account or record.container
+        local data = record.character or record.account or record.container or record.record
         views[#views + 1] = records.get(record.kind, data.id)
       end
       events.emit("records.held", views)

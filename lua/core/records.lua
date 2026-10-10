@@ -44,7 +44,7 @@ local rpf = rpf
 local json = rpf.json
 local events = rpf.events
 
----@alias rpf.RecordKind "character"|"account"|"container"
+---@alias rpf.RecordKind "character"|"account"|"container"|"addon_record"
 
 ---A record by kind and id, as the protocol names one.
 ---@class rpf.RecordRef
@@ -78,8 +78,12 @@ local events = rpf.events
 ---@field awaiting string? The whole report in flight for it, by frame id: no other whole report on it is sent until that one is answered. Only `rpf.sync` sets it.
 ---@field recovering boolean? Whether its whole report recovers one the portal answered stale or refused, and has not been queued yet: holds wait for it as for the report it recovers. Only `rpf.sync` sets it.
 ---@field alone boolean? Whether it is reported in a frame of its own, because a frame carrying it was refused, until one is applied. Only `rpf.sync` sets it.
+---@field patch table? On an addon record, the fields changed since the last report, each at its new value or `json.null` if cleared: what its next change carries.
+---@field created "pending"|"sent"? On an addon record this server created, until the portal has it: `pending` until a frame carries the create, `sent` until that frame is answered. Such a record is only ever reported as its create, never whole.
+---@field deleted boolean? On an addon record this server deleted: reported as its deletion, never whole, and forgotten once the portal has it.
+---@field delete_sent boolean? On a deleted addon record, whether a frame carries its deletion. Only `rpf.sync` sets it.
 
-records.KINDS = { character = true, account = true, container = true }
+records.KINDS = { character = true, account = true, container = true, addon_record = true }
 records.MAX_DESCRIPTION_BYTES = 256
 records.MAX_NAME_BYTES = 64
 
@@ -171,6 +175,10 @@ function records.current(kind, id, revision)
   if entry.revision ~= revision or entry.resync or next(entry.changed) ~= nil then
     return nil, "changed"
   end
+  -- An addon record whose create or deletion the portal has not had yet.
+  if entry.created or entry.deleted then
+    return nil, "changed"
+  end
   for _, tx in ipairs(entry.transactions) do
     if not tx.sent then
       return nil, "changed"
@@ -197,6 +205,8 @@ function records.take(held, through)
     elseif record.kind == "account" then
       data = json.copy(record.account)
       data.balance = record.balance
+    elseif record.kind == "addon_record" then
+      data = record.record
     else
       data = record.container
     end
@@ -594,6 +604,192 @@ function records.adjust(account_id, funds_account, amount, client_id, descriptio
   }
   touched()
   return client_id
+end
+
+-- Addon records (J2) ------------------------------------------------------
+
+---A live addon record's type, from the installed config, if its addon may
+---write here now.
+---@param type_name any The type's full name.
+---@return table? def The type's installed definition.
+---@return string? err `"inactive"` when its addon is not active here, `"invalid"` for a type that is not a live type of one.
+local function writable_type(type_name)
+  if type(type_name) ~= "string" then
+    return nil, "invalid"
+  end
+  local namespace = string.match(type_name, "^([^.]+)%.")
+  local def = rpf.addons.definition(type_name)
+  if not def or def.authority ~= "live" then
+    return nil, "invalid"
+  end
+  if rpf.addons.state(namespace) ~= "active" then
+    return nil, "inactive"
+  end
+  return def
+end
+
+---Creates a live addon record of an active addon (J2), held here from the
+---start: the portal has it once the next report carries its create. Its
+---fields are checked whole against the type's installed definition
+---(`rpf.manifest.check_fields`) and its owner against the kinds the type
+---allows; the portal checks both again, and its references, and refuses
+---the report otherwise.
+---@param type_name string The type's full name, `<namespace>.<name>`.
+---@param owner { kind: string, id: string } Who it belongs to.
+---@param fields table Its fields.
+---@param id string? Its id, minted here if not given: a uuid unique on this server.
+---@return table? record A copy: `{ id, type, owner, fields }`.
+---@return string? err `"invalid"`, `"inactive"`, or `"conflict"` for an id this server already holds.
+---@return table? refusal For `"invalid"`, the rule its fields break.
+function records.create_addon_record(type_name, owner, fields, id)
+  local def, err = writable_type(type_name)
+  if not def then
+    return nil, err
+  end
+  if type(owner) ~= "table" or type(owner.kind) ~= "string" or type(owner.id) ~= "string" then
+    return nil, "invalid"
+  end
+  local allowed = false
+  for _, kind in ipairs(def.owners or {}) do
+    allowed = allowed or kind == owner.kind
+  end
+  if not allowed then
+    return nil, "invalid"
+  end
+  local checked, refusal = rpf.manifest.check_fields(def, fields)
+  if not checked then
+    return nil, "invalid", refusal
+  end
+  id = id or rpf.protocol.new_id(rpf.sync.platform)
+  local key = records.key("addon_record", id)
+  if records.entries[key] then
+    return nil, "conflict"
+  end
+  local entry = {
+    kind = "addon_record",
+    id = id,
+    revision = 0,
+    data = {
+      id = id,
+      type = type_name,
+      owner = json.object({ kind = owner.kind, id = owner.id }),
+      fields = checked,
+    },
+    changed = {},
+    transactions = {},
+    resync = false,
+    created = "pending",
+  }
+  records.entries[key] = entry
+  touched()
+  return view(entry)
+end
+
+---Changes fields of a held addon record (J2): the patch names only what it
+---changes, `json.null` clearing a field, and the result is checked whole
+---against the type's installed definition (`rpf.manifest.apply_patch`). A
+---disabled addon's records may still be changed while held: the holder's
+---final state must land.
+---@param id string The record's uuid.
+---@param patch table The fields to set.
+---@return table? record A copy of the record as it is now.
+---@return string? err `"not_held"` or `"invalid"`.
+---@return table? refusal For `"invalid"`, the rule the result breaks.
+function records.set_addon_fields(id, patch)
+  local entry = records.entries[records.key("addon_record", id)]
+  if not entry or entry.deleted then
+    return nil, "not_held"
+  end
+  local def = rpf.addons.definition(entry.data.type)
+  if not def then
+    return nil, "invalid"
+  end
+  local fields, refusal = rpf.manifest.apply_patch(def, entry.data.fields, patch)
+  if not fields then
+    return nil, "invalid", refusal
+  end
+  entry.data.fields = fields
+  if not entry.created then
+    entry.patch = entry.patch or json.object({})
+    for name in pairs(patch) do
+      local value = fields[name]
+      if value == nil then
+        value = json.null
+      end
+      entry.patch[name] = value
+    end
+    entry.changed.fields = true
+  end
+  touched()
+  return view(entry)
+end
+
+---Deletes a held addon record (J2). The portal deletes it with the next
+---report, and refuses one another live record refers to; this server
+---stops holding it either way once that report is answered. One whose
+---create has not left yet is simply dropped: the portal never had it.
+---@param id string The record's uuid.
+---@return boolean? ok True once it is marked deleted.
+---@return string? err `"not_held"`.
+function records.delete_addon_record(id)
+  local key = records.key("addon_record", id)
+  local entry = records.entries[key]
+  if not entry or entry.deleted then
+    return nil, "not_held"
+  end
+  if entry.created == "pending" then
+    records.entries[key] = nil
+    return true
+  end
+  entry.deleted = true
+  entry.patch = nil
+  entry.changed = {}
+  touched()
+  return true
+end
+
+---Asks the portal for live addon records of a type that match a query
+---(J2): how a server finds records it does not hold, to hold them. The
+---answer is a page of replicas, each with the revision the portal has and
+---whether this server holds it; to change one, hold it first. The query is
+---`rpf_domain::addons::query::RecordQuery` as JSON: `filters` (`field`,
+---`op` of `eq`, `lt`, `lte`, `gt`, `gte` or `prefix`, `value`) on indexed
+---fields, `owner`, `schema`, `order`, `descending`, `after` (a page's
+---`next`) and `limit`.
+---@param type_name string The type's full name.
+---@param query table The query.
+---@param callback fun(records: table[]?, next: table?, err: string?) Called once: the records and the next page's cursor, or nil and why.
+---@return boolean? ok True once the query is queued.
+---@return string? err `"inactive"` or `"invalid"` for a type this server cannot query, or the outbox's refusal.
+function records.query_addon_records(type_name, query, callback)
+  local _, err = writable_type(type_name)
+  if err then
+    return nil, err
+  end
+  if type(query) ~= "table" then
+    return nil, "invalid"
+  end
+  local copy = json.copy(query)
+  if not json.is_object(copy) then
+    copy = json.object(copy)
+  end
+  local _, sent = rpf.connection:send("query_records", { type_name = type_name, query = copy }, function(reply, why)
+    if reply and reply.type == "records_queried" then
+      local next_page = reply.next
+      if next_page == json.null then
+        next_page = nil
+      end
+      callback(reply.records, next_page, nil)
+    elseif reply then
+      callback(nil, nil, reply.code or reply.type)
+    else
+      callback(nil, nil, why)
+    end
+  end)
+  if sent then
+    return nil, sent
+  end
+  return true
 end
 
 rpf.records = records

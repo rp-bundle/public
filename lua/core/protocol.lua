@@ -479,6 +479,17 @@ local COMMAND = tagged("command", {
     { "character_id", UUID },
     { "base_revision", U64 },
   },
+  -- A held addon record's fields (J2): the patch is the addon's data,
+  -- checked against the type's definition by `rpf.records`.
+  edit_addon_record = {
+    { "record_id", UUID },
+    { "base_revision", U64 },
+    { "patch", OPAQUE_OBJECT },
+  },
+  delete_addon_record = {
+    { "record_id", UUID },
+    { "base_revision", U64 },
+  },
 })
 
 local OUTCOME = tagged("outcome", {
@@ -613,7 +624,7 @@ local CONFIG_CHANGE = tagged("change", {
 
 -- Records (C7) ------------------------------------------------------------
 
-local RECORD_KIND = enum({ "character", "account", "container" })
+local RECORD_KIND = enum({ "character", "account", "container", "addon_record" })
 
 ---`RecordRef`: one held record, by kind and id.
 local RECORD_REF = object({
@@ -684,6 +695,26 @@ local CONTAINER = object({
   { "flags", array_of(OPAQUE_OBJECT) },
 })
 
+---`HeldAddonRecord`: a live addon record as the portal hands it over (J2).
+---Its fields are the addon's data, kept as they are.
+local ADDON_RECORD = object({
+  { "id", UUID },
+  { "type", STRING },
+  { "owner", OWNER_REF },
+  { "fields", OPAQUE_OBJECT },
+})
+
+---`QueriedRecord`: a live addon record a query found (J2), with the
+---revision the portal has it at and whether this server holds it.
+local QUERIED_RECORD = object({
+  { "id", UUID },
+  { "type", STRING },
+  { "owner", OWNER_REF },
+  { "revision", U64 },
+  { "held", BOOLEAN },
+  { "fields", OPAQUE_OBJECT },
+})
+
 ---`HeldRecord`: a record as the portal hands it over in `Held`.
 local HELD_RECORD = tagged("kind", {
   character = {
@@ -698,6 +729,10 @@ local HELD_RECORD = tagged("kind", {
   container = {
     { "revision", U64 },
     { "container", CONTAINER },
+  },
+  addon_record = {
+    { "revision", U64 },
+    { "record", ADDON_RECORD },
   },
 })
 
@@ -733,6 +768,11 @@ local RECORD_REPORT = tagged("kind", {
     { "revision", U64 },
     { "contents", OPAQUE_OBJECT },
   },
+  addon_record = {
+    { "id", UUID },
+    { "revision", U64 },
+    { "fields", OPAQUE_OBJECT },
+  },
 })
 
 ---`StateChange`: what changed in one record since `base_revision`. A
@@ -756,6 +796,21 @@ local STATE_CHANGE = tagged("kind", {
     { "id", UUID },
     { "base_revision", U64 },
     { "contents", OPAQUE_OBJECT },
+  },
+  addon_record = {
+    { "id", UUID },
+    { "base_revision", U64 },
+    { "patch", OPAQUE_OBJECT },
+  },
+  addon_record_created = {
+    { "id", UUID },
+    { "type", STRING },
+    { "owner", OWNER_REF },
+    { "fields", OPAQUE_OBJECT },
+  },
+  addon_record_deleted = {
+    { "id", UUID },
+    { "base_revision", U64 },
   },
 })
 
@@ -865,6 +920,11 @@ protocol.messages = {
       { "loaded", array_of(STRING) },
       { "manifests", array_of(OPAQUE_OBJECT) },
     }),
+    -- A read (J2): not reissuable, as an answer days later is of no use.
+    query_records = message("reply", false, {
+      { "type_name", STRING },
+      { "query", OPAQUE_OBJECT },
+    }),
     ack = message("nothing", false, {
       { "re", UUID },
     }),
@@ -939,6 +999,13 @@ protocol.messages = {
     -- (protocol 2, H1).
     restarting = message("nothing", false, {
       { "retry_after_ms", U64 },
+    }),
+    -- The answer to `query_records` (J2): replicas to decide on, never to
+    -- write.
+    records_queried = message("ack", false, {
+      { "re", UUID },
+      { "records", array_of(QUERIED_RECORD) },
+      { "next", nullable(OPAQUE_OBJECT) },
     }),
     ack = message("nothing", false, {
       { "re", UUID },

@@ -57,5 +57,19 @@
     "command": "delete_character",
     "character_id": "00000003-0000-4000-8000-000000000003",
     "base_revision": 2
+  },
+  {
+    "command": "edit_addon_record",
+    "record_id": "0000000d-0000-4000-8000-00000000000d",
+    "base_revision": 4,
+    "patch": {
+      "note": null,
+      "water": 80
+    }
+  },
+  {
+    "command": "delete_addon_record",
+    "record_id": "0000000d-0000-4000-8000-00000000000d",
+    "base_revision": 4
   }
 ]
