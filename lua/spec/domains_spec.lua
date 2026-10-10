@@ -149,7 +149,7 @@ describe("rpf.domains", function()
     assert.are.same(support.COMPANION, rpf.domains.current())
   end)
 
-  it("refuses a Welcome with no profile, or a domain that is neither rpf nor external", function()
+  it("reads a Welcome with no profile as native, and refuses a domain that is neither", function()
     local frame = support.portal_frame("welcome", {
       re = "00000006-0000-4000-8000-000000000006",
       protocol = rpf.protocol.VERSION,
@@ -159,6 +159,18 @@ describe("rpf.domains", function()
     local text = assert(rpf.json.encode(frame))
     assert.is_nil(rpf.protocol.decode(rpf.protocol.PORTAL_TO_SERVER, text))
     frame.domains = nil
-    assert.is_nil(rpf.protocol.decode(rpf.protocol.PORTAL_TO_SERVER, assert(rpf.json.encode(frame))))
+    local decoded = assert(rpf.protocol.decode(rpf.protocol.PORTAL_TO_SERVER, assert(rpf.json.encode(frame))))
+    assert.is_nil(decoded.domains)
+
+    local p = support.fake_platform()
+    rpf.start_server(p, { url = "ws://portal", api_key = "rpf_test_secret" })
+    p.open()
+    p.deliver(support.portal_frame("welcome", {
+      re = last_hello(p).id,
+      protocol = rpf.protocol.VERSION,
+      server_id = SERVER,
+      domains = rpf.json.null,
+    }))
+    assert.are.same(support.NATIVE, rpf.domains.current())
   end)
 end)

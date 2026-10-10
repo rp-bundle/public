@@ -207,8 +207,10 @@ end
 ---null: decoded as nil whether absent or null, and left out when encoding
 ---nil. A character's `job` (D7) is one, there so that frames recorded before
 ---the field existed still re-encode exactly; the unset fields of a definition
----in an in-game config change (E6) are the others, left out exactly as the
----portal's own definitions leave them out. Every other field must be present.
+---in an in-game config change (E6) are others, left out exactly as the
+---portal's own definitions leave them out, and so is `welcome`'s `domains`
+---(K1), which the portal leaves out for the native profile. Every other
+---field must be present.
 ---@param inner rpf.protocol.Type The type when present and not null.
 ---@return rpf.protocol.Type type The type.
 local function optional(inner)
@@ -951,7 +953,7 @@ protocol.messages = {
       { "re", UUID },
       { "protocol", U16 },
       { "server_id", UUID },
-      { "domains", DOMAINS },
+      { "domains", optional(DOMAINS) },
     }),
     rejected = message("ack", false, {
       { "re", UUID },

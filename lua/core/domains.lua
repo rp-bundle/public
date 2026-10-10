@@ -23,11 +23,16 @@
 ---domain is external.
 ---@class rpf.domains
 ---@field NAMES string[] The four domains, in the portal's order.
+---@field NATIVE rpf.Domains The native profile, which a `Welcome` leaves out rather than names. Not to be changed: `fix` copies it.
 local domains = {}
 
 local rpf = rpf
 
 domains.NAMES = { "characters", "money", "inventory", "jobs" }
+
+---The native profile, which a `Welcome` leaves out rather than names.
+---@type rpf.Domains
+domains.NATIVE = { characters = "rpf", money = "rpf", inventory = "rpf", jobs = "rpf" }
 
 ---A profile: who owns each domain on this server.
 ---@class rpf.Domains

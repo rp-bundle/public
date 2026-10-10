@@ -473,7 +473,7 @@ end
 ---@return rpf.Frame frame The frame, not yet encoded.
 function support.portal_frame(tag, fields)
   support.portal_rng = support.portal_rng or support.fake_platform({ seed = 777 })
-  if tag == "welcome" and fields.domains == nil then
+  if tag == "welcome" and fields and fields.domains == nil then
     -- Native, as every portal enforces until staff choose otherwise (K1),
     -- so a test that is not about profiles need not name one.
     fields.domains = support.NATIVE

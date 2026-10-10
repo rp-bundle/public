@@ -1364,7 +1364,8 @@ function Client:handshake_reply(frame)
       )
       return
     end
-    local fixed, conflict = rpf.domains.fix(frame.domains)
+    -- Left out means native, which the portal does not spell out.
+    local fixed, conflict = rpf.domains.fix(frame.domains or rpf.domains.NATIVE)
     if not fixed then
       -- The portal adopts only the profile a `Hello` names, so this is a
       -- portal that changed its mind under a running core, which cannot

@@ -154,14 +154,19 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
         assert.is_nil(protocol.encode(direction, { id = "x", sent_at = "x", type = "teleport_everyone" }))
       end)
 
-      it("rejects a frame missing any of its fields", function()
+      it("rejects a frame missing any of its fields, but the ones the portal leaves out", function()
+        -- `welcome`'s profile is left out when native (K1), as
+        -- `crates/rpf-protocol/tests/protocol.rs`'s `OPTIONAL` names it.
+        local optional = { ["welcome.domains"] = true }
         for tag, raw in pairs(corpus(direction)) do
           for _, field in ipairs(keys(json.decode(raw))) do
-            local frame = json.decode(raw)
-            frame[field] = nil
-            local decoded, err = protocol.decode(direction, assert(json.encode(frame)))
-            assert.is_nil(decoded, tag .. " without " .. field .. " was accepted")
-            assert.is_string(err)
+            if not optional[tag .. "." .. field] then
+              local frame = json.decode(raw)
+              frame[field] = nil
+              local decoded, err = protocol.decode(direction, assert(json.encode(frame)))
+              assert.is_nil(decoded, tag .. " without " .. field .. " was accepted")
+              assert.is_string(err)
+            end
           end
         end
       end)

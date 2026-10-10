@@ -269,7 +269,7 @@ receiver takes the default (empty, `false` or `None`).
 | Field | Where | Default | Why optional |
 |---|---|---|---|
 | `domains` | `hello` | Native | Added by K1. A core from before it runs only the native profile, so an absent field means native, never `null`, which is a core with no profile fixed yet |
-| `domains` | `welcome` | Native | Added by K1, for `welcome`s from before it, which every portal sent while enforcing native. The Lua core requires it |
+| `domains` | `welcome` | Native | Added by K1, and left out when native: a native server's `welcome` is the one it was before K1, which is what every portal enforced then |
 | `items`, `item_bases`, `item_defaults`, `employers`, `employer_departments`, `employer_jobs`, `new_character`, `paying_accounts`, `addons` | `ConfigSnapshot` (`config`) | Empty | Sections added after `settings`, so a snapshot from before one still decodes |
 | `payroll` | An employer in `employers` | `None` | Omitted when the employer pays no salaries; added by D7 |
 | `rank`, `salary` | A job in `employer_jobs` | `0`, `None` | Added by D7; `salary` is omitted for an unpaid job |
