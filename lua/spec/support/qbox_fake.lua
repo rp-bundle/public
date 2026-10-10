@@ -44,6 +44,7 @@
 ---@field deferred integer[]? Players whose `Logout` waits to remove them, when logouts are delayed.
 ---@field searches table[] Every filter `SearchPlayers` was called with.
 ---@field veto boolean? Whether qbx_core's money hooks veto every change, as an owner's hook may.
+---@field logging_in fun()? Runs inside the next `Login`, where the real one waits on the database, before it loads the character.
 ---@field searching fun()? Runs inside the next `SearchPlayers`, where the real one waits on the database: another request overlapping it.
 ---@field created integer? How many characters qbx_core's creation made, for their citizenids.
 local fake = {}
@@ -194,6 +195,11 @@ function fake:login(player, citizenid, new)
       items = {},
       job = { name = "unemployed", grade = { level = 0 }, onduty = false },
     }
+  end
+  local logging_in = self.logging_in
+  self.logging_in = nil
+  if logging_in then
+    logging_in()
   end
   self.players[player] = citizenid
   -- `CreatePlayer`, once the player is in qbx_core's table.

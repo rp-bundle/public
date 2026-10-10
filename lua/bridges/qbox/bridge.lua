@@ -130,7 +130,12 @@ function qbox.register(api, fx)
   ---Players with a load in flight, by server id. qbx_core's search and
   ---`Login` wait on its database, so a second request could otherwise pass
   ---the checks while the first waits, and `Login` a player twice, which
-  ---qbx_core drops them for.
+  ---qbx_core drops them for. The load also reports its own character, once
+  ---it has checked the connection it was asked on is still there:
+  ---`Login`'s `QBCore:Server:PlayerLoaded` comes while it waits, by which
+  ---time the player may have left and the server id gone to someone else,
+  ---so `observe` leaves a player with a load in flight to the load. Kept
+  ---through a drop for that reason, and cleared only when the load ends.
   ---@type table<integer, true>
   local loading = {}
 
@@ -203,21 +208,26 @@ function qbox.register(api, fx)
     fx.to_client(qbox.SELECT, handle)
   end
 
-  ---Logs a character out that qbx_core loaded before its player reached
-  ---`character_select`: past RPF's gate.
+  ---Logs a character out that qbx_core loaded for a player who may not
+  ---have it: one who has not reached `character_select` (past RPF's gate),
+  ---or a connection other than the one that asked for it.
   ---@param handle integer The player's server id.
-  local function turn_away(handle)
+  ---@param why string? What happened, for the log; past the gate unless given.
+  local function turn_away(handle, why)
     if leaving[handle] then
       return
     end
     leaving[handle] = true
     fx.log(
       "error",
-      "qbx_core loaded a character for player "
-        .. tostring(handle)
-        .. " before they logged in to RPF, so it was logged out. Something other than this bridge logged it in: a client"
-        .. " calling qbx_core's own character callbacks, qbx_core's own selection (set useExternalCharacters = true in"
-        .. " qbx_core/config/client.lua), or another character resource, which must be removed"
+      why
+        or (
+          "qbx_core loaded a character for player "
+          .. tostring(handle)
+          .. " before they logged in to RPF, so it was logged out. Something other than this bridge logged it in: a"
+          .. " client calling qbx_core's own character callbacks, qbx_core's own selection (set useExternalCharacters ="
+          .. " true in qbx_core/config/client.lua), or another character resource, which must be removed"
+        )
     )
     fx.thread(function()
       fx.qbx:Logout(handle)
@@ -242,7 +252,7 @@ function qbox.register(api, fx)
   ---@param handle any The player's server id, as the cue gave it.
   local function observe(handle)
     handle = tonumber(handle)
-    if not active or not handle or leaving[handle] or not started(qbox.CORE) then
+    if not active or not handle or leaving[handle] or loading[handle] or not started(qbox.CORE) then
       return
     end
     local character = loaded(handle)
@@ -451,7 +461,13 @@ function qbox.register(api, fx)
     local character = loaded(handle)
     if now ~= "character_select" and now ~= "active" or now_serial ~= serial then
       if character then
-        turn_away(handle)
+        turn_away(
+          handle,
+          "player "
+            .. tostring(handle)
+            .. " left while qbx_core logged their character in, so it was logged out rather than given to whoever has"
+            .. " that server id now"
+        )
       end
       return { error = "not_selecting" }
     end
@@ -477,7 +493,6 @@ function qbox.register(api, fx)
   end)
   api.events.on("players.dropping", function(player)
     leaving[player.handle] = nil
-    loading[player.handle] = nil
   end)
   api.time.every(qbox.SWEEP_MS, sweep)
 

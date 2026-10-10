@@ -249,6 +249,33 @@ local cases = {
     end,
   },
   {
+    name = "never gives a character to a connection that took the server id while Login waited",
+    run = function(world)
+      local fw = framework()
+      boot(world, fw)
+      local api = world.api
+      local handle = world:login(1, PLAYER)
+      fw.db["CIT-JANE"].license = "license2:" .. tostring(handle)
+      local again
+      -- Jane's player leaves while `Login` waits on the database, and
+      -- someone else connects with the same server id and logs in.
+      fw.logging_in = function()
+        assert(world.core.players.dropped(handle, "left"))
+        world:pump()
+        again = world.join(1)
+        assert(world.core.players.authenticating(again))
+        assert(world.core.players.register(again, { player_id = OTHER, username = "other" }))
+        world:pump()
+      end
+      assert.are.same({ error = "not_selecting" }, fw:request(handle, "rpf-qbox:load", "CIT-JANE"))
+      assert.are.equal(handle, again, "the same server id")
+      assert.are.equal("character_select", api.players.get(again).state, "never active with Jane")
+      assert.are.same({ nil, "no_character" }, { api.characters.current(again) })
+      assert.is_nil(fw:loaded(again), "and Jane logged out of qbx_core")
+      assert.are.equal(1, bridge_logged(fw, "error", "left while qbx_core logged their character in"))
+    end,
+  },
+  {
     name = "answers item calls unavailable while ox_inventory alone is stopped",
     run = function(world)
       local fw = framework()
