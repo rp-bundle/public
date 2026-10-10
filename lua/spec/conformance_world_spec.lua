@@ -201,6 +201,22 @@ conformance.run(busted, "World placements", {
     end,
   },
   {
+    name = "leaves a greeter in a bucket no engine has unplaced, never in the public world, saying so once",
+    run = function(world)
+      register(world)
+      install(world, { greeter(A, { bucket = 2147483648 }) })
+      install(world, { greeter(A, { bucket = 2147483648 }) })
+      assert.are.same({}, world.entities())
+      local said = 0
+      for _, line in ipairs(world.logs) do
+        if line.message:find("is none an engine has", 1, true) then
+          said = said + 1
+        end
+      end
+      assert.are.equal(1, said)
+    end,
+  },
+  {
     name = "leaves a greeter with no model for this engine unplaced, saying so once",
     run = function(world)
       register(world)

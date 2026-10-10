@@ -829,32 +829,27 @@ function fivem.client(env, host, seed, convars)
   ---@field run_due fun() Runs every timer due.
   ---@field next_due fun(): number? When the next timer is due.
   ---@field peds table<integer, { invincible: boolean?, blocking: boolean?, frozen: boolean? }> Peds this client has streamed in, by handle, with what the adapter set on them.
-  ---@field bags table<string, integer> Which entity each state bag belongs to, by bag name.
-  ---@field state_bag fun(bag: string, key: string, value: any) A replicated state bag value arrived, as when an entity streams in.
-  local driver = { exported = {}, nui_sent = {}, focus = false, frozen = false, feed = {}, peds = {}, bags = {} }
-  local bag_handlers = {}
-  env.AddStateBagChangeHandler = function(key, bag, handler)
-    bag_handlers[#bag_handlers + 1] = { key = key, bag = bag, handler = handler }
-    return #bag_handlers
-  end
-  env.GetEntityFromStateBagName = function(bag)
-    return driver.bags[bag] or 0
-  end
+  ---@field net_ids table<integer, integer> Each streamed-in entity's network id, by handle.
+  local driver = { exported = {}, nui_sent = {}, focus = false, frozen = false, feed = {}, peds = {}, net_ids = {} }
   env.IsEntityAPed = function(entity)
     return driver.peds[entity] ~= nil
+  end
+  env.NetworkGetEntityFromNetworkId = function(net)
+    for handle, id in pairs(driver.net_ids) do
+      if id == net then
+        return handle
+      end
+    end
+    return 0
+  end
+  env.NetworkDoesEntityExistWithNetworkId = function(net)
+    return env.NetworkGetEntityFromNetworkId(net) ~= 0
   end
   env.SetEntityInvincible = function(entity, on)
     driver.peds[entity].invincible = on
   end
   env.SetBlockingOfNonTemporaryEvents = function(entity, on)
     driver.peds[entity].blocking = on
-  end
-  function driver.state_bag(bag, key, value)
-    for _, entry in ipairs(bag_handlers) do
-      if (entry.key == nil or entry.key == key) and (entry.bag == nil or entry.bag == bag) then
-        entry.handler(bag, key, value, 0, true)
-      end
-    end
   end
   local net = {}
   local text = {}

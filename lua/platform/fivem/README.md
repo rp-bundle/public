@@ -146,7 +146,8 @@ most:
 | `onResourceStart` (this resource) | Starts the core from the convars, then `players.connected` for everyone already on the server |
 | `onResourceStop` (this resource) | Closes every socket it has open in `rpf-ws`, which outlives a `restart rpf` (a socket left open would keep answering the portal's pings, and the portal would refuse the restarted core as a duplicate instance), puts every held player back in their own routing bucket, and removes every entity the core placed (`rpf.world.clear`) |
 | `entityRemoved` | Forgets a placed entity whoever removed it (`server.removed`), since its handle may be reused |
-| A state bag change of `rpf_placement` (client) | Makes a placed ped passive on that client (`client.placed`) |
+| `rpf:placed_peds_request` | Sends that client the placed peds (`server.peds_asked`) |
+| `rpf:placed_peds` (client) | Keeps the server's placed peds, to make passive (`client.placed_peds`) |
 | `playerJoining` | `players.connected(source)` |
 | `playerDropped` | `players.dropped(source, reason)` |
 | `chatMessage` (the `chat` resource) | Cancelled for a held player (`lock.lua`) |
@@ -182,7 +183,7 @@ it the OneSync way, from the server:
   move between clients without the entity going. Its ref is its network
   id.
 - **Tagged, but not trusted.** Each carries the replicated state bag
-  `rpf_placement` (`{ id, type }`) for clients to read. The client that owns
+  `rpf_placement` (`{ id, type }`), for a target resource to read. The client that owns
   an entity can rewrite its state, so the adapter never reads the tag: it
   knows what it placed by its own table (`placed_here`, by server handle,
   with the model), and `server.mine` also asks the engine which resource
@@ -194,11 +195,15 @@ it the OneSync way, from the server:
   entity that inherits a handle is never taken for ours.
 - **Streaming and range** are OneSync's: a server entity streams to the
   players near it in its bucket, and stays whether or not anyone is near.
-- **Passive peds.** What a ped does is up to its owning client, so
-  `client.lua` hears the tag arrive (`AddStateBagChangeHandler`), looks
-  again every 100 ms for up to 5 s when it arrived before the entity, and
-  makes a placed ped invincible, deaf to the world (`SetBlockingOfNonTemporaryEvents`)
-  and frozen on every client, whichever owns it.
+- **Passive peds.** What a ped does is up to its owning client, so each
+  client makes the server's placed peds invincible, deaf to the world
+  (`SetBlockingOfNonTemporaryEvents`) and frozen, whichever owns them. Which
+  peds those are is the server's word, never the tag: the server sends the
+  network ids of the peds it placed (`rpf:placed_peds`) to every client
+  when they change, and to a client that asks as it starts
+  (`rpf:placed_peds_request`, at most once a second per player), and the
+  client looks every `PASSIVE_MS` (1 s) for those it has streamed in,
+  again for one streamed in anew.
 - **Cleanup.** The core removes what it placed when this resource stops
   (`onResourceStop`, `rpf.world.clear`, then `server.clear` for anything the
   adapter still holds or is still making), and `server.sweep` removes, as
@@ -209,8 +214,8 @@ it the OneSync way, from the server:
   `rpf.world.CHECK_MS`) never leaves a record with two entities or none.
 
 Proven on the fake natives only: a real FXServer is still to show a server
-ped's ownership moving between clients, the state bag reaching a client as
-the entity streams in, the ped staying put, how long creation takes, and
+ped's ownership moving between clients, a placed ped made passive as it
+streams in, the ped staying put, how long creation takes, and
 that `GetEntityScript` still names this resource for an entity an earlier
 run of it made (layer 5).
 

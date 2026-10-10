@@ -1006,6 +1006,25 @@ describe("the FiveM adapter", function()
       assert.is_nil(driver.entities[pending])
     end)
 
+    it("tells every client which peds it placed, and a client that asks, at most once a second", function()
+      local driver, record = started_server()
+      local ref = assert(spawn(driver, record, spec_of()))
+      record.time = record.time + 10
+      driver.run_due()
+      local told
+      for _, sent in ipairs(record.to_clients) do
+        if sent.name == "rpf:placed_peds" and sent.player == -1 then
+          told = sent.payload
+        end
+      end
+      assert.are.same({ ref }, told)
+      local before = #record.to_clients
+      driver.from_client(3, "rpf:placed_peds_request", nil)
+      driver.from_client(3, "rpf:placed_peds_request", nil)
+      assert.are.equal(before + 1, #record.to_clients)
+      assert.are.same({ player = 3, name = "rpf:placed_peds", payload = { ref } }, record.to_clients[#record.to_clients])
+    end)
+
     it("removes only an entity it placed", function()
       local driver = started_server()
       local theirs = native("CreateObjectNoOffset")(2, 0, 0, 0, true, true, false)
@@ -1040,33 +1059,21 @@ describe("the FiveM adapter", function()
       )
     end
 
-    it("makes a placed ped passive when its state bag arrives, and leaves anything else alone", function()
-      local driver = load_side("client")
-      driver.start()
-      driver.peds[7001] = {}
-      driver.peds[7002] = {}
-      driver.bags["entity:7001"] = 7001
-      driver.bags["entity:7002"] = 7002
-      driver.state_bag("entity:7001", "rpf_placement", { id = "rec", type = "acme_npcs.greeter" })
-      driver.state_bag("entity:7002", "rpf_placement", nil)
-      driver.state_bag("entity:9999", "rpf_placement", { id = "gone", type = "t" })
-      assert.are.same({ invincible = true, blocking = true, frozen = true }, driver.peds[7001])
-      assert.are.same({}, driver.peds[7002])
-    end)
-
-    it("looks again for a placed ped whose state bag arrived before it did", function()
+    it("makes passive only the peds the server says it placed, as they stream in, and asks for that list as it starts", function()
       local driver, record = load_side("client")
       driver.start()
-      driver.state_bag("entity:7003", "rpf_placement", { id = "rec", type = "acme_npcs.greeter" })
-      record.time = record.time + rpf.fivem.client.PLACED_RETRY_MS
+      assert.are.equal("rpf:placed_peds_request", record.to_server[#record.to_server].name)
+      driver.peds[7001], driver.net_ids[7001] = {}, 505001
+      driver.peds[7002], driver.net_ids[7002] = {}, 505002
+      driver.from_server("rpf:placed_peds", { 505001, 505009 })
+      assert.are.same({ invincible = true, blocking = true, frozen = true }, driver.peds[7001])
+      assert.are.same({}, driver.peds[7002], "a ped the server did not place, whatever its tag")
+      driver.peds[7003], driver.net_ids[7003] = {}, 505009
+      record.time = record.time + rpf.fivem.client.PASSIVE_MS
       driver.run_due()
-      driver.peds[7003] = {}
-      driver.bags["entity:7003"] = 7003
-      driver.run_due()
-      assert.are.same({}, driver.peds[7003], "not before the next look is due")
-      record.time = record.time + rpf.fivem.client.PLACED_RETRY_MS
-      driver.run_due()
-      assert.are.same({ invincible = true, blocking = true, frozen = true }, driver.peds[7003])
+      assert.are.same({ invincible = true, blocking = true, frozen = true }, driver.peds[7003], "streamed in later")
+      driver.from_server("rpf:placed_peds", "not a list")
+      assert.are.same({}, driver.peds[7002])
     end)
 
     it("asks the server over lib.callback, and hands back only a string answer", function()

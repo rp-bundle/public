@@ -175,10 +175,11 @@ function server.platform(shim, transport)
 end
 
 ---The state bag key every entity the core places carries (J4): `{ id,
----type }`, the record it is, replicated so clients can tell a placed entity
----(`client.lua` makes a placed ped passive). Only for clients to read: the
----client that owns an entity can rewrite its state, so the server never
----takes it as proof of anything.
+---type }`, the record it is, replicated so a target resource on a client
+---can offer the right options. Only for that: the client that owns an
+---entity can rewrite its state, so nothing takes it as proof of anything;
+---clients learn which peds to make passive from the server
+---(`shared.PLACED_PEDS`).
 server.PLACEMENT = shared.PLACEMENT
 
 ---FiveM's `SetEntityOrphanMode` value that keeps an entity when the
@@ -220,8 +221,63 @@ end
 ---network ids, and `server.mine` checks the engine still says this
 ---resource made the entity and with that model, so a recycled handle is
 ---never taken for ours.
----@type table<integer, { id: string, model: integer }>
+---@type table<integer, { id: string, model: integer, ped: boolean }>
 local placed_here = {}
+
+---Whether a push of the placed peds to every client is waiting to go.
+local announcing = false
+
+---The network ids of the peds this run placed, sorted.
+---@return integer[] nets The ids.
+local function placed_peds()
+  local out = {}
+  for entity, entry in pairs(placed_here) do
+    if entry.ped then
+      out[#out + 1] = NetworkGetNetworkIdFromEntity(entity)
+    end
+  end
+  table.sort(out)
+  return out
+end
+
+---Sends the peds this run placed to one client, or to every client (`-1`),
+---which make them passive (`client.passive`).
+---@param player integer The client, or -1 for all.
+function server.announce(player)
+  TriggerClientEvent(shared.PLACED_PEDS, player, placed_peds())
+end
+
+---Sends every client the placed peds on the next tick, once however many
+---placements changed meanwhile.
+local function announce_soon()
+  if announcing then
+    return
+  end
+  announcing = true
+  Citizen.SetTimeout(0, function()
+    announcing = false
+    server.announce(-1)
+  end)
+end
+
+---When each player last asked for the placed peds, by player.
+---@type table<integer, number>
+local asked_at = {}
+
+---Answers a client's request for the placed peds, as it starts: at most one
+---a second per player, since any client can send it.
+---@param player integer? The sender, FiveM's `source`.
+function server.peds_asked(player)
+  if type(player) ~= "number" then
+    return
+  end
+  local now = GetGameTimer()
+  if asked_at[player] and now - asked_at[player] < 1000 then
+    return
+  end
+  asked_at[player] = now
+  server.announce(player)
+end
 
 ---Entities asked for and not there yet, by handle: removed by a stop that
 ---comes before they are. `removed` is set when the engine says the handle's
@@ -264,7 +320,10 @@ local function set_up(entity, spec, model)
   FreezeEntityPosition(entity, true)
   SetEntityOrphanMode(entity, server.KEEP_ENTITY)
   Entity(entity).state:set(server.PLACEMENT, { id = spec.id, type = spec.type }, true)
-  placed_here[entity] = { id = spec.id, model = model }
+  placed_here[entity] = { id = spec.id, model = model, ped = spec.kind == "ped" }
+  if spec.kind == "ped" then
+    announce_soon()
+  end
 end
 
 ---Places a record's ped or object, server-authoritative under OneSync
@@ -343,6 +402,7 @@ function server.mine(entity)
   end
   if not made_here(entity) or GetEntityModel(entity) ~= entry.model then
     placed_here[entity] = nil
+    announce_soon()
     return nil
   end
   return entry.id
@@ -355,6 +415,7 @@ function server.despawn(ref)
   local entity = by_ref(ref)
   if entity and server.mine(entity) then
     placed_here[entity] = nil
+    announce_soon()
     DeleteEntity(entity)
   end
 end
@@ -364,7 +425,10 @@ end
 ---@param entity any The handle, as `entityRemoved` reports it.
 function server.removed(entity)
   if type(entity) == "number" then
-    placed_here[entity] = nil
+    if placed_here[entity] then
+      placed_here[entity] = nil
+      announce_soon()
+    end
     if creating[entity] then
       creating[entity].removed = true
     end
@@ -512,6 +576,7 @@ end
 ---answer, and FiveM may give their id to someone else.
 ---@param player integer The player.
 function server.forget(player)
+  asked_at[player] = nil
   local numbers = {}
   for number, pending in pairs(asking) do
     if pending.player == player then
@@ -636,6 +701,8 @@ AddEventHandler("rpf-ws:message", function(id, text) transport.received(id, text
 AddEventHandler("rpf-ws:close", function(id, code, reason) transport.closed(id, code, reason) end)
 -- An entity the engine removed, whoever removed it: its handle may be reused.
 AddEventHandler("entityRemoved", function(entity) server.removed(entity) end)
+-- A client asking which peds the server placed, as it starts.
+RegisterNetEvent(shared.PLACED_PEDS_REQUEST, function() server.peds_asked(tonumber(source)) end)
 AddEventHandler("onResourceStart", function(name)
   if name == GetCurrentResourceName() then server.start(platform) end
 end)

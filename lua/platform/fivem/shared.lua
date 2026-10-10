@@ -8,10 +8,14 @@
 ---Each function here closes over a FiveM native and nothing else, so the
 ---fake globals in `lua/platform/mock/fivem.lua` run it unmodified.
 ---@class rpf.fivem.shared
----@field PLACEMENT string The state bag key every entity the core places carries (J4): `{ id, type }`, the record it is.
+---@field PLACEMENT string The state bag key every entity the core places carries (J4): `{ id, type }`, the record it is. For a target resource's eyes only: the owning client can write it.
+---@field PLACED_PEDS string The event the server sends clients the network ids of the peds it placed on (J4), which they make passive.
+---@field PLACED_PEDS_REQUEST string The event a client asks for that list with as it starts.
 local shared = {}
 
 shared.PLACEMENT = "rpf_placement"
+shared.PLACED_PEDS = "rpf:placed_peds"
+shared.PLACED_PEDS_REQUEST = "rpf:placed_peds_request"
 
 ---The core, with the FiveM adapter's namespace added. Only the FiveM
 ---resource loads the adapter, so the core's own definition of `rpf` does not

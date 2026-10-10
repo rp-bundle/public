@@ -82,6 +82,10 @@ local placed = {}
 ---failure is logged once until it succeeds or the record changes.
 ---@type table<string, string>
 local failed = {}
+---Records left out for a bucket no engine has, by id, so each is logged
+---once.
+---@type table<string, true>
+local refused = {}
 ---Whether the core stopped placing (`clear`), so nothing is placed again.
 local stopped = false
 ---Whether the over-the-limit and cannot-place notices have been logged.
@@ -359,14 +363,26 @@ local function spec_of(type_name, where, record)
     return nil
   end
   local heading = where.heading and fields[where.heading]
+  -- No bucket is bucket 0; a bucket no engine has (negative, or past a
+  -- 32-bit routing bucket) is not the public world, so the record is left
+  -- out rather than put there.
   local bucket = where.bucket and fields[where.bucket]
+  if bucket == nil or rawequal(bucket, json.null) then
+    bucket = 0
+  elseif not whole(bucket) or bucket < 0 then
+    if refused[record.id] == nil then
+      refused[record.id] = true
+      log("warn", "rpf: could not place " .. type_name .. " " .. tostring(record.id) .. ": its bucket " .. tostring(bucket) .. " is none an engine has")
+    end
+    return nil
+  end
   return {
     id = record.id,
     type = type_name,
     kind = where.kind,
     position = at,
     heading = finite(heading) and heading or 0,
-    bucket = whole(bucket) and bucket or 0,
+    bucket = bucket,
     model = model,
   }
 end
@@ -582,7 +598,7 @@ end
 function world.start(p)
   platform = p
   declared = p.capabilities
-  placed, failed, stopped = {}, {}, false
+  placed, failed, refused, stopped = {}, {}, {}, false
   warned = { limit = false, unsupported = false }
   for _, name in ipairs(world.CAPABILITIES) do
     local value = declared[name]

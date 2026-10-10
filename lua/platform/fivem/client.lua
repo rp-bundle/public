@@ -32,45 +32,64 @@ function client.notify(message)
   EndTextCommandThefeedPostTicker(false, true)
 end
 
----How long, in milliseconds, between looks for a placed entity whose state
----bag arrived first.
-client.PLACED_RETRY_MS = 100
+---How often, in milliseconds, the client looks for the server's placed
+---peds among what it has streamed in, to make each one passive.
+client.PASSIVE_MS = 1000
 
----How many looks before giving up on one: five seconds' worth, past which
----it has streamed out again or never will.
-client.PLACED_TRIES = 50
+---The network ids of the peds the server placed, as it last said
+---(`shared.PLACED_PEDS`). Only the server's word counts: the state bag tag
+---on an entity is written by whichever client owns it.
+---@type table<integer, true>
+local placed_peds = {}
 
----Makes a ped the core placed passive on this client (J4): it neither
----dies, flees nor wanders, whichever client OneSync makes its owner. The
----server froze it and keeps it; these are the parts of a ped's behaviour
----only a client can set. A state bag change for anything else is ignored.
----
----The bag can arrive before its entity exists here, so a bag whose entity
----is not there yet is looked for again every `PLACED_RETRY_MS`, up to
----`PLACED_TRIES` times.
----@param bag string The state bag's name.
----@param value any The placement tag, `{ id, type }`.
----@param tries integer? How many looks are left; `PLACED_TRIES` on the first.
-function client.placed(bag, value, tries)
-  if type(value) ~= "table" then
+---The peds made passive on this client, by handle, with the network id
+---each was made passive as, so a ped streamed in again (a new handle) is
+---made passive again, and none twice.
+---@type table<integer, integer>
+local made_passive = {}
+
+---Takes the server's list of the peds it placed.
+---@param list any The network ids, as the server sent them.
+function client.placed_peds(list)
+  if type(list) ~= "table" then
     return
   end
-  local entity = GetEntityFromStateBagName(bag)
-  if not entity or entity == 0 then
-    tries = tries or client.PLACED_TRIES
-    if tries > 1 then
-      Citizen.SetTimeout(client.PLACED_RETRY_MS, function()
-        client.placed(bag, value, tries - 1)
-      end)
+  local set = {}
+  for _, net in ipairs(list) do
+    if type(net) == "number" then
+      set[net] = true
     end
-    return
   end
-  if not IsEntityAPed(entity) then
-    return
+  placed_peds = set
+  client.passive()
+end
+
+---Makes every placed ped this client has streamed in passive (J4): it
+---neither dies, flees nor wanders, whichever client OneSync makes its
+---owner. The server froze it and keeps it; these are the parts of a ped's
+---behaviour only a client can set. Only a ped the server says it placed is
+---touched, never one another client tagged.
+function client.passive()
+  local seen = {}
+  for net in pairs(placed_peds) do
+    if NetworkDoesEntityExistWithNetworkId(net) then
+      local entity = NetworkGetEntityFromNetworkId(net)
+      if entity and entity ~= 0 and IsEntityAPed(entity) then
+        seen[entity] = true
+        if made_passive[entity] ~= net then
+          made_passive[entity] = net
+          SetEntityInvincible(entity, true)
+          SetBlockingOfNonTemporaryEvents(entity, true)
+          FreezeEntityPosition(entity, true)
+        end
+      end
+    end
   end
-  SetEntityInvincible(entity, true)
-  SetBlockingOfNonTemporaryEvents(entity, true)
-  FreezeEntityPosition(entity, true)
+  for entity in pairs(made_passive) do
+    if not seen[entity] then
+      made_passive[entity] = nil
+    end
+  end
 end
 
 ---Answers one of the server's requests (`server.ask`): `<number>\n<payload>`,
@@ -145,6 +164,15 @@ end
 function client.start(platform, screens)
   screens:start()
   core.start_client(platform)
+  -- The peds the server placed: asked for once, then pushed on change, and
+  -- looked for every `PASSIVE_MS` as they stream in and out.
+  TriggerServerEvent(shared.PLACED_PEDS_REQUEST, "")
+  ---Makes placed peds passive, then waits to look again.
+  local function tick()
+    client.passive()
+    Citizen.SetTimeout(client.PASSIVE_MS, tick)
+  end
+  tick()
 end
 
 rpf.fivem.client = client
@@ -159,9 +187,7 @@ local platform = client.platform(screens)
 
 -- The engine's events, two lines at most each.
 RegisterNetEvent("rpf:notify", function(message) client.notify(message) end)
--- A nil bag filter is every bag, which the natives' annotation does not allow for.
----@diagnostic disable-next-line: param-type-mismatch
-AddStateBagChangeHandler(shared.PLACEMENT, nil, function(bag, _, value) client.placed(bag, value) end)
+RegisterNetEvent(shared.PLACED_PEDS, function(list) client.placed_peds(list) end)
 for _, name in ipairs(fivem.ui.CALLBACKS) do
   RegisterNUICallback(name, function(data, respond) respond(screens:nui(name, data)) end)
 end
