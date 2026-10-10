@@ -1410,7 +1410,7 @@ function Bridge.available() end
 ---@field supports string[]? **Capability**: the facade calls it implements, as `<domain>.<call>` (`money.debit`). Each needs its function below, in a domain it provides. A call it does not list is `refused("unsupported")` without reaching it. `characters.current` is never listed: the core answers it from `character_loaded`.
 ---@field tested_with string[]? The framework versions it was tested against; `1.21` covers `1.21.3`. Outside them the core logs a warning, never refuses.
 ---@field running fun(): boolean, string? Whether its framework is running, and its version if it can tell. Asked on a native profile, where a running framework is a second economy the log says so of, and on a companion one, for `tested_with`.
----@field start fun()? Runs once the bridge is active: the profile is fixed and fits. Report every character its framework already has loaded here, with `character_loaded`.
+---@field start fun(selecting: any[])? Runs once the bridge is active: the profile is fixed and fits. Pick up the players already here: report every character its framework has loaded, with `character_loaded`, and show its selection to each player in `selecting`, the engine handles already at `character_select` (a bridge registering again after its resource restarted), who will not see `players.character_select` again. Players who log in later arrive as `players.character_select`.
 ---@field stop fun(reason: string)? Runs when the core stops using the bridge while its code still runs (its `start` threw).
 ---@field money rpf.BridgeMoney? The money calls it supports.
 ---@field inventory rpf.BridgeInventory? The item calls it supports.

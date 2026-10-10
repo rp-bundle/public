@@ -397,8 +397,15 @@ describe("rpf.bridge", function()
       assert.are.same({ "start" }, fw.calls, "stop never runs: its code is gone")
       registered(8)
       assert.are.equal("registered", rpf.players.get(8).state)
-      -- It registers again when its resource starts again.
-      assert.is_true(rpf.addons.from("fakefw_bridge", rpf.api.bridge.register, bridge_of(fw)))
+      -- It registers again when its resource starts again, and picks up
+      -- the players already choosing, who will not hear the cue again.
+      local selecting
+      assert.is_true(rpf.addons.from("fakefw_bridge", rpf.api.bridge.register, bridge_of(fw, {
+        start = function(players)
+          selecting = players
+        end,
+      })))
+      assert.are.same({ 7 }, selecting, "8 was at registered, and hears the cue as it moves on")
       assert.are.equal("character_select", rpf.players.get(8).state)
     end)
 
@@ -500,6 +507,12 @@ describe("rpf.bridge", function()
       assert.are.same({ nil, "unavailable" }, { rpf.api.money.debit(7, "cash", 1, "x", unavailable) })
       -- Nothing changed, so the same op id may go again, and does.
       assert.is_true(rpf.api.money.debit(7, "cash", 1, "x", unavailable))
+      -- What may have happened answers so through an outage too, never
+      -- `unavailable`, which would say nothing did.
+      rpf.api.bridge.unavailable("down")
+      assert.are.same({ nil, "unknown" }, { rpf.api.money.debit(7, "cash", 1, "x", threw) })
+      assert.is_true(rpf.api.money.debit(7, "cash", 1, "x", unavailable))
+      rpf.api.bridge.available()
       assert.are.same({ "money.debit", "money.debit", "money.debit", "money.debit", "money.debit" }, fw.calls)
     end)
 

@@ -88,7 +88,7 @@ local READ_ERRORS = { not_found = true, no_character = true, unavailable = true 
 ---@field supports table<string, function> The calls it implements, by `<domain>.<call>`.
 ---@field tested_with string[] The framework versions it was tested against.
 ---@field running function Whether its framework is running, and its version.
----@field start function? Runs when it becomes active.
+---@field start function? Runs when it becomes active, with the players already waiting at `character_select`.
 ---@field stop function? Runs when the core stops using it while its code still runs.
 ---@field origin any The code that registered it (a FiveM resource), or nil where the engine cannot say.
 
@@ -376,7 +376,16 @@ local function evaluate()
   end
   active = true
   if b.start then
-    local ok, err = pcall(b.start)
+    -- The players already choosing (a bridge registering again after its
+    -- resource restarted) saw their `players.character_select` before it
+    -- was here: it shows them its selection now.
+    local selecting = {}
+    for _, player in ipairs(rpf.players.list()) do
+      if player.state == "character_select" then
+        selecting[#selecting + 1] = player.handle
+      end
+    end
+    local ok, err = pcall(b.start, selecting)
     if not ok then
       log("error", "the " .. b.name .. " bridge's start threw: " .. tostring(err))
       withdraw("its start threw", true)

@@ -254,6 +254,12 @@ end
 ---@return string? status `refused`, `unavailable` or `unknown`.
 ---@return string? why For `refused`, why.
 local function bridge_command(domain, call, handle, op_id, apply, detail, ask)
+  -- A command already in the journal answers as it did, outage or not: an
+  -- `unavailable` now would say nothing happened when something may have.
+  local known, done, recorded, why = rpf.ops.known(op_id)
+  if known then
+    return done, recorded, why
+  end
   local fn, status = rpf.bridge.reach(domain, call)
   if not fn then
     if status == "unsupported" then

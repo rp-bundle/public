@@ -1174,7 +1174,7 @@ fronts it.
 | `CONTRACT` | `{ major = 1, minor = 0 }`. Another major is refused; a later minor's unknown calls are left out |
 | `CALLS` | The optional calls, by domain: `money.accounts`, `balance`, `debit`, `credit`; `inventory.count`, `give`, `take`; `jobs.current`. `characters.current` is the core's, from the lifecycle |
 | `register(def)` | Checks the table whole (`invalid` naming the field, `contract`, `registered`), logs a refusal once, notes the registering origin, offers it to `rpf.domains.accept_bridge`, and activates it if the profile is fixed already |
-| activation | On `domains.fixed`, or at `register` after it: a native profile leaves it inactive (an `error` line naming `domains` if `running()` says the framework runs); a profile it does not fit leaves it inactive and the gate holds players; one it fits makes it active, warns outside `tested_with`, runs `start` (withdrawing it, after its `stop`, if `start` throws), announces `domains.bridge` (`active`), and moves every `registered` player to `character_select`, as it does each later one on `players.registered` |
+| activation | On `domains.fixed`, or at `register` after it: a native profile leaves it inactive (an `error` line naming `domains` if `running()` says the framework runs); a profile it does not fit leaves it inactive and the gate holds players; one it fits makes it active, warns outside `tested_with`, runs `start` with the engine handles already at `character_select` (a bridge registering again picks them up; withdrawing it, after its `stop`, if `start` throws), announces `domains.bridge` (`active`), and moves every `registered` player to `character_select`, as it does each later one on `players.registered` |
 | `character_loaded(handle, { key, name })` | `forbidden` from another origin, `inactive`, `invalid` (key or name not 1 to 128 bytes), `not_found`, `not_registered` (logged). Same key: rename. Otherwise through `character_select` to `active`, holding `{ key, name }` in memory by handle |
 | `character_unloaded(handle)` | Back to `character_select`, the character forgotten (`no_character` if none) |
 | `unavailable(reason)`, `available()` | The outage every call answers `unavailable` to without reaching the bridge; each change announced as `domains.bridge` |
@@ -1183,8 +1183,11 @@ fronts it.
 | `read(fn, call, valid, ...)` | A read under `pcall`: a throw, a value `valid` refuses (`balance_of`, `count_of`, `job_of`, `accounts_of`) or an error outside `not_found`, `no_character`, `unavailable` is `unavailable`, logged; `jobs.current` may answer nil for no job |
 | `command(fn, call, ...)` | A command under `pcall`: `true`; nil and `refused` (with a reason of at most 64 bytes), `unavailable` or `unknown`; anything else, or a throw, is `unknown` with the cause for staff |
 
-The facade (above) asks `reach` before it journals anything, so an
-unsupported call and an outage leave no intent behind; the command itself
+The facade (above) asks the journal first (`rpf.ops.known`): an op id it
+has answers as recorded, outage or not, since `unavailable` would say a
+command that may have happened did not. A new one asks `reach` before it
+journals anything, so an unsupported call and an outage leave no intent
+behind; the command itself
 runs inside `rpf.ops.run`, with the player checked first, and `apply`
 after a `true`. The journal drops an `unavailable` result on both paths,
 since nothing changed, so the same op id may be sent again.

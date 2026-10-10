@@ -30,7 +30,8 @@ local ok, err, field = rpf.bridge.register({
   supports = { "money.balance", "money.debit" },             -- capability
   tested_with = { "1.21" },                    -- framework versions
   running = function() return started, version end,
-  start = function() --[[ report characters already loaded ]] end,
+  start = function(selecting) --[[ report characters already loaded; show
+    the selection to each player in `selecting` ]] end,
   stop = function(reason) end,
   money = { balance = ..., debit = ... },
 })

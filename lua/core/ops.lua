@@ -307,6 +307,34 @@ local function recover(id)
   return entry
 end
 
+---Whether an op id has a result in the journal, and what it is: what
+---`run` would answer at once, without running anything. The facade asks
+---this before it asks whether a provider can be reached, so a command that
+---already happened, or may have, answers so even while its provider is
+---down, rather than `unavailable`, which would say nothing happened.
+---@param id any The op id.
+---@return boolean known True if the journal has it, inside the window.
+---@return boolean? ok For a known one, true if it succeeded.
+---@return string? status For a known one that did not, `refused` or `unknown`.
+---@return string? reason For `refused`, why.
+function ops.known(id)
+  local at = ops.minted_at(id)
+  if not platform or not at or platform.now() - at > ops.WINDOW_MS then
+    return false
+  end
+  ---@cast id string
+  ---@type rpf.ops.Entry?
+  local entry = entries[id]
+  if not entry then
+    local found, lookup = pcall(recover, id)
+    entry = found and lookup or nil
+  end
+  if not entry then
+    return false
+  end
+  return true, recorded(entry)
+end
+
 ---Runs a command once per op id. A repeated id inside the window gets the
 ---recorded result; a new one is journaled `pending`, run, and its result
 ---recorded. A command that throws is `unknown`: it may have done part of
