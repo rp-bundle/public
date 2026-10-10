@@ -1,0 +1,59 @@
+{
+  "description": "world needs a position.",
+  "manifest": {
+    "namespace": "acme_npcs",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "NPCs",
+    "types": {
+      "npc": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "spot": {
+            "type": "vector3",
+            "required": true
+          },
+          "heading": {
+            "type": "number",
+            "min": 0,
+            "max": 360,
+            "default": 0
+          },
+          "bucket": {
+            "type": "integer",
+            "min": 0,
+            "max": 65535,
+            "default": 0
+          },
+          "model": {
+            "type": "json",
+            "max_bytes": 256,
+            "engine": true
+          },
+          "shown": {
+            "type": "boolean",
+            "default": true
+          },
+          "reach": {
+            "type": "number",
+            "min": 0.5,
+            "max": 100,
+            "default": 2
+          },
+          "label": {
+            "type": "string",
+            "max_len": 48
+          }
+        },
+        "world": {
+          "kind": "point"
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "missing",
+    "path": "types.npc.world.position"
+  }
+}

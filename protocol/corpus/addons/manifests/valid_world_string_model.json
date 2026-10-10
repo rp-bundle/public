@@ -1,0 +1,31 @@
+{
+  "description": "A model may be one engine string field.",
+  "manifest": {
+    "namespace": "acme_npcs",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "NPCs",
+    "types": {
+      "npc": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "spot": {
+            "type": "vector3"
+          },
+          "name": {
+            "type": "string",
+            "max_len": 64,
+            "engine": true
+          }
+        },
+        "world": {
+          "kind": "object",
+          "position": "spot",
+          "model": "name"
+        }
+      }
+    }
+  },
+  "error": null
+}

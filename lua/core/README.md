@@ -928,6 +928,9 @@ record. The order is documented once, in `crates/rpf-domain/src/addons/`.
 `manifest.apply_patch(def, current, patch)` is `TypeDef::apply_patch` (a
 write names only what it changes, and a null clears a nullable field), and
 `manifest.with_defaults(def, fields)` is what a record reads as.
+A type's `world` (J4) is checked last, against the type's checked fields:
+each role names a field of a kind it may be (`world_field` otherwise), and
+the kind decides whether `model` and `radius` are needed or refused.
 `manifest.is_version` and `manifest.is_range` check the shape of a release
 and of a `requires` range; matching one against the other is the portal's,
 at install.
