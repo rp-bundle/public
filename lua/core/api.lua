@@ -22,7 +22,7 @@
 ---
 ---What a side gets follows what it loaded: `players`, `staff`, `config`,
 ---`addons`, `records`, the facade (`characters`, `money`, `inventory`,
----`jobs`, `ops`) and `bridge` on the server, `auth` on the client, and `events`, `time`,
+---`jobs`, `ops`), `commerce` and `bridge` on the server, `auth` on the client, and `events`, `time`,
 ---`ui`, `capabilities`, `engine` and `VERSION` on both.
 local rpf = rpf
 local events = rpf.events
@@ -316,6 +316,18 @@ if facade then
       return rpf.ops.unknown()
     end,
   }, "rpf.ops")
+end
+
+local commerce = rpf.commerce
+if commerce then
+  surface.commerce = freeze({
+    exchange = function(player, deal, op_id, apply)
+      return commerce.exchange(player, deal, op_id, apply)
+    end,
+    check = function(player, deal)
+      return commerce.check(player, deal)
+    end,
+  }, "rpf.commerce")
 end
 
 local bridge = rpf.bridge

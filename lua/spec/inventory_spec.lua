@@ -314,6 +314,41 @@ describe("rpf.inventory", function()
     end)
   end)
 
+  -- The items half of an exchange (J5): a plan across containers, made
+  -- whole before anything moves.
+  describe("plan_moves", function()
+    it("takes from each in turn and gives whole into the first that takes it, changing nothing", function()
+      local changes = assert(inventory.plan_moves({ BAG, CRATE }, { { item = "water", count = 2 } }, { { item = "water", count = 4 } }))
+      -- The bag weighs 3 water (15) and a rifle (40) of 100: taking two
+      -- leaves 45, and four more (20) fit there.
+      assert.are.equal(1, #changes)
+      assert.are.equal(BAG, changes[1].id)
+      assert.are.same({ { "water", 3 }, { "rifle", 1 } }, pairs_of(BAG), "nothing changed yet")
+      assert.is_true(rpf.records.set_contents(changes[1].id, changes[1].contents))
+      assert.are.same({ { "water", 4 }, { "rifle", 1 }, { "water", 1 } }, pairs_of(BAG))
+    end)
+
+    it("lets a take free the spot a give needs in a grid", function()
+      for x = 0, 2 do
+        for y = 0, 2 do
+          assert.is_true(inventory.add(GRID, "water", 1, { position = { x = x, y = y } }))
+        end
+      end
+      local gives = { { item = "rifle", count = 1 } }
+      assert.are.same({ nil, "no_space", "rifle" }, { inventory.plan_moves({ GRID }, {}, gives) })
+      local changes = assert(inventory.plan_moves({ GRID }, { { item = "water", count = 3 } }, gives))
+      assert.is_true(rpf.records.set_contents(GRID, changes[1].contents))
+      assert.are.equal(1, inventory.count(GRID, "rifle"))
+    end)
+
+    it("refuses too few units, no room, and no container, naming the item", function()
+      assert.are.same({ nil, "insufficient", "water" }, { inventory.plan_moves({ BAG, CRATE }, { { item = "water", count = 4 } }, {}) })
+      assert.are.same({ nil, "no_space", "rifle" }, { inventory.plan_moves({ CRATE }, {}, { { item = "rifle", count = 1 } }) })
+      assert.are.same({ nil, "no_container" }, { inventory.plan_moves({}, {}, { { item = "water", count = 1 } }) })
+      assert.are.same({ nil, "not_held" }, { inventory.plan_moves({ STASH }, {}, {}) })
+    end)
+  end)
+
   describe("move", function()
     it("moves part of a stack to another container", function()
       assert.is_true(inventory.move(BAG, 1, CRATE, { count = 2 }))

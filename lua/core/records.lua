@@ -328,44 +328,49 @@ end
 
 -- Changing held records -----------------------------------------------------
 
----The records written while `records.watch` runs a function, by key, or
----nil when nothing is watching.
----@type table<string, true>?
-local watching = nil
+---The sets `records.watch` is filling, one for each call of it still
+---running: one whose function yielded (an addon's `apply` waiting on
+---something, on FiveM) included. Every write is noted in each, so a watch
+---never misses its own function's writes, wherever they resume or whichever
+---Lua state they come back through; it may also see another's written
+---meanwhile, which only makes the journal wait for one more record.
+---@type table<table<string, true>, true>
+local watching = {}
 
 ---Asks for a flush after a change, so changes made together go out in one
 ---report, and notes the record for `records.watch`.
 ---@param entry rpf.records.Entry The record changed.
 local function touched(entry)
-  if watching then
-    watching[records.key(entry.kind, entry.id)] = true
+  if next(watching) ~= nil then
+    local key = records.key(entry.kind, entry.id)
+    for set in pairs(watching) do
+      set[key] = true
+    end
   end
   if rpf.sync then
     rpf.sync.schedule()
   end
 end
 
----Runs a function and lists the held records it wrote: what the grant of a
----composite operation changed (`rpf.facade`), so the journal can tell when
----each change is on disk (`rpf.sync.reported`). Nested, an outer watch
----sees the inner one's records too.
+---Runs a function and lists the held records written while it ran: what
+---the grant of a composite operation changed (`rpf.facade`,
+---`rpf.commerce`), so the journal can tell when each change is on disk
+---(`rpf.sync.reported`). Nested, an outer watch sees the inner one's records
+---too. A function that yields keeps watching until it returns, so two
+---grants that wait out of order each still see their own writes.
 ---@param fn function The function: an addon's, so it may throw.
----@return string[] keys The records it wrote, as `records.key` names them, sorted.
+---@return string[] keys The records written, as `records.key` names them, sorted.
 ---@return boolean ok False if it threw.
 ---@return any result What it returned first, or the error.
 ---@return any err What it returned second.
 function records.watch(fn)
-  local outer = watching
   local mine = {}
-  watching = mine
+  watching[mine] = true
   local ok, result, err = pcall(fn)
-  watching = outer
+  watching[mine] = nil
   local keys = {}
   for key in pairs(mine) do
     keys[#keys + 1] = key
-    if outer then
-      outer[key] = true
-    end
   end
   table.sort(keys)
   return keys, ok, result, err
@@ -541,22 +546,16 @@ local function unlimited(account)
   return false
 end
 
----Moves money between two held accounts, as one ledger entry. Both must be
----held here: an account this server does not hold is the portal's to write,
----and a report naming one is refused.
----
----The entry gets a `client_id` minted here, which the portal appends at most
----once, so it can be reported as often as it takes. It is reported with the
----paying account. Balances move here at once, and the paying account must
----cover the amount unless it has `unlimited_balance`. No balance may leave
----±`protocol.MAX_AMOUNT`, the widest integer both sides hold exactly.
+---Whether `records.transfer` would make an entry, without making it: the
+---same checks, in the same order, so a caller moving money with other
+---changes (`rpf.commerce`) finds every refusal before it changes anything.
 ---@param from string The paying account's uuid.
 ---@param to string The receiving account's uuid.
 ---@param amount number A positive integer, at most `protocol.MAX_AMOUNT`.
 ---@param description string Why, for the statement and staff.
----@return string? client_id The entry's id, or nil if refused.
----@return string? err `"not_held"`, `"invalid"` (a bad amount, the same account twice, or a description that is not a string of at most `MAX_DESCRIPTION_BYTES`), `"insufficient_funds"` or `"out_of_range"`. Nothing changes on an error.
-function records.transfer(from, to, amount, description)
+---@return boolean? ok True if the transfer would be made now.
+---@return string? err As `records.transfer` answers.
+function records.check_transfer(from, to, amount, description)
   local refused = external("money")
   if refused then
     return nil, refused
@@ -584,6 +583,31 @@ function records.transfer(from, to, amount, description)
   if payee.data.balance + amount > max then
     return nil, "out_of_range"
   end
+  return true
+end
+
+---Moves money between two held accounts, as one ledger entry. Both must be
+---held here: an account this server does not hold is the portal's to write,
+---and a report naming one is refused.
+---
+---The entry gets a `client_id` minted here, which the portal appends at most
+---once, so it can be reported as often as it takes. It is reported with the
+---paying account. Balances move here at once, and the paying account must
+---cover the amount unless it has `unlimited_balance`. No balance may leave
+---±`protocol.MAX_AMOUNT`, the widest integer both sides hold exactly.
+---@param from string The paying account's uuid.
+---@param to string The receiving account's uuid.
+---@param amount number A positive integer, at most `protocol.MAX_AMOUNT`.
+---@param description string Why, for the statement and staff.
+---@return string? client_id The entry's id, or nil if refused.
+---@return string? err `"not_held"`, `"invalid"` (a bad amount, the same account twice, or a description that is not a string of at most `MAX_DESCRIPTION_BYTES`), `"insufficient_funds"` or `"out_of_range"`. Nothing changes on an error.
+function records.transfer(from, to, amount, description)
+  local ok, err = records.check_transfer(from, to, amount, description)
+  if not ok then
+    return nil, err
+  end
+  local payer = assert(records.entries[records.key("account", from)])
+  local payee = assert(records.entries[records.key("account", to)])
   local client_id = rpf.protocol.new_id(rpf.sync.platform)
   payer.data.balance = payer.data.balance - amount
   payee.data.balance = payee.data.balance + amount

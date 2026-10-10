@@ -43,6 +43,7 @@
 ---@field inventory rpf.api.Inventory The domain-neutral facade: a player's items, and moving them. Server only.
 ---@field jobs rpf.api.Jobs The domain-neutral facade: a player's job. Server only.
 ---@field ops rpf.api.Ops Operation ids, which make the facade's commands safe to send again. Server only.
+---@field commerce rpf.api.Commerce Exchanges: money and items moved together, with your change to your own records, in one intent (J5). For shops, buy-back counters, crafting and other trades. Server only.
 ---@field world rpf.api.World The game world, through what the engine's adapter supports (J3). Server only.
 ---@field interactions rpf.api.Interactions Requests a player's client makes to an addon: `register` a handler on the server, `send` or `request` on the client (J3, J10).
 ---@field capabilities fun(): table<string, boolean> What this engine supports, by name: the game world's `position`, `bucket`, `model`, `entity`, `spawn` and `despawn` (server only), and the UI `notify`, `menu`, `input` and `progress` (both sides). Ask before offering a player something that needs one; a call to one that is missing says `unsupported`.
@@ -464,20 +465,22 @@ function Records.batch(ops) end
 ---
 ---```lua
 ---local op = rpf.ops.new()
----local ok, status, why = rpf.money.debit(player, "bank", 500, "Gold tag", op, function()
----  return rpf.records.update("acme_tags.tag", tag.id, { colour = "gold" }, { revision = tag.revision })
+---local ok, status, why = rpf.money.debit(player, "bank", 500, "Gold badge", op, function()
+---  return rpf.records.update("acme_badges.badge", badge.id, { label = "Gold" }, { revision = badge.revision })
 ---end)
 ---```
 ---
 ---```lua
----local op = rpf.ops.new() -- once per purchase, kept with it
----local ok, status, why = rpf.money.debit(player, "bank", 250, "Spray can", op)
----if ok then
----  rpf.inventory.give(player, "spray_can", 1, rpf.ops.new())
----elseif status == "refused" then
+---local op = rpf.ops.new() -- once per payment, kept with it
+---local ok, status, why = rpf.money.debit(player, "bank", 250, "Parking fine", op)
+---if status == "refused" then
 ---  -- tell the player why: why == "insufficient_funds", …
 ---end
 ---```
+---
+---To sell an item for money, use `rpf.commerce.exchange`, which moves both in
+---one intent: a debit followed by a separate give can take the money and
+---then find the player has no room.
 ---
 ---**Server only.**
 ---@class rpf.api.Characters
@@ -625,10 +628,90 @@ function Ops.unknown() end
 ---A facade command whose result is `unknown`.
 ---@class rpf.OpUnknown
 ---@field op_id string Its op id.
----@field call string What it was: `money.debit`, `money.credit`, `inventory.give` or `inventory.take`.
+---@field call string What it was: `money.debit`, `money.credit`, `inventory.give`, `inventory.take` or `commerce.exchange`.
 ---@field at number When its op id was minted, in milliseconds since the Unix epoch.
----@field detail { player: string?, account: string?, amount: number?, item: string?, count: number?, reason: string? } What it was: the player's account (`player_id`), and the command's arguments.
+---@field detail { player: string?, account: string?, amount: number?, paid: number?, item: string?, count: number?, take: string?, give: string?, reason: string? } What it was: the player's account (`player_id`), and the command's arguments; for an exchange, what the player paid (`amount`) or was paid (`paid`), and the items taken and given (`water:2,bread:1`).
 ---@field cause string What went wrong, for staff.
+
+---**Exchanges** (J5): money and items moved together, with your change to
+---your own records, as one intent. What a shop, a buy-back counter, a
+---crafting bench or a licence office builds on, rather than chaining facade
+---commands and finding out half way that the second is refused.
+---
+---A deal names what moves, from the player's side:
+---
+---```lua
+---local op = rpf.ops.new() -- once per purchase, kept with it
+---local ok, status, why = rpf.commerce.exchange(player, {
+---  account = "wallet",                         -- the player's account, by name
+---  pay = 10,                                   -- or `paid = 10`: the player is paid
+---  give = { { item = "water", count = 2 } },   -- what the player receives
+---  take = { { item = "empty_bottle", count = 2 } }, -- what they hand over
+---  reason = "Corner shop: 2 water",            -- on their statement, and for staff
+---  records = { { type = "acme_shop.stock", id = stock.id, revision = stock.revision } },
+---}, op, function()
+---  return rpf.records.update("acme_shop.stock", stock.id, { left = stock.fields.left - 2 }, { revision = stock.revision })
+---end)
+---```
+---
+---- **On an RPF server it is all or nothing.** Everything is checked before
+---  anything moves: the account and its balance, every item given in the
+---  current catalog, every record in `records` still at the revision you
+---  read, and the items as one plan across the character's containers (so
+---  what is taken can make room for what is given). Then the money, the items
+---  and `apply` move together. A refusal changes nothing.
+---- **Through a bridge to a framework** (a companion server), the
+---  framework's calls cannot be made atomic: they run in order (the money,
+---  each take, each give), then `apply`. A refusal before anything went
+---  through changes nothing; a failure after one did is `unknown`, for staff,
+---  and nothing is refunded. `check` first makes that rare.
+---- **Retries** are safe with the same op id: the deal runs at most once, and
+---  sending it again returns the first answer.
+---- **`apply`** is your change the deal pays for, run only once everything
+---  moved. Check everything it needs first (name the records in `records`),
+---  so it cannot fail; nil, false or a throw make the deal `unknown`. Keep
+---  it to fields of records you hold, which nothing but you can refuse.
+---
+---Only in-game money and items: never connect a deal to a real-money
+---payment (Cfx.re's rules forbid it).
+---
+---**Server only.**
+---@class rpf.api.Commerce
+local Commerce = {}
+
+---Makes a deal once per op id: what the player pays or is paid, hands over
+---and receives, with your change to your own records.
+---@param player any The engine's handle.
+---@param deal rpf.Deal What moves.
+---@param op_id string From `rpf.ops.new()`.
+---@param apply (fun(): any)? Your change the deal pays for: run once everything moved, in the same intent. Answer non-nil (what `rpf.records.update` returns does); nil, false or a throw make the deal `unknown`.
+---@return boolean? ok True once made (and applied).
+---@return rpf.FacadeStatus? status Why not.
+---@return string? reason For `refused`: as for `check`, and `invalid_op`, `expired_op`, `journal_full`.
+function Commerce.exchange(player, deal, op_id, apply) end
+
+---Whether a deal can be made now, without making it, so you can show a
+---player what they can afford and carry. Through a bridge it asks the
+---framework what it can (the balance, the counts); whether a give fits is
+---only known when it runs.
+---@param player any The engine's handle.
+---@param deal rpf.Deal The deal.
+---@return boolean? ok True if it can.
+---@return "refused"|"unavailable"|nil status Why not.
+---@return string? reason For `refused`: `invalid` (not a deal), `not_logged_in`, `no_character`, `not_found`, `not_held` or `inactive` (a record in `records`), `stale` (one moved on since you read it), `unknown_item` (an item given that the catalog does not have), `no_container`, `insufficient`, `no_space`, `invalid_contents`, `no_account`, `unsupported`, `insufficient_funds`, `out_of_range`.
+function Commerce.check(player, deal) end
+
+---A deal: what moves, from the player's side. At least one of `pay`,
+---`paid`, `take` and `give`. Any other key is refused (`invalid`), so a
+---misspelt one cannot sell for nothing.
+---@class rpf.Deal
+---@field account string? The player's account's name (`rpf.money.accounts()`); needed when money moves.
+---@field pay integer? What the player pays, from 1 to 2^53 − 1. Not with `paid`.
+---@field paid integer? What the player is paid. Not with `pay`.
+---@field take { item: string, count: integer }[]? What the player hands over: plain units, at most 16 lines.
+---@field give { item: string, count: integer }[]? What the player receives: plain units, at most 16 lines.
+---@field reason string Why, for the player's statement and staff: 1 to 256 bytes.
+---@field records { type: string, id: string, revision: integer }[]? Records you priced the deal against (a listing, the stock), each at the revision you read: one that moved on since is `stale`, and nothing moves. At most 16.
 
 ---The game world, through capabilities the engine's adapter declares. The
 ---core never branches on the engine: where an adapter does not support a

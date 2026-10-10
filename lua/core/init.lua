@@ -41,6 +41,7 @@
 ---@field data rpf.data The record calls addons make (J3), which `rpf.api.records` fronts.
 ---@field ops rpf.ops Operation ids, and the journal that runs each facade command once (J3).
 ---@field facade rpf.facade The domain-neutral facade: characters, money, items and jobs for addons, from RPF's own modules or the bridge (J3, K2).
+---@field commerce rpf.commerce Exchanges: money and items moved together in one journaled intent, for shops and other trades (J5).
 ---@field bridge rpf.bridge The bridge to an existing RP framework on a companion server: its contract, lifecycle and the calls routed to it (K2).
 ---@field world rpf.world The game world through the adapter's capabilities, and placements (J3, J4).
 ---@field interactions rpf.interactions Requests a player's client makes to an addon's registered handler (J3).
@@ -118,6 +119,7 @@ rpf.files = {
     "ops.lua",
     "bridge.lua",
     "facade.lua",
+    "commerce.lua",
     "world.lua",
     "targets.lua",
     "interactions.lua",

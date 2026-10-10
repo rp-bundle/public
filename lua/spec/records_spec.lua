@@ -346,5 +346,78 @@ describe("rpf.records", function()
       assert.is_string(rpf.records.transfer(BANK, WALLET, max - 100, "Grant"))
       assert.are.same({ nil, "out_of_range" }, { rpf.records.transfer(BANK, WALLET, 1, "x") })
     end)
+
+    it("checks a transfer as it would make it, and makes nothing", function()
+      local elsewhere = "00000009-0000-4000-8000-000000000009"
+      assert.is_true(rpf.records.check_transfer(WALLET, BANK, 100, "Fine"))
+      assert.are.same({ nil, "insufficient_funds" }, { rpf.records.check_transfer(WALLET, BANK, 101, "Fine") })
+      assert.are.same({ nil, "invalid" }, { rpf.records.check_transfer(WALLET, WALLET, 1, "x") })
+      assert.are.same({ nil, "not_held" }, { rpf.records.check_transfer(WALLET, elsewhere, 1, "x") })
+      assert.is_true(rpf.accounts.check_pay(BANK, WALLET, 5, "Wage"))
+      assert.are.same({ nil, "not_a_source" }, { rpf.accounts.check_pay(WALLET, BANK, 5, "Wage") })
+      assert.are.equal(100, rpf.records.get("account", WALLET).balance)
+      assert.are.equal(0, #rpf.records.entries["account:" .. WALLET].transactions)
+      assert.are.equal(0, #rpf.records.entries["account:" .. BANK].transactions)
+    end)
+  end)
+
+  -- What a composite operation's grant wrote is what the journal waits for
+  -- (`rpf.facade`, `rpf.commerce`), so a grant must never lose sight of its
+  -- own writes, even when two of them wait and resume out of order.
+  describe("watch", function()
+    before_each(function()
+      rpf.records.take(held())
+    end)
+
+    it("lists what a function wrote, and an outer watch sees an inner one's", function()
+      local inner
+      local keys, ok, result = rpf.records.watch(function()
+        assert(rpf.records.transfer(WALLET, BANK, 1, "x"))
+        inner = rpf.records.watch(function()
+          assert(rpf.records.set_contents(POCKETS, rpf.json.object({ layout = "list", stacks = rpf.json.array() })))
+        end)
+        return "done"
+      end)
+      assert.is_true(ok)
+      assert.are.equal("done", result)
+      assert.are.same({ "container:" .. POCKETS }, inner)
+      assert.are.same({ "account:" .. WALLET, "container:" .. POCKETS }, keys)
+    end)
+
+    it("keeps each function's own writes when two yield and resume out of order", function()
+      local results = {}
+      ---A watched function that yields, then writes.
+      ---@param name string Which.
+      ---@param write fun() Its write.
+      ---@return thread co Its coroutine, started and waiting.
+      local function waiting(name, write)
+        local co = coroutine.create(function()
+          results[name] = rpf.records.watch(function()
+            coroutine.yield()
+            write()
+            return true
+          end)
+        end)
+        assert(coroutine.resume(co))
+        return co
+      end
+      local first = waiting("first", function()
+        assert(rpf.records.transfer(WALLET, BANK, 1, "x"))
+      end)
+      local second = waiting("second", function()
+        assert(rpf.records.set_contents(POCKETS, rpf.json.object({ layout = "list", stacks = rpf.json.array() })))
+      end)
+      assert(coroutine.resume(first))
+      assert(coroutine.resume(second))
+      local first_keys, second_keys = {}, {}
+      for _, key in ipairs(results.first) do
+        first_keys[key] = true
+      end
+      for _, key in ipairs(results.second) do
+        second_keys[key] = true
+      end
+      assert.is_true(first_keys["account:" .. WALLET], "the first sees its own write")
+      assert.is_true(second_keys["container:" .. POCKETS], "the second sees its own write")
+    end)
   end)
 end)

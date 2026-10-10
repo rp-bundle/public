@@ -125,7 +125,7 @@ describe("rpf.api", function()
         assert.are.same(keys(meta[class]), names, class)
       end
     end
-    assert.are.same({ "addons", "auth", "bridge", "characters", "config", "events", "interactions", "inventory", "jobs", "money", "ops", "players", "records", "staff", "time", "ui", "world" }, sorted((function()
+    assert.are.same({ "addons", "auth", "bridge", "characters", "commerce", "config", "events", "interactions", "inventory", "jobs", "money", "ops", "players", "records", "staff", "time", "ui", "world" }, sorted((function()
       local out = {}
       for part in pairs(parts) do
         if part ~= "" then
@@ -205,7 +205,7 @@ describe("rpf.api", function()
 
     it("reaches nothing internal: every member is a plain value or a function", function()
       local built = rpf.api_members()
-      local internals = { rpf, p, rpf.connection, rpf.events, rpf.players, rpf.staff, rpf.config, rpf.client, rpf.join, rpf.addons, rpf.time, rpf.data, rpf.records, rpf.facade, rpf.ops, rpf.accounts, rpf.inventory, rpf.jobs, rpf.characters, rpf.world, rpf.interactions }
+      local internals = { rpf, p, rpf.connection, rpf.events, rpf.players, rpf.staff, rpf.config, rpf.client, rpf.join, rpf.addons, rpf.time, rpf.data, rpf.records, rpf.facade, rpf.commerce, rpf.ops, rpf.accounts, rpf.inventory, rpf.jobs, rpf.characters, rpf.world, rpf.interactions }
       for part, names in pairs(built) do
         local target = part == "" and rpf.api or rpf.api[part]
         for _, name in ipairs(target and names or {}) do
@@ -234,7 +234,7 @@ describe("rpf.api", function()
       for key in pairs(rpf.api) do
         seen[key] = true
       end
-      assert.are.same(sorted({ "VERSION", "engine", "events", "players", "staff", "config", "addons", "records", "time", "characters", "money", "inventory", "jobs", "ops", "bridge", "world", "interactions", "capabilities", "ui" }), keys(seen))
+      assert.are.same(sorted({ "VERSION", "engine", "events", "players", "staff", "config", "addons", "records", "time", "characters", "money", "inventory", "jobs", "ops", "commerce", "bridge", "world", "interactions", "capabilities", "ui" }), keys(seen))
     end)
 
     it("refuses a script emitting a core event, and passes a script's own events", function()

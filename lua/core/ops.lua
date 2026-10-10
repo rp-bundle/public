@@ -62,7 +62,7 @@ ops.ENTRY_PREFIX = "rpf.ops.op."
 ---One operation in the journal.
 ---@class rpf.ops.Entry
 ---@field at number When its op id was minted, from the id.
----@field call string What it was, for staff: `money.debit`, `inventory.give`, …
+---@field call string What it was, for staff: `money.debit`, `inventory.give`, `commerce.exchange`, …
 ---@field state "pending"|"done" Whether it finished.
 ---@field ok boolean? Whether it succeeded, once done.
 ---@field status string? Its refusal's status, once done and not ok: `refused`, `unavailable` or `unknown`.
@@ -77,18 +77,24 @@ ops.ENTRY_PREFIX = "rpf.ops.op."
 ---@class rpf.ops.Detail
 ---@field player string? The player's account (`player_id`).
 ---@field account string? The account's name, for money.
----@field amount number? The amount, for money.
+---@field amount number? The amount, for money: what the player paid, for an exchange.
 ---@field item string? The item's slug, for items.
 ---@field count number? How many, for items.
----@field reason string? The reason the addon gave, for money.
+---@field reason string? The reason the addon gave, for money and exchanges.
+---@field paid number? What the player was paid, for an exchange (`rpf.commerce`).
+---@field take string? The items the player handed over, for an exchange: `water:2,bread:1`.
+---@field give string? The items the player received, for an exchange.
 
 ---What `ops.unknown()` lists and `domains.op_unknown` carries.
 ---@class rpf.ops.Unknown
 ---@field op_id string The op id.
----@field call string What it was: `money.debit`, `inventory.give`, …
+---@field call string What it was: `money.debit`, `inventory.give`, `commerce.exchange`, …
 ---@field at number When its op id was minted, in milliseconds since the Unix epoch.
 ---@field detail rpf.ops.Detail What it was.
 ---@field cause string What went wrong.
+
+---The fields of `rpf.ops.Detail`, in the order the log names them.
+local DETAIL_KEYS = { "player", "account", "amount", "paid", "item", "count", "take", "give", "reason" }
 
 ---@type table<string, rpf.ops.Entry>
 local entries = {}
@@ -204,7 +210,7 @@ end
 local function detail_of(detail)
   local out = {}
   if type(detail) == "table" then
-    for _, key in ipairs({ "player", "account", "amount", "item", "count", "reason" }) do
+    for _, key in ipairs(DETAIL_KEYS) do
       local value = detail[key]
       if type(value) == "string" or type(value) == "number" then
         out[key] = value
@@ -235,7 +241,7 @@ end
 local function surface(id, entry)
   local unknown = unknown_of(id, entry)
   local parts = {}
-  for _, key in ipairs({ "player", "account", "amount", "item", "count", "reason" }) do
+  for _, key in ipairs(DETAIL_KEYS) do
     if unknown.detail[key] ~= nil then
       parts[#parts + 1] = key .. "=" .. tostring(unknown.detail[key])
     end

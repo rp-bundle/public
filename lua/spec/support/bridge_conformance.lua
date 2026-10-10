@@ -30,6 +30,9 @@
 ---   refused, where it is unknown, and where the server dies between a
 ---   successful debit and the outbox write, which ends `unknown` for staff
 ---   with nothing compensated;
+--- - an exchange (J5) through the framework, in order and once per op id,
+---   refused with nothing changed before any call went through, and
+---   `unknown` for staff, refunding nothing, when a later call fails;
 --- - the framework's key never reaching the portal.
 ---@class spec.bridge_conformance
 local suite = {}
@@ -447,6 +450,91 @@ function suite.cases(kit)
           end),
         })
         assert.are.equal(1, fw.changes["money.debit"])
+      end,
+    },
+    {
+      name = "makes a deal through the framework, in order, once per op id (J5)",
+      run = function(world)
+        local fw = framework()
+        companion(world, kit, fw)
+        local api = world.api
+        local handle = playing(world, fw, "CIT-JANE")
+        local start = fw:balance("CIT-JANE", bank)
+        local badge = assert(api.records.create("acme_badges.badge", { label = "Bronze" }, { owner = { kind = "player", id = PLAYER } }))
+        local deal = {
+          account = bank,
+          pay = 10,
+          reason = "Corner shop",
+          records = { { type = "acme_badges.badge", id = badge.id, revision = badge.revision } },
+        }
+        if kit.item then
+          deal.give = { { item = kit.item, count = 2 } }
+        end
+        assert.is_true(api.commerce.check(handle, deal))
+        local op = api.ops.new()
+        assert.is_true(api.commerce.exchange(handle, deal, op))
+        assert.is_true(api.commerce.exchange(handle, deal, op), "the same op again")
+        assert.are.equal(start - 10, fw:balance("CIT-JANE", bank))
+        assert.are.equal(1, fw.changes["money.debit"])
+        if kit.item then
+          assert.are.equal(5, fw:count("CIT-JANE", kit.item))
+          assert.are.equal(1, fw.changes["inventory.give"])
+        end
+        -- Refused before anything went through: nothing changed, and the
+        -- framework was asked only what it had to be.
+        deal.pay = 99999
+        assert.are.same({ nil, "refused", "insufficient_funds" }, { api.commerce.check(handle, deal) })
+        assert.are.same({ nil, "refused", "insufficient_funds" }, { api.commerce.exchange(handle, deal, api.ops.new()) })
+        deal.pay = 10
+        assert(api.records.update("acme_badges.badge", badge.id, { label = "Silver" }))
+        assert.are.same({ nil, "refused", "stale" }, { api.commerce.exchange(handle, deal, api.ops.new()) })
+        assert.are.equal(start - 10, fw:balance("CIT-JANE", bank))
+        assert.are.equal(1, fw.changes["money.debit"])
+        if not kit.item then
+          -- A deal with items, where the framework supports no item call,
+          -- is refused without reaching it.
+          local swap = { take = { { item = "water", count = 1 } }, reason = "Corner shop" }
+          assert.are.same({ nil, "refused", "unsupported" }, { api.commerce.check(handle, swap) })
+          assert.are.same({ nil, "refused", "unsupported" }, { api.commerce.exchange(handle, swap, api.ops.new()) })
+        end
+        assert.are.equal(0, #api.ops.unknown())
+      end,
+    },
+    {
+      name = "is unknown for staff when a framework call fails once the money went, refunding nothing (J5)",
+      run = function(world)
+        if not kit.item then
+          return -- One call per deal: nothing can fail after another went.
+        end
+        local fw = framework()
+        companion(world, kit, fw)
+        local api = world.api
+        local handle = playing(world, fw, "CIT-JANE")
+        local start = fw:balance("CIT-JANE", bank)
+        local granted = 0
+        fw:fail_next("inventory.give", "unknown")
+        local op = api.ops.new()
+        assert.are.same({ nil, "unknown" }, {
+          api.commerce.exchange(handle, {
+            account = bank,
+            pay = 10,
+            give = { { item = kit.item, count = 1 } },
+            reason = "Corner shop",
+          }, op, function()
+            granted = granted + 1
+            return true
+          end),
+        })
+        assert.are.equal(0, granted, "nothing granted")
+        assert.are.equal(start - 10, fw:balance("CIT-JANE", bank), "charged, and not refunded: staff resolve it")
+        assert.is_nil(fw.changes["money.credit"])
+        local listed = api.ops.unknown()
+        assert.are.equal(1, #listed)
+        assert.are.equal("commerce.exchange", listed[1].call)
+        assert.truthy(listed[1].cause:find("money.debit went through", 1, true), listed[1].cause)
+        assert.are.equal(kit.item .. ":1", listed[1].detail.give)
+        assert.are.same({ nil, "unknown" }, { api.commerce.exchange(handle, { account = bank, pay = 10, reason = "x" }, op) })
+        assert.are.equal(1, fw.changes["money.debit"], "never run again")
       end,
     },
     {
