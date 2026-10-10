@@ -23,9 +23,17 @@
 ---   outbox until it is answered, so nothing is lost) and reports its close on
 ---   the next tick.
 ---
+---A GWSockets call that raises (`write`, `closeNow`) is logged at `warn`, once
+---per connection for a send, and the transport keeps its answer to the core: a
+---failed send is `false`, and a failed close is still reported as a close. What
+---a refused frame means is the core's to decide; this only keeps the cause,
+---which is gone by the time the connection is noticed dead.
+---
 ---The certificate is always verified. Text frames only: every frame is JSON.
 ---@class rpf.gmod.Transport
 local transport = {}
+
+local shared = include("rpf/platform/gmod/shared.lua") --[[@as rpf.gmod.Shared]]
 
 ---One connection attempt and what has been reported for it.
 ---@class rpf.gmod.Connection
@@ -34,6 +42,7 @@ local transport = {}
 ---@field open boolean Whether `open` has been reported.
 ---@field closed boolean Whether `close` has been reported. Nothing is reported after it.
 ---@field error string? The last error GWSockets reported, kept for the close reason.
+---@field send_failed boolean Whether a failed `write` has been logged, so a connection that keeps being written to says why once.
 
 ---The current connection attempt, if any.
 ---@type rpf.gmod.Connection?
@@ -61,7 +70,7 @@ function transport.connect(url, handlers)
     transport.disconnect()
   end
   ---@type rpf.gmod.Connection
-  local connection = { handlers = handlers, open = false, closed = false }
+  local connection = { handlers = handlers, open = false, closed = false, send_failed = false }
   current = connection
   local made, socket = pcall(GWSockets.createWebSocket, url, true)
   if not made or not socket then
@@ -101,7 +110,10 @@ function transport.disconnect()
   end
   current = nil
   if connection.socket then
-    pcall(connection.socket.closeNow, connection.socket)
+    local ok, err = pcall(connection.socket.closeNow, connection.socket)
+    if not ok then
+      shared.log("warn", "rpf: GWSockets could not close the websocket: " .. tostring(err))
+    end
   end
   timer.Simple(0, function()
     finish(connection, "closed by the core")
@@ -110,13 +122,17 @@ end
 
 ---Sends one text frame on the open connection.
 ---@param text string The frame.
----@return boolean sent False when no connection is open.
+---@return boolean sent False when no connection is open, or GWSockets raised on the write (logged once per connection).
 function transport.send(text)
   local connection = current
   if not connection or not connection.open or connection.closed or not connection.socket then
     return false
   end
-  local ok = pcall(connection.socket.write, connection.socket, text)
+  local ok, err = pcall(connection.socket.write, connection.socket, text)
+  if not ok and not connection.send_failed then
+    connection.send_failed = true
+    shared.log("warn", "rpf: GWSockets could not send a frame: " .. tostring(err))
+  end
   return ok
 end
 

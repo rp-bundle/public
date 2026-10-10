@@ -604,6 +604,35 @@ describe("the FiveM adapter", function()
       assert.is_true(said)
     end)
 
+    it("logs why a send failed once per connection, and reports the frame as unsent", function()
+      local driver, record = started_server()
+      local first = record.connects[1].id
+      driver.socket_open(first)
+      rawget(_G, "exports")["rpf-ws"].send = function()
+        error("rpf-ws is not running")
+      end
+      local platform = rpf.connection.platform
+      assert.is_false(platform.send("x"))
+      assert.is_false(platform.send("x"))
+      local count = 0
+      for _, line in ipairs(record.logs) do
+        if line.level == "warn" and line.message:find("could not send a frame on socket " .. first, 1, true) then
+          count = count + 1
+          assert.truthy(line.message:find("rpf-ws is not running", 1, true), line.message)
+        end
+      end
+      assert.are.equal(1, count)
+    end)
+
+    it("says nothing for a send the shim declines because the socket is not open", function()
+      local driver, record = load_side("server", CONVARS)
+      driver.start()
+      assert.is_false(rpf.connection.platform.send("x"), "still opening")
+      for _, line in ipairs(record.logs) do
+        assert.is_nil(line.message:find("could not send", 1, true), line.message)
+      end
+    end)
+
     it("owes the core a close, later, when the shim cannot connect", function()
       local driver, record = load_side("server", CONVARS)
       local attempts = 0

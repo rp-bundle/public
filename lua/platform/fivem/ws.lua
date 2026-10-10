@@ -46,6 +46,9 @@ function ws.new(shim, after, log)
   ---until it closes or is given up.
   ---@type integer?
   local current = nil
+  ---The connection whose failed `send` has been logged.
+  ---@type integer?
+  local warned = nil
 
   -- A shim that is missing or throws still owes the core its one `close`,
   -- later, as the interface promises, so the core backs off and tries again
@@ -84,13 +87,24 @@ function ws.new(shim, after, log)
     end
   end
 
+  -- A shim that is not running raises where one that is answers `false`, and
+  -- the raise is the only place its cause is visible. The connection is noticed
+  -- dead later, so the cause is logged now, once per connection: the core
+  -- keeps sending while it waits.
   local function send(text)
     local id = current
     if not id then
       return false
     end
     local ok, sent = pcall(shim.send, shim, id, text)
-    return ok and sent == true
+    if not ok then
+      if warned ~= id then
+        warned = id
+        log("warn", "rpf: the rpf-ws resource could not send a frame on socket " .. tostring(id) .. ": " .. tostring(sent))
+      end
+      return false
+    end
+    return sent == true
   end
 
   local function opened(id)

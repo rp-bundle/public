@@ -438,6 +438,59 @@ describe("the Gmod adapter's platform members", function()
     world:socket_open(record.connects[1].id)
     assert.is_true(platform.send("{}"))
   end)
+
+  it("logs why a write failed once per connection, and reports the frame as unsent", function()
+    local world, record = boot("server")
+    local platform = world.core.connection.platform
+    local socket = record.connects[1].id
+    world:socket_open(socket)
+    world.sockets[socket].write = function()
+      error("the socket is gone", 0)
+    end
+    assert.is_false(platform.send("{}"))
+    assert.is_false(platform.send("{}"))
+    assert.are.equal(1, logged(record, "warn", "GWSockets could not send a frame: the socket is gone"))
+
+    -- The next connection is a new one, so it says why again.
+    world:socket_close(socket, "gone")
+    record.time = record.time + 120000
+    world:run_due()
+    local second = record.connects[2].id
+    world:socket_open(second)
+    world.sockets[second].write = function()
+      error("still gone", 0)
+    end
+    assert.is_false(world.core.connection.platform.send("{}"))
+    assert.are.equal(1, logged(record, "warn", "GWSockets could not send a frame: still gone"))
+  end)
+
+  it("gives up a connection whose Hello cannot be written, and tries again after a backoff", function()
+    local world, record = boot("server")
+    local socket = record.connects[1].id
+    world.sockets[socket].write = function()
+      error("the socket is gone", 0)
+    end
+    world:socket_open(socket)
+    assert.are.same({ socket }, record.closes, "the core closed it at once")
+    assert.are.equal(1, logged(record, "warn", "GWSockets could not send a frame: the socket is gone"))
+    record.time = record.time + 120000
+    world:run_due()
+    assert.are.equal(2, #record.connects)
+  end)
+
+  it("logs why a close failed, and still reports the close once", function()
+    local world, record = boot("server")
+    welcome(world, record)
+    local socket = record.connects[1].id
+    world.sockets[socket].closeNow = function()
+      error("already closed", 0)
+    end
+    world:run_hook("ShutDown")
+    assert.are.equal(1, logged(record, "warn", "GWSockets could not close the websocket: already closed"))
+    world:run_due()
+    world:socket_close(socket, "closed")
+    assert.are.equal(1, logged(record, "warn", "disconnected"), "the core heard one close")
+  end)
 end)
 
 describe("the Gmod adapter's client", function()
