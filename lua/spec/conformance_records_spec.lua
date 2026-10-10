@@ -57,7 +57,7 @@ local function tags(limit)
         fields = {
           label = { type = "string" },
           lit = { type = "boolean", index = true },
-          meta = { type = "json", max_bytes = 256 },
+          meta = { type = "json", max_bytes = 4096, default = { pad = string.rep("x", 3000) } },
         },
       },
     },
@@ -619,6 +619,35 @@ conformance.run(busted, "addon records", {
       world:advance(1000)
       world:pump()
       assert.is_false(world.portal.records[TAG].held, "given back once there was room")
+    end,
+  },
+  {
+    name = "keeps a batch's answer apart from what its events hand listeners",
+    run = function(world)
+      local api = installed(world)
+      api.events.on("records.created", function(change)
+        change.record.fields.text = "changed by a listener"
+      end)
+      local results = assert(api.records.batch({
+        { op = "create", type = "acme_tags.tag", fields = tag("mine"), owner = OWNER.owner },
+      }))
+      assert.are.equal("mine", results[1].fields.text)
+    end,
+  },
+  {
+    name = "measures a batch's report by its stored fields, defaults and all",
+    run = function(world)
+      local api = installed(world)
+      local options = world.core.connection.options
+      local budget = options.max_bytes
+      -- Room for what was given, not for the record the defaults make.
+      options.max_bytes = world.core.connection.origin_bytes + 2000
+      local _, err = api.records.batch({
+        { op = "create", type = "acme_tags.mark", fields = { label = "hi" }, owner = OWNER.owner },
+      })
+      options.max_bytes = budget
+      assert.are.equal("outbox_full", err)
+      assert.are.equal(0, #api.records.list("acme_tags.mark"))
     end,
   },
   {

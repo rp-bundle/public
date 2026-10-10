@@ -732,7 +732,7 @@ local function plan_create(def, type_name, fields, opts, taken, planned)
   if not checked then
     return nil, "invalid", refusal
   end
-  return { owner = { kind = owner.kind, id = owner.id }, id = opts.id, fields = fields }
+  return { owner = { kind = owner.kind, id = owner.id }, id = opts.id, fields = fields, stored = checked }
 end
 
 ---Makes a live record of an active addon's type, held by this server from
@@ -857,7 +857,7 @@ local function plan_update(def, type_name, id, patch, opts)
   if not fields then
     return nil, "invalid", refusal
   end
-  return { entry = entry, patch = changes }
+  return { entry = entry, patch = changes, stored = fields }
 end
 
 ---Changes fields of a held record: only what the patch names, checked whole
@@ -1010,7 +1010,9 @@ function data.batch(ops)
   end
   local bytes = 1024
   for _, plan in ipairs(plans) do
-    local ok, text = pcall(json.encode, json.copy(plan.fields or plan.patch or json.object({})))
+    -- The record as it will be stored, defaults filled in: what a create
+    -- reports, and what a whole report of an update would carry.
+    local ok, text = pcall(json.encode, plan.stored or json.object({}))
     bytes = bytes + 512 + 2 * ((ok and text) and #text or rpf.manifest.MAX_RECORD_BYTES)
   end
   if not rpf.sync.connection:has_room("state_changed", bytes) then
@@ -1037,7 +1039,9 @@ function data.batch(ops)
     end
     local record = name ~= "records.deleted" and data.get(plan.type, id) or nil
     results[i] = record or true
-    changes[i] = { name = name, change = { type = plan.type, id = id, record = record, by = "addon" } }
+    -- The event's copy is its own: a listener cannot change the answer.
+    local announced = name ~= "records.deleted" and data.get(plan.type, id) or nil
+    changes[i] = { name = name, change = { type = plan.type, id = id, record = announced, by = "addon" } }
   end
   rpf.sync.flush()
   for _, change in ipairs(changes) do
