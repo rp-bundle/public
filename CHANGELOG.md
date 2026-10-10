@@ -43,6 +43,14 @@ keep the job the portal has.
   placement. No migration, route or protocol change: a world-backed type is
   still only fields.
 
+- Bridges to existing RP frameworks, the Qbox pilot (K3, #93): `rpf-qbox`, a
+  resource in the FiveM zip that only a Qbox server ensures, runs RPF beside
+  qbx_core and ox_inventory in the companion profile. It is the character
+  selection after the RPF login, logs out at once a character qbx_core's own
+  callbacks load before it, and routes the facade's money (`cash`, `bank`,
+  `crypto`), items and job to qbx_core's and ox_inventory's exports. It was
+  tested with qbx_core 1.24.0, ox_inventory 2.48.0 and ox_lib 3.40.0.
+  Installing it is in [Installing](docs/installing.md#beside-qbox).
 - Bridges to existing RP frameworks, part 3 (K2, #92): the shared bridge
   conformance suite (`lua/spec/support/bridge_conformance.lua`) every
   bridge runs against a fake of its framework, on the mock platform and the

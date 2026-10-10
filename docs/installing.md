@@ -59,8 +59,10 @@ include it: the txAdmin recipe installs it, and by hand you download
 
 1. Download `rpf-fivem-<version>.zip` from the release.
 2. Unzip it into the server's `resources/`. You get one folder, `[rpf]`,
-   holding the two resources `rpf` and `rpf-ws`. FXServer finds resources
-   inside a bracketed folder, and starts only what `server.cfg` ensures.
+   holding the resources `rpf` and `rpf-ws`, and `rpf-qbox`, which only a
+   server running Qbox uses ([Beside Qbox](#beside-qbox)). FXServer finds
+   resources inside a bracketed folder, and starts only what `server.cfg`
+   ensures.
 3. If the server has no ox_lib, or one older than 3.40.0, download
    `ox_lib.zip` from [its releases](https://github.com/overextended/ox_lib/releases)
    and unzip it into `resources/` too: one folder, `ox_lib`. Take the
@@ -94,6 +96,52 @@ Replace the `[rpf]` folder with the new release's and restart the server.
 Your `server.cfg` stays as it is. A release that changes anything you set
 says so in its notes, and so does one that needs a newer ox_lib, which the
 console says at start too.
+
+### Beside Qbox
+
+A server already running [Qbox](https://github.com/Qbox-project/qbx_core)
+can keep it. Qbox goes on owning characters, money and jobs, ox_inventory
+goes on owning items, and the framework adds its player accounts and
+login, moderation, the staff portal and addons. This is the **companion**
+profile, and the release's `rpf-qbox` resource is the bridge between them
+([the bridge](../lua/bridges/qbox/README.md)). It was tested with qbx_core
+1.24.0, ox_inventory 2.48.0 and ox_lib 3.40.0, and logs a warning on
+another qbx_core.
+
+1. In the portal, on the server's **Settings** page, set **Profile** to
+   **Companion**. The game server takes it at its next start, and the page
+   says "Pending restart" until then.
+2. In `qbx_core/config/client.lua`, set `useExternalCharacters = true`. The
+   bridge is the character selection now, shown once a player has logged
+   in to the framework. Remove any other character selection resource: a
+   second one would load characters past the framework's login, and the
+   bridge logs those out (Troubleshooting, below).
+3. In `server.cfg`, after Qbox's own lines (`ensure [ox]`, `ensure [qbx]`
+   in its recipe, which start ox_lib, oxmysql, qbx_core and ox_inventory),
+   ensure the framework and then the bridge:
+
+   ```
+   set rpf_url "wss://portal.example/ws"
+   set rpf_api_key "rpf_…"
+   ensure rpf-ws
+   ensure rpf
+   ensure rpf-qbox
+   ```
+
+4. Restart the server.
+
+A player logs in to the framework first, and then picks or creates a
+character in the bridge's selection. Creating one goes through qbx_core's
+own creation, so its character limit and starter items apply. Restarting
+qbx_core or ox_inventory needs nothing else: until it is back, the bridge
+answers addons that it is unavailable. `restart rpf` stops `rpf-qbox` with
+it, so follow it with `ensure rpf-qbox`.
+
+What qbx_core leaves open: its own character callbacks still log in any
+client that asks, whatever `useExternalCharacters` says. The bridge logs
+such a character out at once, while the framework still holds the player
+still, but qbx_core keeps it loaded for about 200 ms first. Closing that
+gap is qbx_core's to do.
 
 ## Garry's Mod
 
@@ -225,6 +273,37 @@ console.
 **`rpf: rpf_ws_url is not the portal's websocket address: …`** and
 **`rpf: rpf_api_key does not look like a server API key, …`**: as on FiveM,
 above. The framework starts as soon as the convar is put right.
+
+### Beside Qbox
+
+These are the bridge's lines (`[rpf-qbox] error:`) and the framework's own
+lines about it (`[rpf] error:`).
+
+**`[rpf-qbox] error: qbx_core loaded a character for player … before they logged in to RPF, so it was logged out`**:
+something other than the bridge logged a character in. Either
+`useExternalCharacters` is still `false`, so qbx_core's own selection is
+showing, or another character resource is running, or a player's client
+called qbx_core's character callbacks itself. Set the config and remove
+the other resource. If the line keeps naming the same player, that client
+is doing it on purpose.
+
+**``rpf.bridge: the qbox bridge's framework is running, and this server's `domains` setting is native, …``**:
+`rpf-qbox` is running on a server whose profile is native, so the framework
+and Qbox each keep an economy. Set the profile to **Companion** and restart,
+or stop ensuring `rpf-qbox` and remove Qbox.
+
+**`rpf.bridge: the qbox bridge was tested against 1.24, and its framework is …`**
+(a warning):
+the bridge runs, but this qbx_core version was not tested with it.
+
+**`rpf.domains: this server runs the companion profile, whose characters, money, inventory, jobs are its framework's, and no bridge to that framework is registered, so players stay at registered until a bridge that provides exactly those is`**:
+players log in and go no further, because `rpf-qbox` is not running.
+Ensure it after `rpf`, and run `ensure rpf-qbox` again after a
+`restart rpf`. Its own line says why if it was refused.
+
+**`[rpf-qbox] error: RPF refused the bridge: …`**: the bridge is not one
+this release of the framework takes, usually a bridge from another
+release. Install the `[rpf]` folder of one release whole.
 
 ### When it connects, on either engine
 

@@ -9,7 +9,9 @@ login, moderation, the staff portal and addons. This directory is the
 [`docs/architecture/framework-integration.md`](../../../docs/architecture/framework-integration.md).
 
 It targets **qbx_core's own exports**, not its QBCore compatibility layer.
-Passing here says nothing about QBCore.
+Passing here says nothing about QBCore. It ships in the release's FiveM zip
+as `[rpf]/rpf-qbox`, and installing it is
+[Installing](../../../docs/installing.md#beside-qbox).
 
 | File | What |
 |---|---|
@@ -122,7 +124,14 @@ checks again that the player is still choosing after the search.
 
 ## The two events the selection sends
 
-After a load, the client does what qbx_core's own selection does after one
+Once the network session starts on a server where qbx_core runs, the
+client ends the loading screen, as qbx_core's own selection does, so that
+RPF's login shows over the game. Qbox's recipe leaves the loading screen
+for the selection to end (`loadscreen:externalShutdown`). It turns off
+spawnmanager's automatic spawn only when the server first shows the
+selection, which happens only while the bridge is active. A server where
+the bridge stays inactive keeps its own loading screen and spawning. After
+a load, the client does what qbx_core's own selection does after one
 (`client/character.lua` in qbx_core 1.24): it spawns the ped (at the
 character's last position, or at qbx_core's default spawn for a new one),
 ends the loading screen, and sends `QBCore:Server:OnPlayerLoaded` and
