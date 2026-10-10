@@ -42,6 +42,16 @@ keep the job the portal has.
   is compatible, and the generic record page shows a world-backed record's
   placement. No migration, route or protocol change: a world-backed type is
   still only fields.
+- Placements (J4, #81): the core places the visible ped and object records
+  of running addons' world-backed config types, one entity each, through
+  new adapter capabilities (`bucket`, `model`, `entity`, `spawn`,
+  `despawn`), and keeps them in step with the config. On FiveM they are
+  created server-side under OneSync (frozen, in their routing bucket, kept
+  across owner changes, tagged with a state bag, made passive on clients),
+  removed when the resource stops and swept as it starts; on Gmod they are
+  `prop_dynamic`s. `rpf.api.world` gains `bucket`, `model`, `entity` and
+  `placed`. The `zone` capability, never supported, is gone: a zone is a
+  record's radius, and the core does the arithmetic.
 
 - Bridges to existing RP frameworks, part 3 (K2, #92): the shared bridge
   conformance suite (`lua/spec/support/bridge_conformance.lua`) every

@@ -127,7 +127,7 @@ arrives as a function reference, which the core calls like a function.
 | `after` | `Citizen.SetTimeout` | `shared.lua` |
 | `kv_get`, `kv_set` | Resource KVP, with the synchronous `SetResourceKvp`, never the `NoSync` one | `shared.lua` |
 | `random_hex` | Node's `crypto.randomBytes`, through the shim; Lua's generator, with one warning, only if the shim cannot answer | `server.lua` |
-| `capabilities` | `position`: the player's ped's coordinates (`GetPlayerPed`, `GetEntityCoords`, which OneSync knows on the server), nil while they have no ped; `model`, `zone`, `entity` unsupported until J4 | `server.lua` |
+| `capabilities` | `position`: the player's ped's coordinates (`GetPlayerPed`, `GetEntityCoords`, which OneSync knows on the server), nil while they have no ped. `bucket`: `GetPlayerRoutingBucket`. `model`: `GetHashKey`. `entity(ref)`: a network id (`NetworkGetEntityFromNetworkId`), with its coordinates, model hash, routing bucket and the record its `rpf_placement` state bag names. `spawn`: placements below. `despawn`: `DeleteEntity`, only for an entity carrying the tag | `server.lua` |
 | `thread` | `coroutine.running`: FiveM runs each event handler and timer in a coroutine of its own | `server.lua` |
 | `identifiers`, `name`, `kick` | `GetPlayerIdentifiers` verbatim, `GetPlayerName`, `DropPlayer` | `server.lua` |
 | `notify` | The `rpf:notify` client event, shown as a feed notification | `server.lua`, `client.lua` |
@@ -144,7 +144,8 @@ most:
 | Event | Core call |
 |---|---|
 | `onResourceStart` (this resource) | Starts the core from the convars, then `players.connected` for everyone already on the server |
-| `onResourceStop` (this resource) | Closes every socket it has open in `rpf-ws`, which outlives a `restart rpf` (a socket left open would keep answering the portal's pings, and the portal would refuse the restarted core as a duplicate instance), and puts every held player back in their own routing bucket |
+| `onResourceStop` (this resource) | Closes every socket it has open in `rpf-ws`, which outlives a `restart rpf` (a socket left open would keep answering the portal's pings, and the portal would refuse the restarted core as a duplicate instance), puts every held player back in their own routing bucket, and removes every entity the core placed (`rpf.world.clear`) |
+| A state bag change of `rpf_placement` (client) | Makes a placed ped passive on that client (`client.placed`) |
 | `playerJoining` | `players.connected(source)` |
 | `playerDropped` | `players.dropped(source, reason)` |
 | `chatMessage` (the `chat` resource) | Cancelled for a held player (`lock.lua`) |
@@ -156,6 +157,42 @@ most:
 `source` is a temporary id that changes once they join, and the core keeps
 the handle for the whole session. The core's login starts when the client's
 core says it is ready, which is after `playerJoining` anyway.
+
+## Placements
+
+The core places the ped and object records of world-backed config types
+(`docs/architecture/addons.md`, "World definitions"), and the adapter does
+it the OneSync way, from the server:
+
+- **Server-authoritative.** `server.spawn` creates the entity on the server
+  (`CreatePed`, `CreateObjectNoOffset`, networked), from the record's model
+  name hashed with `GetHashKey` (a table's `fivem` entry, so one record
+  serves both engines). It is frozen where the record says
+  (`FreezeEntityPosition`, `SetEntityHeading`), put in the record's routing
+  bucket (`SetEntityRoutingBucket`), and kept when the client that owns it
+  leaves (`SetEntityOrphanMode` 2, `KEEP_ENTITY`), so ownership can move
+  between clients without the entity going. Its ref is its network id.
+- **Tagged.** Each carries the replicated state bag `rpf_placement` (`{
+  id, type }`). The core trusts a tag only for an entity it placed as
+  exactly that one (`rpf.world.entity`), so a client that sets the bag on
+  an entity it owns names nothing.
+- **Streaming and range** are OneSync's: a server entity streams to the
+  players near it in its bucket, and stays whether or not anyone is near.
+- **Passive peds.** What a ped does is up to its owning client, so
+  `client.lua` hears the tag arrive (`AddStateBagChangeHandler`) and makes
+  a placed ped invincible, deaf to the world (`SetBlockingOfNonTemporaryEvents`)
+  and frozen on every client, whichever owns it.
+- **Cleanup.** The core removes what it placed when this resource stops
+  (`onResourceStop`, `rpf.world.clear`), and `server.sweep` removes, as the
+  resource starts and before the core places anything, every tagged ped
+  and object a crash left (`GetAllPeds`, `GetAllObjects`). So a restart, a
+  reconnect, a config pushed twice or an entity another script deleted
+  (placed again within `rpf.world.CHECK_MS`) never leaves a record with two
+  entities or none.
+
+Proven on the fake natives only: a real FXServer is still to show a server
+ped's ownership moving between clients, the state bag reaching a client as
+the entity streams in, and the ped staying put (layer 5).
 
 ## The websocket shim
 

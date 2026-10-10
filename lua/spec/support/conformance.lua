@@ -64,7 +64,29 @@ conformance.PLATFORMS = { "mock", "fivem", "gmod" }
 ---@field answered integer How many of `sent` the fake portal has read.
 ---@field portal spec.FakePortal What the fake portal holds.
 ---@field kv table<string, string> The platform's storage: what a restart finds.
+---@field entities fun(): spec.PlacedEntity[] The entities in the engine's world that the core tagged as placed, in ref order.
+---@field delete_entity fun(ref: integer) Deletes an entity behind the core's back, as another script would.
+---@field set_bucket (fun(n: integer, bucket: integer))? Moves a player to a routing bucket, where the engine has them.
+---@field stop fun()? Stops the framework's own resource, where there are resources.
 local World = {}
+
+---An entity the core placed, as a case reads it off any engine.
+---@class spec.PlacedEntity
+---@field ref integer Its ref: what `rpf.api.world.entity` takes.
+---@field placement string The record id it is tagged with.
+---@field model any Its model, as the engine has it.
+---@field position { x: number, y: number, z: number } Where it is.
+---@field bucket integer Its routing bucket.
+
+---Sorts placed entities by ref.
+---@param list spec.PlacedEntity[] The entities.
+---@return spec.PlacedEntity[] list The same list, sorted.
+local function by_ref(list)
+  table.sort(list, function(a, b)
+    return a.ref < b.ref
+  end)
+  return list
+end
 
 World.__index = World
 
@@ -317,6 +339,19 @@ function World:select(handle, character_id)
   assert(selected == true, "the character was not selected: " .. tostring(selected))
 end
 
+---Puts a logged-in player in the world without a character, as a
+---character owner does when it has one in play: what the world's checks
+---need, and nothing a case should rely on beyond that.
+---@param handle any The engine's handle.
+function World:activate(handle)
+  local players = self.core.players
+  local player = assert(players.get(handle))
+  if player.state ~= "character_select" then
+    assert(players.advance(handle, "character_select"))
+  end
+  assert(players.advance(handle, "active"))
+end
+
 ---Lets the core report what it changed: one flush interval, and the
 ---portal's answers.
 function World:settle()
@@ -460,6 +495,21 @@ local function boot_mock(opts)
     p.positions[n] = at
   end
   world.from_client = p.from_client
+  world.entities = function()
+    local out = {}
+    for ref, entity in pairs(p.entities) do
+      if entity.placement then
+        out[#out + 1] = { ref = ref, placement = entity.placement, model = entity.model, position = entity.position, bucket = entity.bucket }
+      end
+    end
+    return by_ref(out)
+  end
+  world.delete_entity = function(ref)
+    p.entities[ref] = nil
+  end
+  world.set_bucket = function(n, bucket)
+    p.buckets[n] = bucket
+  end
   world.finish = function()
     rawset(_G, "rpf", nil)
   end
@@ -514,6 +564,25 @@ local function boot_fivem(opts)
   end
   world.from_client = driver.from_client
   world.stop_resource = driver.stop_resource
+  world.entities = function()
+    local out = {}
+    for _, entity in pairs(driver.entities) do
+      local tag = entity.state.rpf_placement
+      if type(tag) == "table" then
+        out[#out + 1] = { ref = entity.net, placement = tag.id, model = entity.model, position = entity.position, bucket = entity.bucket }
+      end
+    end
+    return by_ref(out)
+  end
+  world.delete_entity = function(ref)
+    for handle, entity in pairs(driver.entities) do
+      if entity.net == ref then
+        driver.entities[handle] = nil
+      end
+    end
+  end
+  world.set_bucket = driver.set_bucket
+  world.stop = driver.stop
   world.finish = function()
     for key in pairs(_G) do
       if not before[key] then
@@ -562,6 +631,22 @@ local function boot_gmod(opts)
   end
   world.place = function(n, at)
     fake.players[n].pos = at
+  end
+  world.entities = function()
+    local out = {}
+    for index, entity in pairs(fake.entities) do
+      local tag = entity.nw.rpf_placement
+      if tag then
+        out[#out + 1] = { ref = index, placement = tag, model = string.lower(entity.model or ""), position = entity.pos, bucket = 0 }
+      end
+    end
+    return by_ref(out)
+  end
+  world.delete_entity = function(ref)
+    local entity = fake.entities[ref]
+    if entity then
+      entity:Remove()
+    end
   end
   world.from_client = function(n, name, payload)
     fake:from_client(n, name, payload)

@@ -32,6 +32,25 @@ function client.notify(message)
   EndTextCommandThefeedPostTicker(false, true)
 end
 
+---Makes a ped the core placed passive on this client (J4): it neither
+---dies, flees nor wanders, whichever client OneSync makes its owner. The
+---server froze it and keeps it; these are the parts of a ped's behaviour
+---only a client can set. A state bag change for anything else is ignored.
+---@param bag string The state bag's name.
+---@param value any The placement tag, `{ id, type }`.
+function client.placed(bag, value)
+  if type(value) ~= "table" then
+    return
+  end
+  local entity = GetEntityFromStateBagName(bag)
+  if not entity or entity == 0 or not IsEntityAPed(entity) then
+    return
+  end
+  SetEntityInvincible(entity, true)
+  SetBlockingOfNonTemporaryEvents(entity, true)
+  FreezeEntityPosition(entity, true)
+end
+
 ---Answers one of the server's requests (`server.ask`): `<number>\n<payload>`,
 ---answered once under the same number, perhaps when the player has picked.
 ---@param name string The request's name.
@@ -118,6 +137,9 @@ local platform = client.platform(screens)
 
 -- The engine's events, two lines at most each.
 RegisterNetEvent("rpf:notify", function(message) client.notify(message) end)
+-- A nil bag filter is every bag, which the natives' annotation does not allow for.
+---@diagnostic disable-next-line: param-type-mismatch
+AddStateBagChangeHandler(shared.PLACEMENT, nil, function(bag, _, value) client.placed(bag, value) end)
 for _, name in ipairs(fivem.ui.CALLBACKS) do
   RegisterNUICallback(name, function(data, respond) respond(screens:nui(name, data)) end)
 end

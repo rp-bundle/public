@@ -110,7 +110,7 @@ step.
 | Storage | `kv_get(key) -> string?` | Reads a persisted string |
 | | `kv_set(key, value?)` | Writes one, or deletes it with `nil`. Strings only, so the core owns the encoding |
 | Random | `random_hex(n) -> string` | `n` lowercase hex digits from the best randomness the engine offers |
-| World | `capabilities` | A table, not a function: what the engine can do with the game world for addons, each capability a function or `false` for unsupported (`rpf.world`). `position(player) -> { x, y, z }?` now; `model`, `zone` and `entity` are J4's, `false` on every adapter. Beside them, the UI its clients show addons (J10): `notify`, `menu`, `input`, `progress`, each `true` or `false` (`rpf.ui`) |
+| World | `capabilities` | A table, not a function: what the engine can do with the game world for addons, each capability a function or `false` for unsupported (`rpf.world`). `position(player) -> { x, y, z }?`, `bucket(player) -> integer?`, `model(name) -> id?`, `entity(ref) -> { position, model, bucket, placement }?`, `spawn(spec) -> ref?, err?` and `despawn(ref)` (J4: `rpf.world`). Beside them, the UI its clients show addons (J10): `notify`, `menu`, `input`, `progress`, each `true` or `false` (`rpf.ui`) |
 | Thread | `thread() -> any` | The running coroutine (`coroutine.running`), or nil where there are none (the mock), so `rpf.addons` keeps whose code is running per coroutine without the core touching `coroutine` |
 | Players | `identifiers(player) -> string[]` | Every identifier the engine knows, verbatim. Reference data, never identity |
 | | `name(player) -> string` | The in-game name |
@@ -1201,17 +1201,42 @@ runs inside `rpf.ops.run`, with the player checked first, and `apply`
 after a `true`. The journal drops an `unavailable` result on both paths,
 since nothing changed, so the same op id may be sent again.
 
-### The game world (`rpf.world`, J3)
+### The game world (`rpf.world`, J3, J4)
 
 The world as far as the core reaches it: through the capabilities the
 adapter declares (`platform.capabilities`), never an engine branch.
-`world.capabilities()` is `{ position, model, zone, entity }` as booleans,
-for `rpf.api.capabilities()`; `world.position(handle)` is a logged-in
-player's position as a plain `{ x, y, z }` (how a record stores one, a
-`vector3` field), or `unsupported` where the adapter has no `position`, or
-`not_found` (not logged in, not spawned, or the adapter's call failed,
-which is logged). A capability that is neither a function nor `false` is
-logged at start and counts as unsupported.
+`world.capabilities()` is `{ position, bucket, model, entity, spawn,
+despawn }` as booleans, for `rpf.api.capabilities()`. A capability that is
+neither a function nor `false` is logged at start and counts as
+unsupported, and every call into one runs under `pcall`, a throw logged.
+
+- **`position(handle)`**: a logged-in player's position as a plain `{ x, y,
+  z }` (how a record stores one, a `vector3` field), or `unsupported`, or
+  `not_found` (not logged in, not spawned, or the adapter's call failed).
+- **`bucket(handle)`**: their routing bucket; 0 on an engine with one world.
+- **`model(name)`**: the engine's id for a model name, as `entity` reports
+  one.
+- **`entity(ref)`**: a networked entity by its ref (a FiveM network id, a
+  Gmod entity index), which a client names targets by. A ref that is not a
+  whole number is refused before the adapter sees it. `placement` (`{
+  type, id }`) is set only when the adapter's tag names a record the core
+  placed as exactly that entity, so a forged tag names nothing.
+- **`placed(type, id)`**: the ref of a record's entity.
+
+**Placements.** The core places, one entity each, the visible records of
+the world-backed `config` types of kind `ped` or `object` of every addon
+running here (`addons.active`, `addons.config_records`), worked out from
+the config alone, so the stored config restored at start places them
+before the portal is reached. `reconcile` runs on every `config.changed`
+and `addons.state`: it despawns what is no longer wanted or whose
+placement changed (position, heading, bucket, model) and spawns what is
+wanted and not placed, at most `MAX_PLACED` (1024), the rest logged once.
+Every `CHECK_MS` (10 s) it asks `entity` whether each is still there and
+still tagged with its record, and places again one that is not; a spawn
+that failed (`no_model`, `no_bucket`, the engine's refusal) is tried again
+then, logged once until it succeeds or the record changes. `clear()`
+despawns everything and stops placing, for an adapter's stop. Live
+records are not placed (J6, #83).
 
 ### Interactions (`rpf.interactions`, J3, J10)
 

@@ -457,6 +457,49 @@ describe("the Gmod adapter's server", function()
   end)
 end)
 
+describe("the Gmod adapter's placements (J4)", function()
+  it("removes, as it starts, the entities a previous start placed, and leaves other addons' alone", function()
+    local gmod = load_fake()
+    local host = fake_host()
+    local world = gmod.install("server", host, { read = read, convars = { rpf_ws_url = "wss://portal.test/ws", rpf_api_key = "rpf_sk_test" } })
+    installed = world
+    local left = ents.Create("prop_dynamic")
+    left:SetNWString("rpf_placement", "old")
+    local theirs = ents.Create("prop_physics")
+    world:boot()
+    assert.is_false(left:IsValid())
+    assert.is_true(theirs:IsValid())
+  end)
+
+  it("places a prop_dynamic with its Gmod model, tagged, named by its index, and refuses a bucket Gmod lacks", function()
+    local world = boot("server")
+    local server = assert(world.core).connection.platform.capabilities
+    local spec = {
+      id = "rec",
+      type = "acme_npcs.greeter",
+      kind = "ped",
+      position = { x = 1, y = 2, z = 3 },
+      heading = 90,
+      bucket = 0,
+      model = { fivem = "a_m_y_business_01", gmod = "models/Humans/Group01/male_02.mdl" },
+    }
+    local ref = assert(server.spawn(spec))
+    local entity = world.entities[ref --[[@as integer]]]
+    assert.are.equal("prop_dynamic", entity.class)
+    assert.is_true(entity.spawned)
+    assert.are.same({ p = 0, y = 90, r = 0 }, entity.angles)
+    assert.are.same(
+      { position = { x = 1, y = 2, z = 3 }, model = "models/humans/group01/male_02.mdl", bucket = 0, placement = "rec" },
+      server.entity(ref)
+    )
+    spec.bucket = 2
+    local _, why = server.spawn(spec)
+    assert.are.equal("no_bucket", why)
+    server.despawn(ref)
+    assert.is_nil(world.entities[ref])
+  end)
+end)
+
 describe("the Gmod adapter's platform members", function()
   it("reads the wall clock with millisecond resolution", function()
     local world, record = boot("server")

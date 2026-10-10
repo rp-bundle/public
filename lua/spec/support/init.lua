@@ -143,9 +143,11 @@ function support.fake_platform(opts)
     position = function(player)
       return p.positions[player]
     end,
+    bucket = false,
     model = false,
-    zone = false,
     entity = false,
+    spawn = false,
+    despawn = false,
     notify = true,
     menu = true,
     input = true,

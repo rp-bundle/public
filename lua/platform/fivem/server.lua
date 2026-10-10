@@ -53,9 +53,9 @@ function server.platform(shim, transport)
     expose = shared.expose,
     -- FiveM runs each event handler and timer in a coroutine of its own.
     thread = coroutine.running,
-    -- The game world (J3): a player's position is their ped's, which
-    -- OneSync knows on the server. Placing models, zones and entities are
-    -- J4's.
+    -- The game world (J3, J4): a player's position is their ped's, which
+    -- OneSync knows on the server, and entities are placed and inspected on
+    -- the server, by their network id (`server.spawn`, `server.entity`).
     capabilities = {
       position = function(player)
         local ped = GetPlayerPed(player)
@@ -65,9 +65,21 @@ function server.platform(shim, transport)
         local at = GetEntityCoords(ped)
         return { x = at.x, y = at.y, z = at.z }
       end,
-      model = false,
-      zone = false,
-      entity = false,
+      bucket = function(player)
+        return tonumber(GetPlayerRoutingBucket(tostring(player)))
+      end,
+      model = function(name)
+        return GetHashKey(name)
+      end,
+      entity = function(ref)
+        return server.entity(ref)
+      end,
+      spawn = function(spec)
+        return server.spawn(spec)
+      end,
+      despawn = function(ref)
+        server.despawn(ref)
+      end,
       -- The UI addons show (J10), which the client builds on ox_lib.
       notify = true,
       menu = true,
@@ -160,6 +172,123 @@ function server.platform(shim, transport)
   p.request_client = server.ask
 
   return p
+end
+
+---The state bag key every entity the core places carries (J4): `{ id,
+---type }`, the record it is, replicated so clients can tell a placed entity
+---(`client.lua` makes a placed ped passive), and so `server.sweep`
+---recognises one a previous run left.
+server.PLACEMENT = shared.PLACEMENT
+
+---FiveM's `SetEntityOrphanMode` value that keeps an entity when the
+---client that owned it leaves, rather than letting the server clean it up.
+server.KEEP_ENTITY = 2
+
+---The model a placement names for FiveM: a string is one model's name, a
+---table holds one per engine and FiveM reads its `fivem` entry. A number is
+---taken as a hash already.
+---@param model any The record's model field.
+---@return (integer|string)? model What `CreatePed` and `CreateObjectNoOffset` take, or nil.
+local function fivem_model(model)
+  if type(model) == "table" then
+    model = model.fivem
+  end
+  if type(model) == "string" and model ~= "" then
+    return GetHashKey(model)
+  end
+  if type(model) == "number" then
+    return model
+  end
+  return nil
+end
+
+---The entity a network id names on the server, or nil.
+---@param ref any The network id.
+---@return integer? entity The server's handle.
+local function by_ref(ref)
+  if type(ref) ~= "number" then
+    return nil
+  end
+  local entity = NetworkGetEntityFromNetworkId(ref)
+  if not entity or entity == 0 or not DoesEntityExist(entity) then
+    return nil
+  end
+  return entity
+end
+
+---Places a record's ped or object, server-authoritative under OneSync
+---(`rpf.world`'s `spawn`): created by the server as a networked entity,
+---frozen where the record says, in its routing bucket, kept when its owner
+---leaves (`KEEP_ENTITY`), and tagged with the record (`PLACEMENT`). OneSync
+---streams it to the players in range of it and in its bucket, and it stays
+---whether or not anyone is near.
+---@param spec rpf.world.Spawn The placement.
+---@return integer? ref Its network id.
+---@return string? err `no_model` when the record names no FiveM model, `failed` when the engine made nothing.
+function server.spawn(spec)
+  local model = fivem_model(spec.model)
+  if not model then
+    return nil, "no_model"
+  end
+  local at = spec.position
+  local entity
+  if spec.kind == "ped" then
+    entity = CreatePed(0, model, at.x, at.y, at.z, spec.heading, true, true)
+  else
+    entity = CreateObjectNoOffset(model, at.x, at.y, at.z, true, true, false)
+  end
+  if not entity or entity == 0 then
+    return nil, "failed"
+  end
+  SetEntityHeading(entity, spec.heading)
+  SetEntityRoutingBucket(entity, spec.bucket)
+  FreezeEntityPosition(entity, true)
+  SetEntityOrphanMode(entity, server.KEEP_ENTITY)
+  Entity(entity).state:set(server.PLACEMENT, { id = spec.id, type = spec.type }, true)
+  return NetworkGetNetworkIdFromEntity(entity)
+end
+
+---Removes an entity `server.spawn` placed. One without the tag is another
+---script's, and stays.
+---@param ref any Its network id.
+function server.despawn(ref)
+  local entity = by_ref(ref)
+  if entity and Entity(entity).state[server.PLACEMENT] ~= nil then
+    DeleteEntity(entity)
+  end
+end
+
+---A networked entity, by its network id (`rpf.world`'s `entity`): where it
+---is, its model's hash, its bucket, and the record its tag names.
+---@param ref any The network id, as a client sent it.
+---@return { position: { x: number, y: number, z: number }, model: integer, bucket: integer, placement: string? }? entity It, or nil.
+function server.entity(ref)
+  local entity = by_ref(ref)
+  if not entity then
+    return nil
+  end
+  local at = GetEntityCoords(entity)
+  local tag = Entity(entity).state[server.PLACEMENT]
+  return {
+    position = { x = at.x, y = at.y, z = at.z },
+    model = GetEntityModel(entity),
+    bucket = GetEntityRoutingBucket(entity),
+    placement = type(tag) == "table" and tag.id or nil,
+  }
+end
+
+---Removes every entity a previous run of this resource placed and did not
+---remove, recognised by its tag: what a crash, or a stop the engine cut
+---short, left behind. Run as the resource starts, before the core places
+---anything, so a restart never doubles what was placed.
+function server.sweep()
+  for _, pool in ipairs({ GetAllPeds(), GetAllObjects() }) do
+    for _, entity in ipairs(pool or {}) do
+      if Entity(entity).state[server.PLACEMENT] ~= nil then
+        DeleteEntity(entity)
+      end
+    end
+  end
 end
 
 ---The natives the adapter calls that an old FXServer artifact may lack:
@@ -323,6 +452,7 @@ function server.start(platform)
     return false
   end
   server.started = true
+  server.sweep()
   local portal_url = GetConvar(server.CONVARS.portal_url, "")
   core.start_server(platform, {
     url = url,
@@ -347,11 +477,14 @@ end
 ---shim outlive it: every socket it opened in `rpf-ws` is closed, or it would
 ---keep answering the portal's pings and the restarted core would be refused
 ---as a duplicate instance (C1), and every held player goes back to their
----own routing bucket.
+---own routing bucket, and every entity the core placed is removed.
 ---@param transport rpf.fivem.Transport The socket's transport.
 function server.stop(transport)
   transport.stop()
   fivem.lock.release_all()
+  if server.started then
+    core.world.clear()
+  end
 end
 
 rpf.fivem.server = server

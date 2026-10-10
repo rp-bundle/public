@@ -822,6 +822,62 @@ describe("the FiveM adapter", function()
     end)
   end)
 
+  describe("placements (J4)", function()
+    ---A fake FiveM native, which the language server cannot see from here.
+    ---@param name string The native.
+    ---@return function native It.
+    local function native(name)
+      return rawget(_G, name)
+    end
+
+    it("removes, as it starts, the entities a previous run placed and left, and leaves other scripts' alone", function()
+      local driver = load_side("server", CONVARS)
+      local left = native("CreatePed")(0, 1, 0, 0, 0, 0, true, true)
+      native("Entity")(left).state:set("rpf_placement", { id = "old", type = "acme_npcs.greeter" }, true)
+      local theirs = native("CreateObjectNoOffset")(2, 0, 0, 0, true, true, false)
+      driver.start()
+      assert.is_nil(driver.entities[left])
+      assert.is_not_nil(driver.entities[theirs])
+    end)
+
+    it("places a ped server-side: frozen, in its bucket, kept when its owner leaves, tagged, and named by its network id", function()
+      local driver = started_server()
+      local ref = assert(rpf.fivem.server.spawn({
+        id = "rec",
+        type = "acme_npcs.greeter",
+        kind = "ped",
+        position = { x = 1, y = 2, z = 3 },
+        heading = 45,
+        bucket = 4,
+        model = { fivem = "a_m_y_business_01", gmod = "models/x.mdl" },
+      }))
+      local handle = native("NetworkGetEntityFromNetworkId")(ref)
+      local entity = driver.entities[handle]
+      assert.are_not.equal(handle, ref, "a network id, not the server's handle")
+      assert.are.equal("ped", entity.kind)
+      assert.are.equal(native("GetHashKey")("a_m_y_business_01"), entity.model)
+      assert.are.equal(45, entity.heading)
+      assert.are.equal(4, entity.bucket)
+      assert.is_true(entity.frozen)
+      assert.are.equal(rpf.fivem.server.KEEP_ENTITY, entity.orphan)
+      assert.are.same({ id = "rec", type = "acme_npcs.greeter" }, entity.state.rpf_placement)
+      assert.are.same(
+        { position = { x = 1, y = 2, z = 3 }, model = entity.model, bucket = 4, placement = "rec" },
+        rpf.fivem.server.entity(ref)
+      )
+      local _, why = rpf.fivem.server.spawn({ id = "x", type = "t", kind = "object", position = { x = 0, y = 0, z = 0 }, heading = 0, bucket = 0, model = { gmod = "models/x.mdl" } })
+      assert.are.equal("no_model", why)
+    end)
+
+    it("removes only an entity it placed", function()
+      local driver = started_server()
+      local theirs = native("CreateObjectNoOffset")(2, 0, 0, 0, true, true, false)
+      rpf.fivem.server.despawn(native("NetworkGetNetworkIdFromEntity")(theirs))
+      assert.is_not_nil(driver.entities[theirs])
+      rpf.fivem.server.despawn("not a ref")
+    end)
+  end)
+
   describe("the client", function()
     ---Starts the client side and its screens.
     ---@return table driver The driver.
@@ -845,6 +901,20 @@ describe("the FiveM adapter", function()
         })
       )
     end
+
+    it("makes a placed ped passive when its state bag arrives, and leaves anything else alone", function()
+      local driver = load_side("client")
+      driver.start()
+      driver.peds[7001] = {}
+      driver.peds[7002] = {}
+      driver.bags["entity:7001"] = 7001
+      driver.bags["entity:7002"] = 7002
+      driver.state_bag("entity:7001", "rpf_placement", { id = "rec", type = "acme_npcs.greeter" })
+      driver.state_bag("entity:7002", "rpf_placement", nil)
+      driver.state_bag("entity:9999", "rpf_placement", { id = "gone", type = "t" })
+      assert.are.same({ invincible = true, blocking = true, frozen = true }, driver.peds[7001])
+      assert.are.same({}, driver.peds[7002])
+    end)
 
     it("asks the server over lib.callback, and hands back only a string answer", function()
       local driver, record = load_side("client")

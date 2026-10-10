@@ -40,8 +40,18 @@ function.
    - `random_hex` from the best source the engine has.
    - `capabilities` declares what the engine can do with the game world,
      each capability a function or `false` (`rpf.world`): `position` a
-     player's position as `{ x, y, z }`, and `model`, `zone`, `entity`
-     `false` until J4. Beside them, `notify`, `menu`, `input` and
+     player's position as `{ x, y, z }`; `bucket` their routing bucket
+     (`false` on an engine with one world); `model` the engine's id for a
+     model name; `entity(ref)` a networked entity by the number every
+     machine names it by, with `placement`, the record id its tag names;
+     `spawn(spec)` placing a record's ped or object server-authoritatively,
+     tagged with the record's id, returning its ref, reading the record's
+     model as a name or as its own engine's entry of a table; and
+     `despawn(ref)` removing only an entity it placed (J4). An adapter
+     that places entities also removes, as it starts and before the core
+     starts, every entity carrying its tag, which a crash left; and it
+     calls `rpf.world.clear()` as it stops, where it can stop without its
+     state ending. Beside them, `notify`, `menu`, `input` and
      `progress`, each `true` or `false`: whether this engine's clients show
      an addon's UI (J10, `rpf.ui`). Never leave one out: say unsupported on
      purpose.
@@ -175,8 +185,15 @@ for the clients' `HTTP`.
   `ShutDown`, and the next map's state is a new instance over the same store.
 - *Player disconnects* carry no reason in `PlayerDisconnected`, so the core
   is told `"disconnected"`.
-- *Capabilities* (J3): `position` is `ply:GetPos()`; `model`, `zone` and
-  `entity` are unsupported until J4. All four UI kinds are supported
+- *Capabilities* (J3, J4): `position` is `ply:GetPos()`. Gmod has one
+  world, so `bucket` is `false` and a record in any bucket but 0 is not
+  placed. An entity's ref is its index; `model` lowercases a path, as
+  `GetModel` reports one. `spawn` makes a `prop_dynamic` with the record's
+  `gmod` model (a ped is a prop with a character's model, in its default
+  animation, since Gmod's NPCs have AI of their own), tagged with the
+  networked string `rpf_placement`; the adapter removes tagged entities as
+  it starts (a Lua refresh restarts it on the same map), and a map change
+  takes the rest. Drawn on fake globals only so far. All four UI kinds are supported
   (`addon_ui.lua`): a progress bar is X to cancel, as on ox_lib, and an
   input dialog will not submit a required field left empty or a value out
   of its bounds. Drawn on fake Derma only so far: a real Gmod client is
