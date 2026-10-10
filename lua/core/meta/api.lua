@@ -123,7 +123,7 @@ function Events.once(name, handler) end
 function Events.off(name, handler) end
 
 ---Calls every handler for a name with the given arguments. Names under the
----core's prefixes (`players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `addons.`, `interactions.`, `rpf.`) are refused,
+---core's prefixes (`players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `addons.`, `domains.`, `interactions.`, `rpf.`) are refused,
 ---so no script can forge a lifecycle event other scripts would believe; so
 ---is a name under a loaded addon's namespace when the caller is known to be
 ---another addon (a handler the core runs for one, or, on FiveM, any call

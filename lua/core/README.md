@@ -548,7 +548,7 @@ hears exactly what the core's own modules hear.
   `MAX_DEPTH` (32) deep are refused and logged, so a cycle is a log line, not
   a stack overflow.
 - **Core event names are reserved.** The public `emit` refuses anything under
-  `players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `addons.`, `interactions.` or `rpf.`, so a
+  `players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `addons.`, `domains.`, `interactions.` or `rpf.`, so a
   script cannot forge a lifecycle event other scripts would believe. It
   returns `nil, "reserved"` rather than throwing, and `nil, "forbidden"` for
   a name under another loaded addon's namespace (`rpf.addons.may_use`).
