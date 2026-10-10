@@ -448,8 +448,10 @@ rules_fit = function(name, namespace, rules)
     entries[other] = entry
   end
   entries[name] = { rules = rules, namespace = namespace }
-  local text = handoff.encode(handoff.TARGET_RULES, { rules = list_of(rpf.targets.listed(entries, true)) })
-  return #text <= handoff.MAX_LIST_PAYLOAD
+  -- Every string in a rule is checked as UTF-8 by `check_rules`; a throw
+  -- here would still be a refusal, never through the API.
+  local encoded, text = pcall(handoff.encode, handoff.TARGET_RULES, { rules = list_of(rpf.targets.listed(entries, true)) })
+  return encoded and #text <= handoff.MAX_LIST_PAYLOAD
 end
 
 ---The rules with a target, encoded for a client.

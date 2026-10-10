@@ -137,6 +137,13 @@ conformance.run(busted, "the acme_tags example", {
       local read = assert(interact(world, player, "acme_tags.read", { target = { id = id } }))
       assert.is_true(read.ok, tostring(read.reason))
       assert.are.equal("hello", read.data.text)
+      local shown = false
+      for _, sent in ipairs(world.to_clients) do
+        if sent.name == "rpf:ui_notify" and sent.payload:find("hello", 1, true) then
+          shown = true
+        end
+      end
+      assert.is_true(shown, "the text is shown to the player")
       world.place(1, { x = 50, y = 20, z = 30 })
       local far = assert(interact(world, player, "acme_tags.read", { target = { id = id } }))
       assert.are.same({ false, "too_far" }, { far.ok, far.reason })

@@ -132,12 +132,18 @@ end
 
 ---Reads a tag the player stands at (J4): the interaction's rules made the
 ---server find the tag the client named, visible and within reach, before
----this runs, so all that is left is to answer with its text.
+---this runs, so all that is left is to show its text. It is shown to the
+---player (`rpf.ui.notify`), since the menu that sent it shows only
+---refusals, and answered too, for a client script of the addon's own.
+---@param rpf rpf.Api The API.
+---@param player rpf.PlayerView The player who asked.
 ---@param target table The tag the rules resolved: `{ type, id, record, position, distance }`.
 ---@return boolean ok Always true.
 ---@return { text: string } data The tag's text.
-function acme_tags.read(target)
-  return true, { text = target.record.fields.text }
+function acme_tags.read(rpf, player, target)
+  local text = target.record.fields.text
+  rpf.ui.notify(player.handle, { title = "A tag", text = text })
+  return true, { text = text }
 end
 
 ---The spray can: a player's client asks, and this decides. The payload is
@@ -194,8 +200,8 @@ function acme_tags.start_server(rpf)
       -- Aimed at a tag: the client names one, and the server checks it is
       -- a tag, near enough, before `read` runs. The menu (`rpf_interact`)
       -- lists it for any tag within reach.
-      assert(rpf.interactions.register("acme_tags.read", function(_, _, target)
-        return acme_tags.read(target)
+      assert(rpf.interactions.register("acme_tags.read", function(player, _, target)
+        return acme_tags.read(rpf, player, target)
       end, { target = acme_tags.TYPE, label = "Read the tag", distance = 3 }))
       hold_all(rpf, nil)
     end,

@@ -135,7 +135,7 @@ function targets.check_rules(namespace, raw)
   ---@type rpf.targets.Rules
   local out = { distance = targets.DEFAULT_DISTANCE, cooldown = 0 }
   if raw.label ~= nil then
-    if type(raw.label) ~= "string" or raw.label == "" or #raw.label > targets.MAX_LABEL then
+    if type(raw.label) ~= "string" or raw.label == "" or #raw.label > targets.MAX_LABEL or not json.is_utf8(raw.label) then
       return nil, "label"
     end
     out.label = raw.label
@@ -169,7 +169,7 @@ function targets.check_rules(namespace, raw)
       out.models = {}
       for i = 1, #models do
         local model = models[i]
-        if type(model) ~= "string" or model == "" or #model > 256 then
+        if type(model) ~= "string" or model == "" or #model > 256 or not json.is_utf8(model) then
           return nil, "target.models"
         end
         out.models[i] = model

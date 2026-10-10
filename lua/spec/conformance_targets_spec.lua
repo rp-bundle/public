@@ -446,6 +446,8 @@ conformance.run(busted, "Interactions with targets", {
             { permisson = "boss" },
             { target = { models = {} } },
             { target = { type = "acme_npcs.greeter", models = { "x" } } },
+            { label = string.char(255) },
+            { target = { models = { string.char(255) } } },
           }) do
             local ok, err, detail = api.interactions.register("acme_npcs.bad", function() end, rules)
             refusals[#refusals + 1] = { ok, err, detail and detail.field }
@@ -460,6 +462,8 @@ conformance.run(busted, "Interactions with targets", {
         { nil, "invalid", "permisson" },
         { nil, "invalid", "target.models" },
         { nil, "invalid", "target" },
+        { nil, "invalid", "label" },
+        { nil, "invalid", "target.models" },
       }, refusals)
     end,
   },
