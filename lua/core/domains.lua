@@ -228,11 +228,23 @@ end
 ---and on one whose framework owns any domain only once a bridge that fits
 ---is accepted. Logs the reason once when they may not. Before a profile is
 ---fixed nobody can be registered, so this answers yes.
+---
+---A native server needs no bridge, so one offered there never holds a
+---player back: it stays inactive (`bridge` is nil), and the log says so
+---once, because a framework still running beside a native RPF is a second
+---economy its owner should hear about.
 ---@return boolean ok True if a player may move on.
 ---@return string? err `"no_bridge"` if not.
 function domains.may_play()
   local why = mismatch()
   if not why then
+    return true
+  end
+  if next(external_set(fixed --[[@as rpf.Domains]])) == nil then
+    if not gate_logged and platform then
+      gate_logged = true
+      platform.log("warn", "rpf.domains: " .. why .. "; the bridge stays inactive, and RPF owns every domain here")
+    end
     return true
   end
   if not gate_logged then

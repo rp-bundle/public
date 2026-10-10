@@ -350,3 +350,25 @@ describe("rpf.domains on a companion server", function()
     assert.is_nil(rpf.domains.bridge())
   end)
 end)
+
+describe("rpf.domains with a bridge on a native server", function()
+  it("lets players on, keeps the bridge inactive, and says so once", function()
+    support.load_core()
+    local p = support.fake_platform()
+    assert.is_true((rpf.domains.accept_bridge("qbox", { "characters", "money", "inventory", "jobs" })))
+    rpf.start_server(p, { url = "ws://portal", api_key = "rpf_test_secret" })
+    p.open()
+    welcome(p, support.NATIVE)
+    for handle = 7, 8 do
+      assert(rpf.players.connected(handle))
+      assert(rpf.players.authenticating(handle))
+      assert(rpf.players.register(handle, {
+        player_id = string.format("00000002-0000-4000-8000-%012d", handle),
+        username = "sam" .. handle,
+      }))
+      assert.is_true((rpf.players.advance(handle, "character_select")))
+    end
+    assert.is_nil(rpf.domains.bridge())
+    assert.are.equal(1, #p.logged("warn", "the bridge stays inactive"))
+  end)
+end)
