@@ -132,6 +132,14 @@ describe("rpf.interactions", function()
         end,
       })
       assert.are.same({ nil, "invalid" }, { rpf.api.interactions.send("acme_tags.spray", { inner = hostile, [hostile] = 1 }) })
+      local sparse = setmetatable({ [2] = "x" }, {
+        __index = function()
+          error("an __index that throws")
+        end,
+      })
+      local sent, nothing, sent_why = pcall(rpf.api.interactions.send, "acme_tags.spray", { list = sparse })
+      assert.is_true(sent, "no throw through the API for a sparse list either")
+      assert.are.same({ nil, "invalid" }, { nothing, sent_why })
       local ok, refused, why = pcall(rpf.api.interactions.send, "acme_tags.spray", hostile)
       assert.is_true(ok, "no throw through the API")
       assert.is_true(refused or why == "invalid")
@@ -290,11 +298,16 @@ describe("rpf.interactions", function()
     end)
 
     it("answers failed for data that is not plain, and logs it for the addon", function()
-      for _, extra in ipairs({ { fn = print }, { [1] = 1, x = 2 }, "text" }) do
+      local sparse = setmetatable({ [2] = "x" }, {
+        __index = function()
+          error("an __index that throws")
+        end,
+      })
+      for _, extra in ipairs({ { fn = print }, { [1] = 1, x = 2 }, "text", { list = sparse } }) do
         local answer = answering(true, extra)
         assert.are.same({ false, "failed" }, { answer.ok, answer.reason })
       end
-      assert.are.equal(3, #p.logged("error", "acme_tags.read answered data that is not"))
+      assert.are.equal(4, #p.logged("error", "acme_tags.read answered data that is not"))
     end)
 
     it("answers too_large for data past the limit", function()

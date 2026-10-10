@@ -106,7 +106,9 @@ function ox.on_client_request(name, handler)
 end
 
 ---Asks the server, over `lib.callback`, with no client-side rate limit:
----the core keeps its own, and its own timeout.
+---the core keeps its own, and its own timeout. ox_lib keeps its own record
+---of the request until the answer comes, which the server always sends
+---(`on_client_request`); only a server that stops mid-request leaves one.
 ---@param name string The request's name.
 ---@param payload string The request.
 ---@param callback fun(reply: string?) Called with the answer.

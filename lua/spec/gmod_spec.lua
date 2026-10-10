@@ -650,6 +650,28 @@ describe("the Gmod adapter's client", function()
     assert.are.same({ "second:two", "first:one" }, replies)
   end)
 
+  it("forgets a request that has no answer, telling its callback none will come", function()
+    local gmod = load_fake()
+    local host, record = fake_host()
+    local world = gmod.install("client", host, { read = read })
+    installed = world
+    world:boot()
+    local messages = world.include("rpf/platform/gmod/messages.lua")
+    local replies = {}
+    messages.request_server("rpf:test", "lost", function(reply)
+      replies[#replies + 1] = reply == nil and "nil" or reply
+    end)
+    local asked = record.to_server[#record.to_server].payload
+    record.time = record.time + (messages.REQUEST_TTL - 1) * 1000
+    world:run_due()
+    assert.are.same({}, replies)
+    record.time = record.time + 1000
+    world:run_due()
+    assert.are.same({ "nil" }, replies)
+    world:from_server("rpf:test", asked:match("^(%d+)\n") .. "\ntoo late")
+    assert.are.same({ "nil" }, replies, "a late answer finds nothing waiting")
+  end)
+
   it("shows the login form with the password reuse warning, and sends the password only to the portal", function()
     local gmod, world, record = at_login()
     assert.truthy(labels(gmod, world):find(world.core.auth.PASSWORD_REUSE_WARNING, 1, true))

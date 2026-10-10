@@ -30,6 +30,7 @@
 ---@class rpf.gmod.Messages
 ---@field PART_BYTES integer The most bytes one part carries, under `net`'s 64 KiB with room for the header.
 ---@field MAX_PARTS_FROM_SERVER integer The most parts a client joins into one payload, so even its own server cannot make it hold more than a couple of megabytes.
+---@field REQUEST_TTL integer How long, in seconds, a request waits for its answer before it is forgotten: well past the core's own timeout, which has answered it by then, so an answer that never comes holds nothing for good.
 local messages = {}
 
 ---Callbacks for this client's requests the server has not answered, by
@@ -54,6 +55,7 @@ end
 
 messages.PART_BYTES = 60000
 messages.MAX_PARTS_FROM_SERVER = 32
+messages.REQUEST_TTL = 60
 
 ---Names already pooled with `util.AddNetworkString` in this state.
 ---@type table<string, true>
@@ -205,7 +207,8 @@ function messages.on_server(name, handler)
 end
 
 ---Asks the game server something and hands its answer to `callback`. The
----first request under a name listens for its answers.
+---first request under a name listens for its answers. One with no answer
+---in `REQUEST_TTL` is forgotten, and its callback told none will come.
 ---@param name string The request's name.
 ---@param payload string The request.
 ---@param callback fun(reply: string?) Called once, with the answer.
@@ -225,8 +228,16 @@ function messages.request_server(name, payload, callback)
     end)
   end
   numbered = numbered + 1
-  waiting[name][numbered] = callback
-  messages.to_server(name, tostring(numbered) .. "\n" .. payload)
+  local number = numbered
+  waiting[name][number] = callback
+  timer.Simple(messages.REQUEST_TTL, function()
+    local pending = waiting[name][number]
+    if pending then
+      waiting[name][number] = nil
+      pending(nil)
+    end
+  end)
+  messages.to_server(name, tostring(number) .. "\n" .. payload)
 end
 
 return messages

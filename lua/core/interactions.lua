@@ -95,7 +95,8 @@ end
 ---A copy of plain data marked the way the codec needs (`rpf.json`): a table
 ---whose keys are 1 to n is an array, one whose keys are strings (or none)
 ---an object. The other side gets a copy without marks, so an empty table
----arrives as an empty table either way.
+---arrives as an empty table either way. Reads are raw, as `plain`'s are, so
+---a script's table with an `__index` that throws is refused, not thrown.
 ---@param value any Plain data (`plain`).
 ---@return any? marked The copy, or nil for a table that mixes the two kinds of key, or numbers that are not 1 to n.
 local function mark(value)
@@ -115,10 +116,10 @@ local function mark(value)
       return nil
     end
     for i = 1, count do
-      if value[i] == nil then
+      if rawget(value, i) == nil then
         return nil
       end
-      local item = mark(value[i])
+      local item = mark(rawget(value, i))
       if item == nil then
         return nil
       end
