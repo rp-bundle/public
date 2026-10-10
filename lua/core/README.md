@@ -1059,13 +1059,13 @@ The record calls addons make, which `rpf.api.records` fronts, over
 | `create(type, fields, opts)` | `records.create_addon_record` with `opts.owner` and an optional `opts.id`, after checking the owner kind, the id, the type's `limit` of held records and the fields |
 | `update(type, id, patch, opts)` | `records.set_addon_fields`, `opts.clear` naming the nullable fields to clear (`json.null`, which an export cannot carry), `opts.revision` refusing a stale write |
 | `delete(type, id, opts)` | `records.delete_addon_record`, `opts.revision` likewise |
-| `batch(ops)` | Every write checked against the records as they are, none made unless all would be; what was queued before is flushed first, then the writes are made and flushed, so they go in one report when they fit one frame (64 records, `max_records_per_frame`) |
+| `batch(ops)` | Every write checked against the records as they are, none made unless all would be; what was queued before is flushed first, then the writes are made and flushed, so they go in one report when they fit one frame (64 records, `max_records_per_frame`). A record whose create or whole report is still unanswered goes in a report of its own, so a batch naming one is `busy` until it is |
 
 Refusals: `not_found` (no such installed type, or config record),
 `inactive` (its addon is not running: `rpf.addons.running`, which a `start`
 handler counts as; or the caller is code of an activation that has ended,
 `rpf.addons.stale`), `not_held` (a live record not held here, of another
-type, or being deleted), `stale`, `invalid` with the rule as the portal
+type, or being deleted), `stale`, `busy` (a batch, above), `invalid` with the rule as the portal
 names it (`{ error, field }`), `conflict`, `limit`, `outbox_full`. A
 record's `revision` here is `entry.version`: the portal's revision when it
 was held (1 when created here), moved on by every change made here, so a
@@ -1074,8 +1074,11 @@ the portal in one report.
 
 An addon's calls close when it stops being active, and the records it held
 for the server (none a player's session holds) are released with their
-final state, after its `stop` ran. Its held records still drain to the
-portal as J2 made them (staff edits, reports, releases).
+final state, after its `stop` ran; a release that cannot finish yet (a
+create still on its way, a full outbox) is tried again each second while
+the addon stays inactive, and a hold answered after the addon stopped is
+given back. Its held records still drain to the portal as J2 made them
+(staff edits, reports, releases).
 
 Events, reserved, each an `rpf.data.Change` (`{ type, id, record, by,
 reason }`): `records.created`, `records.changed` and `records.deleted` after

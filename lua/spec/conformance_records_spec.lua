@@ -407,6 +407,54 @@ conformance.run(busted, "addon records", {
     end,
   },
   {
+    name = "keeps a batch to one report: one naming a record whose create is unanswered waits",
+    run = function(world)
+      local api = installed(world)
+      local fresh = assert(api.records.create("acme_tags.tag", tag("fresh"), OWNER))
+      world:advance(1000) -- its create is sent, not answered
+      local _, err, detail = api.records.batch({
+        { op = "update", type = "acme_tags.tag", id = fresh.id, patch = { text = "x" } },
+      })
+      assert.are.same({ "busy", 1 }, { err, detail.index })
+      world:pump()
+      assert(api.records.batch({ { op = "update", type = "acme_tags.tag", id = fresh.id, patch = { text = "x" } } }))
+    end,
+  },
+  {
+    name = "gives back what a hold brings once its addon has stopped",
+    run = function(world)
+      local api = installed(world)
+      world.portal.records[TAG] = {
+        id = TAG,
+        type = "acme_tags.tag",
+        owner = { kind = "player", id = PLAYER },
+        revision = 1,
+        fields = { text = "old", spot = { x = 0, y = 0, z = 0 }, fades_at = 1 },
+        held = false,
+      }
+      local got
+      assert(api.records.hold("acme_tags.tag", { TAG }, function(held, err)
+        got = { held = held, err = err }
+      end))
+      world:install({ conformance.installed(world.core, tags(), false) })
+      world:pump()
+      world:advance(1000)
+      world:pump()
+      assert.are.same({ err = "inactive" }, got)
+      assert.is_false(world.portal.records[TAG].held)
+    end,
+  },
+  {
+    name = "refuses options that are not a table, without throwing",
+    run = function(world)
+      local api = installed(world)
+      local record = assert(api.records.create("acme_tags.tag", tag(), OWNER))
+      assert.are.equal("invalid", select(2, api.records.update("acme_tags.tag", record.id, { text = "x" }, 42)))
+      assert.are.equal("invalid", select(2, api.records.update("acme_tags.tag", record.id, nil, { revision = "1" })))
+      assert.are.same({ nil, "invalid" }, { api.records.delete("acme_tags.tag", record.id, false) })
+    end,
+  },
+  {
     name = "lets a start handler write the records of its own addon",
     run = function(world)
       local m = tags()

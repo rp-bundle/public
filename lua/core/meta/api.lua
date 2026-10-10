@@ -382,6 +382,7 @@ function Records.batch(ops) end
 ---| "invalid" # The write breaks a rule of the type, or a query is not one: the third value says which.
 ---| "conflict" # A create named an id this server already holds.
 ---| "limit" # The type's `limit` of records is held here already.
+---| "busy" # A batch named a record whose create or last whole report the portal has not answered yet; a moment later it can go.
 ---| "outbox_full" # Too much is waiting for the portal; try again later.
 ---| "unknown" # A batch write failed after it was checked; logged. Should not happen.
 

@@ -475,6 +475,11 @@ end
 
 -- Holding ------------------------------------------------------------------
 
+---Releases the records an addon held for the server while it is not
+---active; defined with the lifecycle, below.
+---@type fun(namespace: string)
+local drain
+
 ---Record refs for ids of a type, or nil if one is not an id.
 ---@param ids any The ids.
 ---@return table[]? refs `{ kind = "addon_record", id }` each.
@@ -518,9 +523,15 @@ function data.hold(type_name, ids, callback)
     end
   end
   local ctx = rpf.addons.context()
+  local namespace = type_name:match("^([^.]+)%.")
   rpf.sync.hold({ records = refs }, nil, function(_, why)
     local out = nil
-    if not why then
+    if not why and not rpf.addons.running(namespace) then
+      -- The addon stopped while the hold was on its way, and its drain
+      -- found nothing to release: what arrived goes back now.
+      drain(namespace)
+      why = "inactive"
+    elseif not why then
       -- The portal holds by id alone: a record of another type it handed
       -- over is not what was asked for, and goes straight back.
       local strays = {}
@@ -708,6 +719,9 @@ end
 ---@return string? err Why not.
 ---@return table? refusal For `invalid`, the rule.
 local function plan_update(def, type_name, id, patch, opts)
+  if opts ~= nil and (type(opts) ~= "table" or (opts.revision ~= nil and type(opts.revision) ~= "number")) then
+    return nil, "invalid", { error = "options", field = "" }
+  end
   local entry = held(type_name, id)
   if not entry then
     return nil, "not_held"
@@ -760,6 +774,9 @@ end
 ---@return rpf.records.Entry? entry The record.
 ---@return string? err Why not.
 local function plan_delete(type_name, id, opts)
+  if opts ~= nil and (type(opts) ~= "table" or (opts.revision ~= nil and type(opts.revision) ~= "number")) then
+    return nil, "invalid"
+  end
   local entry = held(type_name, id)
   if not entry then
     return nil, "not_held"
@@ -777,7 +794,7 @@ end
 ---@param id any The record's id.
 ---@param opts any? `revision`, as for `update`.
 ---@return boolean? ok True once it is gone here.
----@return string? err `not_found`, `inactive`, `not_held` or `stale`.
+---@return string? err `not_found`, `inactive`, `not_held`, `stale`, or `invalid` for options that are not a table with a number `revision`.
 function data.delete(type_name, id, opts)
   local _, err = open_type(type_name)
   if err then
@@ -810,7 +827,7 @@ end
 ---not share a frame with older changes.
 ---@param ops any The writes, from 1 to the records one report carries (64), each record at most once.
 ---@return table? results For each write in order: the record (create, update) or true (delete).
----@return string? err Why none was made: `invalid` (with the rule and the index), the first write's own refusal (with its index), `outbox_full` when what was queued before could not be sent.
+---@return string? err Why none was made: `invalid` (with the rule and the index), the first write's own refusal (with its index), `busy` for a record whose create or last whole report the portal has not answered yet (a moment later it can go), `outbox_full` when what was queued before could not be sent.
 ---@return table? refusal `{ index = n, … }`: which write, and for `invalid` the rule.
 function data.batch(ops)
   if type(ops) ~= "table" or #ops == 0 or #ops > rpf.sync.options.max_records_per_frame then
@@ -851,6 +868,13 @@ function data.batch(ops)
     local id = plan.id or plan.entry.id
     if taken[id] then
       return nil, "invalid", { index = i, error = "duplicate" }
+    end
+    -- A record whose create, deletion or whole report the portal has not
+    -- answered yet goes in a report of its own when it can, so it could not
+    -- go with the rest: the batch waits for it, as `busy`.
+    local entry = plan.entry
+    if entry and (entry.created or entry.resync or entry.awaiting or entry.recovering) then
+      return nil, "busy", { index = i }
     end
     taken[id] = true
     plan.op, plan.type = op.op, op.type
@@ -900,7 +924,7 @@ local DRAIN_RETRY_MS = 1000
 ---on its way to the portal, a full outbox) tries again a second later, for
 ---as long as the addon stays inactive and anything is left.
 ---@param namespace string The addon.
-local function drain(namespace)
+drain = function(namespace)
   local state = rpf.addons.state(namespace)
   if state == "active" or not rpf.sync.connection then
     return
