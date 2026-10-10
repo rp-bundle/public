@@ -121,6 +121,7 @@ end
 describe("the FiveM zip", function()
   local MANIFEST = RESOURCES .. "rpf/fxmanifest.lua"
   local SHIM_MANIFEST = RESOURCES .. "rpf-ws/fxmanifest.lua"
+  local QBOX_MANIFEST = RESOURCES .. "rpf-qbox/fxmanifest.lua"
 
   ---Every global the fakes and the resource set, taken away after each test.
   ---@type table<string, true>
@@ -176,17 +177,21 @@ describe("the FiveM zip", function()
     return names
   end
 
-  it("holds exactly the files the two manifests name, the manifests and the licences", function()
+  it("holds exactly the files the three manifests name, the manifests and the licences", function()
     local expected = named(MANIFEST, "[rpf]/rpf/")
     for name in pairs(named(SHIM_MANIFEST, "[rpf]/rpf-ws/")) do
       expected[name] = true
     end
+    for name in pairs(named(QBOX_MANIFEST, "[rpf]/rpf-qbox/")) do
+      expected[name] = true
+    end
     expected["[rpf]/rpf/fxmanifest.lua"] = true
     expected["[rpf]/rpf-ws/fxmanifest.lua"] = true
+    expected["[rpf]/rpf-qbox/fxmanifest.lua"] = true
     expected["[rpf]/rpf-ws/LICENSE.ws"] = true
     local files = shipped("fivem")
-    -- The project's own licence is in both resources once it has one (#190).
-    for _, licence in ipairs({ "[rpf]/rpf/LICENSE", "[rpf]/rpf-ws/LICENSE" }) do
+    -- The project's own licence is in every resource once it has one (#190).
+    for _, licence in ipairs({ "[rpf]/rpf/LICENSE", "[rpf]/rpf-ws/LICENSE", "[rpf]/rpf-qbox/LICENSE" }) do
       if files[licence] then
         expected[licence] = true
       end
@@ -214,6 +219,45 @@ describe("the FiveM zip", function()
     local driver, record = load_side("client")
     driver.start()
     assert.are.equal("rpf:client_ready", record.to_server[1].name)
+  end)
+
+  it("starts the Qbox bridge's server from the packaged files, beside the packaged core", function()
+    local driver = load_side("server", { rpf_url = "wss://portal.example/ws", rpf_api_key = "rpf_sk_release" })
+    driver.start()
+    -- Another resource's Lua state: its own globals, the engine's natives,
+    -- and `exports` reaching `rpf`'s API as `rpf-qbox` and the two
+    -- resources it bridges, which are not started.
+    local env = setmetatable({
+      exports = { rpf = { api = function()
+        return driver.resource("rpf-qbox")
+      end }, qbx_core = {}, ox_inventory = {} },
+    }, { __index = _G })
+    for _, script in ipairs(dofile(support.path("lua/platform/mock/fivem.lua")).scripts(read_file(QBOX_MANIFEST), "server")) do
+      local source = read_file(RESOURCES .. "rpf-qbox/" .. script)
+      local chunk
+      if rawget(_G, "setfenv") then
+        chunk = assert(loadstring(source, "=" .. script))
+        setfenv(chunk, env)
+      else
+        chunk = assert(load(source, "=" .. script, "t", env))
+      end
+      chunk()
+    end
+    assert.is_table(rawget(env, "rpf_qbox"), "bridge.lua loaded, in the bridge's own state")
+    assert.is_nil(rawget(_G, "rpf_qbox"))
+    -- The core took it: a second bridge is refused as one already is.
+    local again = {
+      rpf.api.bridge.register({
+        name = "other",
+        version = "1",
+        contract = { major = 1, minor = 0 },
+        provides = {},
+        running = function()
+          return false
+        end,
+      }),
+    }
+    assert.are.same({ nil, "registered" }, again)
   end)
 end)
 
