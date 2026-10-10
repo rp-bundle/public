@@ -34,6 +34,17 @@ keep the job the portal has.
 
 ### Added
 
+- Bridges to existing RP frameworks, part 3 (K2, #92): the shared bridge
+  conformance suite (`lua/spec/support/bridge_conformance.lua`) every
+  bridge runs against a fake of its framework, on the mock platform and the
+  real FiveM and Gmod adapters: the lifecycle and RPF's login gate, every
+  supported call once per op id, a framework failing part way, its resource
+  stopping and starting, a restart that cut a command off inside the
+  framework, and a composite operation refused, unknown, and cut off
+  between the debit and the grant reaching the outbox, which ends `unknown`
+  for staff with nothing compensated. A mock bridge over a fake framework
+  passes it, as K3's Qbox and K4's DarkRP bridges will.
+
 - Bridges to existing RP frameworks, part 2 (K2, #92): the bridge
   contract, 1.0. A bridge registers through `rpf.api.bridge.register`,
   declaring the domains its framework owns (`provides`) and the facade
