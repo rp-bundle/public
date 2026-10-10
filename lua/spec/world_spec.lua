@@ -135,6 +135,19 @@ describe("rpf.world's placements", function()
     assert.are.same({ 22 }, despawned, "an answer is taken once")
   end)
 
+  it("never removes another record's entity through a ref a deleted one handed on", function()
+    install(world, 2)
+    local entities = world.server_platform.entities
+    local first = world.api.world.placed("acme_props.prop", "00000001-0000-4000-8000-000000000000")
+    local second = world.api.world.placed("acme_props.prop", "00000002-0000-4000-8000-000000000000")
+    -- The first is deleted behind the core's back, and its ref reused by an
+    -- entity of the second record's.
+    entities[first] = entities[second]
+    entities[second] = nil
+    install(world, 2, 2)
+    assert.is_not_nil(entities[first], "the second record's entity stays")
+  end)
+
   it("despawns everything and places nothing more once cleared", function()
     install(world, 2)
     assert.are.equal(2, #world.entities())

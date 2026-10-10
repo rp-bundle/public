@@ -431,10 +431,19 @@ local function take_away(id)
     entry.gone = true
     return
   end
-  local despawn = capability("despawn")
-  if despawn then
-    call("despawn", despawn, entry.ref)
+  -- Only if the ref still names this record's entity: one deleted behind
+  -- the core's back may have handed its ref to another placement.
+  local despawn, entity = capability("despawn"), capability("entity")
+  if not despawn then
+    return
   end
+  if entity then
+    local ok, info = call("entity", entity, entry.ref)
+    if not ok or type(info) ~= "table" or info.placement ~= id then
+      return
+    end
+  end
+  call("despawn", despawn, entry.ref)
 end
 
 ---Takes the adapter's answer to a spawn: the entity's ref, or why not. It
