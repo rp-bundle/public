@@ -159,6 +159,11 @@ local function notify(spec, done)
   done()
 end
 
+---How to end the menu of ours on show, if one is, so `close` ends it, and
+---its watch, even though `lib.hideContext` runs no `onExit`.
+---@type fun(index: integer?)?
+local open_menu = nil
+
 ---A menu, over ox_lib's context menu. Picking an option closes it without
 ---`onExit`; closing it runs `onExit`. Another resource's menu can replace
 ---it with no word to anyone, so while it waits it checks every `WATCH_MS`
@@ -172,9 +177,13 @@ local function menu(spec, done)
   local function finish(index)
     if not over then
       over = true
+      if open_menu == finish then
+        open_menu = nil
+      end
       done(index)
     end
   end
+  open_menu = finish
   local options = {}
   for i, option in ipairs(spec.options) do
     options[i] = {
@@ -349,8 +358,12 @@ end
 ---@param kind "menu"|"input"|"progress" Which.
 local function close(kind)
   if kind == "menu" then
+    local ending = open_menu
     if lib.getOpenContextMenu() == ox.MENU_ID then
       lib.hideContext(false)
+    end
+    if ending then
+      ending(nil)
     end
   elseif kind == "input" then
     lib.closeInputDialog()
