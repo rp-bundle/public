@@ -822,6 +822,219 @@ describe("the FiveM adapter", function()
     end)
   end)
 
+  describe("placements (J4)", function()
+    ---A fake FiveM native, which the language server cannot see from here.
+    ---@param name string The native.
+    ---@return function native It.
+    local function native(name)
+      return rawget(_G, name)
+    end
+
+    ---A ped's placement.
+    ---@param id string? The record's id.
+    ---@return table spec The spec.
+    local function spec_of(id)
+      return {
+        id = id or "rec",
+        type = "acme_npcs.greeter",
+        kind = "ped",
+        position = { x = 1, y = 2, z = 3 },
+        heading = 45,
+        bucket = 4,
+        model = { fivem = "a_m_y_business_01", gmod = "models/x.mdl" },
+      }
+    end
+
+    ---Spawns through the adapter and waits, on the fake clock, for its
+    ---answer, as the core does.
+    ---@param driver table The server's driver.
+    ---@param record table What the host recorded, whose clock it moves.
+    ---@param spec table The placement.
+    ---@return integer? ref The answer.
+    ---@return string? err Or why not.
+    local function spawn(driver, record, spec)
+      local answer
+      rpf.fivem.server.spawn(spec, function(ref, err)
+        answer = { ref, err }
+      end)
+      local waited = 0
+      while not answer and waited <= rpf.fivem.server.SPAWN_TIMEOUT_MS + 100 do
+        record.time = record.time + rpf.fivem.server.SPAWN_POLL_MS
+        waited = waited + rpf.fivem.server.SPAWN_POLL_MS
+        driver.run_due()
+      end
+      assert(answer, "the spawn was answered")
+      return answer[1], answer[2]
+    end
+
+    it("removes, as it starts, every ped and object this resource made and left, and nothing another made, whatever the tags", function()
+      local driver = load_side("server", CONVARS)
+      local left = native("CreatePed")(0, 1, 0, 0, 0, 0, true, true)
+      local untagged = native("CreateObjectNoOffset")(1, 0, 0, 0, true, true, false)
+      local forged = native("CreateObjectNoOffset")(2, 0, 0, 0, true, true, false)
+      driver.run_due()
+      native("Entity")(left).state:set("rpf_placement", { id = "old", type = "acme_npcs.greeter" }, true)
+      native("Entity")(forged).state:set("rpf_placement", { id = "old", type = "acme_npcs.greeter" }, true)
+      driver.entities[forged].script = "another_resource"
+      driver.start()
+      assert.is_nil(driver.entities[left])
+      assert.is_nil(driver.entities[untagged], "a cleared tag hides nothing")
+      assert.is_not_nil(driver.entities[forged], "a forged tag removes nothing")
+    end)
+
+    it("places a ped server-side once it exists: frozen, in its bucket, kept when its owner leaves, tagged, named by its network id", function()
+      local driver, record = started_server()
+      local ref = assert(spawn(driver, record, spec_of()))
+      local handle = native("NetworkGetEntityFromNetworkId")(ref)
+      local entity = driver.entities[handle]
+      assert.are_not.equal(handle, ref, "a network id, not the server's handle")
+      assert.are.equal("ped", entity.kind)
+      assert.are.equal(native("GetHashKey")("a_m_y_business_01"), entity.model)
+      assert.are.equal(45, entity.heading)
+      assert.are.equal(4, entity.bucket)
+      assert.is_true(entity.frozen)
+      assert.are.equal(rpf.fivem.server.KEEP_ENTITY, entity.orphan)
+      assert.are.same({ id = "rec", type = "acme_npcs.greeter" }, entity.state.rpf_placement)
+      assert.are.same(
+        { position = { x = 1, y = 2, z = 3 }, model = entity.model, bucket = 4, placement = "rec" },
+        rpf.fivem.server.entity(ref)
+      )
+      local spec = spec_of("x")
+      spec.model = { gmod = "models/x.mdl" }
+      assert.are.same({ nil, "no_model" }, { spawn(driver, record, spec) })
+    end)
+
+    it("gives up on an entity that never comes, deleting its handle", function()
+      local driver, record = started_server()
+      local real = native("CreatePed")
+      local made
+      rawset(_G, "CreatePed", function(...)
+        made = real(...)
+        driver.entities[made].hold = true -- never, until the test says
+        return made
+      end)
+      local answer = { spawn(driver, record, spec_of()) }
+      rawset(_G, "CreatePed", real)
+      assert.are.same({ nil, "failed" }, answer)
+      assert.is_nil(driver.entities[made], "its handle deleted when it did not come in time")
+    end)
+
+    it("knows what it placed by its own table, not by a tag the owning client can rewrite", function()
+      local driver, record = started_server()
+      local ref = assert(spawn(driver, record, spec_of()))
+      local handle = native("NetworkGetEntityFromNetworkId")(ref)
+      driver.entities[handle].state.rpf_placement = nil
+      assert.are.equal("rec", rpf.fivem.server.entity(ref).placement, "a cleared tag changes nothing")
+      local forged = native("CreateObjectNoOffset")(2, 0, 0, 0, true, true, false)
+      driver.run_due()
+      native("Entity")(forged).state:set("rpf_placement", { id = "rec", type = "acme_npcs.greeter" }, true)
+      local forged_ref = native("NetworkGetNetworkIdFromEntity")(forged)
+      assert.is_nil(rpf.fivem.server.entity(forged_ref).placement, "a forged tag names nothing")
+      rpf.fivem.server.despawn(forged_ref)
+      assert.is_not_nil(driver.entities[forged], "nor can it be removed as ours")
+      rpf.fivem.server.despawn(ref)
+      assert.is_nil(driver.entities[handle])
+    end)
+
+    it("forgets an entity something else removed, so a recycled handle is not taken for it", function()
+      local driver, record = started_server()
+      for _, case in ipairs({
+        { model = "a_m_y_business_01", script = "another_resource" }, -- same model, another resource
+        { model = "other", script = "rpf" }, -- another model
+      }) do
+        local ref = assert(spawn(driver, record, spec_of()))
+        local handle = native("NetworkGetEntityFromNetworkId")(ref)
+        driver.delete_entity(handle)
+        driver.recycle(handle, ref, native("GetHashKey")(case.model), case.script)
+        assert.is_nil(rpf.fivem.server.entity(ref).placement, case.model)
+        rpf.fivem.server.despawn(ref)
+        assert.is_not_nil(driver.entities[handle], "another entity stays: " .. case.model)
+      end
+      -- Should the event ever be missed, a recycled handle is still not ours.
+      local ref = assert(spawn(driver, record, spec_of()))
+      local handle = native("NetworkGetEntityFromNetworkId")(ref)
+      driver.entities[handle] = nil
+      driver.recycle(handle, ref, native("GetHashKey")("a_m_y_business_01"), "another_resource")
+      assert.is_nil(rpf.fivem.server.entity(ref).placement)
+    end)
+
+    it("never adopts another entity that inherits a pending spawn's handle", function()
+      for _, fired in ipairs({ true, false }) do
+        local driver, record = started_server()
+        local answer
+        rpf.fivem.server.spawn(spec_of(), function(ref, err)
+          answer = { ref, err }
+        end)
+        local handle, entity = next(driver.entities)
+        while entity and entity.ready ~= false do
+          handle, entity = next(driver.entities, handle)
+        end
+        assert(entity, "a pending entity")
+        ---@cast handle integer
+        if fired then
+          driver.delete_entity(handle)
+        else
+          driver.entities[handle] = nil
+        end
+        driver.recycle(handle, entity.net, entity.model, "another_resource")
+        for _ = 1, 3 do
+          record.time = record.time + rpf.fivem.server.SPAWN_POLL_MS
+          driver.run_due()
+        end
+        assert.are.same({ nil, "failed" }, answer, "event fired: " .. tostring(fired))
+        local theirs = driver.entities[handle]
+        assert.is_false(theirs.frozen)
+        assert.is_nil(theirs.state.rpf_placement)
+        driver.stop()
+        assert.is_not_nil(driver.entities[handle], "nor removed on stop")
+      end
+    end)
+
+    it("removes, on a clean stop, what it placed and what it is still placing", function()
+      local driver, record = started_server()
+      local ref = assert(spawn(driver, record, spec_of("one")))
+      local handle = native("NetworkGetEntityFromNetworkId")(ref)
+      rpf.fivem.server.spawn(spec_of("two"), function() end)
+      local pending = 0
+      for h, entity in pairs(driver.entities) do
+        if not entity.ready then
+          pending = h
+        end
+      end
+      driver.stop()
+      assert.is_nil(driver.entities[handle])
+      assert.is_nil(driver.entities[pending])
+    end)
+
+    it("tells every client which peds it placed, and a client that asks, at most once a second", function()
+      local driver, record = started_server()
+      local ref = assert(spawn(driver, record, spec_of()))
+      record.time = record.time + 10
+      driver.run_due()
+      local told
+      for _, sent in ipairs(record.to_clients) do
+        if sent.name == "rpf:placed_peds" and sent.player == -1 then
+          told = sent.payload
+        end
+      end
+      assert.are.same({ ref }, told)
+      local before = #record.to_clients
+      driver.from_client(3, "rpf:placed_peds_request", nil)
+      driver.from_client(3, "rpf:placed_peds_request", nil)
+      assert.are.equal(before + 1, #record.to_clients)
+      assert.are.same({ player = 3, name = "rpf:placed_peds", payload = { ref } }, record.to_clients[#record.to_clients])
+    end)
+
+    it("removes only an entity it placed", function()
+      local driver = started_server()
+      local theirs = native("CreateObjectNoOffset")(2, 0, 0, 0, true, true, false)
+      driver.run_due()
+      rpf.fivem.server.despawn(native("NetworkGetNetworkIdFromEntity")(theirs))
+      assert.is_not_nil(driver.entities[theirs])
+      rpf.fivem.server.despawn("not a ref")
+    end)
+  end)
+
   describe("the client", function()
     ---Starts the client side and its screens.
     ---@return table driver The driver.
@@ -845,6 +1058,23 @@ describe("the FiveM adapter", function()
         })
       )
     end
+
+    it("makes passive only the peds the server says it placed, as they stream in, and asks for that list as it starts", function()
+      local driver, record = load_side("client")
+      driver.start()
+      assert.are.equal("rpf:placed_peds_request", record.to_server[#record.to_server].name)
+      driver.peds[7001], driver.net_ids[7001] = {}, 505001
+      driver.peds[7002], driver.net_ids[7002] = {}, 505002
+      driver.from_server("rpf:placed_peds", { 505001, 505009 })
+      assert.are.same({ invincible = true, blocking = true, frozen = true }, driver.peds[7001])
+      assert.are.same({}, driver.peds[7002], "a ped the server did not place, whatever its tag")
+      driver.peds[7003], driver.net_ids[7003] = {}, 505009
+      record.time = record.time + rpf.fivem.client.PASSIVE_MS
+      driver.run_due()
+      assert.are.same({ invincible = true, blocking = true, frozen = true }, driver.peds[7003], "streamed in later")
+      driver.from_server("rpf:placed_peds", "not a list")
+      assert.are.same({}, driver.peds[7002])
+    end)
 
     it("asks the server over lib.callback, and hands back only a string answer", function()
       local driver, record = load_side("client")

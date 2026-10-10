@@ -107,6 +107,7 @@ local gmod = {}
 ---@field player_meta table The metatable of fake players.
 ---@field include fun(path: string): any The fake `include`.
 ---@field driver rpf.mock.GmodDriver The driving functions as plain functions, as the fake game server calls a platform's.
+---@field entities table<integer, rpf.mock.GmodEntity> Entities made with `ents.Create`, by index, until removed.
 ---@field core rpf? The core's internal table, kept when the adapter loads `init.lua`, because publishing the API replaces the global. For tests to look inside.
 local World = {}
 World.__index = World
@@ -149,6 +150,10 @@ local GLOBALS = {
   "NOTIFY_GENERIC",
   "NOTIFY_ERROR",
   "NOTIFY_HINT",
+  "ents",
+  "Entity",
+  "Vector",
+  "Angle",
 }
 
 ---The Gmod adapter's part framing (`lua/platform/gmod/messages.lua`): part
@@ -741,6 +746,89 @@ function gmod.install(side, host, options)
     return self.pos or { x = 0, y = 0, z = 0 }
   end
   world.player_meta = Player
+
+  -- Entities (J4): `ents.Create` and what the adapter calls on one. Indexes
+  -- start above any player's, as in a game.
+
+  ---An entity made with `ents.Create`.
+  ---@class rpf.mock.GmodEntity
+  ---@field index integer Its index.
+  ---@field class string Its class.
+  ---@field model string? Its model's path.
+  ---@field pos { x: number, y: number, z: number }? Where it is.
+  ---@field angles { p: number, y: number, r: number }? Its angles.
+  ---@field spawned boolean Whether `Spawn` ran.
+  ---@field valid boolean False once removed.
+  ---@field nw table<string, string> Its networked strings.
+  local EntityMeta = {}
+  EntityMeta.__index = EntityMeta
+  function EntityMeta:IsValid()
+    return self.valid
+  end
+  function EntityMeta:SetModel(model)
+    self.model = model
+  end
+  function EntityMeta:GetModel()
+    return self.model
+  end
+  function EntityMeta:SetPos(pos)
+    self.pos = pos
+  end
+  function EntityMeta:GetPos()
+    return self.pos or { x = 0, y = 0, z = 0 }
+  end
+  function EntityMeta:SetAngles(angles)
+    self.angles = angles
+  end
+  function EntityMeta:Spawn()
+    self.spawned = true
+  end
+  function EntityMeta:SetNWString(key, value)
+    self.nw[key] = value
+  end
+  function EntityMeta:GetNWString(key, fallback)
+    local value = self.nw[key]
+    if value == nil then
+      return fallback
+    end
+    return value
+  end
+  function EntityMeta:EntIndex()
+    return self.index
+  end
+  function EntityMeta:Remove()
+    self.valid = false
+    world.entities[self.index] = nil
+  end
+  world.entities = {}
+  local next_index = 1000
+  _G.ents = {
+    Create = function(class)
+      next_index = next_index + 1
+      local entity = setmetatable({ index = next_index, class = class, spawned = false, valid = true, nw = {} }, EntityMeta)
+      world.entities[next_index] = entity
+      return entity
+    end,
+    GetAll = function()
+      local out = {}
+      for _, entity in pairs(world.entities) do
+        out[#out + 1] = entity
+      end
+      table.sort(out, function(a, b)
+        return a.index < b.index
+      end)
+      return out
+    end,
+  }
+  _G.Entity = function(index)
+    return world.entities[index] or setmetatable({ index = index, valid = false, nw = {} }, EntityMeta)
+  end
+  _G.Vector = function(x, y, z)
+    return { x = x, y = y, z = z }
+  end
+  _G.Angle = function(pitch, yaw, roll)
+    return { p = pitch, y = yaw, r = roll }
+  end
   _G.player = {
     GetAll = function()
       local out = {}

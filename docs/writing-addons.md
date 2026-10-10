@@ -111,7 +111,12 @@ greeter = {
 `visible` name an integer and a boolean field when you want them. A model
 field marked `engine = true` can hold one model per engine, `{ fivem =
 "a_m_y_business_01", gmod = "models/Humans/Group01/male_02.mdl" }`, so the
-same record works on both. The rules are in
+same record works on both. Staff then place them in the portal, and RPF
+keeps a `ped` or `object` record placed for you while your addon runs:
+one entity each, moved, hidden and removed as staff change the record,
+and gone when your addon stops. `rpf.world.placed(type, id)` gives the
+entity's ref, and `rpf.world.entity(ref)` tells you which record an entity
+a client names is. The rules are in
 [Addons, "World definitions"](architecture/addons.md#world-definitions).
 
 ## Registering, installing, running

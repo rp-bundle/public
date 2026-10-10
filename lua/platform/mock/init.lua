@@ -205,6 +205,9 @@ end
 ---@field add_player fun(player: any, name: string, identifiers: string[]) Tells the mock about a player before the harness hands them to the core.
 ---@field remove_player fun(player: any) Forgets a player after the harness has told the core they left.
 ---@field positions table<any, { x: number, y: number, z: number }> Where each player is, as the harness sets it, for the `position` capability.
+---@field buckets table<any, integer> Each player's routing bucket, as the harness sets it; 0 when unset.
+---@field entities table<integer, rpf.mock.Entity> The world's networked entities, by ref: what the core placed, and any the harness adds.
+---@field entity_seq integer The last ref handed out.
 ---@field socket_open fun(id: integer) The host's socket opened.
 ---@field socket_message fun(id: integer, text: string) A frame arrived on it.
 ---@field socket_close fun(id: integer, reason: string) It closed, or never opened.
@@ -228,16 +231,65 @@ function mock.server(host, seed)
     return nil
   end
 
-  -- The game world (J3): a player's position is whatever the harness put
-  -- in `positions`; the rest is J4's, unsupported as on every adapter.
+  -- The game world (J3, J4): a player's position and bucket are whatever
+  -- the harness put in `positions` and `buckets`, and the world's entities
+  -- are a table it can read and change, as another script would. A model
+  -- is its own name; a record's model is a name, or a table whose `mock`
+  -- entry is, as each adapter reads its own engine's entry.
   p.positions = {}
+  p.buckets = {}
+  p.entities = {}
+  p.entity_seq = 0
+
+  ---A networked entity in the mock's world.
+  ---@class rpf.mock.Entity
+  ---@field position { x: number, y: number, z: number } Where it is.
+  ---@field heading number Which way it faces.
+  ---@field bucket integer Its routing bucket.
+  ---@field model any Its model.
+  ---@field kind string? `ped` or `object`, for one the core placed.
+  ---@field placement string? The record id the core tagged it with.
+
   p.capabilities = {
     position = function(player)
       return p.positions[player]
     end,
-    model = false,
-    zone = false,
-    entity = false,
+    bucket = function(player)
+      return p.buckets[player] or 0
+    end,
+    model = function(name)
+      return name
+    end,
+    entity = function(ref)
+      local found = p.entities[ref]
+      if not found then
+        return nil
+      end
+      return { position = found.position, model = found.model, bucket = found.bucket, placement = found.placement }
+    end,
+    spawn = function(spec, done)
+      local model = spec.model
+      if type(model) == "table" then
+        model = model.mock
+      end
+      if type(model) ~= "string" or model == "" then
+        done(nil, "no_model")
+        return
+      end
+      p.entity_seq = p.entity_seq + 1
+      p.entities[p.entity_seq] = {
+        position = spec.position,
+        heading = spec.heading,
+        bucket = spec.bucket,
+        model = model,
+        kind = spec.kind,
+        placement = spec.id,
+      }
+      done(p.entity_seq)
+    end,
+    despawn = function(ref)
+      p.entities[ref] = nil
+    end,
     notify = true,
     menu = true,
     input = true,

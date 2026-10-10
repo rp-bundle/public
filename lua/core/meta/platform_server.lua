@@ -139,9 +139,11 @@ function ToClients.request_client(player, name, payload, callback) end
 ---purpose.
 ---@class rpf.Capabilities
 ---@field position (fun(player: rpf.PlayerHandle): { x: number, y: number, z: number }?)|false A player's position in the world, in the engine's units, or nil while they have none (not spawned).
----@field model false Spawning and placing models: J4's (#81), unsupported until then.
----@field zone false Zones a player is in: J4's, unsupported until then.
----@field entity false A record's entity in the world: J4's, unsupported until then.
+---@field bucket (fun(player: rpf.PlayerHandle): integer?)|false A player's routing bucket (J4): the world they are in, where the engine has more than one. `false` on an engine with one world, where every player is in bucket 0.
+---@field model (fun(name: string): (number|string)?)|false The engine's id for a model name, as `entity` reports a model (a hash on FiveM, a lowercased path on Gmod), so a target rule written with names can be compared with an entity.
+---@field entity (fun(ref: integer): { position: { x: number, y: number, z: number }, model: (number|string)?, bucket: integer?, placement: string? }?)|false A networked entity, by its ref: the number the engine names it by on every machine (a network id on FiveM, an entity index on Gmod). Nil when the ref names nothing. `placement` is the record id the adapter tagged it with, for one `spawn` placed.
+---@field spawn (fun(spec: rpf.world.Spawn, done: fun(ref: integer?, err: string?)))|false Places a record's entity, server-authoritative, tagged with the record's id for its clients, and hands `done` its ref, or nil and why (`no_model` when the record has no model for this engine), once: at once, or later where the engine makes entities asynchronously (FiveM), within a bounded wait.
+---@field despawn (fun(ref: integer))|false Removes an entity `spawn` placed. A ref that names nothing, or something `spawn` did not place, is left alone.
 ---@field notify boolean Whether this engine's clients show an addon's notification (`rpf.ui`, J10). The client's adapter builds it (`rpf.ClientPlatform.ui`); the server only says whether it can.
 ---@field menu boolean Whether they show a menu to pick from.
 ---@field input boolean Whether they show an input dialog.

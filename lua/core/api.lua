@@ -363,6 +363,18 @@ if world then
     position = function(player)
       return world.position(player)
     end,
+    bucket = function(player)
+      return world.bucket(player)
+    end,
+    model = function(name)
+      return world.model(name)
+    end,
+    entity = function(ref)
+      return world.entity(ref)
+    end,
+    placed = function(type_name, id)
+      return world.placed(type_name, id)
+    end,
   }, "rpf.world")
 end
 

@@ -1054,6 +1054,20 @@ function addons.definition(type_name)
   return nil
 end
 
+---Every addon running here now, in namespace order: active, or in its
+---`start` handler. What the world's placements are worked out from.
+---@return string[] namespaces The namespaces.
+function addons.active()
+  local out = {}
+  for _, namespace in ipairs(names()) do
+    local addon = loaded[namespace]
+    if addon.state == "active" or addon.starting then
+      out[#out + 1] = namespace
+    end
+  end
+  return out
+end
+
 ---The records of a `config` type, as the config carries them, while their
 ---addon is active or its `start` handler runs: staff write them, and this
 ---server only reads them.

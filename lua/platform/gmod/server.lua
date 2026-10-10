@@ -124,6 +124,106 @@ local function identifiers(player)
   return { "steam:" .. id }
 end
 
+---The networked string every entity the core places carries (J4): the
+---record's id, so `server.entity` can say which record an entity is, and
+---`server.sweep` recognises one a previous run left. Only the server sets
+---an entity's networked variables, so a client cannot forge or clear it,
+---unlike a FiveM state bag, which the entity's owner can write.
+server.PLACEMENT = "rpf_placement"
+
+---The model a placement names for Gmod: a string is one model's path, a
+---table holds one per engine and Gmod reads its `gmod` entry.
+---@param model any The record's model field.
+---@return string? path The model's path, or nil.
+local function gmod_model(model)
+  if type(model) == "table" then
+    model = model.gmod
+  end
+  if type(model) ~= "string" or model == "" then
+    return nil
+  end
+  return model
+end
+
+---Places a record's ped or object (`rpf.world`'s `spawn`): a
+---`prop_dynamic` with the record's model, where the record says, tagged
+---with its id. A ped is a prop with a character's model, standing in its
+---default animation, since Gmod's NPCs have AI of their own. Gmod has one
+---world, so a record in any bucket but 0 is not placed.
+---Gmod makes the entity at once, so `done` is called before this returns.
+---@param spec rpf.world.Spawn The placement.
+---@param done fun(ref: integer?, err: string?) Handed the entity's index, or nil and why: `no_model` when the record names no Gmod model, `no_bucket` for a bucket Gmod does not have, `failed` when the engine made nothing.
+function server.spawn(spec, done)
+  local model = gmod_model(spec.model)
+  if not model then
+    done(nil, "no_model")
+    return
+  end
+  if spec.bucket ~= 0 then
+    done(nil, "no_bucket")
+    return
+  end
+  local entity = ents.Create("prop_dynamic")
+  if not IsValid(entity) then
+    done(nil, "failed")
+    return
+  end
+  local at = spec.position
+  entity:SetModel(model)
+  entity:SetPos(Vector(at.x, at.y, at.z))
+  entity:SetAngles(Angle(0, spec.heading, 0))
+  entity:Spawn()
+  entity:SetNWString(server.PLACEMENT, spec.id)
+  done(entity:EntIndex())
+end
+
+---Removes an entity `server.spawn` placed. One without the tag is another
+---addon's, and stays.
+---@param ref any Its index.
+function server.despawn(ref)
+  if type(ref) ~= "number" then
+    return
+  end
+  local entity = Entity(ref)
+  if IsValid(entity) and entity:GetNWString(server.PLACEMENT, "") ~= "" then
+    entity:Remove()
+  end
+end
+
+---An entity, by its index (`rpf.world`'s `entity`): where it is, its
+---model's path, lowercased as `model` gives a name, and the record its tag
+---names.
+---@param ref any The index, as a client sent it.
+---@return { position: { x: number, y: number, z: number }, model: string, bucket: integer, placement: string? }? entity It, or nil.
+function server.entity(ref)
+  if type(ref) ~= "number" then
+    return nil
+  end
+  local entity = Entity(ref)
+  if not IsValid(entity) then
+    return nil
+  end
+  local at = entity:GetPos()
+  local tag = entity:GetNWString(server.PLACEMENT, "")
+  return {
+    position = { x = at.x, y = at.y, z = at.z },
+    model = string.lower(entity:GetModel() or ""),
+    bucket = 0,
+    placement = tag ~= "" and tag or nil,
+  }
+end
+
+---Removes every entity a previous start placed and did not remove (a Lua
+---refresh starts the adapter again on the same map), recognised by its tag,
+---before the core places anything.
+function server.sweep()
+  for _, entity in ipairs(ents.GetAll()) do
+    if IsValid(entity) and entity:GetNWString(server.PLACEMENT, "") ~= "" then
+      entity:Remove()
+    end
+  end
+end
+
 ---The game server's platform: every member of `rpf.ServerPlatform`.
 ---@type rpf.ServerPlatform
 local platform = {
@@ -138,7 +238,9 @@ local platform = {
   kv_set = shared.kv_set,
   random_hex = random.hex,
   thread = coroutine.running,
-  -- The game world (J3). Placing models, zones and entities are J4's.
+  -- The game world (J3, J4): Gmod has one world, so no buckets; entities
+  -- are named by their index, and placed as `prop_dynamic`s
+  -- (`server.spawn`).
   capabilities = {
     position = function(player)
       if not IsValid(player) then
@@ -147,9 +249,19 @@ local platform = {
       local at = player:GetPos()
       return { x = at.x, y = at.y, z = at.z }
     end,
-    model = false,
-    zone = false,
-    entity = false,
+    bucket = false,
+    model = function(name)
+      return string.lower(name)
+    end,
+    entity = function(ref)
+      return server.entity(ref)
+    end,
+    spawn = function(spec, done)
+      server.spawn(spec, done)
+    end,
+    despawn = function(ref)
+      server.despawn(ref)
+    end,
     -- The UI addons show (J10), which the client builds in Derma
     -- (`addon_ui.lua`).
     notify = true,
@@ -218,6 +330,7 @@ local function start()
     end
     return false
   end
+  server.sweep()
   core.start_server(platform, { url = url, api_key = key, portal_url = portal_url ~= "" and portal_url or nil })
 
   core.events.on("players.state_changed", function(player)

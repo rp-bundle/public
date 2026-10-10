@@ -340,6 +340,10 @@ function fivem.server(env, host, seed, convars)
   ---@field resource fun(name: string): table The exported `api` as another resource gets it: every value copied across the boundary, and every call naming that resource as the invoker.
   ---@field stop_resource fun(name: string) `onResourceStop` for another resource.
   ---@field positions table<integer, { x: number, y: number, z: number }> Where each player's ped stands, as `GetEntityCoords` reports it.
+  ---@field entities table<integer, rpf.mock.FivemEntity> The peds and objects the server created, by handle, until deleted.
+  ---@field set_bucket fun(player: integer, bucket: integer) Moves a player to a routing bucket, as another resource would.
+  ---@field delete_entity fun(handle: integer) Deletes an entity as any script or the engine would, firing `entityRemoved`.
+  ---@field recycle fun(handle: integer, net: integer, model: any, script: string?) Gives a handle and network id to a new entity, as FiveM reuses them, made by `script` (`rpf` unless given).
   local driver = {
     exported = own_exports,
     lockdown = {},
@@ -394,12 +398,167 @@ function fivem.server(env, host, seed, convars)
     return p.positions[tonumber(player)] and tonumber(player) or 0
   end
   env.GetEntityCoords = function(ped)
-    local at = p.positions[ped]
+    local entity = driver.entities and driver.entities[ped]
+    local at = entity and entity.position or p.positions[ped]
     return { x = at.x, y = at.y, z = at.z }
   end
 
   env.GetPlayerRoutingBucket = function(player)
     return buckets[tonumber(player)] or 0
+  end
+  function driver.set_bucket(player, bucket)
+    buckets[player] = bucket
+  end
+
+  -- Entities the server creates (J4). Handles start far above any player's
+  -- ped (a player's id), and a network id is a different number from its
+  -- handle, as on FiveM, so code that mixes the two up fails here. The
+  -- creation natives are RPC natives, as on FiveM: the entity exists (and
+  -- has a network id) only on the next tick. Each knows the resource that
+  -- made it (`GetEntityScript`): `rpf`, unless a test says otherwise.
+
+  ---A ped or object a fake server created.
+  ---@class rpf.mock.FivemEntity
+  ---@field kind string `ped` or `object`.
+  ---@field model any The model hash it was created with.
+  ---@field position { x: number, y: number, z: number } Where it stands.
+  ---@field heading number Which way it faces.
+  ---@field bucket integer Its routing bucket.
+  ---@field frozen boolean Whether `FreezeEntityPosition` froze it.
+  ---@field orphan integer? Its orphan mode, as set.
+  ---@field net integer Its network id.
+  ---@field state table Its state bag, as `Entity(handle).state` reads and sets it.
+  ---@field ready boolean False until the tick after it was asked for: the creation natives are asynchronous.
+  ---@field script string The resource that made it.
+  ---@field hold boolean? Set by a test to keep it from ever becoming ready, as an RPC native whose client never answers.
+  driver.entities = {}
+  local next_entity = 10000
+  local function create(kind, model, x, y, z, heading)
+    next_entity = next_entity + 1
+    local state = {}
+    function state.set(self, key, value)
+      rawset(self, key, value)
+    end
+    local entity = {
+      kind = kind,
+      model = model,
+      position = { x = x, y = y, z = z },
+      heading = heading or 0,
+      bucket = 0,
+      frozen = false,
+      net = next_entity + 500000,
+      state = state,
+      ready = false,
+      script = "rpf",
+    }
+    driver.entities[next_entity] = entity
+    p.after(0, function()
+      if not entity.hold then
+        entity.ready = true
+      end
+    end)
+    return next_entity
+  end
+  env.CreatePed = function(_, model, x, y, z, heading)
+    return create("ped", model, x, y, z, heading)
+  end
+  env.CreateObjectNoOffset = function(model, x, y, z)
+    return create("object", model, x, y, z, 0)
+  end
+  env.DoesEntityExist = function(entity)
+    local found = driver.entities[entity]
+    return found ~= nil and found.ready
+  end
+  env.GetEntityScript = function(entity)
+    return driver.entities[entity].script
+  end
+  env.DeleteEntity = function(entity)
+    driver.delete_entity(entity)
+  end
+  -- Removed by anyone, the engine says so with `entityRemoved`.
+  function driver.delete_entity(handle)
+    if driver.entities[handle] then
+      driver.entities[handle] = nil
+      fire("entityRemoved", "", handle)
+    end
+  end
+  -- A handle and network id FiveM gives again, to a new entity.
+  function driver.recycle(handle, net, model, script)
+    local state = {}
+    function state.set(self, key, value)
+      rawset(self, key, value)
+    end
+    driver.entities[handle] = {
+      kind = "object",
+      model = model,
+      position = { x = 0, y = 0, z = 0 },
+      heading = 0,
+      bucket = 0,
+      frozen = false,
+      net = net,
+      state = state,
+      ready = true,
+      script = script or "rpf",
+    }
+  end
+  env.SetEntityHeading = function(entity, heading)
+    driver.entities[entity].heading = heading
+  end
+  env.SetEntityRoutingBucket = function(entity, bucket)
+    driver.entities[entity].bucket = bucket
+  end
+  env.GetEntityRoutingBucket = function(entity)
+    return driver.entities[entity].bucket
+  end
+  env.FreezeEntityPosition = function(entity, frozen)
+    driver.entities[entity].frozen = frozen
+  end
+  env.SetEntityOrphanMode = function(entity, mode)
+    driver.entities[entity].orphan = mode
+  end
+  env.GetEntityModel = function(entity)
+    return driver.entities[entity].model
+  end
+  env.NetworkGetNetworkIdFromEntity = function(entity)
+    local found = driver.entities[entity]
+    return found.ready and found.net or 0
+  end
+  env.NetworkGetEntityFromNetworkId = function(net_id)
+    for handle, entity in pairs(driver.entities) do
+      if entity.net == net_id then
+        return handle
+      end
+    end
+    return 0
+  end
+  env.Entity = function(handle)
+    local entity = driver.entities[handle]
+    return { state = entity and entity.state or {} }
+  end
+  local function pool(kind)
+    local out = {}
+    for handle, entity in pairs(driver.entities) do
+      if entity.kind == kind then
+        out[#out + 1] = handle
+      end
+    end
+    table.sort(out)
+    return out
+  end
+  env.GetAllPeds = function()
+    return pool("ped")
+  end
+  env.GetAllObjects = function()
+    return pool("object")
+  end
+  -- Not FiveM's joaat, but a stable number per name, which is all a model
+  -- comparison needs.
+  env.GetHashKey = function(name)
+    local h = 0
+    for i = 1, #name do
+      h = (h * 31 + name:lower():byte(i)) % 4294967296
+    end
+    return h
   end
   env.SetPlayerRoutingBucket = function(player, bucket)
     buckets[tonumber(player)] = bucket
@@ -669,7 +828,29 @@ function fivem.client(env, host, seed, convars)
   ---@field stop fun() `onClientResourceStop` for this resource.
   ---@field run_due fun() Runs every timer due.
   ---@field next_due fun(): number? When the next timer is due.
-  local driver = { exported = {}, nui_sent = {}, focus = false, frozen = false, feed = {} }
+  ---@field peds table<integer, { invincible: boolean?, blocking: boolean?, frozen: boolean? }> Peds this client has streamed in, by handle, with what the adapter set on them.
+  ---@field net_ids table<integer, integer> Each streamed-in entity's network id, by handle.
+  local driver = { exported = {}, nui_sent = {}, focus = false, frozen = false, feed = {}, peds = {}, net_ids = {} }
+  env.IsEntityAPed = function(entity)
+    return driver.peds[entity] ~= nil
+  end
+  env.NetworkGetEntityFromNetworkId = function(net)
+    for handle, id in pairs(driver.net_ids) do
+      if id == net then
+        return handle
+      end
+    end
+    return 0
+  end
+  env.NetworkDoesEntityExistWithNetworkId = function(net)
+    return env.NetworkGetEntityFromNetworkId(net) ~= 0
+  end
+  env.SetEntityInvincible = function(entity, on)
+    driver.peds[entity].invincible = on
+  end
+  env.SetBlockingOfNonTemporaryEvents = function(entity, on)
+    driver.peds[entity].blocking = on
+  end
   local net = {}
   local text = {}
 
@@ -800,8 +981,12 @@ function fivem.client(env, host, seed, convars)
   env.PlayerPedId = function()
     return 1
   end
-  env.FreezeEntityPosition = function(_, frozen)
-    driver.frozen = frozen
+  env.FreezeEntityPosition = function(entity, frozen)
+    if driver.peds[entity] then
+      driver.peds[entity].frozen = frozen
+    else
+      driver.frozen = frozen
+    end
   end
   env.BeginTextCommandThefeedPost = function()
     text = {}

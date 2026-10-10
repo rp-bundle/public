@@ -45,7 +45,7 @@
 ---@field ops rpf.api.Ops Operation ids, which make the facade's commands safe to send again. Server only.
 ---@field world rpf.api.World The game world, through what the engine's adapter supports (J3). Server only.
 ---@field interactions rpf.api.Interactions Requests a player's client makes to an addon: `register` a handler on the server, `send` or `request` on the client (J3, J10).
----@field capabilities fun(): table<string, boolean> What this engine supports, by name: the game world's `position`, `model`, `zone` and `entity` (server only), and the UI `notify`, `menu`, `input` and `progress` (both sides). Ask before offering a player something that needs one; a call to one that is missing says `unsupported`.
+---@field capabilities fun(): table<string, boolean> What this engine supports, by name: the game world's `position`, `bucket`, `model`, `entity`, `spawn` and `despawn` (server only), and the UI `notify`, `menu`, `input` and `progress` (both sides). Ask before offering a player something that needs one; a call to one that is missing says `unsupported`.
 ---@field ui rpf.api.Ui Notifications, menus, input dialogs and progress bars that look right on every engine (J10): on the client for the player, on the server for a player you name.
 ---@field players rpf.api.Players? The players on this game server. Server only.
 ---@field staff rpf.api.Staff? In-game staff: what a linked staff member may do here, account linking, and staff actions for the audit log. Server only.
@@ -645,6 +645,48 @@ local World = {}
 ---@return { x: number, y: number, z: number }? position A copy.
 ---@return "unsupported"|"not_found"|nil err `unsupported` where the engine's adapter cannot say, `not_found` for a player not logged in here or not spawned.
 function World.position(player) end
+
+---Which routing bucket a logged-in player is in: the world they are in,
+---where the engine has more than one (FiveM's routing buckets). On an engine
+---with one world (`capabilities().bucket` false) every player is in bucket
+---0, as a record with no bucket field is.
+---@param player any The engine's handle.
+---@return integer? bucket The bucket.
+---@return "not_found"|nil err For a player not logged in here.
+function World.bucket(player) end
+
+---The engine's id for a model name: what `entity` reports an entity's
+---model as (a hash on FiveM, a lowercased path on Gmod), so a model you
+---know by name can be compared with an entity a client named.
+---@param name string The model's name.
+---@return (number|string)? id The engine's id for it.
+---@return "unsupported"|"invalid"|nil err `unsupported` where the engine has no models to name, `invalid` for a name that is not one.
+function World.model(name) end
+
+---A networked entity, by the ref a client named it by (a network id on
+---FiveM, an entity index on Gmod): hostile input, resolved by the engine.
+---`placement` names the record when RPF placed it for a world-backed type,
+---and only then.
+---
+---```lua
+---local entity = rpf.world.entity(payload.ref)
+---if not entity or not entity.placement then
+---  return false, "Nothing to talk to there."
+---end
+---```
+---@param ref any The ref.
+---@return { position: { x: number, y: number, z: number }, model: any, bucket: integer, placement: { type: string, id: string }? }? entity A copy: where it is, its model (the engine's id for it, as `capabilities().model` names it), its bucket.
+---@return "unsupported"|"not_found"|nil err `unsupported` where the engine cannot say, `not_found` for a ref that names nothing.
+function World.entity(ref) end
+
+---The ref of the entity RPF placed for a record of a world-backed `config`
+---type of kind `ped` or `object`, so the addon can hand it to a client
+---(to point at it, or name it as a target). Nil while it is not placed: the
+---record is hidden, its addon is not running, or the engine places nothing.
+---@param type_name string The record's type.
+---@param id string The record's id.
+---@return integer? ref The entity's ref.
+function World.placed(type_name, id) end
 
 ---Interactions: a player's client asks an addon to do something, and the
 ---addon decides on the server. A request reaches only a handler an addon
