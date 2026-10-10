@@ -53,6 +53,29 @@ keep the job the portal has.
   `placed`. The `zone` capability, never supported, is gone: a zone is a
   record's radius, and the core does the arithmetic.
 
+- Bridges to existing RP frameworks, the DarkRP pilot (K4, #94):
+  `rpf_darkrp`, an addon in the Gmod zip that only a DarkRP server keeps,
+  runs RPF beside DarkRP in the companion profile. A player's character is
+  their DarkRP data, under their SteamID64, in play once they have logged
+  in and DarkRP has loaded it. The facade's money is DarkRP's `wallet` and
+  its job the team's `command`; no item call is supported, since DarkRP's
+  pocket is not an item inventory. Until a player is in play the bridge
+  holds them out of DarkRP's play with DarkRP's and Garry's Mod's own
+  hooks: dead, with team changes, commands, votes, pocket drops, salary and
+  voice refused, and other players' commands that name them. It was tested
+  against DarkRP 2.7.0's source. Installing it is in
+  [Installing](docs/installing.md#beside-darkrp).
+
+  **Release note: what the DarkRP login gate does not hold.** DarkRP's tip
+  jar asks no hook before a donation, so a modified client of a player who
+  has not logged in, beside a tip jar where they joined, can donate from
+  their DarkRP wallet; keep tip jars away from spawns. A few hookless
+  DarkRP commands that move nothing (answering a question, signing a
+  letter, a gesture, a job model preference) also work. Admin mods
+  (FAdmin, ULX, SAM) work for admins before the RPF login, as on any
+  server. Other addons' own commands and net messages are theirs to gate,
+  and an addon whose hook answers before the bridge's decides that hook,
+  since Garry's Mod gives hooks no order.
 - Bridges to existing RP frameworks, the Qbox pilot (K3, #93): `rpf-qbox`, a
   resource in the FiveM zip that only a Qbox server ensures, runs RPF beside
   qbx_core and ox_inventory in the companion profile. It is the character
