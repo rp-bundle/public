@@ -145,6 +145,26 @@ local function admit(player_id)
   return count.count <= interactions.MAX_PER_WINDOW
 end
 
+---Cuts a string to at most `n` bytes without splitting a UTF-8 character:
+---a cut that would land inside one moves back to its start.
+---@param text string The string.
+---@param n integer The most bytes.
+---@return string cut The string, cut.
+local function cut_utf8(text, n)
+  if #text <= n then
+    return text
+  end
+  local at = n
+  while at > 0 do
+    local next_byte = text:byte(at + 1)
+    if next_byte < 0x80 or next_byte >= 0xC0 then
+      break
+    end
+    at = at - 1
+  end
+  return text:sub(1, at)
+end
+
 ---Answers a request.
 ---@param handle any The player's handle.
 ---@param name string The interaction.
@@ -154,14 +174,17 @@ local function answer(handle, name, ok, reason)
   local p = assert(platform) --[[@as rpf.ServerPlatform]]
   if type(reason) ~= "string" then
     reason = nil
-  elseif #reason > interactions.MAX_REASON_BYTES then
-    reason = reason:sub(1, interactions.MAX_REASON_BYTES)
+  else
+    reason = cut_utf8(reason, interactions.MAX_REASON_BYTES)
   end
-  p.to_client(handle, handoff.INTERACTION_RESULT, handoff.encode(handoff.INTERACTION_RESULT, {
-    name = name:sub(1, 64),
-    ok = ok,
-    reason = reason,
-  }))
+  -- A reason the codec cannot write (not UTF-8) is dropped, never thrown:
+  -- the answer still goes.
+  local encoded, text = pcall(handoff.encode, handoff.INTERACTION_RESULT, { name = name, ok = ok, reason = reason })
+  if not encoded then
+    p.log("warn", "rpf: the interaction " .. name .. " gave a reason that is not text; answering without it")
+    text = handoff.encode(handoff.INTERACTION_RESULT, { name = name, ok = ok })
+  end
+  p.to_client(handle, handoff.INTERACTION_RESULT, text)
 end
 
 ---Runs one request from a logged-in player's client.
@@ -179,6 +202,12 @@ local function on_interact(player, payload)
     return
   end
   local name = request.name
+  -- Only a name an addon could have registered gets an answer, which
+  -- echoes it: anything else is dropped here.
+  if #name > 64 or not name:match("^[a-z][a-z0-9_]*%.[a-z][a-z0-9_]*$") then
+    p.log("debug", "rpf: dropped an interaction with a name no addon can register")
+    return
+  end
   if request.payload ~= nil and not plain(request.payload, 0) then
     answer(player.handle, name, false, "invalid")
     return

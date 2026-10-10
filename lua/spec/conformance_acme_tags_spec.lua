@@ -113,6 +113,40 @@ conformance.run(busted, "the acme_tags example", {
     end,
   },
   {
+    name = "keeps trying to reclaim the portal's tags when it could not answer at start",
+    run = function(world)
+      world.portal.records[OLD_TAG] = {
+        id = OLD_TAG,
+        type = "acme_tags.tag",
+        owner = { kind = "player", id = PLAYER },
+        revision = 3,
+        fields = { text = "old", spot = { x = 0, y = 0, z = 0 }, fades_at = 1 },
+        held = false,
+      }
+      world.portal.refuse = { query_records = "forbidden" }
+      sprayable(world)
+      assert.are.equal(0, #world.api.records.list("acme_tags.tag"))
+      world.portal.refuse = nil
+      world:advance(30000)
+      world:pump()
+      assert.are.equal(1, #world.api.records.list("acme_tags.tag"), "held on the retry")
+    end,
+  },
+  {
+    name = "answers a long reason whole characters at a time, and drops a name no addon could have",
+    run = function(world)
+      local player = sprayable(world)
+      world.api.interactions.register("acme_tags.euros", function()
+        return false, string.rep("€", 50)
+      end)
+      local answer = assert(interact(world, player, "acme_tags.euros", {}))
+      assert.is_false(answer.ok)
+      assert.are.equal(string.rep("€", 42), answer.reason, "128 bytes is 42 whole euro signs")
+      assert.is_nil(interact(world, player, "Acme Tags!", {}))
+      assert.is_nil(interact(world, player, string.rep("a", 60) .. "." .. string.rep("b", 10), {}))
+    end,
+  },
+  {
     name = "fades a tag once its day is up",
     run = function(world)
       local player = sprayable(world)

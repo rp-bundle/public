@@ -3,13 +3,30 @@
 ---through `rpf`, the public API, which the entry point hands in.
 acme_tags = acme_tags or {}
 
+---How long to wait before asking again when the portal could not answer.
+acme_tags.RETRY_MS = 30000
+
 ---Holds every tag the server does not hold yet, a page at a time, so tags
 ---survive a restart and fade on time. (J6, #83, will hold a `hold = "server"`
 ---type's records for the addon; until then an addon holds what it needs.)
+---If the portal cannot be asked, or does not answer, it tries again later:
+---the timer is the addon's, so it stops with it.
 ---@param rpf rpf.Api The API.
 ---@param after table? Where the last page ended.
 local function hold_all(rpf, after)
-  rpf.records.query(acme_tags.TYPE, { limit = 64, after = after }, function(found, next_page)
+  ---Asks again, later, from the same page.
+  ---@param why string? What went wrong, for the console.
+  local function retry(why)
+    print("[acme_tags] could not reclaim tags (" .. tostring(why) .. "); trying again")
+    rpf.time.after(acme_tags.RETRY_MS, function()
+      hold_all(rpf, after)
+    end)
+  end
+  local asked, refused = rpf.records.query(acme_tags.TYPE, { limit = 64, after = after }, function(found, next_page, err)
+    if not found then
+      retry(err)
+      return
+    end
     local ids = {}
     for _, tag in ipairs(found or {}) do
       if not tag.held then
@@ -23,6 +40,9 @@ local function hold_all(rpf, after)
       hold_all(rpf, next_page)
     end
   end)
+  if not asked then
+    retry(refused)
+  end
 end
 
 ---Deletes every held tag whose time is up.
