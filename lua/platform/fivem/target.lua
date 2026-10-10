@@ -32,6 +32,11 @@ target.RESOURCES = { "ox_target", "qb-target" }
 ---@type rpf.fivem.target.Offered?
 local offered = nil
 
+---The rules last given, kept so a target resource that starts later, or
+---restarts, is offered them too.
+---@type table[]
+local rules_given = {}
+
 ---The target resource that is running, if any.
 ---@return string? resource Its name.
 function target.resource()
@@ -72,6 +77,11 @@ function target.clear()
   if not offered then
     return
   end
+  if GetResourceState(offered.resource) ~= "started" then
+    -- Its exports went with it, and so did what it was offered.
+    offered = nil
+    return
+  end
   local resource = exports[offered.resource]
   if offered.resource == "ox_target" then
     resource:removeGlobalPed(offered.peds)
@@ -96,10 +106,12 @@ end
 ---@param rules table[] The rules, as `interactions.targets` announced them.
 function target.apply(rules)
   target.clear()
+  rules_given = type(rules) == "table" and rules or {}
   local resource_name = target.resource()
-  if not resource_name or type(rules) ~= "table" then
+  if not resource_name then
     return
   end
+  rules = rules_given
   local resource = exports[resource_name]
   ---@type rpf.fivem.target.Offered
   local now = { resource = resource_name, peds = {}, objects = {}, models = {} }
@@ -155,6 +167,30 @@ function target.apply(rules)
     end
   end
   offered = now
+end
+
+---A resource started: a target resource that starts (or restarts) after
+---the rules came is offered them now.
+---@param name string The resource.
+function target.started(name)
+  for _, known in ipairs(target.RESOURCES) do
+    if known == name then
+      offered = nil
+      target.apply(rules_given)
+      return
+    end
+  end
+end
+
+---A resource stopped: if it is the target resource the rules were offered
+---through, they went with it, and are not taken back from it; another
+---target resource still running is offered them instead.
+---@param name string The resource.
+function target.stopped(name)
+  if offered and offered.resource == name then
+    offered = nil
+    target.apply(rules_given)
+  end
 end
 
 rpf.fivem.target = target

@@ -235,7 +235,9 @@ type, and a models rule on those models (`addModel`, `AddTargetModel`),
 each with the rule's label and distance. Selecting one sends the
 interaction with the entity's network id, and a refusal is shown with
 ox_lib's notify. New rules replace the old ones, and stopping the
-resource takes them back. Proven on fake exports only: a real FXServer
+resource takes them back. A target resource that starts (or restarts)
+after the rules came is offered them then, and one that stops is never
+asked to take them back: its exports went with it. Proven on fake exports only: a real FXServer
 with ox_target and with qb-target is still to show the options (layer 5).
 
 ## The websocket shim

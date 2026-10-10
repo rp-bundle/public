@@ -306,6 +306,67 @@ conformance.run(busted, "Interactions with targets", {
     end,
   },
   {
+    name = "sends an empty list as a list: no rules, and nothing near",
+    run = function(world)
+      local json = world.core.json
+      world:connect()
+      local handle = world:login(1, PLAYER)
+      world:activate(handle)
+      world.place(1, { x = 0, y = 0, z = 0 })
+      world:advance(0)
+      local rules
+      for _, sent in ipairs(world.to_clients) do
+        if sent.player == 1 and sent.name == "rpf:target_rules" then
+          rules = assert(json.decode(sent.payload)).rules
+        end
+      end
+      assert.is_true(json.is_array(rules), "rules")
+      local answer = ask(world, "rpf:targets", json.object({}))
+      assert.is_true(json.is_array(answer.options), "options")
+      assert.are.equal(0, #answer.options)
+    end,
+  },
+  {
+    name = "holds the cooldown from the moment a request is admitted, so a request made while the handler runs is refused",
+    run = function(world)
+      ready(world)
+      local runs = 0
+      ---@type table
+      local inner = {}
+      assert(world.api.interactions.register("acme_npcs.slow", function()
+        runs = runs + 1
+        if runs == 1 then
+          -- The same player's next request, while this one is still running.
+          inner = interact(world, "acme_npcs.slow", { id = NEAR })
+        end
+        return true
+      end, { target = "acme_npcs.greeter", cooldown = 5000 }))
+      interact(world, "acme_npcs.slow", { id = NEAR })
+      assert.are.equal(1, runs)
+      assert.are.equal("cooldown", inner.reason)
+    end,
+  },
+  {
+    name = "gives the cooldown back when the addon's own check refuses",
+    run = function(world)
+      ready(world)
+      local allow = false
+      assert(world.api.interactions.register("acme_npcs.picky", function()
+        return true
+      end, {
+        target = "acme_npcs.greeter",
+        cooldown = 5000,
+        check = function()
+          return allow, "Not yet."
+        end,
+      }))
+      assert.are.equal("Not yet.", interact(world, "acme_npcs.picky", { id = NEAR }).reason)
+      allow = true
+      assert.is_true(interact(world, "acme_npcs.picky", { id = NEAR }).ok, "not held to a cooldown it never used")
+      assert.are.equal("cooldown", interact(world, "acme_npcs.picky", { id = NEAR }).reason)
+    end,
+  },
+  {
     name = "refuses rules an author got wrong at registration, naming the rule",
     run = function(world)
       local api = world.api

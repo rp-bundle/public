@@ -382,12 +382,42 @@ function targets.admit(name, rules, player, payload)
   return resolve_entity(rules, named, at, bucket)
 end
 
----Starts a player's cooldown for an interaction: its handler ran.
+---A cooldown taken for a request, to give back if its check refuses.
+---@class rpf.targets.Reservation
+---@field name string The interaction.
+---@field player_id string The player.
+---@field at number When it was taken.
+---@field before number? The use it replaced.
+
+---Starts a player's cooldown for an interaction as their request is
+---admitted, before any addon code runs, so a check or handler that yields
+---cannot let their next request past `admit` meanwhile.
 ---@param name string The interaction.
+---@param rules rpf.targets.Rules Its rules.
 ---@param player rpf.PlayerView The player.
-function targets.used(name, player)
+---@return rpf.targets.Reservation? reservation What to give back if the check refuses, or nil for a rule with no cooldown.
+function targets.reserve(name, rules, player)
+  if rules.cooldown <= 0 then
+    return nil
+  end
   used[name] = used[name] or {}
-  used[name][player.player_id] = assert(platform).now()
+  local at = assert(platform).now()
+  local reservation = { name = name, player_id = player.player_id, at = at, before = used[name][player.player_id] }
+  used[name][player.player_id] = at
+  return reservation
+end
+
+---Gives a cooldown back: the addon's check refused, so the interaction was
+---not used. Only if nothing has taken the player's cooldown since.
+---@param reservation rpf.targets.Reservation? What `reserve` gave.
+function targets.release(reservation)
+  if not reservation then
+    return
+  end
+  local by_player = used[reservation.name]
+  if by_player and by_player[reservation.player_id] == reservation.at then
+    by_player[reservation.player_id] = reservation.before
+  end
 end
 
 ---Forgets an interaction's cooldowns, when it is replaced or taken down.

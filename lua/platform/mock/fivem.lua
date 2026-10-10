@@ -826,6 +826,8 @@ function fivem.client(env, host, seed, convars)
   ---@field close_context fun() The player closes the open context menu.
   ---@field start fun() `onClientResourceStart` for this resource.
   ---@field stop fun() `onClientResourceStop` for this resource.
+  ---@field resource_start fun(name: string) `onClientResourceStart` for another resource.
+  ---@field resource_stop fun(name: string) `onClientResourceStop` for another resource.
   ---@field run_due fun() Runs every timer due.
   ---@field next_due fun(): number? When the next timer is due.
   ---@field peds table<integer, { invincible: boolean?, blocking: boolean?, frozen: boolean? }> Peds this client has streamed in, by handle, with what the adapter set on them.
@@ -1075,6 +1077,14 @@ function fivem.client(env, host, seed, convars)
 
   function driver.stop()
     fire("onClientResourceStop", "", "rpf")
+  end
+
+  function driver.resource_start(name)
+    fire("onClientResourceStart", "", name)
+  end
+
+  function driver.resource_stop(name)
+    fire("onClientResourceStop", "", name)
   end
 
   driver.timers = p.timers

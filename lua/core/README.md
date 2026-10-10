@@ -1280,8 +1280,9 @@ as a request the platform pairs with its answer (`request_server`,
 field }`), and every request for a registration with rules goes through
 `rpf.targets.admit` (in the world, permission, cooldown, the target) and
 the rules' `check`, in the addon's context, before the handler runs with
-the resolved target as its third argument; the cooldown starts once it
-has. The server answers `rpf:targets` (what is near, `targets.options`)
+the resolved target as its third argument; the cooldown starts as the
+request is admitted, and a refusing check gives it back. Empty lists go
+to clients as JSON arrays. The server answers `rpf:targets` (what is near, `targets.options`)
 on the same rate, and sends `rpf:target_rules` (`targets.listed`) to each
 player as they become `active` and to everyone in the world when a
 registration or an addon's state changes, once per turn of the clock.
@@ -1303,8 +1304,11 @@ on both sides, before `rpf.interactions`.
   the player's position and bucket (`rpf.world`), a zone by its radius;
   `{ ref }` for a models rule through `rpf.world.entity` and
   `rpf.world.model`. Missing, hidden, other bucket and other type are
-  `not_found`, out of reach `too_far`. `used` starts a cooldown and
-  `forget` drops an interaction's. `options(entries, player)` lists what is
+  `not_found`, out of reach `too_far`. `reserve` starts a player's
+  cooldown as their request is admitted, before any addon code runs (a
+  check or handler that yields cannot let the next request in meanwhile),
+  `release` gives it back when the check refuses, and `forget` drops an
+  interaction's. `options(entries, player)` lists what is
   near, offered to the player, nearest first, at most `MAX_NEARBY` (16);
   `listed(entries)` is what a target resource needs.
 - **Client.** `start_client` keeps the server's `rpf:target_rules` and

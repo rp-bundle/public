@@ -348,8 +348,16 @@ local function on_interact(player, payload, respond)
       return
     end
     target = resolved or nil
+    -- The cooldown starts now, before any addon code runs: a check or a
+    -- handler that yields (FiveM) would otherwise let the same player's
+    -- next request through the admission above meanwhile. A check that
+    -- refuses gives it back.
+    local reservation = rpf.targets.reserve(name, rules, player)
     if rules.check then
       local checked, allowed, why = rpf.addons.run(rpf.addons.context_of(entry.namespace), rules.check, player, rpf.targets.copy(target))
+      if not checked or allowed ~= true then
+        rpf.targets.release(reservation)
+      end
       if not checked then
         p.log("error", "rpf: the check of the interaction " .. name .. " failed: " .. tostring(allowed))
         respond(refusal("failed"))
@@ -363,9 +371,6 @@ local function on_interact(player, payload, respond)
     end
   end
   local ran, ok, extra = rpf.addons.run(rpf.addons.context_of(entry.namespace), entry.handler, player, given, rpf.targets.copy(target))
-  if rules and rules.cooldown > 0 then
-    rpf.targets.used(name, player)
-  end
   if not ran then
     p.log("error", "rpf: the interaction " .. name .. " failed: " .. tostring(ok))
     respond(refusal("failed"))
@@ -382,10 +387,21 @@ local function on_interact(player, payload, respond)
   respond(text)
 end
 
+---A list marked as a JSON array, whether or not it is empty: `mark` takes
+---an empty table for an object, and the client reads these as arrays.
+---@param list table[] The list, of plain data.
+---@return table marked The array.
+local function list_of(list)
+  if #list == 0 then
+    return json.array({})
+  end
+  return mark(list) or json.array({})
+end
+
 ---The rules with a target, encoded for a client.
 ---@return string payload The `rpf:target_rules` payload.
 local function rules_payload()
-  return handoff.encode(handoff.TARGET_RULES, { rules = mark(rpf.targets.listed(handlers)) or json.array({}) })
+  return handoff.encode(handoff.TARGET_RULES, { rules = list_of(rpf.targets.listed(handlers)) })
 end
 
 ---Whether a push of the rules is waiting to go.
@@ -421,8 +437,7 @@ local function on_targets(player, payload, respond)
     respond(empty)
     return
   end
-  local options = mark(rpf.targets.options(handlers, player))
-  respond(options and handoff.encode(handoff.TARGETS_RESULT, { options = options }) or empty)
+  respond(handoff.encode(handoff.TARGETS_RESULT, { options = list_of(rpf.targets.options(handlers, player)) }))
 end
 
 ---Listens for interactions and nearby requests, tells each player the

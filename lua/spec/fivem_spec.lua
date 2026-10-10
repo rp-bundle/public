@@ -1149,6 +1149,24 @@ describe("the FiveM adapter", function()
       assert.are.equal("Talk", driver.target_calls[1].args[1].options[1].label)
     end)
 
+    it("offers the rules to a target resource that starts later, and never asks a stopped one to take them back", function()
+      local driver = load_side("client")
+      driver.start()
+      push_rules(driver)
+      assert.are.same({}, driver.target_calls, "nothing to offer them through yet")
+      driver.resources.ox_target = "started"
+      driver.resource_start("ox_target")
+      assert.are.equal("addGlobalPed", driver.target_calls[1].call)
+      driver.resources.ox_target = "stopped"
+      driver.resource_stop("ox_target")
+      local before = #driver.target_calls
+      push_rules(driver)
+      assert.are.equal(before, #driver.target_calls, "a stopped resource's exports are not called")
+      driver.resources["qb-target"] = "started"
+      driver.resource_start("qb-target")
+      assert.are.equal("AddGlobalPed", driver.target_calls[#driver.target_calls - 1].call)
+    end)
+
     it("asks the server over lib.callback, and hands back only a string answer", function()
       local driver, record = load_side("client")
       driver.start()
