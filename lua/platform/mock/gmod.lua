@@ -66,6 +66,7 @@ local gmod = {}
 ---@field fraction number? What `SetFraction` set.
 ---@field tooltip string? What `SetTooltip` set.
 ---@field title string? What `SetTitle` set.
+---@field size number[]? What `SetSize` set: width and height.
 
 ---The world's driving functions without `self`, the shape the fake game
 ---server calls the mock's in (`crates/fake-server/src/lua.rs`).
@@ -847,6 +848,9 @@ function gmod.install(side, host, options)
     end,
     SetTitle = function(self, title)
       self.title = title
+    end,
+    SetSize = function(self, width, height)
+      self.size = { width, height }
     end,
     IsValid = function(self)
       return not self.removed

@@ -248,6 +248,10 @@ function server.start(platform)
   core.events.on("players.state_changed", function(player)
     fivem.lock.follow(player.handle, player.state)
   end)
+  -- A player leaving never answers what the server asked them over ox_lib.
+  core.events.on("players.dropping", function(player)
+    fivem.ox.forget(player.handle)
+  end)
   for _, id in ipairs(GetPlayers() or {}) do
     core.players.connected(tonumber(id))
   end

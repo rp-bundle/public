@@ -397,7 +397,9 @@ function ui.read(kind, kept, raw)
       if value ~= nil and type(value) ~= "boolean" then
         return nil, "invalid"
       end
-      value = value == true
+      -- A required checkbox must be ticked, as ox_lib's is: the box a
+      -- player ticks to agree.
+      value = value == true or nil
     else
       if value ~= nil then
         if not whole(value, 1, #field.values) then
@@ -408,6 +410,9 @@ function ui.read(kind, kept, raw)
     end
     if value == nil and field.required then
       return nil, "invalid"
+    end
+    if field.kind == "checkbox" then
+      value = value == true
     end
     out[field.name] = value
   end
@@ -696,7 +701,10 @@ local function show_server(handle, kind, opts, callback)
     if err == "invalid" then
       p.log("debug", "rpf: a client answered a ui." .. kind .. " with something it was not offered")
     end
-    deliver(ctx, callback, plain(result), err)
+    -- The result is the addon's own option value, or a dialog's values in
+    -- a table `ui.read` made: handed over as they are, never copied, so a
+    -- value of any shape (one that refers to itself) comes back whole.
+    deliver(ctx, callback, result, err)
   end
   by_kind[kind] = finish
   local timeout = kind == "progress" and spec.duration_ms + ui.GRACE_MS or ui.TIMEOUT_MS

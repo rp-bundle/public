@@ -816,6 +816,33 @@ describe("the Gmod adapter's addon UI (J10)", function()
     assert.are.same({ nil, "cancelled" }, got[2])
   end)
 
+  it("keeps a long menu on the screen, its options scrolling", function()
+    local world, api = client()
+    local options = {}
+    for i = 1, 32 do
+      options[i] = { label = "option " .. i }
+    end
+    api.ui.menu({ title = "Long", options = options }, function() end)
+    local frame = shown(world, "DFrame")[1]
+    assert.is_true(frame.size[2] <= ScrH() * 0.8)
+    local scroll = shown(world, "DScrollPanel")[1]
+    assert.are.equal(scroll, button(world, "option 32").parent, "the options are in the scrolling panel")
+  end)
+
+  it("will not submit a required checkbox left unticked", function()
+    local world, api = client()
+    local got
+    api.ui.input({ title = "Agree", fields = { { name = "ok", label = "I agree", kind = "checkbox", required = true } } }, function(values)
+      got = values
+    end)
+    button(world, "Submit"):DoClick()
+    local status = shown(world, "DLabel")
+    assert.are.equal("I agree must be ticked.", status[#status].text)
+    shown(world, "DCheckBoxLabel")[1].value = true
+    button(world, "Submit"):DoClick()
+    assert.are.same({ ok = true }, got)
+  end)
+
   it("shows an input dialog that will not submit until it is filled in right", function()
     local world, api = client()
     local got

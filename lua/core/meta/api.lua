@@ -816,7 +816,7 @@ function Ui.progress(opts, callback) end
 ---@field name string Its key in the values, `[A-Za-z_][A-Za-z0-9_]*`, unique in the dialog.
 ---@field label string Its label, at most 128 bytes.
 ---@field kind "text"|"number"|"checkbox"|"select"? What it takes: `text` unless given.
----@field required boolean? Must be filled in (a checkbox always is).
+---@field required boolean? Must be filled in; a checkbox, ticked.
 ---@field placeholder string? Shown while it is empty.
 ---@field min number? Text: the fewest bytes (0). Number: the least value.
 ---@field max number? Text: the most bytes (128 unless given, at most 512). Number: the greatest value.

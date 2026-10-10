@@ -580,6 +580,31 @@ describe("the FiveM adapter", function()
       assert.are.equal(before + 1, #record.to_clients, "another player is not held up")
     end)
 
+    it("forgets what a player who left never answered, so their id starts clean", function()
+      local driver, record = started_server()
+      local ox = rpf.fivem.ox
+      driver.add_player(6, "Sam", { "license:6" })
+      driver.connect_player(6)
+      local first_number
+      for i = 1, ox.MAX_ASKING do
+        ox.request_client(6, "rpf:ui", "{}", function() end)
+        if i == 1 then
+          first_number = record.to_clients[#record.to_clients].payload:match("^(%d+)\n")
+        end
+      end
+      driver.drop_player(6, "Exiting")
+      driver.add_player(6, "Next", { "license:66" })
+      driver.connect_player(6)
+      local before = #record.to_clients
+      for _ = 1, ox.MAX_ASKING do
+        ox.request_client(6, "rpf:ui", "{}", function() end)
+      end
+      assert.are.equal(before + ox.MAX_ASKING, #record.to_clients, "the new player starts at nothing")
+      driver.from_client(6, "rpf:ui", first_number .. "\nlate")
+      ox.request_client(6, "rpf:ui", "{}", function() end)
+      assert.are.equal(before + ox.MAX_ASKING, #record.to_clients, "a late answer from before counts against nobody")
+    end)
+
     it("kicks, notifies and messages a player through the engine", function()
       local _, record = started_server()
       local platform = rpf.connection.platform

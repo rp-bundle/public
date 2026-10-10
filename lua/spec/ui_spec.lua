@@ -139,6 +139,13 @@ describe("rpf.ui", function()
       end
     end)
 
+    it("takes a required checkbox only ticked, as ox_lib does", function()
+      local _, kept = rpf.ui.spec("input", { title = "Agree", fields = { { name = "ok", label = "I agree", kind = "checkbox", required = true } } })
+      assert.are.same({ ok = true }, (rpf.ui.read("input", kept, { true })))
+      assert.are.same({ nil, "invalid" }, { rpf.ui.read("input", kept, { false }) })
+      assert.are.same({ nil, "invalid" }, { rpf.ui.read("input", kept, {}) })
+    end)
+
     it("reads a progress bar's true as done, and false as cancelled", function()
       assert.are.same({ true }, { rpf.ui.read("progress", {}, true) })
       assert.are.same({ nil, "cancelled" }, { rpf.ui.read("progress", {}, false) })
@@ -391,6 +398,17 @@ describe("rpf.ui", function()
       assert.is_true(rpf.api.ui.menu(7, menu(), function() end), "and it held nothing open")
     end)
 
+    it("hands back an option's own value, whatever its shape", function()
+      local value = {}
+      value.self = value
+      local got
+      assert.is_true(rpf.api.ui.menu(7, { title = "x", options = { { label = "loop", value = value } } }, function(choice)
+        got = choice
+      end))
+      answer({ ok = true, index = 1 })
+      assert.are.equal(value, got)
+    end)
+
     it("sends a notification as a message of its own", function()
       assert.is_true(rpf.api.ui.notify(7, { text = "Welcome", kind = "success" }))
       local sent = p.messages_to(7, "rpf:ui_notify")[1]
@@ -411,6 +429,44 @@ describe("rpf.ui", function()
       end)
       answer({ ok = true, index = 1 })
       assert.are.equal(1, #p.logged("error", "a ui callback failed"))
+    end)
+  end)
+
+  describe("in the example's client", function()
+    local c
+
+    before_each(function()
+      support.load_core("client")
+      c = support.fake_client_platform()
+      rpf.start_client(c)
+      rawset(_G, "acme_tags", nil)
+      dofile(support.path("lua/examples/acme_tags/client.lua"))
+    end)
+
+    after_each(function()
+      rawset(_G, "acme_tags", nil)
+    end)
+
+    it("shows a player's tags a page at a time, the next behind More", function()
+      local told = {}
+      local example = rawget(_G, "acme_tags")
+      assert.is_true(example.pick_mine(rpf.api, function(line)
+        told[#told + 1] = line
+      end))
+      local tags = rpf.json.array({})
+      for i = 1, 40 do
+        tags[i] = rpf.json.object({ id = "tag-" .. i, text = "t" .. i })
+      end
+      c.asked[1].callback(rpf.handoff.encode("rpf:interaction_result", { ok = true, data = rpf.json.object({ tags = tags }) }))
+      local first = c.shown[1].spec.options
+      assert.are.equal(32, #first)
+      assert.are.equal("More", first[32].label)
+      c.shown[1].done(32)
+      local second = c.shown[2].spec.options
+      assert.are.equal(9, #second, "the other nine, with no More")
+      c.shown[2].done(9)
+      assert.are.same({ name = "acme_tags.scrub", payload = { id = "tag-40" } }, rpf.json.decode(c.asked[2].payload))
+      assert.are.same({}, told)
     end)
   end)
 end)

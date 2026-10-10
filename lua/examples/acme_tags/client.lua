@@ -43,11 +43,48 @@ function acme_tags.teller(rpf, fallback)
   end
 end
 
+---How many tags one page of the menu shows: a menu has at most 32 options,
+---and the last is "More".
+acme_tags.PAGE = 31
+
+---Shows one page of the player's tags in a menu, the next behind "More",
+---and scrubs the one picked.
+---@param rpf rpf.Api The API.
+---@param tags { id: string, text: string }[] Every tag of theirs.
+---@param from integer The first to show.
+---@param tell fun(message: string) Shows the player a line.
+local function show_page(rpf, tags, from, tell)
+  local options = {}
+  for i = from, math.min(#tags, from + acme_tags.PAGE - 1) do
+    options[#options + 1] = { label = tostring(tags[i].text), description = "Scrub it off", value = tags[i].id }
+  end
+  local more = from + acme_tags.PAGE <= #tags
+  if more then
+    options[#options + 1] = { label = "More", value = false }
+  end
+  local shown, why = rpf.ui.menu({ title = "Your tags", options = options }, function(id)
+    if id == false then
+      show_page(rpf, tags, from + acme_tags.PAGE, tell)
+      return
+    end
+    if not id then
+      return -- closed
+    end
+    rpf.interactions.request("acme_tags.scrub", { id = id }, function(scrubbed, reason)
+      tell(scrubbed and "Scrubbed." or ("Not scrubbed: " .. tostring(reason)))
+    end)
+  end)
+  if not shown then
+    tell("Could not show your tags: " .. tostring(why))
+  end
+end
+
 ---Lets the player pick one of their tags from a menu and scrubs it: the
 ---server's list comes as data (`rpf.interactions.request`), the menu is
----`rpf.ui.menu` with each tag's id as its option's value, and the server
----checks the pick is the player's own, whatever id this sends. Where the
----engine has no menu, it lists them numbered for `ask_scrub` instead.
+---`rpf.ui.menu` with each tag's id as its option's value, a page at a
+---time, and the server checks the pick is the player's own, whatever id
+---this sends. Where the engine has no menu, it lists them numbered for
+---`ask_scrub` instead.
 ---@param rpf rpf.Api The API.
 ---@param tell fun(message: string) Shows the player a line.
 ---@return boolean? sent True once asked.
@@ -65,21 +102,7 @@ function acme_tags.pick_mine(rpf, tell)
       tell("You have no tags up.")
       return
     end
-    local options = {}
-    for i, tag in ipairs(result.tags) do
-      options[i] = { label = tostring(tag.text), description = "Scrub it off", value = tag.id }
-    end
-    local shown, why = rpf.ui.menu({ title = "Your tags", options = options }, function(id)
-      if not id then
-        return -- closed
-      end
-      rpf.interactions.request("acme_tags.scrub", { id = id }, function(scrubbed, reason)
-        tell(scrubbed and "Scrubbed." or ("Not scrubbed: " .. tostring(reason)))
-      end)
-    end)
-    if not shown then
-      tell("Could not show your tags: " .. tostring(why))
-    end
+    show_page(rpf, result.tags, 1, tell)
   end)
 end
 

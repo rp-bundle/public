@@ -12,11 +12,13 @@
 ---@class rpf.gmod.AddonUi
 ---@field WIDTH number Every window's width, in pixels.
 ---@field CANCEL_KEY integer The key that cancels a progress bar: X, as on ox_lib.
+---@field MAX_SCREEN number The most of the screen's height a window takes; a longer menu or dialog scrolls.
 ---@field ui rpf.ClientUi What the client platform's `ui` is.
 local addon_ui = {}
 
 addon_ui.WIDTH = 360
 addon_ui.CANCEL_KEY = KEY_X
+addon_ui.MAX_SCREEN = 0.8
 
 ---How each kind of notification shows: Gmod has its own icons for a hint
 ---and an error.
@@ -52,17 +54,22 @@ local function once(done)
   end
 end
 
----Opens a window that takes the keyboard and mouse.
+---Opens a window that takes the keyboard and mouse, no taller than
+---`MAX_SCREEN` of the screen, and the panel its contents go in, which
+---scrolls when they are taller: 32 options do not fit a 720p screen.
 ---@param title string Its title.
----@param height number Its height, in pixels.
+---@param height number The height its contents want, in pixels.
 ---@return rpf.gmod.AddonFrame frame The window.
+---@return DScrollPanel body Where its contents go.
 local function window(title, height)
   local frame = vgui.Create("DFrame") --[[@as rpf.gmod.AddonFrame]]
   frame:SetTitle(title)
-  frame:SetSize(addon_ui.WIDTH, height)
+  frame:SetSize(addon_ui.WIDTH, math.min(height, ScrH() * addon_ui.MAX_SCREEN))
   frame:Center()
   frame:MakePopup()
-  return frame
+  local body = vgui.Create("DScrollPanel", frame) --[[@as DScrollPanel]]
+  body:Dock(FILL)
+  return frame, body
 end
 
 ---Adds a button.
@@ -110,9 +117,9 @@ end
 ---@param done fun(index: integer?) Called once.
 local function show_menu(spec, done)
   local finish = once(done)
-  local frame = window(spec.title, 64 + #spec.options * 34)
+  local frame, body = window(spec.title, 64 + #spec.options * 34)
   for i, option in ipairs(spec.options) do
-    local b = button(frame, option.label, function()
+    local b = button(body, option.label, function()
       finish(i)
       frame:Remove()
     end)
@@ -129,7 +136,7 @@ local function show_menu(spec, done)
 end
 
 ---One field's control, and how to read it.
----@param frame DFrame The window.
+---@param frame Panel Where it goes.
 ---@param field rpf.ui.FieldSpec The field.
 ---@return fun(): any read Its value as the player left it: text, a number, a boolean, a select's option number, or nil for nothing.
 local function control(frame, field)
@@ -186,6 +193,9 @@ end
 ---@param value any Its value.
 ---@return string? problem What to fix.
 local function problem(field, value)
+  if field.kind == "checkbox" then
+    return (field.required and value ~= true) and (field.label .. " must be ticked.") or nil
+  end
   if value == nil then
     return field.required and (field.label .. " is required.") or nil
   end
@@ -214,13 +224,13 @@ end
 ---@param done fun(values: table?) Called once.
 local function show_input(spec, done)
   local finish = once(done)
-  local frame = window(spec.title, 120 + #spec.fields * 52)
+  local frame, body = window(spec.title, 120 + #spec.fields * 52)
   local readers = {}
   for i, field in ipairs(spec.fields) do
-    readers[i] = control(frame, field)
+    readers[i] = control(body, field)
   end
-  local status = label(frame, "")
-  button(frame, "Submit", function()
+  local status = label(body, "")
+  button(body, "Submit", function()
     local values = {}
     for i, field in ipairs(spec.fields) do
       local value = readers[i]()
@@ -234,7 +244,7 @@ local function show_input(spec, done)
     finish(values)
     frame:Remove()
   end)
-  button(frame, "Cancel", function()
+  button(body, "Cancel", function()
     finish(nil)
     frame:Remove()
   end)

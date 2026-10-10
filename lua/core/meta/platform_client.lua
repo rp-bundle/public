@@ -73,7 +73,7 @@ function ToServer.on_server_request(name, handler) end
 ---@field name string Its name.
 ---@field label string Its label.
 ---@field kind "text"|"number"|"checkbox"|"select" What it takes.
----@field required boolean? Whether it must be filled in.
+---@field required boolean? Whether it must be filled in; a checkbox, ticked.
 ---@field placeholder string? Shown in an empty text or number field.
 ---@field min number? A number's least value, or a text's fewest bytes.
 ---@field max number? A number's greatest value, or a text's most bytes.

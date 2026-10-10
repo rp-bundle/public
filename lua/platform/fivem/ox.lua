@@ -148,9 +148,19 @@ function ox.request_server(name, payload, callback)
 end
 
 ---How many of the server's requests to each player's client ox_lib holds
----without an answer yet, by player; a player with none has no entry.
----@type table<integer, integer>
+---without an answer yet, by player; a player with none has no entry. Each
+---entry is the player's for one connection: `forget` drops it when they
+---leave, so a later player given the same id starts at nothing, and an
+---answer to a request from before counts against nobody.
+---@type table<integer, { count: integer }>
 local asking = {}
+
+---Forgets a player's outstanding requests when they leave: they will never
+---answer them, and FiveM may give their id to someone else.
+---@param player integer The player.
+function ox.forget(player)
+  asking[player] = nil
+end
 
 ---Asks a player's client, over `lib.callback` with their id: from 3.40.0,
 ---ox_lib takes the answer only from that player. ox_lib raises for a player
@@ -163,16 +173,22 @@ local asking = {}
 ---@param payload string The request.
 ---@param callback fun(reply: string?) Called with the answer.
 function ox.request_client(player, name, payload, callback)
+  local entry = asking[player] or { count = 0 }
   local sent = false
-  if (asking[player] or 0) < ox.MAX_ASKING then
+  if entry.count < ox.MAX_ASKING then
     sent = pcall(lib.callback --[[@as function]], name, player, function(reply)
-      local left = (asking[player] or 1) - 1
-      asking[player] = left > 0 and left or nil
+      if asking[player] == entry then
+        entry.count = entry.count - 1
+        if entry.count == 0 then
+          asking[player] = nil
+        end
+      end
       callback(type(reply) == "string" and reply or nil)
     end, payload)
   end
   if sent then
-    asking[player] = (asking[player] or 0) + 1
+    entry.count = entry.count + 1
+    asking[player] = entry
     return
   end
   Citizen.SetTimeout(0, function()
