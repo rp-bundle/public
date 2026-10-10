@@ -169,6 +169,7 @@ end
 ---@field client_handlers table<string, fun(player: any, payload: string)> Handlers registered with `on_client`, by name.
 ---@field add_player fun(player: any, name: string, identifiers: string[]) Tells the mock about a player before the harness hands them to the core.
 ---@field remove_player fun(player: any) Forgets a player after the harness has told the core they left.
+---@field positions table<any, { x: number, y: number, z: number }> Where each player is, as the harness sets it, for the `position` capability.
 ---@field socket_open fun(id: integer) The host's socket opened.
 ---@field socket_message fun(id: integer, text: string) A frame arrived on it.
 ---@field socket_close fun(id: integer, reason: string) It closed, or never opened.
@@ -189,6 +190,18 @@ function mock.server(host, seed)
   function p.thread()
     return nil
   end
+
+  -- The game world (J3): a player's position is whatever the harness put
+  -- in `positions`; the rest is J4's, unsupported as on every adapter.
+  p.positions = {}
+  p.capabilities = {
+    position = function(player)
+      return p.positions[player]
+    end,
+    model = false,
+    zone = false,
+    entity = false,
+  }
 
   -- MINSTD: every product stays below 2^53, so it is exact on LuaJIT too.
   function p.random_hex(n)

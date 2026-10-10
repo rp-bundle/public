@@ -178,6 +178,53 @@ local function logged(record, level, text)
   return count
 end
 
+describe("an addon loaded before the adapter (the example's entry point)", function()
+  it("reads the public API at Initialize, registers, and runs once installed", function()
+    local gmod = load_fake()
+    local host = fake_host()
+    rawset(_G, "acme_tags", nil)
+    local world = gmod.install("server", host, {
+      read = function(relative)
+        if relative == "autorun/acme_tags.lua" then
+          return support.read("lua/examples/acme_tags/gmod/autorun.lua")
+        end
+        local example = relative:match("^acme_tags/(.+)$")
+        if example then
+          return support.read("lua/examples/acme_tags/" .. example)
+        end
+        return read(relative)
+      end,
+      convars = { rpf_ws_url = "wss://portal.test/ws", rpf_api_key = "rpf_sk_test" },
+    })
+    installed = world
+    -- Name order: `acme_tags.lua` runs before `rpf.lua`.
+    world.include("autorun/acme_tags.lua")
+    world:boot()
+    local api = rawget(_G, "rpf")
+    assert.are_not.equal(world.core, api, "the global is the public API")
+    assert.are.equal("not_installed", (api.addons.state("acme_tags")))
+    local json = world.core.json
+    local checked = assert(world.core.manifest.check(rawget(_G, "acme_tags").MANIFEST))
+    local snapshot = assert(json.decode(assert(json.encode({
+      settings = json.object({}),
+      addons = json.array({
+        {
+          namespace = "acme_tags",
+          version = "1.0.0",
+          hash = "sha256:x",
+          enabled = true,
+          manifest = checked,
+          types = json.object({}),
+          records = json.array({}),
+        },
+      }),
+    }))))
+    assert(world.core.config.apply(world.core.connection.platform, 1, "h1", snapshot))
+    assert.are.equal("active", (api.addons.state("acme_tags")), "its start ran on the public API")
+    rawset(_G, "acme_tags", nil)
+  end)
+end)
+
 describe("the Gmod adapter's server", function()
   it("starts the core once the map has loaded, over GWSockets, as engine gmod", function()
     local world, record = boot("server")

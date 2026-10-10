@@ -52,9 +52,9 @@ rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, 
                  -- config.lua, client.lua, players.lua, commands.lua, moderation.lua, staff.lua,
                  -- inventory.lua, manifest.lua, addons.lua, records.lua, sync.lua, accounts.lua,
                  -- handoff.lua, join.lua, characters.lua, jobs.lua, edits.lua, data.lua, ops.lua,
-                 -- facade.lua, api.lua
+                 -- facade.lua, world.lua, interactions.lua, api.lua
 rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua,
-                 -- picker.lua, api.lua
+                 -- picker.lua, interactions.lua, api.lua
 ```
 
 Every later file registers itself on `rpf` (`rpf.json = json`) *and* returns
@@ -73,7 +73,7 @@ API (see The public API).
 
 The client never loads `protocol.lua`, `domains.lua`, `client.lua`, `players.lua`,
 `commands.lua`, `moderation.lua`, `staff.lua`, `inventory.lua`, `manifest.lua`, `addons.lua`, `records.lua`, `sync.lua`,
-`accounts.lua`, `join.lua`, `characters.lua`, `jobs.lua`, `edits.lua`, `data.lua`, `ops.lua` or `facade.lua`, because the player's client
+`accounts.lua`, `join.lua`, `characters.lua`, `jobs.lua`, `edits.lua`, `data.lua`, `ops.lua`, `facade.lua` or `world.lua`, because the player's client
 must never hold the server's API key and has no players, staff or records to
 manage.
 
@@ -110,6 +110,7 @@ step.
 | Storage | `kv_get(key) -> string?` | Reads a persisted string |
 | | `kv_set(key, value?)` | Writes one, or deletes it with `nil`. Strings only, so the core owns the encoding |
 | Random | `random_hex(n) -> string` | `n` lowercase hex digits from the best randomness the engine offers |
+| World | `capabilities` | A table, not a function: what the engine can do with the game world for addons, each capability a function or `false` for unsupported (`rpf.world`). `position(player) -> { x, y, z }?` now; `model`, `zone` and `entity` are J4's, `false` on every adapter |
 | Thread | `thread() -> any` | The running coroutine (`coroutine.running`), or nil where there are none (the mock), so `rpf.addons` keeps whose code is running per coroutine without the core touching `coroutine` |
 | Players | `identifiers(player) -> string[]` | Every identifier the engine knows, verbatim. Reference data, never identity |
 | | `name(player) -> string` | The in-game name |
@@ -547,7 +548,7 @@ hears exactly what the core's own modules hear.
   `MAX_DEPTH` (32) deep are refused and logged, so a cycle is a log line, not
   a stack overflow.
 - **Core event names are reserved.** The public `emit` refuses anything under
-  `players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `addons.` or `rpf.`, so a
+  `players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `addons.`, `domains.`, `interactions.` or `rpf.`, so a
   script cannot forge a lifecycle event other scripts would believe. It
   returns `nil, "reserved"` rather than throwing, and `nil, "forbidden"` for
   a name under another loaded addon's namespace (`rpf.addons.may_use`).
@@ -1132,6 +1133,44 @@ would otherwise lose the change while the journal answered a retry `true`.
 Until then the entry is `pending` on disk, which a restart reads as
 `unknown`.
 
+### The game world (`rpf.world`, J3)
+
+The world as far as the core reaches it: through the capabilities the
+adapter declares (`platform.capabilities`), never an engine branch.
+`world.capabilities()` is `{ position, model, zone, entity }` as booleans,
+for `rpf.api.capabilities()`; `world.position(handle)` is a logged-in
+player's position as a plain `{ x, y, z }` (how a record stores one, a
+`vector3` field), or `unsupported` where the adapter has no `position`, or
+`not_found` (not logged in, not spawned, or the adapter's call failed,
+which is logged). A capability that is neither a function nor `false` is
+logged at start and counts as unsupported.
+
+### Interactions (`rpf.interactions`, J3)
+
+A player's client asks an addon to do something, by a name the addon
+registered: the one way a client's request reaches addon code, so a client
+never names an event. Loaded on both sides.
+
+- **Server.** `register(name, handler)`: `name` is `<namespace>.<name>`
+  under a loaded addon, its own when the caller is known (`may_use`), and
+  the registration is owned like a timer. `rpf:interact` (`{ name, payload
+  }`) reaches only a logged-in player (`players.on_client`), at most
+  `MAX_PER_WINDOW` (20) per `WINDOW_MS` (10 s) per player, past which it is
+  dropped. The payload is a JSON object within `handoff.MAX_PAYLOAD` (4 KiB)
+  and `MAX_DEPTH` (8); it is handed over as a plain copy. A name nobody
+  registered is answered `unknown`, an addon not running `inactive`, a
+  payload too deep `invalid`, and a handler that throws `failed` (logged);
+  otherwise the handler's own answer, `true` or `false` and a reason of at
+  most `MAX_REASON_BYTES`, goes back as `rpf:interaction_result`.
+- **Client.** `send(name, payload)` checks the name and that the payload is
+  plain data within the size, and sends `rpf:interact`; the answer is
+  announced as `interactions.result` (`{ name, ok, reason }`), a reserved
+  name.
+
+J4 (#81) builds targeting on it (which record, entity or zone, distance,
+cooldowns) and J10 (#239) a request/response transport over ox_lib's
+callbacks on FiveM; both keep its rule.
+
 ### Characters (`rpf.characters`, `rpf.picker`)
 
 A logged-in player's characters (D5): list, create, select and switch. Server
@@ -1471,6 +1510,8 @@ internal.
 | `time` | both | `now`, `after`, `every`, `cancel`: `rpf.time`'s timers |
 | `addons` | server | `API`, `API_MIN`, `register`, `state`, `provide`, `call` (`rpf.addons` above) |
 | `records` | server | `get`, `list`, `query`, `hold`, `release`, `create`, `update`, `delete`, `batch` (`rpf.data` above) |
+| `capabilities`, `world` | server | `capabilities()` and `world.position` (`rpf.world` above) |
+| `interactions` | both | `register` on the server, `send` on the client (`rpf.interactions` above) |
 | `characters`, `money`, `inventory`, `jobs`, `ops` | server | The domain-neutral facade (`rpf.facade` above): `characters.current`; `money.accounts`, `balance`, `debit`, `credit`; `inventory.count`, `give`, `take`; `jobs.current`; each domain's `supports`; `ops.new` |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
 | `staff` | server | `can`, `permissions`, `link`, `record` (F9, `rpf.staff` above) |

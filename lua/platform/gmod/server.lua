@@ -138,6 +138,19 @@ local platform = {
   kv_set = shared.kv_set,
   random_hex = random.hex,
   thread = coroutine.running,
+  -- The game world (J3). Placing models, zones and entities are J4's.
+  capabilities = {
+    position = function(player)
+      if not IsValid(player) then
+        return nil
+      end
+      local at = player:GetPos()
+      return { x = at.x, y = at.y, z = at.z }
+    end,
+    model = false,
+    zone = false,
+    entity = false,
+  },
   identifiers = identifiers,
   name = function(player)
     return IsValid(player) and player:Nick() or ""

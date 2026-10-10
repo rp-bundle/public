@@ -14,15 +14,19 @@ local platform = {}
 ---One member a platform must provide.
 ---@class rpf.platform.Member
 ---@field name string The key on the platform table.
----@field kind "string"|"function" The Lua type its value must have.
+---@field kind "string"|"function"|"table" The Lua type its value must have.
 
----Builds a member list from names, all functions except `engine`.
+---Members that are not functions, and what they are.
+---@type table<string, "string"|"table">
+local KINDS = { engine = "string", capabilities = "table" }
+
+---Builds a member list from names, all functions but those `KINDS` names.
 ---@param names string[] The member names, in the order the README lists them.
 ---@return rpf.platform.Member[] members The list.
 local function members(names)
   local out = {}
   for i, name in ipairs(names) do
-    out[i] = { name = name, kind = name == "engine" and "string" or "function" }
+    out[i] = { name = name, kind = KINDS[name] or "function" }
   end
   return out
 end
@@ -47,6 +51,7 @@ platform.SERVER = members({
   "on_client",
   "log",
   "expose",
+  "capabilities",
 })
 
 platform.CLIENT = members({

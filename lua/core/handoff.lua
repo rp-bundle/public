@@ -6,7 +6,9 @@
 ---client hands back the join ticket the portal gave it. The `character`
 ---ones are D5's: the server lists a logged-in player's characters, and the
 ---client asks to create, select or put one away (`rpf.characters`,
----`rpf.picker`). They travel over the engine's own client messaging, not the
+---`rpf.picker`). The `interact` pair is J3's: a client asks an addon's
+---registered interaction to run, and is told how it went
+---(`rpf.interactions`). They travel over the engine's own client messaging, not the
 ---portal protocol, and both halves ship in the same addon, so they are not
 ---an external contract and have no corpus. They are still hostile input on
 ---the server, where any client can send anything, so every payload is
@@ -25,6 +27,8 @@
 ---@field CHARACTER_SELECT string Client → server: play this character, putting away the one in play first.
 ---@field CHARACTER_DESELECT string Client → server: put the character in play away, back to choosing.
 ---@field CHARACTER_RESULT string Server → client: how a create, select or deselect went.
+---@field INTERACT string Client → server: run an addon's registered interaction, by name, with a payload (J3).
+---@field INTERACTION_RESULT string Server → client: how an interaction went.
 ---@field MAX_PAYLOAD integer The longest payload decoded, in bytes, of every message but the list of characters. Real ones are a few hundred.
 ---@field MAX_LIST_PAYLOAD integer The longest list of characters decoded, in bytes. Only the client decodes one, from its own server; the server registers no handler for it, so a client cannot make the server decode one.
 ---@field schemas table<string, table<string, rpf.handoff.FieldKind>> Each message's fields and their kinds.
@@ -45,13 +49,16 @@ handoff.CHARACTER_CREATE = "rpf:character_create"
 handoff.CHARACTER_SELECT = "rpf:character_select"
 handoff.CHARACTER_DESELECT = "rpf:character_deselect"
 handoff.CHARACTER_RESULT = "rpf:character_result"
+handoff.INTERACT = "rpf:interact"
+handoff.INTERACTION_RESULT = "rpf:interaction_result"
 handoff.MAX_PAYLOAD = 4096
 handoff.MAX_LIST_PAYLOAD = 65536
 
 ---How one field is checked. A trailing `?` means it may be absent. A
 ---`table` is only checked to be one, so the module that reads it checks the
----rest; only messages the server sends carry one.
----@alias rpf.handoff.FieldKind "string"|"string?"|"number"|"boolean"|"boolean?"|"table"
+---rest; of what a client sends, only an interaction's payload is one, and
+---`rpf.interactions` checks it is plain data before any handler sees it.
+---@alias rpf.handoff.FieldKind "string"|"string?"|"number"|"boolean"|"boolean?"|"table"|"table?"
 
 handoff.schemas = {
   [handoff.CLIENT_READY] = {},
@@ -92,6 +99,15 @@ handoff.schemas = {
     during = "string",
     ok = "boolean",
     id = "string?",
+    reason = "string?",
+  },
+  [handoff.INTERACT] = {
+    name = "string",
+    payload = "table?",
+  },
+  [handoff.INTERACTION_RESULT] = {
+    name = "string",
+    ok = "boolean",
     reason = "string?",
   },
 }

@@ -51,6 +51,24 @@ function server.platform(shim, transport)
     kv_set = shared.kv_set,
     log = log,
     expose = shared.expose,
+    -- FiveM runs each event handler and timer in a coroutine of its own.
+    thread = coroutine.running,
+    -- The game world (J3): a player's position is their ped's, which
+    -- OneSync knows on the server. Placing models, zones and entities are
+    -- J4's.
+    capabilities = {
+      position = function(player)
+        local ped = GetPlayerPed(player)
+        if not ped or ped == 0 then
+          return nil
+        end
+        local at = GetEntityCoords(ped)
+        return { x = at.x, y = at.y, z = at.z }
+      end,
+      model = false,
+      zone = false,
+      entity = false,
+    },
   }
 
   -- FiveM's own HTTP client. A response that is not a success carries its
@@ -75,8 +93,6 @@ function server.platform(shim, transport)
   -- Node's cryptographic generator, through the shim. If the shim cannot
   -- answer, Lua's generator stands in so ids are still minted, and the
   -- console says so once; nothing connects without the shim anyway.
-  p.thread = coroutine.running
-
   function p.random_hex(n)
     local ok, hex = pcall(shim.random_hex, shim, n)
     if ok and type(hex) == "string" and #hex == n then

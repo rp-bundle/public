@@ -235,6 +235,15 @@ keep the job the portal has.
   **`economy.addon_account`** (`config.accounts.edit`, unset by default),
   names the paying account addons charge into and pay out of; until staff
   set it, addons cannot move money.
+- The addon API, part 4 (J3, #80). `rpf.api.interactions`: an addon
+  registers a handler by namespaced name, and a player's client sends a
+  request to it (`rpf:interact`), answered as `interactions.result`; nothing
+  else a client sends reaches addon code. `rpf.api.capabilities()` and
+  `rpf.api.world.position(player)`, from what each engine's adapter
+  declares. The worked example ships runnable as `lua/examples/acme_tags/`,
+  and [Writing addons](docs/writing-addons.md) is the author's guide on the
+  docs site. [Compatibility](docs/compatibility.md#addon-api-majors) says
+  how addon API majors, game servers and the portal move.
 
 ### Database
 

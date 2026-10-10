@@ -718,6 +718,11 @@ function gmod.install(side, host, options)
   function Player:UnLock()
     self.locked = false
   end
+  ---Where the player stands: `pos`, which the harness sets, as a Vector.
+  ---@return table pos `{ x, y, z }`.
+  function Player:GetPos()
+    return self.pos or { x = 0, y = 0, z = 0 }
+  end
   world.player_meta = Player
   _G.player = {
     GetAll = function()

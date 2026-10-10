@@ -81,6 +81,7 @@ function support.fake_platform(opts)
   ---@field time number The fake clock, in milliseconds.
   ---@field timers { at: number, seq: integer, fn: fun() }[] Pending `after` callbacks.
   ---@field seq integer Orders timers due at the same moment.
+  ---@field positions table<any, table> Where each player is, for the `position` capability.
   ---@field store table<string, string> The fake key-value store. Pass one table to two platforms to simulate a restart.
   ---@field rng integer The deterministic random state.
   ---@field socket { handlers: rpf.platform.SocketHandlers, open: boolean }? The current connection attempt.
@@ -132,6 +133,16 @@ function support.fake_platform(opts)
   function p.thread()
     return nil
   end
+
+  p.positions = {}
+  p.capabilities = {
+    position = function(player)
+      return p.positions[player]
+    end,
+    model = false,
+    zone = false,
+    entity = false,
+  }
 
   -- MINSTD: every product stays below 2^53, so it is exact on LuaJIT too.
   function p.random_hex(n)
