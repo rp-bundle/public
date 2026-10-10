@@ -340,6 +340,12 @@ local cases = {
       assert.are.equal(1, world:logged("warn", "framework is unavailable (DarkRP is not the gamemode)"))
       assert.are.equal("character_select", api.players.get(handle).state)
       assert.are.same({ nil, "unavailable" }, { api.money.debit(handle, "wallet", 1, "x", api.ops.new()) })
+      -- And quietly: DarkRP's functions are not there to call, and the
+      -- bridge never calls them.
+      world:advance(5 * bridge.SWEEP_MS)
+      for _, line in ipairs(world.logs) do
+        assert.is_nil(line.message:find("nil value", 1, true), line.message)
+      end
     end,
   },
   {

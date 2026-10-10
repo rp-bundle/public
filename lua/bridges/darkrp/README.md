@@ -57,6 +57,9 @@ checklist; record the version it ran on there, and here.
 - **Every call is checked against the data DarkRP has loaded.** One for a
   player whose data is not loaded is `unavailable`, and one whose SteamID64
   is not the character RPF has in play is `no_character`.
+- **Without DarkRP** (the addon installed on another gamemode), the bridge
+  never calls DarkRP's functions: RPF answers addons that DarkRP is
+  unavailable, and the console says so once at start.
 - **`money.accounts()` and `supports` answer before anyone logs in**, since
   they are about the server, not a player. Every call about a player is
   refused until RPF has them `active` with their character.
@@ -67,7 +70,8 @@ DarkRP sets a player up on join and loads their data (`restorePlayerData`)
 from its database, at once on SQLite and whenever the query returns on
 MySQL. It has no hook for "loaded". The bridge's cue is the wallet's first
 value (`DarkRPVarChanged` for `money`, which DarkRP sets once the data is
-in), with a sweep every second behind it, and it reads "loaded" as the
+in), looked at a tick later because `setDarkRPVar` runs the hook before it
+stores the value, with a sweep every second behind it, and it reads "loaded" as the
 wallet set and `ply.DarkRPUnInitialized` clear: the field DarkRP sets while
 it loads, and which its own `canAfford` and `canChatCommand` read. The
 bridge only reads it.

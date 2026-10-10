@@ -115,15 +115,15 @@ function fake:player(player)
   return assert(self.players[player], "that player is not in the game")
 end
 
----Sets a DarkRPVar, as `setDarkRPVar` does: `DarkRPVarChanged` follows.
+---Sets a DarkRPVar, as `setDarkRPVar` does: `DarkRPVarChanged` first,
+---while the var still holds its old value, and then the value.
 ---@param player any The engine's handle.
 ---@param var string The var.
 ---@param value any Its new value.
 function fake:set_var(player, var, value)
   local data = self:player(player)
-  local old = data.vars[var]
+  self:call("DarkRPVarChanged", player, var, data.vars[var], value)
   data.vars[var] = value
-  self:call("DarkRPVarChanged", player, var, old, value)
 end
 
 ---The engine spawns a player, and DarkRP's `PlayerSpawn` runs after the
@@ -187,10 +187,23 @@ function fake:add_money(player, amount)
   end
 end
 
----The bridge's engine, over this fake.
+---The bridge's engine, over this fake. While DarkRP is not the gamemode,
+---its functions are not there: calling one throws, as calling a nil
+---method on a real server does.
 ---@return rpf_darkrp.Engine engine The engine.
 function fake:engine()
   local fw = self
+  ---DarkRP's own function, which throws while DarkRP is not running.
+  ---@param fn function The function.
+  ---@return function fn It, guarded.
+  local function darkrp(fn)
+    return function(...)
+      if not fw.running then
+        error("attempt to call a nil value (method of DarkRP's)")
+      end
+      return fn(...)
+    end
+  end
   return {
     hook = function(event, fn)
       fw.hooks[event] = fw.hooks[event] or {}
@@ -222,33 +235,33 @@ function fake:engine()
     key = function(player)
       return fw:player(player).key
     end,
-    rpname = function(player)
+    rpname = darkrp(function(player)
       return fw:player(player).vars.rpname or "SteamName"
-    end,
-    wallet = function(player)
+    end),
+    wallet = darkrp(function(player)
       return fw:player(player).vars.money
-    end,
-    loaded = function(player)
+    end),
+    loaded = darkrp(function(player)
       local data = fw:player(player)
       return data.vars.money ~= nil and not data.uninitialized
-    end,
-    failed = function(player)
+    end),
+    failed = darkrp(function(player)
       return fw:player(player).failed == true
-    end,
-    can_afford = function(player, amount)
+    end),
+    can_afford = darkrp(function(player, amount)
       local data = fw:player(player)
       if not amount or data.uninitialized then
         return false
       end
       return math.floor(amount) >= 0 and (data.vars.money or 0) - math.ceil(amount) >= 0
-    end,
-    add_money = function(player, amount)
+    end),
+    add_money = darkrp(function(player, amount)
       return fw:add_money(player, amount)
-    end,
-    job = function(player)
+    end),
+    job = darkrp(function(player)
       local job = fw.teams[fw:player(player).team]
       return job and { command = job.command, name = job.name } or nil
-    end,
+    end),
     running = function()
       return fw.running, fw.running and fw.version or nil
     end,

@@ -111,8 +111,9 @@ end
 function darkrp.register(api, fx)
   local bridge = api.bridge
 
-  ---Whether RPF activated the bridge: the server's profile is companion.
-  ---Until then no character is reported, though the hold holds.
+  ---Whether RPF activated the bridge, on a server where DarkRP is the
+  ---gamemode: the server's profile is companion. Until then no character
+  ---is reported, though the hold holds.
   local active = false
 
   ---Players the bridge took out of the world, whom DarkRP's spawn puts back
@@ -350,10 +351,14 @@ function darkrp.register(api, fx)
   end)
   -- DarkRP sets the wallet once it has loaded a player's data, and has no
   -- hook of its own for that: the wallet's first value is the cue. A
-  -- changed `rpname` is a rename.
+  -- changed `rpname` is a rename. `setDarkRPVar` runs this hook before it
+  -- stores the value, so the player is looked at on the next tick, once it
+  -- has.
   fx.hook("DarkRPVarChanged", function(handle, var)
     if var == "money" or var == "rpname" then
-      observe(handle)
+      fx.after(function()
+        observe(handle)
+      end)
     end
   end)
 
@@ -399,7 +404,9 @@ function darkrp.register(api, fx)
       return fx.running()
     end,
     start = function(selecting)
-      active = true
+      -- Without DarkRP there is no data to look at, and its functions are
+      -- not there to call: the bridge stays quiet, and RPF answers addons
+      -- that DarkRP is unavailable.
       if not fx.running() then
         local ok, err = bridge.unavailable("DarkRP is not the gamemode")
         if not ok then
@@ -407,6 +414,7 @@ function darkrp.register(api, fx)
         end
         return
       end
+      active = true
       for _, handle in ipairs(selecting) do
         observe(handle)
       end
