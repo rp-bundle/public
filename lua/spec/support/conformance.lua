@@ -19,8 +19,9 @@
 ---
 ---A case gets a `spec.ConformanceWorld` and must not reach past it into one
 ---platform's internals, so the same case holds on every engine. K2's bridge
----conformance suite is meant to reuse this harness with a bridge in place of
----an addon.
+---conformance suite (`spec/support/bridge_conformance.lua`) reuses it, with
+---a bridge's resource beside the addon's, a companion `Welcome`, and a
+---restart over the storage as it was at one moment (`snapshot`, `restart`).
 ---@class spec.conformance
 ---@field PLATFORMS string[] Every platform a case runs on.
 local conformance = {}
@@ -62,6 +63,7 @@ conformance.PLATFORMS = { "mock", "fivem", "gmod" }
 ---@field sent { id: integer, text: string }[] Every frame the core sent, in order.
 ---@field answered integer How many of `sent` the fake portal has read.
 ---@field portal spec.FakePortal What the fake portal holds.
+---@field kv table<string, string> The platform's storage: what a restart finds.
 local World = {}
 
 World.__index = World
@@ -247,7 +249,8 @@ end
 
 ---Opens the socket the core asked for, welcomes it, and answers what
 ---follows, so the core is connected to the fake portal.
-function World:connect()
+---@param domains table? The profile the `Welcome` names; native when nil.
+function World:connect(domains)
   local id = assert(self.connects[#self.connects], "the core asked for no socket")
   self.socket_open(id)
   local protocol = self.core.protocol
@@ -258,8 +261,38 @@ function World:connect()
     re = hello.id,
     protocol = protocol.VERSION,
     server_id = "00000001-0000-4000-8000-000000000001",
+    domains = domains,
   }))
   self:pump()
+end
+
+---What the platform's storage holds now: what a game server that died at
+---this moment would find when it starts again. A copy.
+---@return table<string, string> storage The copy.
+function World:snapshot()
+  local out = {}
+  for key, value in pairs(self.kv) do
+    out[key] = value
+  end
+  return out
+end
+
+---Restarts the game server: this process ends, and a new one boots on the
+---same platform over `storage` (a `snapshot`, or what storage holds now),
+---with the same fake portal and clock, not yet connected. The world is
+---the new one in place, so a case's handle on it stays good.
+---@param storage table<string, string>? What the new process finds.
+function World:restart(storage)
+  local kv = storage or self:snapshot()
+  local portal, time = self.portal, self.time
+  self.finish()
+  local fresh = conformance.boot(self.platform_name, { kv = kv, portal = portal, time = time })
+  for key in pairs(self) do
+    self[key] = nil
+  end
+  for key, value in pairs(fresh) do
+    self[key] = value
+  end
 end
 
 ---Puts a player in the game as the engine does, logs them in as an account
@@ -335,14 +368,24 @@ function World:logged(level, text)
   return count
 end
 
+---What a boot carries over from a process before it (`World:restart`).
+---@class spec.BootOptions
+---@field kv table<string, string>? The storage it finds.
+---@field portal spec.FakePortal? The fake portal, which outlives a game server.
+---@field time number? The clock.
+
 ---A host for a mock platform: a clock the world moves, storage, and a log;
 ---the socket and HTTP go nowhere, since the cases install addons by config.
 ---@param world spec.ConformanceWorld The world, whose `time` is the clock.
+---@param opts spec.BootOptions? What it carries over.
 ---@return table host The host.
-local function host_for(world)
-  local kv = {}
+local function host_for(world, opts)
+  opts = opts or {}
+  local kv = opts.kv or {}
+  world.kv = kv
   world.connects, world.sent, world.answered, world.to_clients = {}, {}, 0, {}
-  world.portal = { records = {}, frames = {}, owned = {} }
+  world.portal = opts.portal or { records = {}, frames = {}, owned = {} }
+  world.time = opts.time or world.time
   return {
     now = function()
       return world.time
@@ -392,12 +435,13 @@ local function global_names()
 end
 
 ---Boots the mock platform's server.
+---@param opts spec.BootOptions? What it carries over.
 ---@return spec.ConformanceWorld world The world.
-local function boot_mock()
+local function boot_mock(opts)
   local world = new_world("mock")
   local core = support.load_core("server")
   local mock = dofile(support.path("lua/platform/mock/init.lua"))
-  local p = mock.server(host_for(world), 1)
+  local p = mock.server(host_for(world, opts), 1)
   core.start_server(p, { url = "wss://portal.test/ws", api_key = "rpf_sk_conformance" })
   world.core, world.server_platform, world.api = core, p, assert(p.exposed)
   world.view = function()
@@ -433,15 +477,16 @@ local function fivem_path(script)
 end
 
 ---Boots the real FiveM adapter's server on the FiveM fake globals.
+---@param opts spec.BootOptions? What it carries over.
 ---@return spec.ConformanceWorld world The world.
-local function boot_fivem()
+local function boot_fivem(opts)
   local world = new_world("fivem")
   world.origins = true
   rawset(_G, "rpf", nil)
   local before = global_names()
   local mock = dofile(support.path("lua/platform/mock/init.lua"))
   local fakes = dofile(support.path("lua/platform/mock/fivem.lua")).bind(mock)
-  local host = host_for(world)
+  local host = host_for(world, opts)
   local driver = fakes.server(_G, host, 1, { rpf_url = "wss://portal.test/ws", rpf_api_key = "rpf_sk_conformance" })
   for _, script in ipairs(fakes.scripts(support.read("lua/platform/fivem/fxmanifest.lua"), "server")) do
     dofile(support.path(fivem_path(script)))
@@ -479,11 +524,12 @@ local function boot_fivem()
 end
 
 ---Boots the real Gmod adapter's server on the Gmod fake globals.
+---@param opts spec.BootOptions? What it carries over.
 ---@return spec.ConformanceWorld world The world.
-local function boot_gmod()
+local function boot_gmod(opts)
   local world = new_world("gmod")
   local gmod = dofile(support.path("lua/platform/mock/gmod.lua"))
-  local fake = gmod.install("server", host_for(world), {
+  local fake = gmod.install("server", host_for(world, opts), {
     read = function(relative)
       return support.read("lua/" .. relative)
     end,
@@ -527,15 +573,16 @@ end
 
 ---Boots a game server on a platform.
 ---@param name string One of `PLATFORMS`.
+---@param opts spec.BootOptions? What it carries over from a process before.
 ---@return spec.ConformanceWorld world The world, booted and started.
-function conformance.boot(name)
+function conformance.boot(name, opts)
   local world
   if name == "mock" then
-    world = boot_mock()
+    world = boot_mock(opts)
   elseif name == "fivem" then
-    world = boot_fivem()
+    world = boot_fivem(opts)
   else
-    world = boot_gmod()
+    world = boot_gmod(opts)
   end
   return world
 end

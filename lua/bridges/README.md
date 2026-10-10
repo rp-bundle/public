@@ -119,8 +119,14 @@ reach it already checked: whole, from 1 to `MAX_AMOUNT`.
 
 ## Proving a bridge
 
-Every bridge runs the shared conformance suite (K2, PR 3:
-`lua/spec/support/bridge_conformance.lua`) against a fake of its framework,
-on every engine the harness boots, and then one smoke test on a real server:
+Every bridge runs the shared conformance suite
+(`lua/spec/support/bridge_conformance.lua`, `docs/testing.md`) against a
+fake of its framework, on every engine the harness boots. It brings a kit
+(`spec.BridgeKit`): a fake of its framework, a driver over that fake the
+cases act through (`spec.FrameworkDriver`: load and unload a character,
+stop and start the framework, make a call fail part way, run something
+inside one), and how its own code registers it. The mock bridge
+(`lua/spec/support/mock_bridge.lua`, over `mock_framework.lua`) is the
+worked example. Then one smoke test on a real server:
 an RPF login, a framework character reaching `active`, a debit through the
 facade, and the framework's resource restarting mid-session.
