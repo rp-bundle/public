@@ -52,13 +52,15 @@ local fake = {}
 fake.__index = fake
 
 ---Items ox_inventory knows: `money` is qbx_core's cash, `phone` does not
----stack.
+---stack, and `cash` is ox_inventory's own alias of `money`
+---(`modules/items/shared.lua` in 2.48), which `Items` answers as `money`.
 local ITEMS = {
-  water = { stack = true },
-  bread = { stack = true },
-  phone = { stack = false },
-  money = { stack = true },
+  water = { name = "water", stack = true },
+  bread = { name = "bread", stack = true },
+  phone = { name = "phone", stack = false },
+  money = { name = "money", stack = true },
 }
+ITEMS.cash = ITEMS.money
 
 ---Deep-copies a value, as a call across resources does.
 ---@param value any The value.

@@ -340,6 +340,12 @@ local cases = {
       assert.are.same({ nil, "refused", "money_item" }, { api.inventory.give(handle, "money", 5, api.ops.new()) })
       assert.are.same({ nil, "refused", "money_item" }, { api.inventory.take(handle, "money", 5, api.ops.new()) })
       assert.are.same({ nil, "not_found" }, { api.inventory.count(handle, "money") })
+      -- ox_inventory's alias of `money`, refused as what it resolves to.
+      assert.are.same({ nil, "refused", "money_item" }, { api.inventory.give(handle, "cash", 5, api.ops.new()) })
+      assert.are.same({ nil, "refused", "money_item" }, { api.inventory.take(handle, "cash", 5, api.ops.new()) })
+      assert.are.same({ nil, "not_found" }, { api.inventory.count(handle, "cash") })
+      assert.is_nil(fw.changes["inventory.give"])
+      assert.is_nil(fw.changes["inventory.take"])
       assert.are.same({ nil, "refused", "unknown_item" }, { api.inventory.give(handle, "nope", 1, api.ops.new()) })
       assert.are.same({ nil, "not_found" }, { api.inventory.count(handle, "nope") })
       fw.slots = 2

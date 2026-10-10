@@ -57,7 +57,9 @@ the companion profile.
   anything thrown the core reads as `unknown` too. A bridge never retries.
 - **The `money` item is refused** (`money_item`). It is qbx_core's cash,
   synced into ox_inventory (the `inventory:accounts` convar), so moving it
-  is moving money, which goes through `rpf.money` with `cash`.
+  is moving money, which goes through `rpf.money` with `cash`. A name is
+  checked as the item `Items` resolves it to: ox_inventory 2.48 answers
+  `cash` as `money`, so `cash` is refused too.
 - **ox_inventory stopping on its own** makes item calls `unavailable`,
   and debits and credits of `cash` too. qbx_core sets cash in ox_inventory,
   as the `money` item, after it has changed the balance, and that throws

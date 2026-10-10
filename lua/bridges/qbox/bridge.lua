@@ -366,6 +366,24 @@ function qbox.register(api, fx)
     return inventory_backed(account) and not started(qbox.INVENTORY)
   end
 
+  ---What ox_inventory makes of an item's name: the item it resolves to,
+  ---or why the facade leaves it alone. ox_inventory answers some names as
+  ---another item (2.48 answers `cash` as `money`), so a name is checked as
+  ---the item it resolves to, never as given.
+  ---@param item string The item's name, as the caller gave it.
+  ---@return "money"|"unknown"|nil problem `money` for qbx_core's money, `unknown` for an item ox_inventory does not know.
+  local function item_kind(item)
+    local definition = fx.inventory:Items(item)
+    if type(definition) ~= "table" then
+      return "unknown"
+    end
+    local name = type(definition.name) == "string" and definition.name or item
+    if is_money(name) or is_money(item) then
+      return "money"
+    end
+    return nil
+  end
+
   ---Why an item call cannot be asked now, if it cannot.
   ---@param item string The item.
   ---@return string? status `unavailable` while ox_inventory is not started.
@@ -374,10 +392,10 @@ function qbox.register(api, fx)
     if not started(qbox.INVENTORY) then
       return "unavailable"
     end
-    if is_money(item) then
+    local kind = item_kind(item)
+    if kind == "money" then
       return "refused", "money_item"
-    end
-    if fx.inventory:Items(item) == nil then
+    elseif kind == "unknown" then
       return "refused", "unknown_item"
     end
     return nil
@@ -653,7 +671,7 @@ function qbox.register(api, fx)
         if not playing(handle) then
           return nil, "no_character"
         end
-        if is_money(item) or fx.inventory:Items(item) == nil then
+        if item_kind(item) then
           return nil, "not_found"
         end
         return fx.inventory:GetItemCount(handle, item)
