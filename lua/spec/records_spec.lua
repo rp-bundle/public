@@ -126,9 +126,7 @@ describe("rpf.records", function()
   end)
 
   it("refuses its events to scripts", function()
-    assert.has_error(function()
-      rpf.api.events.emit("records.lost", {}, "forged")
-    end)
+    assert.are.same({ nil, "reserved" }, { rpf.api.events.emit("records.lost", {}, "forged") })
   end)
 
   describe("characters", function()

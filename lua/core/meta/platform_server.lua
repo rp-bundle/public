@@ -48,6 +48,17 @@ local Random = {}
 ---@return string hex Exactly `n` characters from `0-9a-f`.
 function Random.random_hex(n) end
 
+---Which coroutine is running, where the engine has them, so the core can
+---keep whose code is running per coroutine (`rpf.addons`) without touching
+---`coroutine` itself: an addon's handler that yields must not leave its
+---context on code that runs while it waits.
+---@class rpf.platform.Thread
+local Thread = {}
+
+---The running coroutine, or any value naming it.
+---@return any thread What the engine's `running` coroutine function returns first, or nil where the engine runs no coroutines (the mock).
+function Thread.thread() end
+
 ---The players connected to this game server.
 ---@class rpf.platform.Players
 local Players = {}
@@ -93,4 +104,4 @@ function ToClients.on_client(name, handler) end
 
 ---Everything the game-server half of the core needs from its engine.
 ---`rpf.start_server` refuses a table missing any of it.
----@class rpf.ServerPlatform: rpf.platform.Engine, rpf.platform.Transport, rpf.platform.Http, rpf.platform.Clock, rpf.platform.Storage, rpf.platform.Random, rpf.platform.Players, rpf.platform.ToClients, rpf.platform.Log, rpf.platform.Api
+---@class rpf.ServerPlatform: rpf.platform.Engine, rpf.platform.Transport, rpf.platform.Http, rpf.platform.Clock, rpf.platform.Storage, rpf.platform.Random, rpf.platform.Thread, rpf.platform.Players, rpf.platform.ToClients, rpf.platform.Log, rpf.platform.Api

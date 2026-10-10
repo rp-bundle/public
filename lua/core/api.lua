@@ -20,9 +20,9 @@
 ---   accidents, not attackers: `rawset` and the debug library still reach
 ---   past it, and on Gmod it is all the server owner's own code anyway.
 ---
----What a side gets follows what it loaded: `players`, `staff` and `config`
----on the server, `auth` on the client, and `events`, `engine` and `VERSION`
----on both.
+---What a side gets follows what it loaded: `players`, `staff`, `config` and
+---`addons` on the server, `auth` on the client, and `events`, `time`,
+---`engine` and `VERSION` on both.
 local rpf = rpf
 local events = rpf.events
 
@@ -61,24 +61,168 @@ end
 ---@type string[]
 local RESERVED = { "bridge" }
 
+---What `events.on` and `once` registered for each handler a script passed,
+---by name, so `off` with the script's handler finds them: a script's
+---handler is registered wrapped, so it runs in the context of the code that
+---subscribed (`rpf.addons.run`), with how to forget that its subscriber owns
+---it. Weak keys, so a handler nobody holds can go.
+---@type table<string, table<any, { fn: function, disown: fun() }[]>>
+local wrapped = {}
+
+---Subscribes a script's handler. A handler subscribed while an addon's
+---code runs is the addon's, and is removed when it stops (`rpf.addons.own`);
+---a `once` that fires, or an `off`, forgets that ownership at once, so an
+---addon that subscribes and unsubscribes as it goes leaves nothing behind.
+---@param name any The event name.
+---@param handler any The handler: a function, or a FiveM function reference.
+---@param once boolean Whether it runs once.
+---@return any handler The same handler, for `off`; nil if refused.
+---@return string? err `invalid` for a name that is not a non-empty string or a handler that cannot be called, `inactive` from code of an addon activation that has ended.
+local function subscribe(name, handler, once)
+  if type(name) ~= "string" or name == "" or not rpf.callable(handler) then
+    return nil, "invalid"
+  end
+  local addons = rpf.addons
+  if addons and addons.stale() then
+    return nil, "inactive"
+  end
+  local ctx = addons and addons.context()
+  local by_handler = wrapped[name]
+  if not by_handler then
+    by_handler = setmetatable({}, { __mode = "k" })
+    wrapped[name] = by_handler
+  end
+  ---@type { fn: function, disown: fun() }
+  local registration = { disown = function() end }
+  ---Forgets this registration in the map `off` reads, the map itself once
+  ---it is empty, and its ownership.
+  local function forget()
+    local list = by_handler[handler]
+    for i = #(list or {}), 1, -1 do
+      if list[i] == registration then
+        table.remove(list, i)
+      end
+    end
+    if list and #list == 0 then
+      by_handler[handler] = nil
+    end
+    if next(by_handler) == nil and wrapped[name] == by_handler then
+      wrapped[name] = nil
+    end
+    registration.disown()
+  end
+  ---The handler as registered: forgets itself first if it runs once, then
+  ---runs the script's handler in its subscriber's context, which is none
+  ---for a script that subscribed outside any addon's code: it must not run
+  ---as whichever addon emitted.
+  ---@param ... any The event's arguments.
+  ---@return any ... The handler's results.
+  registration.fn = function(...)
+    if once then
+      forget()
+    end
+    if not addons then
+      return handler(...)
+    end
+    local ok, err = addons.run(ctx, handler, ...)
+    if not ok then
+      error(err, 0)
+    end
+  end
+  by_handler[handler] = by_handler[handler] or {}
+  local list = by_handler[handler]
+  list[#list + 1] = registration
+  if once then
+    events.once(name, registration.fn)
+  else
+    events.on(name, registration.fn)
+  end
+  if addons then
+    registration.disown = addons.own(function()
+      forget()
+      events.off(name, registration.fn)
+    end)
+  end
+  return handler
+end
+
+---How many event names have a subscription a script made, for tests and
+---diagnostics: an unsubscribed name must not stay behind.
+---@return integer count The count.
+function rpf.api_subscribed_names()
+  local count = 0
+  for _ in pairs(wrapped) do
+    count = count + 1
+  end
+  return count
+end
+
 ---The top-level table behind `rpf.api`. `engine` is filled in at start.
 local surface = {
   VERSION = rpf.VERSION,
   events = freeze({
     on = function(name, handler)
-      return events.on(name, handler)
+      return subscribe(name, handler, false)
     end,
     once = function(name, handler)
-      return events.once(name, handler)
+      return subscribe(name, handler, true)
     end,
     off = function(name, handler)
-      return events.off(name, handler)
+      local by_handler = type(name) == "string" and wrapped[name] or nil
+      ---@type { fn: function, disown: fun() }[]?
+      local list = by_handler and handler ~= nil and by_handler[handler] or nil
+      if not by_handler or not list or #list == 0 then
+        return false
+      end
+      by_handler[handler] = nil
+      if next(by_handler) == nil then
+        wrapped[name] = nil
+      end
+      for _, registration in ipairs(list) do
+        events.off(name, registration.fn)
+        registration.disown()
+      end
+      return true
     end,
     emit = function(name, ...)
       return events.emit_public(name, ...)
     end,
   }, "rpf.events"),
+  time = freeze({
+    now = function()
+      return rpf.time.now()
+    end,
+    after = function(delay_ms, fn)
+      return rpf.time.after(delay_ms, fn)
+    end,
+    every = function(period_ms, fn)
+      return rpf.time.every(period_ms, fn)
+    end,
+    cancel = function(id)
+      return rpf.time.cancel(id)
+    end,
+  }, "rpf.time"),
 }
+
+local addons = rpf.addons
+if addons then
+  surface.addons = freeze({
+    API = addons.API,
+    API_MIN = addons.API_MIN,
+    register = function(manifest, handlers)
+      return addons.register(manifest, handlers)
+    end,
+    state = function(namespace)
+      return addons.state(namespace)
+    end,
+    provide = function(name, fn)
+      return addons.provide(name, fn)
+    end,
+    call = function(name, ...)
+      return addons.call(name, ...)
+    end,
+  }, "rpf.addons")
+end
 
 local players = rpf.players
 if players then
@@ -194,6 +338,7 @@ rpf.api = freeze(surface, "rpf")
 ---@param platform rpf.ServerPlatform|rpf.ClientPlatform The platform.
 function rpf.publish(platform)
   surface.engine = platform.engine
+  rpf.time.bind(platform --[[@as rpf.time.Clock]])
   platform.expose(rpf.api)
 end
 

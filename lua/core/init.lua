@@ -15,6 +15,7 @@
 ---wires (`rpf.players.connected`, `rpf.players.dropped`).
 ---@class rpf
 ---@field VERSION string The core's version, reported in `Hello` as `core_version`. Compatibility is decided by the protocol version, not this.
+---@field callable fun(value: any): boolean Whether a value can be called: a function, or a FiveM function reference. Defined below.
 ---@field files rpf.LoadOrder The files each side loads after this one, in order.
 ---@field api rpf.Api The public API table the platform exposes to other scripts. Only what is in it is supported; everything else under `rpf` is internal. Built by `api.lua`.
 ---@field json rpf.json The bundled JSON codec.
@@ -45,12 +46,31 @@
 ---@field start_server fun(platform: rpf.ServerPlatform, options: rpf.ServerOptions): rpf.Client Starts the game-server half. Defined below.
 ---@field start_client fun(platform: rpf.ClientPlatform, options: rpf.ClientStartOptions?): rpf.ClientPlatform Starts the player-client half. Defined below.
 ---@field publish fun(platform: rpf.ServerPlatform|rpf.ClientPlatform) Publishes the public API through the platform. Defined by `api.lua`, which loads last.
+---@field api_subscribed_names fun(): integer How many event names hold a script's subscription, for tests. Defined by `api.lua`.
 ---@field api_members fun(): table<string, string[]>, string[] The public API's member names and reserved names, for the test that holds `meta/api.lua` to them. Defined by `api.lua`.
 rpf = {}
 
 local rpf = rpf
 
 rpf.VERSION = "0.1.0"
+
+---Whether a value can be called: a function, or a table whose metatable has
+---`__call`. Another FiveM resource's function arrives as such a table (a
+---function reference), so anything that takes a handler from a script
+---checks this rather than `type(value) == "function"`, which would refuse it
+---or skip it.
+---@param value any The value.
+---@return boolean callable True if calling it is not an error by itself.
+function rpf.callable(value)
+  if type(value) == "function" then
+    return true
+  end
+  if type(value) ~= "table" then
+    return false
+  end
+  local meta = getmetatable(value)
+  return type(meta) == "table" and meta.__call ~= nil
+end
 
 ---Which files each side loads after `init.lua`, in the order they must run.
 ---Order matters because a file may read an earlier file's table while it

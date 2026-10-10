@@ -174,9 +174,9 @@ describe("rpf.events", function()
       events.on(name, function()
         fired = true
       end)
-      assert.has_error(function()
-        events.emit_public(name)
-      end)
+      local failed, err = events.emit_public(name)
+      assert.is_nil(failed)
+      assert.are.equal("reserved", err)
       assert.is_false(fired)
     end)
   end
@@ -188,5 +188,13 @@ describe("rpf.events", function()
     end)
     assert.are.equal(0, events.emit_public("myaddon.opened", 42))
     assert.are.equal(42, got)
+  end)
+
+  it("refuses a name that is not one, without throwing", function()
+    for _, name in ipairs({ "", 42, false }) do
+      local failed, err = events.emit_public(name)
+      assert.is_nil(failed)
+      assert.are.equal("invalid", err)
+    end
   end)
 end)

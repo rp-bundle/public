@@ -1,4 +1,14 @@
----Reading RFC 3339 timestamps, computed rather than delegated.
+---The clock and timers scripts use, and reading RFC 3339 timestamps.
+---
+---**Timers (J3).** `now`, `after`, `every` and `cancel` run on the
+---platform's clock (`platform.now`, `platform.after`), so a script's timer
+---behaves the same on every engine and runs instantly in the tests. A
+---timer an addon starts while its code runs belongs to it
+---(`rpf.addons.own`) and is cancelled when it stops, so an addon that starts
+---`every` in its `start` handler gets exactly one, however often it is
+---restarted. Its callback runs in the addon's context, under `pcall`: one
+---that throws is logged, and an `every` keeps going. Ids are strings, so
+---they cross a FiveM export unchanged.
 ---
 ---The portal writes every time as RFC 3339, and both halves of the core need
 ---to read them: the server to turn a join nonce's `expires_at` into a
@@ -9,9 +19,150 @@
 ---can send. Writing one is `rpf.protocol.timestamp`, which only the server
 ---needs.
 ---@class rpf.time
+---@field MIN_INTERVAL_MS integer The shortest period `every` takes, so a mistake cannot spin the server's thread.
+---@field MAX_DELAY_MS integer The longest delay or period a timer takes: about 24.8 days, which every engine's timers hold.
 local time = {}
 
 local rpf = rpf
+
+time.MIN_INTERVAL_MS = 10
+time.MAX_DELAY_MS = 2147483647
+
+---What timers need of a platform: either side's has it.
+---@class rpf.time.Clock
+---@field now fun(): number Wall-clock milliseconds.
+---@field after fun(delay_ms: number, callback: fun()) Runs a callback once, later.
+---@field log fun(level: string, message: string) Logs a line.
+
+---The platform whose clock timers run on, once bound.
+---@type rpf.time.Clock?
+local clock = nil
+
+---Live timers by id; a cancelled one is removed, and its scheduled run then
+---does nothing.
+---@type table<string, { fn: any, period: number?, context: table?, disown: fun() }>
+local timers = {}
+
+---How many timers have been made, for their ids.
+local made = 0
+
+---Binds the clock timers run on. Called when the public API is published,
+---which on Gmod is as the adapter loads, before the core starts, so addons
+---loading then can already set timers.
+---@param platform rpf.time.Clock The platform.
+function time.bind(platform)
+  clock = platform
+end
+
+---The wall clock, in milliseconds since the Unix epoch.
+---@return number? now Nil before a platform is bound.
+function time.now()
+  return clock and clock.now()
+end
+
+---Whether a delay or period is one a timer takes.
+---@param ms any The value.
+---@param least number The smallest allowed.
+---@return boolean ok True if it is a whole number from `least` to `MAX_DELAY_MS`.
+local function in_range(ms, least)
+  return type(ms) == "number" and ms == math.floor(ms) and ms >= least and ms <= time.MAX_DELAY_MS
+end
+
+---Runs a timer that came due, if it is still live, and schedules the next
+---run of an `every`.
+---@param id string The timer.
+local function fire(id)
+  local entry, c = timers[id], clock
+  if not entry or not c then
+    return
+  end
+  if entry.period then
+    c.after(entry.period, function()
+      fire(id)
+    end)
+  else
+    timers[id] = nil
+    entry.disown()
+  end
+  local ok, err
+  if rpf.addons then
+    ok, err = rpf.addons.run(entry.context, entry.fn)
+  else
+    ok, err = pcall(entry.fn)
+  end
+  if not ok then
+    c.log("error", "rpf: a timer failed: " .. tostring(err))
+  end
+end
+
+---Makes a timer.
+---@param ms any The delay, or the period.
+---@param fn any What to run.
+---@param period boolean Whether it repeats.
+---@return string? id The timer's id, for `cancel`.
+---@return string? err Why not.
+local function start(ms, fn, period)
+  local c = clock
+  if not c then
+    return nil, "unavailable"
+  end
+  if not in_range(ms, period and time.MIN_INTERVAL_MS or 0) or not rpf.callable(fn) then
+    return nil, "invalid"
+  end
+  if rpf.addons and rpf.addons.stale() then
+    return nil, "inactive"
+  end
+  made = made + 1
+  local id = "rpf-timer-" .. made
+  local disown = function() end
+  if rpf.addons then
+    disown = rpf.addons.own(function()
+      timers[id] = nil
+    end)
+  end
+  timers[id] = {
+    fn = fn,
+    period = period and ms or nil,
+    context = rpf.addons and rpf.addons.context() or nil,
+    disown = disown,
+  }
+  c.after(ms, function()
+    fire(id)
+  end)
+  return id
+end
+
+---Runs a function once, after a delay.
+---@param delay_ms any Milliseconds, a whole number from 0 to `MAX_DELAY_MS`.
+---@param fn any The function, or a FiveM function reference.
+---@return string? id The timer, for `cancel`.
+---@return string? err `invalid` for a delay or function that is not one, `unavailable` before a platform is bound, `inactive` from code of an addon activation that has ended.
+function time.after(delay_ms, fn)
+  return start(delay_ms, fn, false)
+end
+
+---Runs a function every period, the first time one period from now, until
+---cancelled (or its addon stops).
+---@param period_ms any Milliseconds, a whole number from `MIN_INTERVAL_MS` to `MAX_DELAY_MS`.
+---@param fn any The function, or a FiveM function reference.
+---@return string? id The timer, for `cancel`.
+---@return string? err `invalid` or `unavailable`, as for `after`.
+function time.every(period_ms, fn)
+  return start(period_ms, fn, true)
+end
+
+---Cancels a timer. Cancelling one that has run or was cancelled is harmless.
+---@param id any The timer's id.
+---@return boolean cancelled True if it was live.
+function time.cancel(id)
+  local entry = type(id) == "string" and timers[id] or nil
+  if not entry then
+    return false
+  end
+  timers[id] = nil
+  entry.disown()
+  return true
+end
 
 ---Days since 1970-01-01 for a civil date, after Hinnant's `days_from_civil`.
 ---@param year integer The year.

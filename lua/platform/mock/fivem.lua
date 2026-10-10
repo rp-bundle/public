@@ -182,7 +182,14 @@ function fivem.server(env, host, seed, convars)
   ---@field next_due fun(): number? When the next timer is due.
   ---@field http_done fun(id: integer, status: integer, body: string, headers: table<string, string>?) Answers a request.
   ---@field resources table<string, string> Each resource's state as `GetResourceState` reports it: `rpf` and `rpf-ws` started. Anything else is `missing`.
+  ---@field invoker string? The resource whose call into an export is running, as `GetInvokingResource` reports it; nil for this resource's own code.
+  ---@field resource fun(name: string): table The exported `api` as another resource gets it: every value copied across the boundary, and every call naming that resource as the invoker.
+  ---@field stop_resource fun(name: string) `onResourceStop` for another resource.
   local driver = { exported = own_exports, lockdown = {}, resources = { rpf = "started", ["rpf-ws"] = "started" } }
+
+  env.GetInvokingResource = function()
+    return driver.invoker
+  end
   local buckets = {}
 
   env.os = setmetatable({
@@ -336,6 +343,111 @@ function fivem.server(env, host, seed, convars)
 
   function driver.stop()
     fire("onResourceStop", "", "rpf")
+  end
+
+  function driver.stop_resource(name)
+    fire("onResourceStop", "", name)
+  end
+
+  ---How many function references have been made, for their ids.
+  local references = 0
+
+  ---Values packed with their count, so a nil in the middle survives.
+  ---@param ... any The values.
+  ---@return table packed `{ n = count, ... }`.
+  local function pack(...)
+    return { n = select("#", ...), ... }
+  end
+
+  ---The values of a pack, from `i` on.
+  ---@param t table The pack.
+  ---@param i integer Where to start.
+  ---@return any first The value at `i`.
+  ---@return any ... The ones after it.
+  local function unpacked(t, i)
+    if i > t.n then
+      return
+    end
+    return t[i], unpacked(t, i + 1)
+  end
+
+  ---Copies a value across the boundary between two resources, as FiveM's
+  ---msgpack does: tables are copied raw, without their metatables (so a
+  ---read-only view or a JSON mark does not survive), and a function becomes a
+  ---reference, a fresh callable table each time, which runs the function
+  ---where it was made. A reference crossing back stays one.
+  ---@param value any The value.
+  ---@param depth integer? How deep the copy is, to refuse a cycle as msgpack would.
+  ---@return any copy The copy.
+  local function cross(value, depth)
+    depth = depth or 0
+    if depth > 64 then
+      error("msgpack: a table nests too deep, or refers to itself")
+    end
+    local meta = type(value) == "table" and getmetatable(value) or nil
+    if type(value) == "function" or (type(meta) == "table" and meta.__call) then
+      references = references + 1
+      return setmetatable({ __cfx_functionReference = "ref:" .. references }, {
+        __call = function(_, ...)
+          return value(...)
+        end,
+      })
+    end
+    if type(value) ~= "table" then
+      return value
+    end
+    local copy = {}
+    for key, item in pairs(value) do
+      copy[cross(key, depth + 1)] = cross(item, depth + 1)
+    end
+    return copy
+  end
+
+  ---Each argument crossed.
+  ---@param t table A pack.
+  ---@return table crossed A pack of copies.
+  local function cross_all(t)
+    local out = { n = t.n }
+    for i = 1, t.n do
+      out[i] = cross(t[i])
+    end
+    return out
+  end
+
+  function driver.resource(name)
+    ---An exported function as `name` calls it.
+    ---@param fn function The export's function.
+    ---@return function call The call.
+    local function call_as(fn)
+      return function(...)
+        local saved = driver.invoker
+        driver.invoker = name
+        local results = pack(pcall(fn, unpacked(cross_all(pack(...)), 1)))
+        driver.invoker = saved
+        if not results[1] then
+          error(results[2], 0)
+        end
+        local out = cross_all(results)
+        return unpacked(out, 2)
+      end
+    end
+    ---The export's table as `name` sees it.
+    ---@param value any A member.
+    ---@return any seen The member, its functions calling as `name`.
+    local function view(value)
+      if type(value) == "function" then
+        return call_as(value)
+      end
+      if type(value) ~= "table" then
+        return value
+      end
+      local out = {}
+      for key, item in pairs(value) do
+        out[key] = view(item)
+      end
+      return out
+    end
+    return view(own_exports.api())
   end
 
   driver.run_due = p.run_due

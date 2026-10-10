@@ -75,6 +75,8 @@ function server.platform(shim, transport)
   -- Node's cryptographic generator, through the shim. If the shim cannot
   -- answer, Lua's generator stands in so ids are still minted, and the
   -- console says so once; nothing connects without the shim anyway.
+  p.thread = coroutine.running
+
   function p.random_hex(n)
     local ok, hex = pcall(shim.random_hex, shim, n)
     if ok and type(hex) == "string" and #hex == n then
@@ -252,8 +254,11 @@ AddEventHandler("rpf-ws:close", function(id, code, reason) transport.closed(id, 
 AddEventHandler("onResourceStart", function(name)
   if name == GetCurrentResourceName() then server.start(platform) end
 end)
+-- Another resource stopping is its addons' code going: the core stops and
+-- forgets every addon it registered, and takes down what its code set up
+-- through the API, so nothing calls into a resource that is gone.
 AddEventHandler("onResourceStop", function(name)
-  if name == GetCurrentResourceName() then server.stop(transport) end
+  if name == GetCurrentResourceName() then server.stop(transport) else core.addons.unload_origin(name) end
 end)
 -- `playerJoining`, not `playerConnecting`: a connecting player's `source`
 -- is a temporary id that changes once they join, and the core keeps the

@@ -34,6 +34,9 @@ function.
    - `now` is the wall clock in milliseconds; `after` runs later, never inside
      the caller.
    - `random_hex` from the best source the engine has.
+   - `thread` names the running coroutine (`coroutine.running`), or returns
+     nil where there are none, so the core keeps whose code is running per
+     coroutine.
    - `identifiers` verbatim, with the engine account identifier the portal's
      `ENGINE_IDENTIFIERS` names for this engine. **Add the engine to that list
      in the same PR**, or none of its players can log in.
@@ -42,7 +45,11 @@ function.
    - `expose` publishes `rpf.api` the way scripts on this engine share code.
      Where each resource has its own Lua state, that is an export of a plain
      copy: read-only views do not survive serialisation, and neither does a
-     function's identity (FiveM's `shared.lua`).
+     function's identity (FiveM's `shared.lua`). Where the engine can say
+     which code is calling (a resource), each exported call names it to the
+     core (`rpf.addons.from`), and code that stops is unloaded
+     (`rpf.addons.unload_origin`), so an addon's timers and handlers go with
+     it.
 2. **The client platform table**, every member of `rpf.ClientPlatform`
    (`meta/platform_client.lua`), with the same rules where they overlap.
 3. **The engine events**, two lines each: a player handed over calls

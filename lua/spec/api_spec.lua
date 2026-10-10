@@ -109,7 +109,7 @@ describe("rpf.api", function()
         assert.are.same(keys(meta[class]), names, class)
       end
     end
-    assert.are.same({ "auth", "config", "events", "players", "staff" }, sorted((function()
+    assert.are.same({ "addons", "auth", "config", "events", "players", "staff", "time" }, sorted((function()
       local out = {}
       for part in pairs(parts) do
         if part ~= "" then
@@ -183,7 +183,7 @@ describe("rpf.api", function()
 
     it("reaches nothing internal: every member is a plain value or a function", function()
       local built = rpf.api_members()
-      local internals = { rpf, p, rpf.connection, rpf.events, rpf.players, rpf.staff, rpf.config, rpf.client, rpf.join }
+      local internals = { rpf, p, rpf.connection, rpf.events, rpf.players, rpf.staff, rpf.config, rpf.client, rpf.join, rpf.addons, rpf.time }
       for part, names in pairs(built) do
         local target = part == "" and rpf.api or rpf.api[part]
         for _, name in ipairs(target and names or {}) do
@@ -195,7 +195,10 @@ describe("rpf.api", function()
           if part == "" and kind == "table" then
             assert.are.equal(false, getmetatable(value), name .. " is not a frozen view")
           else
-            assert.truthy(kind == "function" or kind == "string" or kind == "nil", part .. "." .. name .. " is a " .. kind)
+            assert.truthy(
+              kind == "function" or kind == "string" or kind == "number" or kind == "nil",
+              part .. "." .. name .. " is a " .. kind
+            )
           end
         end
       end
@@ -209,13 +212,11 @@ describe("rpf.api", function()
       for key in pairs(rpf.api) do
         seen[key] = true
       end
-      assert.are.same(sorted({ "VERSION", "engine", "events", "players", "staff", "config" }), keys(seen))
+      assert.are.same(sorted({ "VERSION", "engine", "events", "players", "staff", "config", "addons", "time" }), keys(seen))
     end)
 
     it("refuses a script emitting a core event, and passes a script's own events", function()
-      assert.has_error(function()
-        rpf.api.events.emit("players.registered", {})
-      end)
+      assert.are.same({ nil, "reserved" }, { rpf.api.events.emit("players.registered", {}) })
       local got
       rpf.api.events.on("myaddon.ping", function(value)
         got = value

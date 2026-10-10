@@ -73,6 +73,15 @@ reference to it), so through the export `events.on` and `events.once` return
 a subscription id, a string, and `events.off` takes that id rather than the
 function.
 
+Every call through the export names the resource that made it
+(`GetInvokingResource`, `shared.from_caller`), so the core knows whose code
+is calling: an addon registered from a resource is that resource's, what it
+sets up through the API (timers, event handlers, exports) is taken down when
+it stops (`onResourceStop` hands its name to `rpf.addons.unload_origin`),
+and one addon's resource cannot emit events under another addon's
+namespace. A handler an addon passes (`start`, a timer, an event handler)
+arrives as a function reference, which the core calls like a function.
+
 ## How each part is done
 
 | Platform member | On FiveM | File |
@@ -84,6 +93,7 @@ function.
 | `after` | `Citizen.SetTimeout` | `shared.lua` |
 | `kv_get`, `kv_set` | Resource KVP, with the synchronous `SetResourceKvp`, never the `NoSync` one | `shared.lua` |
 | `random_hex` | Node's `crypto.randomBytes`, through the shim; Lua's generator, with one warning, only if the shim cannot answer | `server.lua` |
+| `thread` | `coroutine.running`: FiveM runs each event handler and timer in a coroutine of its own | `server.lua` |
 | `identifiers`, `name`, `kick` | `GetPlayerIdentifiers` verbatim, `GetPlayerName`, `DropPlayer` | `server.lua` |
 | `notify` | The `rpf:notify` client event, shown as a feed notification | `server.lua`, `client.lua` |
 | `to_client` / `on_client`, `to_server` / `on_server` | `TriggerClientEvent` / `RegisterNetEvent`, `TriggerServerEvent` / `RegisterNetEvent`, with the sender from FiveM's `source` and anything but a string payload dropped | `server.lua`, `client.lua` |
