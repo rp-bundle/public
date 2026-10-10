@@ -61,6 +61,12 @@ local function sorted(list)
   return out
 end
 
+---Parts whose members differ by side, by design: `interactions` registers a
+---handler on the server and sends a request from the client. Their class in
+---`meta/api.lua` documents the members of both.
+---@type table<string, true>
+local SIDED = { interactions = true }
+
 ---Starts the server on a fake platform.
 ---@return spec.FakePlatform p The platform.
 local function server()
@@ -88,6 +94,16 @@ describe("rpf.api", function()
         for _, name in ipairs(names) do
           top[name] = true
         end
+      elseif parts[part] and SIDED[part] then
+        -- Its members are side by side: one class documents both.
+        local union = {}
+        for _, name in ipairs(parts[part]) do
+          union[name] = true
+        end
+        for _, name in ipairs(names) do
+          union[name] = true
+        end
+        parts[part] = keys(union)
       elseif parts[part] then
         assert.are.same(parts[part], names, part .. " differs between the sides")
       else
@@ -109,7 +125,7 @@ describe("rpf.api", function()
         assert.are.same(keys(meta[class]), names, class)
       end
     end
-    assert.are.same({ "addons", "auth", "characters", "config", "events", "inventory", "jobs", "money", "ops", "players", "records", "staff", "time" }, sorted((function()
+    assert.are.same({ "addons", "auth", "characters", "config", "events", "interactions", "inventory", "jobs", "money", "ops", "players", "records", "staff", "time", "world" }, sorted((function()
       local out = {}
       for part in pairs(parts) do
         if part ~= "" then
@@ -183,7 +199,7 @@ describe("rpf.api", function()
 
     it("reaches nothing internal: every member is a plain value or a function", function()
       local built = rpf.api_members()
-      local internals = { rpf, p, rpf.connection, rpf.events, rpf.players, rpf.staff, rpf.config, rpf.client, rpf.join, rpf.addons, rpf.time, rpf.data, rpf.records, rpf.facade, rpf.ops, rpf.accounts, rpf.inventory, rpf.jobs, rpf.characters }
+      local internals = { rpf, p, rpf.connection, rpf.events, rpf.players, rpf.staff, rpf.config, rpf.client, rpf.join, rpf.addons, rpf.time, rpf.data, rpf.records, rpf.facade, rpf.ops, rpf.accounts, rpf.inventory, rpf.jobs, rpf.characters, rpf.world, rpf.interactions }
       for part, names in pairs(built) do
         local target = part == "" and rpf.api or rpf.api[part]
         for _, name in ipairs(target and names or {}) do
@@ -212,7 +228,7 @@ describe("rpf.api", function()
       for key in pairs(rpf.api) do
         seen[key] = true
       end
-      assert.are.same(sorted({ "VERSION", "engine", "events", "players", "staff", "config", "addons", "records", "time", "characters", "money", "inventory", "jobs", "ops" }), keys(seen))
+      assert.are.same(sorted({ "VERSION", "engine", "events", "players", "staff", "config", "addons", "records", "time", "characters", "money", "inventory", "jobs", "ops", "world", "interactions", "capabilities" }), keys(seen))
     end)
 
     it("refuses a script emitting a core event, and passes a script's own events", function()

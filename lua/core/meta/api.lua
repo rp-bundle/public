@@ -19,9 +19,11 @@
 
 ---The public API table.
 ---
----What is present follows the side: `players`, `staff`, `config` and
----`addons` on the game server, `auth` on the player's client, and
----`VERSION`, `engine`, `events` and `time` on both. Every table in it is
+---What is present follows the side: `players`, `staff`, `config`,
+---`addons`, `records`, the facade, `world` and `capabilities` on the game
+---server, `auth` on the player's client, and `VERSION`, `engine`, `events`,
+---`time` and `interactions` on both (`register` on the server, `send` on the
+---client). Every table in it is
 ---read-only.
 ---
 ---**Nothing in it throws.** A call that cannot do what was asked returns nil
@@ -40,6 +42,9 @@
 ---@field inventory rpf.api.Inventory The domain-neutral facade: a player's items, and moving them. Server only.
 ---@field jobs rpf.api.Jobs The domain-neutral facade: a player's job. Server only.
 ---@field ops rpf.api.Ops Operation ids, which make the facade's commands safe to send again. Server only.
+---@field world rpf.api.World The game world, through what the engine's adapter supports (J3). Server only.
+---@field interactions rpf.api.Interactions Requests a player's client makes to an addon: `register` a handler on the server, `send` a request on the client (J3).
+---@field capabilities fun(): table<string, boolean> Which game-world capabilities this engine supports, by name: `position`, `model`, `zone`, `entity`. Ask before offering a player something that needs one. Server only.
 ---@field players rpf.api.Players? The players on this game server. Server only.
 ---@field staff rpf.api.Staff? In-game staff: what a linked staff member may do here, account linking, and staff actions for the audit log. Server only.
 ---@field config rpf.api.Config? Lookups over the config the portal pushed, and linked staff's edits of it in game. Server only.
@@ -75,6 +80,8 @@
 ---   record held here was created, changed or deleted: by an addon, by a
 ---   staff edit from the portal, or (`records.changed`, `by = "portal"`)
 ---   put back because the portal refused its deletion. Server only.
+--- - `interactions.result(result)`, an `rpf.InteractionResult`, when the
+---   server answered an interaction this client sent. Client only.
 --- - `staff.changed(change)`, an `rpf.StaffChange`, once for each player
 ---   whose staff permissions here changed: a push from the portal gave them
 ---   new ones or took some away, or they left. Server only.
@@ -116,7 +123,7 @@ function Events.once(name, handler) end
 function Events.off(name, handler) end
 
 ---Calls every handler for a name with the given arguments. Names under the
----core's prefixes (`players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `addons.`, `rpf.`) are refused,
+---core's prefixes (`players.`, `config.`, `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `addons.`, `interactions.`, `rpf.`) are refused,
 ---so no script can forge a lifecycle event other scripts would believe; so
 ---is a name under a loaded addon's namespace when the caller is known to be
 ---another addon (a handler the core runs for one, or, on FiveM, any call
@@ -550,6 +557,67 @@ local Ops = {}
 ---minted, and is refused (`expired_op`) after a day.
 ---@return string? op_id The id, or nil before the core has started.
 function Ops.new() end
+
+---The game world, through capabilities the engine's adapter declares. The
+---core never branches on the engine: where an adapter does not support a
+---capability, the call says `unsupported` (check `rpf.capabilities()`).
+---Positions are plain `{ x, y, z }`, in the engine's units, which is how a
+---record stores one (a `vector3` field).
+---@class rpf.api.World
+local World = {}
+
+---Where a logged-in player is.
+---@param player any The engine's handle.
+---@return { x: number, y: number, z: number }? position A copy.
+---@return "unsupported"|"not_found"|nil err `unsupported` where the engine's adapter cannot say, `not_found` for a player not logged in here or not spawned.
+function World.position(player) end
+
+---Interactions: a player's client asks an addon to do something, and the
+---addon decides on the server. A request reaches only a handler an addon
+---registered, under its own namespace; never an event the client named.
+---
+---```lua
+----- server
+---rpf.interactions.register("acme_tags.spray", function(player, payload)
+---  if type(payload.text) ~= "string" then return false, "Say something." end
+---  -- resolve every id in payload inside this player's scope before using it
+---  return true
+---end)
+----- client
+---rpf.interactions.send("acme_tags.spray", { text = "hello" })
+---rpf.events.on("interactions.result", function(result) show(result.ok and "Done" or result.reason) end)
+---```
+---@class rpf.api.Interactions
+local Interactions = {}
+
+---Server only. Registers an interaction, under the addon's own namespace.
+---One registered while the addon's code runs goes when it stops.
+---
+---The handler runs only while the addon is active, only for a player who
+---has logged in, and at most 20 times per player every 10 seconds. The
+---payload is hostile input: a copy of plain data (at most 4 KiB, 8 deep),
+---whatever the player's client chose to send.
+---@param name string `<namespace>.<name>`.
+---@param handler fun(player: rpf.PlayerView, payload: table): boolean, string? Answers `true`, or `false` and a reason the player's client is told.
+---@return boolean? ok True once registered.
+---@return "invalid"|"not_found"|"forbidden"|"inactive"|nil err `invalid` for a bad name or handler, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an activation that has ended.
+function Interactions.register(name, handler) end
+
+---Client only. Asks the server to run an interaction. The answer arrives as
+---`interactions.result`: `unknown` when nothing is registered by that name,
+---`inactive` while its addon is not, `invalid` for a payload that is not
+---plain data, `failed` when the handler threw, or the handler's own reason.
+---@param name string `<namespace>.<name>`.
+---@param payload table? Plain data, at most 4 KiB encoded.
+---@return boolean? ok True once sent.
+---@return "invalid"|"too_large"|"unavailable"|nil err Why not.
+function Interactions.send(name, payload) end
+
+---What `interactions.result` carries.
+---@class rpf.InteractionResult
+---@field name string The interaction.
+---@field ok boolean Whether it went through.
+---@field reason string? Why not.
 
 ---Why a facade read has no value.
 ---@alias rpf.FacadeRead

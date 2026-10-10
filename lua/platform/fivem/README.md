@@ -93,6 +93,7 @@ arrives as a function reference, which the core calls like a function.
 | `after` | `Citizen.SetTimeout` | `shared.lua` |
 | `kv_get`, `kv_set` | Resource KVP, with the synchronous `SetResourceKvp`, never the `NoSync` one | `shared.lua` |
 | `random_hex` | Node's `crypto.randomBytes`, through the shim; Lua's generator, with one warning, only if the shim cannot answer | `server.lua` |
+| `capabilities` | `position`: the player's ped's coordinates (`GetPlayerPed`, `GetEntityCoords`, which OneSync knows on the server), nil while they have no ped; `model`, `zone`, `entity` unsupported until J4 | `server.lua` |
 | `thread` | `coroutine.running`: FiveM runs each event handler and timer in a coroutine of its own | `server.lua` |
 | `identifiers`, `name`, `kick` | `GetPlayerIdentifiers` verbatim, `GetPlayerName`, `DropPlayer` | `server.lua` |
 | `notify` | The `rpf:notify` client event, shown as a feed notification | `server.lua`, `client.lua` |

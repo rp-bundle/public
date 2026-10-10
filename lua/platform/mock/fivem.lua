@@ -185,6 +185,7 @@ function fivem.server(env, host, seed, convars)
   ---@field invoker string? The resource whose call into an export is running, as `GetInvokingResource` reports it; nil for this resource's own code.
   ---@field resource fun(name: string): table The exported `api` as another resource gets it: every value copied across the boundary, and every call naming that resource as the invoker.
   ---@field stop_resource fun(name: string) `onResourceStop` for another resource.
+  ---@field positions table<integer, { x: number, y: number, z: number }> Where each player's ped stands, as `GetEntityCoords` reports it.
   local driver = { exported = own_exports, lockdown = {}, resources = { rpf = "started", ["rpf-ws"] = "started" } }
 
   env.GetInvokingResource = function()
@@ -228,6 +229,16 @@ function fivem.server(env, host, seed, convars)
     table.sort(out)
     return out
   end
+  -- A player's ped is their id (any non-zero handle will do), and its
+  -- coordinates are the mock's `positions`, as FiveM's vector3.
+  env.GetPlayerPed = function(player)
+    return p.positions[tonumber(player)] and tonumber(player) or 0
+  end
+  env.GetEntityCoords = function(ped)
+    local at = p.positions[ped]
+    return { x = at.x, y = at.y, z = at.z }
+  end
+
   env.GetPlayerRoutingBucket = function(player)
     return buckets[tonumber(player)] or 0
   end
@@ -453,6 +464,7 @@ function fivem.server(env, host, seed, convars)
   driver.run_due = p.run_due
   driver.next_due = p.next_due
   driver.http_done = p.http_done
+  driver.positions = p.positions
   return driver
 end
 

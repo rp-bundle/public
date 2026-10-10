@@ -15,7 +15,7 @@
     "${3rd}/lfs/library"
   ],
   "workspace.checkThirdParty": false,
-  "workspace.ignoreDir": ["platform/gmod", "platform/fivem"],
+  "workspace.ignoreDir": ["platform/gmod", "platform/fivem", "examples/acme_tags/fivem", "examples/acme_tags/gmod"],
   "diagnostics.globals": [],
   "diagnostics.neededFileStatus": {
     "missing-global-doc": "Any!",

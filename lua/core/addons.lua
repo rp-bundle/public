@@ -1011,6 +1011,19 @@ function addons.state(namespace)
   return addon.state, addon.reason
 end
 
+---The context a call into an addon's code runs in now: its namespace, its
+---origin and its running activation, for a module that calls an addon's
+---handler on the core's behalf (`rpf.interactions`).
+---@param namespace string The addon.
+---@return rpf.addons.Context? context Nil if no addon of that namespace is loaded.
+function addons.context_of(namespace)
+  local addon = loaded[namespace]
+  if not addon then
+    return nil
+  end
+  return { namespace = namespace, origin = addon.origin, run = addon.run }
+end
+
 ---Whether an addon's calls are open: it is active, or its `start` handler
 ---is running (which may set up records and read its config records).
 ---@param namespace string The addon.

@@ -155,6 +155,45 @@ one that goes is deprecated a release ahead, with the replacement named in
 The same "ask before going further" rule applies when keeping one of these
 would be ugly.
 
+## Addon API majors
+
+Addons are a fourth party to a server's versions, written by people who
+are not us and upgraded on their own schedule. Three versions meet (J3):
+
+- **The addon's `api`**, in its manifest: the addon API major it was
+  written for.
+- **The game server's RPF release**, which serves a range of majors,
+  `rpf.addons.API_MIN` to `rpf.addons.API` (1 to 1 in 0.2.0). An addon
+  whose `api` is outside it stays in state `api`, with the reason, and
+  never runs; the others on the server are not affected.
+- **The portal's release**, which checks every manifest by the shared
+  rules (`rpf_domain::addons`). Nothing unknown is accepted, so a manifest
+  using a key a newer contract added is refused, with the rule, by an older
+  portal rather than half-read; the game server's own check (`rpf.manifest`)
+  is the same rules, and refuses it at registration first.
+
+How each moves:
+
+- **Within a major, the API only grows.** A new call, a new optional
+  argument, a new field in what a call returns, a new event or a new
+  refusal reason is compatible: an addon written for an older minor runs
+  unchanged. Addons check what they need with `supports` and
+  `capabilities()`, and treat an unknown refusal reason as a refusal.
+- **A breaking change is a new major**, served beside the old one for the
+  support window above. `API` moves to it; `API_MIN` moves only with the
+  deprecation notice `CHANGELOG.md` gives for protocol versions. The
+  compatibility path lives at the edge, an API table per major, never in
+  the modules behind it; if it cannot, the owner decides, as for the wire.
+- **Skew between a game server and the portal** is the protocol's, above:
+  everything an addon does reaches the portal through frames J2 added at
+  protocol 2, and the portal upgrades first, so a game server months
+  behind is served its protocol and its addons' manifests are checked by
+  the rules its own core applied.
+- **Records outlive releases.** A type's records stay valid through every
+  compatible schema change, an older release of the addon keeps fields it
+  does not know (writes are patches), and records stay when the addon's
+  files leave the server ([Addons](architecture/addons.md#versions-and-schema-evolution)).
+
 ## Changing the wire
 
 ### The freeze

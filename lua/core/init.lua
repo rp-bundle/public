@@ -41,6 +41,8 @@
 ---@field data rpf.data The record calls addons make (J3), which `rpf.api.records` fronts.
 ---@field ops rpf.ops Operation ids, and the journal that runs each facade command once (J3).
 ---@field facade rpf.facade The domain-neutral facade's native provider: characters, money, items and jobs for addons (J3).
+---@field world rpf.world The game world through the adapter's capabilities (J3).
+---@field interactions rpf.interactions Requests a player's client makes to an addon's registered handler (J3).
 ---@field picker rpf.picker The client side of choosing a character.
 ---@field handoff rpf.handoff The login messages between server and client.
 ---@field join rpf.join The server side of a player's login.
@@ -111,6 +113,8 @@ rpf.files = {
     "data.lua",
     "ops.lua",
     "facade.lua",
+    "world.lua",
+    "interactions.lua",
     "api.lua",
   },
   client = {
@@ -121,6 +125,7 @@ rpf.files = {
     "handoff.lua",
     "auth.lua",
     "picker.lua",
+    "interactions.lua",
     "api.lua",
   },
 }
@@ -176,6 +181,8 @@ function rpf.start_server(platform, options)
   rpf.edits.start()
   rpf.data.start()
   rpf.ops.start(platform)
+  rpf.world.start(platform)
+  rpf.interactions.serve(platform)
   rpf.config.restore(platform)
   rpf.config.serve(platform, rpf.connection)
   rpf.publish(platform)
@@ -201,6 +208,7 @@ function rpf.start_client(platform, options)
   rpf.publish(platform)
   rpf.auth.start(platform, options and options.auth)
   rpf.picker.start(platform)
+  rpf.interactions.start_client(platform)
   return platform
 end
 

@@ -38,6 +38,10 @@ function.
    - `now` is the wall clock in milliseconds; `after` runs later, never inside
      the caller.
    - `random_hex` from the best source the engine has.
+   - `capabilities` declares what the engine can do with the game world,
+     each capability a function or `false` (`rpf.world`): `position` a
+     player's position as `{ x, y, z }`, and `model`, `zone`, `entity`
+     `false` until J4. Never leave one out: say unsupported on purpose.
    - `thread` names the running coroutine (`coroutine.running`), or returns
      nil where there are none, so the core keeps whose code is running per
      coroutine.
@@ -153,6 +157,8 @@ for the clients' `HTTP`.
   `ShutDown`, and the next map's state is a new instance over the same store.
 - *Player disconnects* carry no reason in `PlayerDisconnected`, so the core
   is told `"disconnected"`.
+- *Capabilities* (J3): `position` is `ply:GetPos()`; `model`, `zone` and
+  `entity` are unsupported until J4.
 
 The language-server check for this directory runs on its own
 (`lua/platform/gmod/.luarc.json`) with the GLua annotations

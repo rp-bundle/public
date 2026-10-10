@@ -53,6 +53,9 @@ conformance.PLATFORMS = { "mock", "fivem", "gmod" }
 ---@field stop_resource fun(origin: string)? Stops a resource, where there are resources.
 ---@field finish fun() Takes the platform's globals away again.
 ---@field join fun(n: integer): any Puts a player in the game, as the engine hands one over, and returns their handle.
+---@field place fun(n: integer, at: { x: number, y: number, z: number }) Puts a player somewhere in the world, as the engine reports it.
+---@field from_client fun(n: integer, name: string, payload: string) A player's client sent the server a message.
+---@field to_clients { player: any, name: string, payload: string }[] Every message the server sent a client, by the harness's number for the player.
 ---@field socket_open fun(id: integer) The host's socket opened, as the platform hears it.
 ---@field socket_message fun(id: integer, text: string) A frame arrived on it.
 ---@field connects integer[] The sockets the core asked for, in order.
@@ -338,7 +341,7 @@ end
 ---@return table host The host.
 local function host_for(world)
   local kv = {}
-  world.connects, world.sent, world.answered = {}, {}, 0
+  world.connects, world.sent, world.answered, world.to_clients = {}, {}, 0, {}
   world.portal = { records = {}, frames = {}, owned = {} }
   return {
     now = function()
@@ -361,7 +364,9 @@ local function host_for(world)
     end,
     kick = function() end,
     notify = function() end,
-    to_client = function() end,
+    to_client = function(player, name, payload)
+      world.to_clients[#world.to_clients + 1] = { player = player, name = name, payload = payload }
+    end,
     to_server = function() end,
     log = function(level, message)
       world.logs[#world.logs + 1] = { level = level, message = message }
@@ -406,6 +411,10 @@ local function boot_mock()
     assert(core.players.connected(n))
     return n
   end
+  world.place = function(n, at)
+    p.positions[n] = at
+  end
+  world.from_client = p.from_client
   world.finish = function()
     rawset(_G, "rpf", nil)
   end
@@ -454,6 +463,10 @@ local function boot_fivem()
     driver.connect_player(n)
     return n
   end
+  world.place = function(n, at)
+    driver.positions[n] = at
+  end
+  world.from_client = driver.from_client
   world.stop_resource = driver.stop_resource
   world.finish = function()
     for key in pairs(_G) do
@@ -499,6 +512,12 @@ local function boot_gmod()
   end
   world.join = function(n)
     return fake:connect_player(n, "Player " .. n, string.format("765611980000%05d", n))
+  end
+  world.place = function(n, at)
+    fake.players[n].pos = at
+  end
+  world.from_client = function(n, name, payload)
+    fake:from_client(n, name, payload)
   end
   world.finish = function()
     fake:uninstall()

@@ -102,6 +102,21 @@ function ToClients.to_client(player, name, payload) end
 ---@param handler fun(player: rpf.PlayerHandle, payload: string) Called for each message. The payload is hostile input.
 function ToClients.on_client(name, handler) end
 
+---What the engine can do with the game world for addons (J3), each a
+---function, or `false` where this adapter does not support it: the core
+---never branches on the engine, so an engine difference is one of these.
+---`rpf.api.capabilities()` tells addons which are there.
+---@class rpf.platform.World
+---@field capabilities rpf.Capabilities What it can do.
+
+---The game-world capabilities an adapter declares (J3). A capability not
+---supported is `false`, never missing, so an adapter says so on purpose.
+---@class rpf.Capabilities
+---@field position (fun(player: rpf.PlayerHandle): { x: number, y: number, z: number }?)|false A player's position in the world, in the engine's units, or nil while they have none (not spawned).
+---@field model false Spawning and placing models: J4's (#81), unsupported until then.
+---@field zone false Zones a player is in: J4's, unsupported until then.
+---@field entity false A record's entity in the world: J4's, unsupported until then.
+
 ---Everything the game-server half of the core needs from its engine.
 ---`rpf.start_server` refuses a table missing any of it.
----@class rpf.ServerPlatform: rpf.platform.Engine, rpf.platform.Transport, rpf.platform.Http, rpf.platform.Clock, rpf.platform.Storage, rpf.platform.Random, rpf.platform.Thread, rpf.platform.Players, rpf.platform.ToClients, rpf.platform.Log, rpf.platform.Api
+---@class rpf.ServerPlatform: rpf.platform.Engine, rpf.platform.Transport, rpf.platform.Http, rpf.platform.Clock, rpf.platform.Storage, rpf.platform.Random, rpf.platform.Thread, rpf.platform.World, rpf.platform.Players, rpf.platform.ToClients, rpf.platform.Log, rpf.platform.Api

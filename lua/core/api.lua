@@ -314,6 +314,37 @@ if facade then
   }, "rpf.ops")
 end
 
+local world = rpf.world
+if world then
+  ---Which game-world capabilities this engine supports.
+  ---@return table<string, boolean> supported By name.
+  surface.capabilities = function()
+    return world.capabilities()
+  end
+  surface.world = freeze({
+    position = function(player)
+      return world.position(player)
+    end,
+  }, "rpf.world")
+end
+
+local interactions = rpf.interactions
+if interactions then
+  if rpf.players then
+    surface.interactions = freeze({
+      register = function(name, handler)
+        return interactions.register(name, handler)
+      end,
+    }, "rpf.interactions")
+  else
+    surface.interactions = freeze({
+      send = function(name, payload)
+        return interactions.send(name, payload)
+      end,
+    }, "rpf.interactions")
+  end
+end
+
 local players = rpf.players
 if players then
   surface.players = freeze({
