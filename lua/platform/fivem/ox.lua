@@ -29,6 +29,7 @@
 ---@field MAX_UNANSWERED integer The most requests a client has open to the server over `lib.callback` at once: ox_lib keeps each until its answer comes and never expires one sent with a callback, so past this a request is answered with nothing rather than left in its table.
 ---@field MINIMUM string The oldest release the adapter accepts: the one it is built and type-checked against (`dev/fivem-natives`), which also closes a hole in ox_lib's callbacks that let one player answer what the server asked another, for every resource on the server that uses them.
 ---@field RELEASES_URL string Where an owner gets it.
+---@field PRECISION integer How many decimal places a number field takes: ox_lib's number input takes whole numbers unless told, and `rpf.ui` takes any number.
 ---@field MENU_ID string The context menu id addons' menus are registered under: one at a time, as `rpf.ui` allows.
 ---@field WATCH_MS integer How often an open menu checks it is still the one on show, since ox_lib says nothing when another resource's menu replaces it.
 ---@field ui rpf.ClientUi The UI an addon shows, for the client platform.
@@ -39,6 +40,7 @@ ox.MINIMUM = "3.40.0"
 ox.MAX_UNANSWERED = 256
 ox.RELEASES_URL = "https://github.com/overextended/ox_lib/releases"
 ox.MENU_ID = "rpf_menu"
+ox.PRECISION = 6
 ox.WATCH_MS = 1000
 
 ---The three numbers of a `MAJOR.MINOR.PATCH` version, anything after them
@@ -216,7 +218,11 @@ end
 ---@return table row The row, as `lib.inputDialog` takes it.
 local function row(field)
   if field.kind == "number" then
-    return { type = "number", label = field.label, placeholder = field.placeholder, default = field.default, required = field.required, min = field.min, max = field.max }
+    -- `precision` is read by ox_lib's page, though its annotations leave it
+    -- out.
+    local number_row = { type = "number", label = field.label, placeholder = field.placeholder, default = field.default, required = field.required, min = field.min, max = field.max }
+    number_row.precision = ox.PRECISION
+    return number_row
   elseif field.kind == "checkbox" then
     return { type = "checkbox", label = field.label, checked = field.default, required = field.required }
   elseif field.kind == "select" then
@@ -307,9 +313,12 @@ local function input(spec, done)
   end)
 end
 
----Whether the progress bar on show is this adapter's, so `close` never
----cancels another resource's.
-local progress_ours = false
+---The progress bar of this adapter's on show, if one is: a token per bar,
+---so `close` never cancels another resource's, and a bar that ends late
+---(ox_lib finishes a cancel on its next tick) never clears the one that
+---replaced it.
+---@type table?
+local progress_ours = nil
 
 ---A progress bar, over `lib.progressBar`, which waits on a thread of its
 ---own: true when it ran to its end, anything else (cancelled, interrupted)
@@ -324,9 +333,12 @@ local function progress(spec, done)
       done(false)
       return
     end
-    progress_ours = true
+    local mine = {}
+    progress_ours = mine
     local completed = lib.progressBar({ duration = spec.duration_ms, label = spec.label, canCancel = spec.cancel, useWhileDead = false })
-    progress_ours = false
+    if progress_ours == mine then
+      progress_ours = nil
+    end
     done(completed == true)
   end)
 end
@@ -342,7 +354,7 @@ local function close(kind)
     end
   elseif kind == "input" then
     lib.closeInputDialog()
-  elseif kind == "progress" and progress_ours and lib.progressActive() then
+  elseif kind == "progress" and progress_ours ~= nil and lib.progressActive() then
     lib.cancelProgress()
   end
 end

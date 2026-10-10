@@ -661,6 +661,7 @@ function fivem.client(env, host, seed, convars)
   ---@field open_context string? The context menu on show, as `lib.getOpenContextMenu` reports it.
   ---@field dialog { heading: string, rows: table[], options: table?, answer: fun(values: table?) }? The input dialog on show; `answer` is the player submitting (or nil, cancelling).
   ---@field bar { data: table, finish: fun(completed: boolean?) }? The progress bar on show; `finish` is it ending.
+  ---@field bar_ending { data: table, finish: fun(completed: boolean?) }? A bar cancelled, which ends on the next tick.
   ---@field pick fun(n: integer) The player picks the open context menu's `n`th option.
   ---@field timers table[] The timers pending, as the mock platform keeps them.
   ---@field close_context fun() The player closes the open context menu.
@@ -736,9 +737,16 @@ function fivem.client(env, host, seed, convars)
   env.lib.progressActive = function()
     return driver.bar and true or nil
   end
+  -- As ox_lib's: a cancelled bar is no longer active at once, but ends, and
+  -- lets the next start, only on the next tick.
   env.lib.cancelProgress = function()
-    assert(driver.bar, "No progress bar is active")
-    driver.bar.finish(false)
+    local bar = assert(driver.bar, "No progress bar is active")
+    driver.bar = nil
+    driver.bar_ending = bar
+    env.Citizen.SetTimeout(0, function()
+      driver.bar_ending = nil
+      bar.finish(false)
+    end)
   end
   -- One dialog and one bar at a time, as ox_lib's: another dialog while one
   -- is on show answers nil at once, and another bar waits for the one on
@@ -760,9 +768,9 @@ function fivem.client(env, host, seed, convars)
     return env.Citizen.Await(answer)
   end
   env.lib.progressBar = function(data)
-    while driver.bar do
+    while driver.bar or driver.bar_ending do
       local before = env.promise.new()
-      local running = assert(driver.bar)
+      local running = assert(driver.bar or driver.bar_ending)
       local finish = running.finish
       running.finish = function(completed)
         finish(completed)
