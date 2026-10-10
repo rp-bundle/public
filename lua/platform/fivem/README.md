@@ -13,7 +13,9 @@ character screens. What any adapter must do is in
 | `rpf-ws` | `ws-shim/` | The portal websocket, in FiveM's JS runtime, bundled with `ws` into one file |
 
 `dev/fivem-resources [out]` assembles both (default `target/fivem/`), and CI
-uploads them as the `fivem-resources` artifact. A server owner needs no
+uploads them as the `fivem-resources` artifact. A release ships them as
+`rpf-fivem-<version>.zip`, both inside one `[rpf]` folder
+(`dev/release-addon`, [Deployment](../../../docs/deployment.md#the-game-server-release)). A server owner needs no
 `npm install`: the shim is one bundled file. `rpf` declares
 `dependency "rpf-ws"`, so FiveM starts the shim first and stops `rpf` with
 it. `dev/fivem-resources --dev` also adds `dev.lua`, the smoke test's
@@ -21,7 +23,10 @@ console commands (Testing, below); a release never has it.
 
 ## Installing
 
-Copy both folders into the server's `resources/`, then in `server.cfg`:
+Unzip a release's `rpf-fivem-<version>.zip` into the server's `resources/`,
+which gives it one `[rpf]` folder (FXServer finds resources inside a
+bracketed folder, and starts only what `server.cfg` ensures), or copy both
+folders of a `dev/fivem-resources` build there. Then in `server.cfg`:
 
 ```
 set rpf_url "wss://portal.example/ws"

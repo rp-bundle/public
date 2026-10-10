@@ -31,6 +31,14 @@ keep the job the portal has.
 
 ### Added
 
+- Game-server releases (H7, #56). A version tag now also publishes a
+  GitHub Release with `rpf-fivem-<version>.zip` (one `[rpf]` folder holding
+  the `rpf` and `rpf-ws` resources, for `resources/`), `rpf-gmod-<version>.zip`
+  (the `rpf` addon, for `garrysmod/addons/`) and their `SHA256SUMS`, with
+  notes naming the protocol the release speaks and the portal releases that
+  serve it. A tag whose version, changelog section, compatibility row,
+  frozen corpus or licence is missing is refused before anything is
+  published ([Deployment](docs/deployment.md#the-game-server-release)).
 - In-game config editing (E6, #48). A linked staff member changes their
   server's settings, items, item bases, employers, departments and jobs in
   game with `rpf.api.config.edit(handle, base_version, changes)`, with the
