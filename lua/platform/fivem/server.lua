@@ -275,9 +275,10 @@ AddEventHandler("onResourceStart", function(name)
 end)
 -- Another resource stopping is its addons' code going: the core stops and
 -- forgets every addon it registered, and takes down what its code set up
--- through the API, so nothing calls into a resource that is gone.
+-- through the API, so nothing calls into a resource that is gone. A bridge's
+-- resource stopping withdraws the bridge.
 AddEventHandler("onResourceStop", function(name)
-  if name == GetCurrentResourceName() then server.stop(transport) else core.addons.unload_origin(name) end
+  if name == GetCurrentResourceName() then server.stop(transport) else core.unload_origin(name) end
 end)
 -- `playerJoining`, not `playerConnecting`: a connecting player's `source`
 -- is a temporary id that changes once they join, and the core keeps the

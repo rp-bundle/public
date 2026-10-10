@@ -107,7 +107,7 @@ Every call through the export names the resource that made it
 (`GetInvokingResource`, `shared.from_caller`), so the core knows whose code
 is calling: an addon registered from a resource is that resource's, what it
 sets up through the API (timers, event handlers, exports) is taken down when
-it stops (`onResourceStop` hands its name to `rpf.addons.unload_origin`),
+it stops (`onResourceStop` hands its name to `rpf.unload_origin`),
 and one addon's resource cannot emit events under another addon's
 namespace. A handler an addon passes (`start`, a timer, an event handler)
 arrives as a function reference, which the core calls like a function.

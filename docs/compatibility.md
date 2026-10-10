@@ -197,6 +197,25 @@ How each moves:
   does not know (writes are patches), and records stay when the addon's
   files leave the server ([Addons](architecture/addons.md#versions-and-schema-evolution)).
 
+## Bridge contract majors
+
+A bridge to an existing RP framework (`lua/bridges/README.md`) is written
+against the **bridge contract**, versioned on its own (K2): the core
+speaks `rpf.bridge.CONTRACT` (1.0 in 0.2.0), and a bridge declares the
+`contract` it was written for.
+
+- **A new optional call bumps the minor.** A bridge written for an older
+  minor does not list it in `supports`, and the facade answers it
+  `refused("unsupported")` there, which addons check with `supports`. A
+  bridge written for a newer minor than the core's may list calls the core
+  does not know: they are left out.
+- **A breaking change bumps the major**, a new call every bridge must
+  implement included, and the core refuses a bridge of another major, with
+  one log line, and holds players at `registered`: the server fails closed
+  rather than half-routed.
+- Bridge, core and portal versions are independent: the contract never
+  crosses the wire, and nothing in the portal names a framework.
+
 ## Changing the wire
 
 ### The freeze

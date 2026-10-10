@@ -13,7 +13,10 @@
 --- - **After it ran** the result replaces `pending`, and stays as a
 ---   tombstone for `WINDOW_MS`. A repeated `op_id` inside the window gets the
 ---   recorded result without running again, so an addon that is not sure a
----   payment went through may simply send it again.
+---   payment went through may simply send it again. An `unavailable` result
+---   is the exception: it says nothing changed because nothing could be
+---   asked, so it is dropped rather than kept, and the same op id may be
+---   sent again once the provider is back.
 --- - **After a restart** an intent still `pending` is `unknown`: it is
 ---   surfaced to staff and never run again, because nobody can tell whether
 ---   it happened. An addon must not grant what it was paying for.
@@ -379,6 +382,15 @@ function ops.run(id, call, durable, run, detail)
   local ran, ok, status, reason = pcall(run)
   if not ran then
     ok, status, reason = nil, "unknown", "it threw part way: " .. tostring(ok)
+  end
+  if ok ~= true and status == "unavailable" then
+    -- Nothing changed: forget the intent, so the same id may run later.
+    entries[id] = nil
+    local forgot, failure = pcall(save, id, true)
+    if not forgot then
+      log("error", "could not take " .. id .. " back out of the journal (" .. tostring(failure) .. ")")
+    end
+    return nil, "unavailable"
   end
   entry.state = "done"
   entry.ok = ok == true

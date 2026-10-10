@@ -34,6 +34,28 @@ keep the job the portal has.
 
 ### Added
 
+- Bridges to existing RP frameworks, part 2 (K2, #92): the bridge
+  contract, 1.0. A bridge registers through `rpf.api.bridge.register`,
+  declaring the domains its framework owns (`provides`) and the facade
+  calls it implements (`supports`); the core refuses one of another
+  contract major or with a field the contract does not allow, with one log
+  line, and activates it once the server's profile is fixed and it
+  provides exactly the external domains. Players then move on to
+  `character_select`, and the bridge reports `character_loaded` (to
+  `active`), `character_unloaded`, `unavailable` and `available`. On a
+  companion server the facade's calls go to the bridge and never to RPF's
+  own modules: an unsupported call is `refused("unsupported")`, an outage
+  `unavailable`, and a command the bridge cannot prove did nothing
+  `unknown`, journaled once per op id as on a native server. A framework's
+  key stays on the game server. On a native profile, a bridge whose
+  framework is running anyway logs an error naming the `domains` setting.
+  On FiveM, a bridge's resource stopping withdraws it. The rules every
+  bridge follows are in `lua/bridges/README.md`, and
+  [Compatibility](docs/compatibility.md#bridge-contract-majors) says how
+  the contract is versioned. A facade command whose result is
+  `unavailable` is no longer kept in the journal, so the same op id may be
+  sent again once the provider is back.
+
 - Bridges to existing RP frameworks, part 1 (K2, #92): an addon pays for a
   change to its own records in one intent. Each facade command
   (`rpf.api.money.debit`, `credit`, `rpf.api.inventory.give`, `take`)

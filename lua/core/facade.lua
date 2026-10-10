@@ -6,9 +6,9 @@
 ---written against them runs unchanged on a native server, where RPF owns
 ---every domain, and on a companion one, where a bridge to an existing
 ---framework does (K2). This module is the native provider: each call goes
----to RPF's own module. K2 adds the bridge, and the routing between the two
----by the server's domain authority (K1), behind these same calls; no addon
----changes.
+---to RPF's own module, or, for a domain the server's framework owns, to
+---the bridge to that framework (`rpf.bridge`, K2): the server's domain
+---authority (K1) picks which, behind these same calls, so no addon changes.
 ---
 ---**Players, not ids.** Every call takes the engine's handle of a player who
 ---has logged in, and acts on the character they have in play: the facade's
@@ -23,9 +23,13 @@
 ---provider could not be asked), or `unknown` (it may have happened; never
 ---retry it, and never grant what it paid for). Nothing throws.
 ---
----**Authority (K1).** A domain the server's framework owns is not RPF's to
----answer: its calls are `unavailable` and `supports` is false until K2's
----bridge provides them, and nothing reaches RPF's own module.
+---**Authority (K1, K2).** A domain the server's framework owns is not RPF's
+---to answer, and nothing of it ever reaches RPF's own module, which would
+---be a second writer of the framework's records. Its calls go to the active
+---bridge: a call the bridge does not support is `unsupported` without
+---reaching it, and while no bridge is active, or its framework is
+---unavailable, every call is `unavailable` without reaching it, and nothing
+---is journaled, so the same op id may be sent again later.
 ---
 ---**Retries.** Every command names an `op_id` from `rpf.ops.new()`, and runs
 ---at most once per id (`rpf.ops`): a repeated id gets the recorded result.
@@ -204,15 +208,78 @@ local function addon_account()
   return rpf.config.paying_account(name)
 end
 
----Whether a domain has a provider on this server: RPF's own module while
----the domain is RPF's (K1). An external one is the framework's, reached
----through its bridge (K2); until that exists it has none, and its calls are
----`unavailable`, nothing changed, rather than ever reaching RPF's module,
----which would be a second writer of the framework's records.
+---Whether a domain is the server's framework's (K1), so its calls go to
+---the bridge (`rpf.bridge`) and never to RPF's own module.
 ---@param domain string The domain.
----@return boolean provided True if a call may go ahead.
-local function provided(domain)
-  return not rpf.domains.is_external(domain)
+---@return boolean external True if they do.
+local function external(domain)
+  return rpf.domains.is_external(domain)
+end
+
+---Reads through the bridge: the call must be supported and reachable, and
+---the player logged in with a character the bridge reported loaded.
+---@param domain string The domain.
+---@param call string The call.
+---@param valid fun(value: any): any The check of what the bridge answers.
+---@param handle any The engine's handle, or nil for a call about no player.
+---@param ... any The call's arguments after the player.
+---@return any value The value.
+---@return string? err `unsupported`, `unavailable`, `not_logged_in`, `no_character`, `not_found`.
+local function bridge_read(domain, call, valid, handle, ...)
+  local fn, status = rpf.bridge.reach(domain, call)
+  if not fn then
+    return nil, status
+  end
+  if handle == nil then
+    return rpf.bridge.read(fn, domain .. "." .. call, valid)
+  end
+  local character, err = rpf.bridge.character(handle)
+  if not character then
+    return nil, err
+  end
+  return rpf.bridge.read(fn, domain .. "." .. call, valid, handle, ...)
+end
+
+---Sends a command through the bridge, once per op id. Whether it may be
+---asked at all is settled before the journal, since nothing changes when
+---it may not: an `unsupported` call, or no bridge or framework to ask. The
+---player is checked inside, as on the native path.
+---@param domain string The domain.
+---@param call string The call.
+---@param handle any The engine's handle.
+---@param op_id string The op id, checked already.
+---@param apply any The addon's change, checked already, or nil.
+---@param detail rpf.ops.Detail What it is, for staff.
+---@param ask fun(fn: function): boolean?, string?, string? Calls the bridge's function with the command's arguments.
+---@return boolean? ok True once done.
+---@return string? status `refused`, `unavailable` or `unknown`.
+---@return string? why For `refused`, why.
+local function bridge_command(domain, call, handle, op_id, apply, detail, ask)
+  local fn, status = rpf.bridge.reach(domain, call)
+  if not fn then
+    if status == "unsupported" then
+      return nil, "refused", "unsupported"
+    end
+    return nil, "unavailable"
+  end
+  local written = {}
+  ---Whether what `apply` wrote is on disk: the framework's own change is
+  ---the framework's to keep.
+  ---@return boolean durable True once it is.
+  local function durable()
+    return applied_on_disk(written)
+  end
+  return rpf.ops.run(op_id, domain .. "." .. call, durable, function()
+    local character, err = rpf.bridge.character(handle)
+    if not character then
+      return nil, "refused", err
+    end
+    local done, failure, why = ask(fn)
+    if not done then
+      return nil, failure, why
+    end
+    return then_apply(apply, written)
+  end, detail)
 end
 
 ---Whether a call works on this server, before an addon offers a player
@@ -222,8 +289,11 @@ end
 ---@return boolean supported True if it works here.
 function facade.supports(domain, call)
   local calls = facade.CALLS[domain]
-  if not calls or not calls[call] or not provided(domain) then
+  if not calls or not calls[call] then
     return false
+  end
+  if external(domain) then
+    return rpf.bridge.supports(domain, call)
   end
   if domain == "money" and (call == "debit" or call == "credit") then
     return addon_account() ~= nil
@@ -235,11 +305,11 @@ end
 
 ---The character a player has in play.
 ---@param handle any The engine's handle.
----@return { key: string, name: string }? character `key` is the character's id here, opaque to an addon; `name` its full name.
----@return string? err `unavailable` where the server's framework owns the domain (K1), `not_logged_in` or `no_character`.
+---@return { key: string, name: string }? character `key` is the character's id here, the framework's own key through a bridge, opaque to an addon either way; `name` its full name.
+---@return string? err `unavailable` where the server's framework owns the domain and no bridge is active, `not_logged_in` or `no_character`.
 function facade.current_character(handle)
-  if not provided("characters") then
-    return nil, "unavailable"
+  if external("characters") then
+    return rpf.bridge.character(handle)
   end
   local character, err = character_of(handle)
   if not character then
@@ -250,11 +320,12 @@ end
 
 -- Money --------------------------------------------------------------------
 
----The account names an addon may use: those every character is opened with.
----@return string[] names In the config's order.
+---The account names an addon may use: those every character is opened
+---with, or those the bridge lists.
+---@return string[] names In the config's order, or the bridge's; empty where none can be had.
 function facade.accounts()
-  if not provided("money") then
-    return {}
+  if external("money") then
+    return bridge_read("money", "accounts", rpf.bridge.accounts_of) or {}
   end
   local out = {}
   for _, account in ipairs(rpf.config.starting_accounts() or {}) do
@@ -267,10 +338,13 @@ end
 ---@param handle any The engine's handle.
 ---@param name any The account's name.
 ---@return number? balance The balance.
----@return string? err `unavailable` where the server's framework owns the domain (K1), `not_logged_in`, `no_character` or `not_found`.
+---@return string? err `unavailable`, `unsupported` (a bridge that does not read balances), `not_logged_in`, `no_character` or `not_found`.
 function facade.balance(handle, name)
-  if not provided("money") then
-    return nil, "unavailable"
+  if external("money") then
+    if type(name) ~= "string" then
+      return nil, "not_found"
+    end
+    return bridge_read("money", "balance", rpf.bridge.balance_of, handle, name)
   end
   local character, err = character_of(handle)
   if not character then
@@ -309,14 +383,20 @@ end
 ---@return string? status `refused`, `unavailable` or `unknown`.
 ---@return string? why For `refused`, why.
 local function move_money(direction, handle, name, amount, reason, op_id, apply)
-  if not provided("money") then
-    return nil, "unavailable"
-  end
   if not valid_entry(amount, reason) or (apply ~= nil and not rpf.callable(apply)) then
     return nil, "refused", "invalid"
   end
   if not rpf.ops.minted_at(op_id) then
     return nil, "refused", "invalid_op"
+  end
+  if external("money") then
+    if type(name) ~= "string" then
+      return nil, "refused", "no_account"
+    end
+    local detail = detail_of(handle, { account = name, amount = amount, reason = reason })
+    return bridge_command("money", direction, handle, op_id, apply, detail, function(fn)
+      return rpf.bridge.command(fn, "money." .. direction, handle, name, amount, reason, op_id)
+    end)
   end
   local on_disk = nil
   local written = {}
@@ -425,10 +505,13 @@ end
 ---@param handle any The engine's handle.
 ---@param item any The item's slug.
 ---@return number? count The count.
----@return string? err `unavailable` where the server's framework owns the domain (K1), `not_logged_in`, `no_character` or `not_found` (an item that is not a string; an item nobody holds counts 0).
+---@return string? err `unavailable`, `unsupported` (a bridge that does not count items), `not_logged_in`, `no_character` or `not_found` (an item that is not a string; an item nobody holds counts 0).
 function facade.count(handle, item)
-  if not provided("inventory") then
-    return nil, "unavailable"
+  if external("inventory") then
+    if type(item) ~= "string" then
+      return nil, "not_found"
+    end
+    return bridge_read("inventory", "count", rpf.bridge.count_of, handle, item)
   end
   local character, err = character_of(handle)
   if not character then
@@ -456,9 +539,6 @@ end
 ---@return string? status `refused`, `unavailable` or `unknown`.
 ---@return string? why For `refused`, why.
 local function move_items(direction, handle, item, count, op_id, apply)
-  if not provided("inventory") then
-    return nil, "unavailable"
-  end
   if
     type(item) ~= "string"
     or type(count) ~= "number"
@@ -471,6 +551,12 @@ local function move_items(direction, handle, item, count, op_id, apply)
   end
   if not rpf.ops.minted_at(op_id) then
     return nil, "refused", "invalid_op"
+  end
+  if external("inventory") then
+    local detail = detail_of(handle, { item = item, count = count })
+    return bridge_command("inventory", direction, handle, op_id, apply, detail, function(fn)
+      return rpf.bridge.command(fn, "inventory." .. direction, handle, item, count, op_id)
+    end)
   end
   local changed = {}
   local written = {}
@@ -560,11 +646,11 @@ end
 
 ---A player's character's job.
 ---@param handle any The engine's handle.
----@return { name: string, employer: string, grade: number, on_duty: boolean }? job `name` the job's slug, `employer` its employer's, `grade` its rank there; nil for no job (or one the config no longer has).
----@return string? err `unavailable` where the server's framework owns the domain (K1), `not_logged_in` or `no_character`.
+---@return { name: string, employer: string?, grade: number, on_duty: boolean }? job `name` the job's slug, `employer` its employer's (absent through a bridge whose framework has none), `grade` its rank there; nil for no job (or one the config no longer has).
+---@return string? err `unavailable`, `unsupported` (a bridge that does not read jobs), `not_logged_in` or `no_character`.
 function facade.current_job(handle)
-  if not provided("jobs") then
-    return nil, "unavailable"
+  if external("jobs") then
+    return bridge_read("jobs", "current", rpf.bridge.job_of, handle)
   end
   local character, err = character_of(handle)
   if not character then

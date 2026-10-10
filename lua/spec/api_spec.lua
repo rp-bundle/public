@@ -125,7 +125,7 @@ describe("rpf.api", function()
         assert.are.same(keys(meta[class]), names, class)
       end
     end
-    assert.are.same({ "addons", "auth", "characters", "config", "events", "interactions", "inventory", "jobs", "money", "ops", "players", "records", "staff", "time", "world" }, sorted((function()
+    assert.are.same({ "addons", "auth", "bridge", "characters", "config", "events", "interactions", "inventory", "jobs", "money", "ops", "players", "records", "staff", "time", "world" }, sorted((function()
       local out = {}
       for part in pairs(parts) do
         if part ~= "" then
@@ -134,12 +134,12 @@ describe("rpf.api", function()
       end
       return out
     end)()))
-    assert.are.same({ "register" }, keys(meta["rpf.api.Bridge"]))
+    assert.are.same({}, reserved, "bridge, the last name reserved, is filled (K2)")
   end)
-  it("reserves bridge and domain_external for Milestone 2 in the meta surface", function()
+  it("documents domain_external and unsupported in the meta surface", function()
     local source = support.read("lua/core/meta/api.lua")
-    assert.truthy(source:find("---@field bridge rpf.api.Bridge? **Reserved for Milestone 2 (K2", 1, true))
     assert.truthy(source:find('---| "domain_external"', 1, true))
+    assert.truthy(source:find('---| "unsupported"', 1, true))
   end)
 
   describe("on the server", function()
@@ -169,12 +169,18 @@ describe("rpf.api", function()
       assert.is_nil(rpf.api.auth)
     end)
 
-    it("keeps bridge free: nil now, and no script can claim it", function()
-      assert.is_nil(rpf.api.bridge)
+    it("has the bridge's surface, which no script can replace", function()
+      assert.is_function(rpf.api.bridge.register)
+      assert.are.equal(rpf.bridge.CONTRACT.major, rpf.api.bridge.CONTRACT_MAJOR)
+      local bridge = rpf.api.bridge
       assert.has_error(function()
+        ---@diagnostic disable-next-line: missing-fields
         rpf.api.bridge = {}
       end)
-      assert.is_nil(rpf.api.bridge)
+      assert.has_error(function()
+        bridge.register = function() end
+      end)
+      assert.are.equal(bridge, rpf.api.bridge)
     end)
 
     it("refuses writes at every level, and hides its metatables", function()
@@ -228,7 +234,7 @@ describe("rpf.api", function()
       for key in pairs(rpf.api) do
         seen[key] = true
       end
-      assert.are.same(sorted({ "VERSION", "engine", "events", "players", "staff", "config", "addons", "records", "time", "characters", "money", "inventory", "jobs", "ops", "world", "interactions", "capabilities" }), keys(seen))
+      assert.are.same(sorted({ "VERSION", "engine", "events", "players", "staff", "config", "addons", "records", "time", "characters", "money", "inventory", "jobs", "ops", "bridge", "world", "interactions", "capabilities" }), keys(seen))
     end)
 
     it("refuses a script emitting a core event, and passes a script's own events", function()

@@ -61,7 +61,7 @@ function.
      function's identity (FiveM's `shared.lua`). Where the engine can say
      which code is calling (a resource), each exported call names it to the
      core (`rpf.addons.from`), and code that stops is unloaded
-     (`rpf.addons.unload_origin`), so an addon's timers and handlers go with
+     (`rpf.unload_origin`), so an addon's timers and handlers go with
      it.
 2. **The client platform table**, every member of `rpf.ClientPlatform`
    (`meta/platform_client.lua`), with the same rules where they overlap.

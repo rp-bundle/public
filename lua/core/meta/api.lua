@@ -50,7 +50,7 @@
 ---@field staff rpf.api.Staff? In-game staff: what a linked staff member may do here, account linking, and staff actions for the audit log. Server only.
 ---@field config rpf.api.Config? Lookups over the config the portal pushed, and linked staff's edits of it in game. Server only.
 ---@field auth rpf.api.Auth? The player's own login. Client only.
----@field bridge rpf.api.Bridge? **Reserved for Milestone 2 (K2, #92).** Always nil in 0.1. It will register the one bridge to an existing RP framework on a companion server (see `docs/architecture/framework-integration.md`). The name is reserved now so no script claims it first.
+---@field bridge rpf.api.Bridge The bridge to an existing RP framework (K2): how a bridge registers, and reports what its framework does. For bridge authors; an addon uses the facade, which routes to it. Server only.
 
 ---The event bus, shared by the core and every script.
 ---
@@ -96,6 +96,9 @@
 ---   its `apply` failed after it went through, or a restart cut it off (at
 ---   start, before any addon has subscribed: `rpf.ops.unknown()` lists those
 ---   too). Staff must resolve it by hand. Server only.
+--- - `domains.bridge(change)`, an `rpf.BridgeState`, when the bridge became
+---   active, its framework unavailable or available again, or it was
+---   withdrawn. Server only.
 --- - `auth.required(prompt)`, an `rpf.AuthPrompt`: show the login form.
 ---   `auth.succeeded(result)`, an `rpf.AuthResult`. `auth.failed(failure)`, an
 ---   `rpf.AuthFailure`. `auth.password_change_required(change)`, an
@@ -1293,19 +1296,65 @@ function Auth.api_token() end
 ---@field username string The username that was used.
 ---@field message string? The portal's message, written for the player.
 
----**Reserved for Milestone 2 (K2, #92).** Nothing implements it in 0.1, and
----`rpf.bridge` is nil. On a companion server a bridge to an existing RP
----framework will register here, declaring which domains the framework owns
----(`provides`) and which facade calls it implements (`supports`). See
----`docs/architecture/framework-integration.md`.
+---The bridge to an existing RP framework (K2, `docs/architecture/framework-integration.md`).
+---On a companion server the framework owns characters, money, items and
+---jobs, and one bridge, a package beside RPF (`lua/bridges/<framework>/`),
+---reaches it through its public API: it registers its contract here, and
+---reports what the framework does through the lifecycle calls. Addons never
+---call these: the facade (`rpf.money`, …) routes to the bridge.
+---
+---The core accepts the bridge only if its `contract.major` is this core's
+---and its `provides` is exactly the domains the server's profile leaves to
+---the framework; until then players stay at `registered`. Once the profile
+---is fixed and fits, the bridge is active: its `start` runs, and each
+---logged-in player moves to `character_select`, the bridge's cue to show
+---the framework's character selection. On FiveM only the resource that
+---registered the bridge may report for it, and that resource stopping
+---withdraws it. `rpf.BridgeDefinition` is the table a bridge registers;
+---`lua/bridges/README.md` states the rules a bridge follows.
+---
+---**Server only.**
 ---@class rpf.api.Bridge
+---@field CONTRACT_MAJOR integer The bridge contract's major this core speaks: a bridge written for another is refused.
+---@field CONTRACT_MINOR integer The contract's minor: a bridge written for a later one may list calls this core leaves out.
 local Bridge = {}
 
----Registers the one bridge for this server. Milestone 2 (K2).
----@param bridge table The bridge: `name`, `version`, `contract`, `provides`, `supports`, `start` and `stop`.
----@return boolean accepted False if the contract major or `provides` does not match this server's config.
----@return string? err Why.
+---Registers the one bridge for this server. A refusal is logged once and
+---changes nothing.
+---@param bridge rpf.BridgeDefinition The bridge.
+---@return boolean? ok True once registered: active, or waiting for the profile.
+---@return "invalid"|"contract"|"registered"|nil err `invalid` for a field the contract does not allow (the third value names it), `contract` for another major, `registered` when a bridge is already.
+---@return string? field For `invalid`, which field.
 function Bridge.register(bridge) end
+
+---Reports that a player's framework character is loaded: the player moves
+---to `active`. Report the same character again to change its name; another
+---key is a switch, through `character_select`.
+---@param player any The engine's handle.
+---@param character rpf.BridgeCharacter The character: the framework's key and its name.
+---@return boolean? ok True once the player is active with it.
+---@return "forbidden"|"inactive"|"invalid"|"not_found"|"not_registered"|nil err `forbidden` from code other than the bridge's, `inactive` while it is not active, `invalid` for a key or name that is not one, `not_found` for a player not here, `not_registered` for one who has not logged in to RPF (the framework loaded a character past RPF's gate; logged).
+function Bridge.character_loaded(player, character) end
+
+---Reports that a player's framework character is unloaded: the player
+---goes back to `character_select`.
+---@param player any The engine's handle.
+---@return boolean? ok True once they are.
+---@return "forbidden"|"inactive"|"not_found"|"no_character"|nil err Why not.
+function Bridge.character_unloaded(player) end
+
+---Reports that the framework cannot be asked (its resource stopped):
+---every facade call is `unavailable`, without reaching the bridge, until
+---`available`. Report its characters unloaded as the framework does.
+---@param reason string? Why, for the log.
+---@return boolean? ok True.
+---@return "forbidden"|"inactive"|nil err `inactive` when no bridge is registered.
+function Bridge.unavailable(reason) end
+
+---Reports that the framework can be asked again.
+---@return boolean? ok True.
+---@return "forbidden"|"inactive"|nil err Why not.
+function Bridge.available() end
 
 ---Refusals for a domain an existing framework owns on this server (K1, K2),
 ---and for a call nobody implements here. RPF's own modules answer
@@ -1315,3 +1364,102 @@ function Bridge.register(bridge) end
 ---@alias rpf.api.Refusal
 ---| "domain_external" # The domain (`characters`, `money`, `inventory`, `jobs`) is owned by an existing framework on this server, so RPF's own operation on it is refused. Use the facade, which routes to the bridge.
 ---| "unsupported" # The active provider does not implement this call. Check `supports` first.
+
+-- The bridge contract (K2, #92), version 1.0: the table a bridge to an
+-- existing RP framework passes to `rpf.bridge.register`, and the calls the
+-- core makes into it. `lua/bridges/README.md` states the rules a bridge
+-- follows, and `docs/architecture/framework-integration.md` why.
+--
+-- Every function in `rpf.BridgeDefinition` is the bridge's, called by the core. Each takes the
+-- engine's handle of a player the core has already checked is logged in
+-- with a character the bridge reported loaded, and nothing in it may throw
+-- on purpose: a read that throws is `unavailable`, and a command that throws
+-- is `unknown`, since the framework may have changed something first.
+
+---What a bridge registers (`rpf.bridge.register`). Checked whole: a field
+---that is not what the contract allows refuses the bridge, with one line in
+---the server's log naming it.
+---
+---```lua
+----- `qbx` stands for the framework's public API, as the bridge reaches it.
+---local bridge = {
+---  name = "qbox",
+---  version = "1.0.0",
+---  contract = { major = 1, minor = 0 },
+---  provides = { "characters", "money", "inventory", "jobs" },
+---  supports = { "money.accounts", "money.balance", "money.debit", "money.credit", "jobs.current" },
+---  tested_with = { "1.21" },
+---  running = function() return qbx.started(), qbx.version() end,
+---  money = {
+---    accounts = function() return { "cash", "bank" } end,
+---    balance = function(player, account) return qbx.get_money(player, account) end,
+---    debit = function(player, account, amount, reason)
+---      if qbx.get_money(player, account) < amount then return nil, "refused", "insufficient_funds" end
+---      if not qbx.remove_money(player, account, amount, reason) then return nil, "unknown" end
+---      return true
+---    end,
+---  },
+---}
+---rpf.bridge.register(bridge)
+---```
+---@class rpf.BridgeDefinition
+---@field name string The bridge's name, `[a-z][a-z0-9_]*`, at most 32 bytes: the framework it reaches, in the log.
+---@field version string The bridge's own release, for the log. Independent of the core's and the portal's.
+---@field contract { major: integer, minor: integer } The contract it was written for: `rpf.bridge.CONTRACT` when written. A major this core does not speak refuses it; a later minor's calls it lists are left out.
+---@field provides rpf.DomainName[] **Authority**: the domains whose records its framework owns. Must be exactly the domains the server's profile marks external, or the bridge stays inactive and players stay at `registered`.
+---@field supports string[]? **Capability**: the facade calls it implements, as `<domain>.<call>` (`money.debit`). Each needs its function below, in a domain it provides. A call it does not list is `refused("unsupported")` without reaching it. `characters.current` is never listed: the core answers it from `character_loaded`.
+---@field tested_with string[]? The framework versions it was tested against; `1.21` covers `1.21.3`. Outside them the core logs a warning, never refuses.
+---@field running fun(): boolean, string? Whether its framework is running, and its version if it can tell. Asked on a native profile, where a running framework is a second economy the log says so of, and on a companion one, for `tested_with`.
+---@field start fun()? Runs once the bridge is active: the profile is fixed and fits. Report every character its framework already has loaded here, with `character_loaded`.
+---@field stop fun(reason: string)? Runs when the core stops using the bridge while its code still runs (its `start` threw).
+---@field money rpf.BridgeMoney? The money calls it supports.
+---@field inventory rpf.BridgeInventory? The item calls it supports.
+---@field jobs rpf.BridgeJobs? The job call it supports.
+
+---A domain of the profile.
+---@alias rpf.DomainName
+---| "characters" # Characters, and which one a player has in play.
+---| "money" # Accounts and their balances.
+---| "inventory" # Items.
+---| "jobs" # Employment and duty.
+
+---What a bridge's command answers. `true` once it happened. Otherwise nil
+---and a status, and the status must be true of what the framework did:
+---
+--- - `refused`, and a reason (`insufficient_funds`, `no_space`, …): it
+---   checked before calling the framework, and nothing changed.
+--- - `unavailable`: it could not ask the framework, and nothing changed.
+--- - `unknown`: it called the framework and cannot say what happened (a
+---   framework call that returned an error after it may have written).
+---
+---Only an answer the bridge can prove came before any change may be
+---`refused` or `unavailable`. Anything else is read as `unknown`.
+---@alias rpf.BridgeResult boolean?
+
+---The money calls (`supports` lists the ones implemented).
+---@class rpf.BridgeMoney
+---@field accounts (fun(): string[])? The account names a player's money is in (`cash`, `bank`), at most 32, which addons configure which to use from.
+---@field balance (fun(player: any, account: string): number?, string?)? A balance: a whole amount within `MAX_AMOUNT` either way, or nil and `not_found` for an account the player does not have.
+---@field debit (fun(player: any, account: string, amount: integer, reason: string, op_id: string): rpf.BridgeResult, string?, string?)? Takes money from the player. `amount` is a whole number from 1 to `MAX_AMOUNT`, already checked; `op_id` is the core's, for the framework's own log only: the core runs each op id at most once, and the bridge must not retry.
+---@field credit (fun(player: any, account: string, amount: integer, reason: string, op_id: string): rpf.BridgeResult, string?, string?)? Pays money to the player, as `debit`.
+
+---The item calls.
+---@class rpf.BridgeInventory
+---@field count (fun(player: any, item: string): number?, string?)? How many of an item the player has: a whole number from 0.
+---@field give (fun(player: any, item: string, count: integer, op_id: string): rpf.BridgeResult, string?, string?)? Gives the player units of an item; `refused` with `no_space` if they do not fit.
+---@field take (fun(player: any, item: string, count: integer, op_id: string): rpf.BridgeResult, string?, string?)? Takes units of an item; `refused` with `insufficient` if the player has fewer.
+
+---The job call.
+---@class rpf.BridgeJobs
+---@field current (fun(player: any): { name: string, grade: number, on_duty: boolean, employer: string? }?, string?)? The player's job, or nil for none.
+
+---A loaded character, as a bridge reports it.
+---@class rpf.BridgeCharacter
+---@field key string The framework's own key for it (a `citizenid`): opaque, at most 128 bytes. It stays on this game server: never sent to the portal, never logged.
+---@field name string Its name, as the framework shows it; at most 128 bytes.
+
+---What `domains.bridge` carries.
+---@class rpf.BridgeState
+---@field name string? The bridge.
+---@field state "active"|"unavailable"|"available"|"withdrawn" What changed.
+---@field reason string? Why, where there is a reason.

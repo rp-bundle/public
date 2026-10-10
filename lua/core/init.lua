@@ -40,7 +40,8 @@
 ---@field edits rpf.edits Staff edits of held records: the commands that change a character, an account or a container this server holds (F5).
 ---@field data rpf.data The record calls addons make (J3), which `rpf.api.records` fronts.
 ---@field ops rpf.ops Operation ids, and the journal that runs each facade command once (J3).
----@field facade rpf.facade The domain-neutral facade's native provider: characters, money, items and jobs for addons (J3).
+---@field facade rpf.facade The domain-neutral facade: characters, money, items and jobs for addons, from RPF's own modules or the bridge (J3, K2).
+---@field bridge rpf.bridge The bridge to an existing RP framework on a companion server: its contract, lifecycle and the calls routed to it (K2).
 ---@field world rpf.world The game world through the adapter's capabilities (J3).
 ---@field interactions rpf.interactions Requests a player's client makes to an addon's registered handler (J3).
 ---@field picker rpf.picker The client side of choosing a character.
@@ -50,6 +51,7 @@
 ---@field connection rpf.Client? The running connection, once `start_server` has run.
 ---@field instance_id string? This process's instance id, once `start_server` has run.
 ---@field start_server fun(platform: rpf.ServerPlatform, options: rpf.ServerOptions): rpf.Client Starts the game-server half. Defined below.
+---@field unload_origin fun(origin: any) Forgets what code from an origin set up through the public API, once that code is gone. Defined below.
 ---@field start_client fun(platform: rpf.ClientPlatform, options: rpf.ClientStartOptions?): rpf.ClientPlatform Starts the player-client half. Defined below.
 ---@field publish fun(platform: rpf.ServerPlatform|rpf.ClientPlatform) Publishes the public API through the platform. Defined by `api.lua`, which loads last.
 ---@field api_subscribed_names fun(): integer How many event names hold a script's subscription, for tests. Defined by `api.lua`.
@@ -112,6 +114,7 @@ rpf.files = {
     "edits.lua",
     "data.lua",
     "ops.lua",
+    "bridge.lua",
     "facade.lua",
     "world.lua",
     "interactions.lua",
@@ -182,6 +185,7 @@ function rpf.start_server(platform, options)
   rpf.edits.start()
   rpf.data.start()
   rpf.ops.start(platform)
+  rpf.bridge.start(platform)
   rpf.world.start(platform)
   rpf.interactions.serve(platform)
   rpf.config.restore(platform)
@@ -189,6 +193,16 @@ function rpf.start_server(platform, options)
   rpf.publish(platform)
   rpf.connection:start()
   return rpf.connection
+end
+
+---Forgets what code from an origin set up through the public API, because
+---that code is gone (on FiveM, its resource stopped): every addon it
+---registered (`rpf.addons.unload_origin`), and the bridge, if it registered
+---it (`rpf.bridge.unload_origin`). The adapter calls this, one line.
+---@param origin any The origin, as the adapter names it.
+function rpf.unload_origin(origin)
+  rpf.addons.unload_origin(origin)
+  rpf.bridge.unload_origin(origin)
 end
 
 ---Options for `rpf.start_client`.
