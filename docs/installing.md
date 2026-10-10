@@ -155,7 +155,9 @@ gap is qbx_core's to do.
    `gmsv_gwsockets_linux64.dll` on a 64-bit Linux one, and the `win32` or
    `linux` build on a 32-bit server.
 2. Download `rpf-gmod-<version>.zip` from the release and unzip it into
-   `garrysmod/addons/`. You get one folder, `rpf`.
+   `garrysmod/addons/`. You get two folders: `rpf`, the framework, and
+   `rpf_darkrp`, the bridge to DarkRP. Delete `rpf_darkrp` unless the
+   server runs DarkRP (Beside DarkRP, below).
 3. Paste the Garry's Mod lines from the portal into `garrysmod/cfg/server.cfg`:
 
    ```
@@ -174,8 +176,58 @@ through the `rpf` global ([the platform adapters](../lua/platform/README.md)).
 
 ### Upgrading
 
-Replace the `addons/rpf` folder with the new release's and restart the
-server. GWSockets and `server.cfg` stay as they are.
+Replace the `addons/rpf` folder with the new release's, and
+`addons/rpf_darkrp` too if you run it, and restart the server. GWSockets
+and `server.cfg` stay as they are.
+
+### Beside DarkRP
+
+A server already running [DarkRP](https://github.com/FPtje/DarkRP) can keep
+it. DarkRP goes on owning money and jobs, and the framework adds its player
+accounts and login, moderation, the staff portal and addons, without
+characters or items of its own. This is the **companion** profile, and the
+release's `rpf_darkrp` addon is the bridge between them
+([the bridge](../lua/bridges/darkrp/README.md)). It was tested with DarkRP
+2.7.0, and logs a warning on another version.
+
+1. In the portal, on the server's **Settings** page, set **Profile** to
+   **Companion**. The game server takes it at its next start, and the page
+   says "Pending restart" until then.
+2. Keep both folders from the zip in `garrysmod/addons/`: `rpf` and
+   `rpf_darkrp`. Nothing in DarkRP or `darkrpmodification` changes.
+3. Restart the server.
+
+DarkRP has no characters, so a player's character is their DarkRP data,
+under their SteamID64: once they have logged in to the framework and
+DarkRP has loaded their wallet, they are in play. Until then they are held
+out of DarkRP's play: they stay dead on the login screen, cannot change
+team, use DarkRP's commands (chat or the F4 menu), vote or drop from their
+pocket, are paid no salary, cannot be heard, and other players cannot
+demote, want, warrant or put a hit on them. When DarkRP cannot load a
+player's data (its database is down), it plays on without saving for them,
+so the framework keeps them held and says so in the console. A map change ends the session on both
+sides: everyone logs in again (silently, with their remember token) and
+DarkRP loads their data again.
+
+What the hold does not cover, because nothing public in DarkRP or Garry's
+Mod would let it:
+
+- **DarkRP's tip jar.** Its donation asks no hook, so a modified client of
+  a player who has not logged in yet, standing where they joined within
+  100 units of someone's tip jar, can donate from their DarkRP wallet. Keep
+  tip jars away from where players spawn.
+- **DarkRP's hookless commands that move nothing:** answering a question
+  put to the player, signing a letter, a gesture, the job model they prefer.
+- **Admin commands.** A player in an admin usergroup can use FAdmin, ULX,
+  SAM or another admin mod before logging in to the framework, as on any
+  server. The framework's own staff permissions still need the login.
+- **Other addons' own commands and menus.** Those that act through
+  DarkRP's commands or Garry's Mod's sandbox actions are held; those that
+  act on a player some other way are each addon's to gate.
+- **Another addon's hook answering first.** Garry's Mod runs hooks in no
+  fixed order, so an addon that answers `PlayerSpawn`, `PlayerDeathThink`
+  or one of DarkRP's refusal hooks before the bridge decides that one. A
+  player spawned that way is taken out again within a second.
 
 ## The first connection
 
@@ -304,6 +356,36 @@ Ensure it after `rpf`, and run `ensure rpf-qbox` again after a
 **`[rpf-qbox] error: RPF refused the bridge: …`**: the bridge is not one
 this release of the framework takes, usually a bridge from another
 release. Install the `[rpf]` folder of one release whole.
+
+### Beside DarkRP
+
+These are the bridge's lines (`[error] rpf_darkrp:`) and the framework's own
+lines about it.
+
+**`rpf_darkrp: DarkRP could not load …'s data, so they stay out of play`**:
+DarkRP's database query for that player failed, so DarkRP itself saves
+nothing for them this session. They stay dead on the login screen. Fix
+DarkRP's database connection (MySQL's settings in `darkrpmodification`),
+and have them rejoin.
+
+**`rpf_darkrp: DarkRP is not the gamemode, …`**: `rpf_darkrp` is installed
+on a server running another gamemode. Remove the folder, or run DarkRP.
+Players are still held until the framework has them in play.
+
+**``rpf.bridge: the darkrp bridge's framework is running, and this server's `domains` setting is native, …``**:
+the server's profile is native while DarkRP runs, so the framework and
+DarkRP each keep an economy. Set the profile to **Companion** and restart,
+or remove `rpf_darkrp` and DarkRP.
+
+**`rpf.bridge: the darkrp bridge was tested against 2.7, and its framework is …`**
+(a warning): the bridge runs, but this DarkRP version was not tested with it.
+
+**`rpf_darkrp: RPF is not running …`**: the `rpf` addon is missing or
+refused to start; its own line above says why. Nothing is held then.
+
+**`rpf_darkrp: RPF refused the bridge: …`**: the bridge is not one this
+release of the framework takes, usually a bridge from another release.
+Install both folders of one release.
 
 ### When it connects, on either engine
 

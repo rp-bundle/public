@@ -339,8 +339,11 @@ Addons move money and items only through one set of calls, which work the
 same whoever owns those domains on the server: RPF itself, or an existing
 framework such as Qbox or DarkRP, through its bridge. They take the
 player's engine handle and act on the character they have in play. Through
-a bridge, the character's `key` is the framework's own (a `citizenid`):
-keep it on the game server, never in a record's field.
+a bridge, the character's `key` is the framework's own (Qbox's
+`citizenid`, DarkRP's SteamID64): keep it on the game server, never in a
+record's field. Ask `rpf.<domain>.supports(call)` before offering a player
+anything that needs it: under DarkRP, for one, no `inventory` call works,
+and the only account is `wallet`.
 
 ```lua
 local op = rpf.ops.new() -- mint once per purchase, and keep it with the purchase
