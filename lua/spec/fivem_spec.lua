@@ -308,14 +308,20 @@ describe("the FiveM adapter", function()
       assert.is_falsy(line:find("sk_secret", 1, true), line)
     end)
 
-    it("refuses to start with OneSync off, and says how to turn it on", function()
-      local convars = { onesync = "off" }
-      for name, value in pairs(CONVARS) do
-        convars[name] = value
+    it("refuses to start unless OneSync is on, legacy included, and says how to set it", function()
+      for _, mode in ipairs({ "off", "legacy" }) do
+        local convars = { onesync = mode }
+        for name, value in pairs(CONVARS) do
+          convars[name] = value
+        end
+        local line = refused(convars)
+        assert.truthy(line:find("OneSync is " .. mode, 1, true), line)
+        assert.truthy(line:find("set onesync on", 1, true), line)
+        for key in pairs(installed) do
+          rawset(_G, key, nil)
+        end
+        installed = {}
       end
-      local line = refused(convars)
-      assert.truthy(line:find("OneSync is off", 1, true), line)
-      assert.truthy(line:find("set onesync on", 1, true), line)
     end)
 
     it("refuses to start on an artifact without routing buckets, and says to update it", function()

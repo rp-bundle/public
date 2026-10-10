@@ -29,7 +29,7 @@ working for its support window ([Compatibility](compatibility.md)).
 
 ## FiveM
 
-You need a current FXServer artifact with **OneSync** on, which it is by
+You need a current FXServer artifact with **OneSync** on (not `legacy`), which it is by
 default on a current server. The framework holds each player in a routing
 bucket of their own until they have logged in, and routing buckets are a
 OneSync feature.
@@ -155,9 +155,9 @@ another native): the artifact is too old for the routing buckets the
 framework needs. Update it from <https://runtime.fivem.net/artifacts/fivem/>
 (txAdmin can do it for you).
 
-**`rpf: OneSync is off, …`**: turn it on with `set onesync on` in
-`server.cfg`, or txAdmin's OneSync setting, and restart the server.
-`legacy` works too.
+**`rpf: OneSync is off, …`** (or `legacy`): set it on with `set onesync on`
+in `server.cfg`, or txAdmin's OneSync setting, and restart the server.
+`legacy` is not enough: routing buckets need OneSync on.
 
 **`rpf: the rpf-ws resource is stopped, …`** (or `missing`, `uninitialized`):
 `rpf-ws` is not running. Check that both folders from the release's `[rpf]`

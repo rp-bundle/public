@@ -175,9 +175,14 @@ function server.refusal(url, api_key)
         .. "); not connecting"
     end
   end
-  if GetConvar("onesync", "off") == "off" then
-    return "rpf: OneSync is off, and holding a player until they log in needs its routing buckets;"
-      .. " turn it on (`set onesync on` in server.cfg, or txAdmin's OneSync setting) and restart the server; not connecting"
+  -- Routing buckets need OneSync `on`: under `legacy` their natives exist
+  -- but do not isolate anyone.
+  local onesync = GetConvar("onesync", "off")
+  if onesync ~= "on" then
+    return "rpf: OneSync is "
+      .. onesync
+      .. ", and holding a player until they log in needs its routing buckets, which only OneSync on has;"
+      .. " set it on (`set onesync on` in server.cfg, or txAdmin's OneSync setting) and restart the server; not connecting"
   end
   local shim = GetResourceState("rpf-ws")
   if shim ~= "started" then

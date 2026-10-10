@@ -47,7 +47,7 @@ The adapter refuses to start, in one console line saying what to do
 `ws://`/`wss://` address or `rpf_api_key` is not shaped like a key
 (`rpf.client.target_problem`, which never repeats the key), when the
 artifact lacks a routing-bucket native (`server.NATIVES`), when OneSync is
-off, or when `rpf-ws` is not started. A refused start hands the core no
+not `on` (routing buckets do not work under `legacy`), or when `rpf-ws` is not started. A refused start hands the core no
 player events either. Those lines are what `docs/installing.md`'s
 troubleshooting section is keyed by.
 
