@@ -20,6 +20,10 @@ local A = "0000000a-0000-4000-8000-00000000000a"
 local B = "0000000b-0000-4000-8000-00000000000b"
 local PLAYER = "00000002-0000-4000-8000-000000000002"
 
+---How long a placement may take to arrive: FiveM makes an entity
+---asynchronously, and the adapter looks for it every 50 ms.
+local SETTLE_MS = 500
+
 ---Each engine's model for the greeters: one record, placed on any engine.
 local MODELS = { fivem = "a_m_y_business_01", gmod = "models/humans/group01/male_02.mdl", mock = "mock_greeter" }
 
@@ -75,12 +79,14 @@ local function install(world, records, enabled)
   local entry = conformance.installed(world.core, manifest(), enabled)
   entry.records = assert(json.decode(assert(json.encode(json.array(records)))))
   world:install({ entry })
+  world:advance(SETTLE_MS)
 end
 
 ---Registers the addon, so it runs once installed.
 ---@param world spec.ConformanceWorld The world.
 local function register(world)
   assert(world.api.addons.register(manifest(), {}))
+  world:advance(SETTLE_MS)
 end
 
 ---Which records are placed, in ref order.
@@ -111,7 +117,7 @@ conformance.run(busted, "World placements", {
       assert.is_nil(world.api.world.placed(GREETER, B), "a hidden greeter is not placed")
 
       install(world, { greeter(A), greeter(B, { shown = false }) })
-      world:advance(world.core.world.CHECK_MS)
+      world:advance(world.core.world.CHECK_MS + SETTLE_MS)
       local again = world.entities()
       assert.are.equal(1, #again)
       assert.are.equal(placed.ref, again[1].ref, "the same entity, not another")
@@ -154,7 +160,7 @@ conformance.run(busted, "World placements", {
       local first = world.entities()[1].ref
       world.delete_entity(first)
       assert.are.same({}, world.entities())
-      world:advance(world.core.world.CHECK_MS)
+      world:advance(world.core.world.CHECK_MS + SETTLE_MS)
       local entities = world.entities()
       assert.are.equal(1, #entities)
       assert.are.equal(A, entities[1].placement)

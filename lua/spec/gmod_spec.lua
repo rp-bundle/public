@@ -483,7 +483,11 @@ describe("the Gmod adapter's placements (J4)", function()
       bucket = 0,
       model = { fivem = "a_m_y_business_01", gmod = "models/Humans/Group01/male_02.mdl" },
     }
-    local ref = assert(server.spawn(spec))
+    local answer
+    server.spawn(spec, function(ref, err)
+      answer = { ref, err }
+    end)
+    local ref = assert(answer[1])
     local entity = world.entities[ref --[[@as integer]]]
     assert.are.equal("prop_dynamic", entity.class)
     assert.is_true(entity.spawned)
@@ -493,8 +497,10 @@ describe("the Gmod adapter's placements (J4)", function()
       server.entity(ref)
     )
     spec.bucket = 2
-    local _, why = server.spawn(spec)
-    assert.are.equal("no_bucket", why)
+    server.spawn(spec, function(ref, err)
+      answer = { ref, err }
+    end)
+    assert.are.same({ nil, "no_bucket" }, answer)
     server.despawn(ref)
     assert.is_nil(world.entities[ref])
   end)

@@ -28,7 +28,10 @@
 ---  it, and so does the stored config the core restores at start, so a game
 ---  server that cannot reach the portal still places what it last had.
 ---- **Reconciling** despawns what is no longer wanted or has changed, then
----  spawns what is wanted and not placed. A record is placed once: the
+---  spawns what is wanted and not placed. A spawn answers through a
+---  callback, at once or later (FiveM makes an entity asynchronously); a
+---  placement waiting for its answer counts as placed, and one taken away
+---  meanwhile has its entity removed as it arrives. A record is placed once: the
 ---  core keys what it placed by record id and spawns only a record with no
 ---  entity, so a reconnect, a config pushed twice or a reload never doubles
 ---  one. It runs on every `config.changed` and `addons.state`.
@@ -65,11 +68,13 @@ local declared = nil
 ---@type rpf.ServerPlatform?
 local platform = nil
 
----What the core has placed, by record id.
+---What the core has placed, or is placing, by record id.
 ---@class rpf.world.Placed
 ---@field type string The record's type.
 ---@field key string What it was placed as (`key_of`), so a change places it again.
----@field ref any The entity's ref.
+---@field ref any? The entity's ref; nil while the adapter is still making it.
+---@field gone boolean? True once it was taken away while still being made, so the entity, when it comes, is removed at once.
+---@field answered boolean? True once the adapter answered the spawn.
 
 ---@type table<string, rpf.world.Placed>
 local placed = {}
@@ -418,9 +423,48 @@ end
 local function take_away(id)
   local entry = placed[id]
   placed[id] = nil
+  if not entry then
+    return
+  end
+  if entry.ref == nil then
+    -- Still being made: its entity is removed when it arrives (`made`).
+    entry.gone = true
+    return
+  end
   local despawn = capability("despawn")
-  if entry and despawn then
+  if despawn then
     call("despawn", despawn, entry.ref)
+  end
+end
+
+---Takes the adapter's answer to a spawn: the entity's ref, or why not. It
+---may come at once or later (FiveM makes an entity asynchronously), and is
+---taken once. A placement taken away meanwhile has its entity removed.
+---@param id string The record's id.
+---@param entry rpf.world.Placed The placement it was asked for.
+---@param ref any The ref, or nil.
+---@param why any Why not, when nil.
+local function made(id, entry, ref, why)
+  if entry.ref ~= nil or entry.answered then
+    return
+  end
+  entry.answered = true
+  local despawn = capability("despawn")
+  if entry.gone or stopped or placed[id] ~= entry then
+    if whole(ref) and despawn then
+      call("despawn", despawn, ref)
+    end
+    return
+  end
+  if whole(ref) then
+    entry.ref = ref
+    failed[id] = nil
+    return
+  end
+  placed[id] = nil
+  if failed[id] ~= entry.key then
+    failed[id] = entry.key
+    log("warn", "rpf: could not place " .. entry.type .. " " .. id .. ": " .. tostring(why or "failed"))
   end
 end
 
@@ -462,14 +506,14 @@ function world.reconcile()
   for _, id in ipairs(order) do
     if not placed[id] then
       local spec = want[id]
-      local key = key_of(spec)
-      local ok, ref, why = call("spawn", spawn, plain(spec))
-      if ok and whole(ref) then
-        placed[id] = { type = spec.type, key = key, ref = ref }
-        failed[id] = nil
-      elseif failed[id] ~= key then
-        failed[id] = key
-        log("warn", "rpf: could not place " .. spec.type .. " " .. id .. ": " .. tostring(why or "failed"))
+      ---@type rpf.world.Placed
+      local entry = { type = spec.type, key = key_of(spec) }
+      placed[id] = entry
+      local ok = call("spawn", spawn, plain(spec), function(ref, why)
+        made(id, entry, ref, why)
+      end)
+      if not ok then
+        made(id, entry, nil, "failed")
       end
     end
   end
@@ -494,8 +538,11 @@ local function check()
   table.sort(ids)
   for _, id in ipairs(ids) do
     local entry = placed[id]
-    local ok, info = call("entity", entity, entry.ref)
-    if not ok or type(info) ~= "table" or info.placement ~= id then
+    local ok, info = true, nil
+    if entry.ref ~= nil then
+      ok, info = call("entity", entity, entry.ref)
+    end
+    if entry.ref ~= nil and (not ok or type(info) ~= "table" or info.placement ~= id) then
       placed[id] = nil
       log("info", "rpf: the entity placed for " .. entry.type .. " " .. id .. " is gone; placing it again")
     end

@@ -44,8 +44,9 @@ function.
      (`false` on an engine with one world); `model` the engine's id for a
      model name; `entity(ref)` a networked entity by the number every
      machine names it by, with `placement`, the record id its tag names;
-     `spawn(spec)` placing a record's ped or object server-authoritatively,
-     tagged with the record's id, returning its ref, reading the record's
+     `spawn(spec, done)` placing a record's ped or object
+     server-authoritatively, tagged with the record's id, handing `done`
+     its ref at once or later (within a bounded wait), reading the record's
      model as a name or as its own engine's entry of a table; and
      `despawn(ref)` removing only an entity it placed (J4). An adapter
      that places entities also removes, as it starts and before the core

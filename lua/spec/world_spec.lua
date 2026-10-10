@@ -115,6 +115,26 @@ describe("rpf.world's placements", function()
     assert.is_false(world.api.capabilities().spawn)
   end)
 
+  it("waits for a spawn that answers later, and removes an entity that arrives after its record went", function()
+    local caps = world.server_platform.capabilities
+    local answers, despawned = {}, {}
+    caps.spawn = function(spec, done)
+      answers[spec.id] = done
+    end
+    caps.despawn = function(ref)
+      despawned[#despawned + 1] = ref
+    end
+    install(world, 2)
+    assert.is_nil(world.api.world.placed("acme_props.prop", "00000001-0000-4000-8000-000000000000"), "not until it answers")
+    answers["00000001-0000-4000-8000-000000000000"](11)
+    assert.are.equal(11, world.api.world.placed("acme_props.prop", "00000001-0000-4000-8000-000000000000"))
+    install(world, 1)
+    answers["00000002-0000-4000-8000-000000000000"](22)
+    assert.are.same({ 22 }, despawned, "its record went while it was being made")
+    answers["00000002-0000-4000-8000-000000000000"](23)
+    assert.are.same({ 22 }, despawned, "an answer is taken once")
+  end)
+
   it("despawns everything and places nothing more once cleared", function()
     install(world, 2)
     assert.are.equal(2, #world.entities())

@@ -150,20 +150,23 @@ end
 ---with its id. A ped is a prop with a character's model, standing in its
 ---default animation, since Gmod's NPCs have AI of their own. Gmod has one
 ---world, so a record in any bucket but 0 is not placed.
+---Gmod makes the entity at once, so `done` is called before this returns.
 ---@param spec rpf.world.Spawn The placement.
----@return integer? ref The entity's index.
----@return string? err `no_model` when the record names no Gmod model, `no_bucket` for a bucket Gmod does not have, `failed` when the engine made nothing.
-function server.spawn(spec)
+---@param done fun(ref: integer?, err: string?) Handed the entity's index, or nil and why: `no_model` when the record names no Gmod model, `no_bucket` for a bucket Gmod does not have, `failed` when the engine made nothing.
+function server.spawn(spec, done)
   local model = gmod_model(spec.model)
   if not model then
-    return nil, "no_model"
+    done(nil, "no_model")
+    return
   end
   if spec.bucket ~= 0 then
-    return nil, "no_bucket"
+    done(nil, "no_bucket")
+    return
   end
   local entity = ents.Create("prop_dynamic")
   if not IsValid(entity) then
-    return nil, "failed"
+    done(nil, "failed")
+    return
   end
   local at = spec.position
   entity:SetModel(model)
@@ -171,7 +174,7 @@ function server.spawn(spec)
   entity:SetAngles(Angle(0, spec.heading, 0))
   entity:Spawn()
   entity:SetNWString(server.PLACEMENT, spec.id)
-  return entity:EntIndex()
+  done(entity:EntIndex())
 end
 
 ---Removes an entity `server.spawn` placed. One without the tag is another
@@ -253,8 +256,8 @@ local platform = {
     entity = function(ref)
       return server.entity(ref)
     end,
-    spawn = function(spec)
-      return server.spawn(spec)
+    spawn = function(spec, done)
+      server.spawn(spec, done)
     end,
     despawn = function(ref)
       server.despawn(ref)

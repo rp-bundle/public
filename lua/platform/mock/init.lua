@@ -267,13 +267,14 @@ function mock.server(host, seed)
       end
       return { position = found.position, model = found.model, bucket = found.bucket, placement = found.placement }
     end,
-    spawn = function(spec)
+    spawn = function(spec, done)
       local model = spec.model
       if type(model) == "table" then
         model = model.mock
       end
       if type(model) ~= "string" or model == "" then
-        return nil, "no_model"
+        done(nil, "no_model")
+        return
       end
       p.entity_seq = p.entity_seq + 1
       p.entities[p.entity_seq] = {
@@ -284,7 +285,7 @@ function mock.server(host, seed)
         kind = spec.kind,
         placement = spec.id,
       }
-      return p.entity_seq
+      done(p.entity_seq)
     end,
     despawn = function(ref)
       p.entities[ref] = nil

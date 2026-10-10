@@ -74,8 +74,8 @@ function server.platform(shim, transport)
       entity = function(ref)
         return server.entity(ref)
       end,
-      spawn = function(spec)
-        return server.spawn(spec)
+      spawn = function(spec, done)
+        server.spawn(spec, done)
       end,
       despawn = function(ref)
         server.despawn(ref)
@@ -176,24 +176,30 @@ end
 
 ---The state bag key every entity the core places carries (J4): `{ id,
 ---type }`, the record it is, replicated so clients can tell a placed entity
----(`client.lua` makes a placed ped passive), and so `server.sweep`
----recognises one a previous run left.
+---(`client.lua` makes a placed ped passive). Only for clients to read: the
+---client that owns an entity can rewrite its state, so the server never
+---takes it as proof of anything.
 server.PLACEMENT = shared.PLACEMENT
-
----The `GlobalState` key holding what this resource has placed, as `{
----handle, model }` entries, for the next run's `server.sweep`. Set
----unreplicated: no client sees it, and none can write it.
-server.PLACED_STATE = "rpf:placed"
 
 ---FiveM's `SetEntityOrphanMode` value that keeps an entity when the
 ---client that owned it leaves, rather than letting the server clean it up.
 server.KEEP_ENTITY = 2
 
+---How long, in milliseconds, between looks for an entity `CreatePed` or
+---`CreateObjectNoOffset` asked for: they are RPC natives, so the handle
+---they return names an entity that exists on the server only once a
+---client has made it.
+server.SPAWN_POLL_MS = 50
+
+---How long a spawn waits for its entity before giving up, removing it if
+---it came after all, and answering `failed`.
+server.SPAWN_TIMEOUT_MS = 5000
+
 ---The model a placement names for FiveM: a string is one model's name, a
 ---table holds one per engine and FiveM reads its `fivem` entry. A number is
 ---taken as a hash already.
 ---@param model any The record's model field.
----@return (integer|string)? model What `CreatePed` and `CreateObjectNoOffset` take, or nil.
+---@return integer? hash What `CreatePed` and `CreateObjectNoOffset` take, or nil.
 local function fivem_model(model)
   if type(model) == "table" then
     model = model.fivem
@@ -208,50 +214,19 @@ local function fivem_model(model)
 end
 
 ---Which record each entity this run placed is, by the server's handle: the
----one proof of what an entity is. The state bag tag is what clients read,
----but the client that owns an entity can overwrite its state, so nothing
----here trusts it. What a run placed is also kept in `GlobalState`, server
----side and unreplicated (`PLACED_STATE`), which a client cannot write and
----which outlives a restart of this resource (but not of the server, whose
----entities go with it), so `server.sweep` knows a previous run's too.
----
----An entry goes when the entity does (`server.removed`, on the engine's
+---one proof of what an entity is, with the model it was made with. An
+---entry goes when the entity does (`server.removed`, on the engine's
 ---`entityRemoved`), whoever removed it, because FiveM recycles handles and
----network ids: an entry outliving its entity would claim the next one.
----Each entry keeps the model it was made with too, so a recycled handle
----that slipped past the event is still not taken for ours.
----@type table<integer, { id: string, model: integer|string }>
+---network ids, and `server.mine` checks the engine still says this
+---resource made the entity and with that model, so a recycled handle is
+---never taken for ours.
+---@type table<integer, { id: string, model: integer }>
 local placed_here = {}
 
----Whether a save of `placed_here` is waiting to go.
-local saving = false
-
----Writes what this run has placed to `GlobalState`, now.
-function server.save()
-  saving = false
-  local list = {}
-  for handle, entry in pairs(placed_here) do
-    list[#list + 1] = { handle = handle, model = entry.model }
-  end
-  table.sort(list, function(a, b)
-    return a.handle < b.handle
-  end)
-  GlobalState:set(server.PLACED_STATE, list, false)
-end
-
----Saves what this run has placed on the next tick, once however many
----placements changed meanwhile: a reconcile places hundreds at once.
-local function save_soon()
-  if saving then
-    return
-  end
-  saving = true
-  Citizen.SetTimeout(0, function()
-    if saving then
-      server.save()
-    end
-  end)
-end
+---Entities asked for and not there yet, by handle: removed by a stop that
+---comes before they are.
+---@type table<integer, true>
+local creating = {}
 
 ---The entity a network id names on the server, or nil.
 ---@param ref any The network id.
@@ -267,19 +242,43 @@ local function by_ref(ref)
   return entity
 end
 
+---Whether the engine says this resource made an entity: what no client and
+---no other script can claim, and what survives this resource restarting.
+---@param entity integer The server's handle.
+---@return boolean ours True if it did.
+local function made_here(entity)
+  return GetEntityScript(entity) == GetCurrentResourceName()
+end
+
+---Sets up an entity that now exists: frozen where the record says, in its
+---routing bucket, kept when its owner leaves (`KEEP_ENTITY`), tagged for
+---clients, and recorded as this run's.
+---@param entity integer The server's handle.
+---@param spec rpf.world.Spawn The placement.
+---@param model integer The model's hash.
+local function set_up(entity, spec, model)
+  SetEntityHeading(entity, spec.heading)
+  SetEntityRoutingBucket(entity, spec.bucket)
+  FreezeEntityPosition(entity, true)
+  SetEntityOrphanMode(entity, server.KEEP_ENTITY)
+  Entity(entity).state:set(server.PLACEMENT, { id = spec.id, type = spec.type }, true)
+  placed_here[entity] = { id = spec.id, model = model }
+end
+
 ---Places a record's ped or object, server-authoritative under OneSync
 ---(`rpf.world`'s `spawn`): created by the server as a networked entity,
----frozen where the record says, in its routing bucket, kept when its owner
----leaves (`KEEP_ENTITY`), and tagged with the record (`PLACEMENT`). OneSync
+---then, once it exists and has a network id, set up (`set_up`). OneSync
 ---streams it to the players in range of it and in its bucket, and it stays
----whether or not anyone is near.
+---whether or not anyone is near. The creation natives are RPC natives, so
+---this waits for the entity, every `SPAWN_POLL_MS` up to
+---`SPAWN_TIMEOUT_MS`, and answers `done` then.
 ---@param spec rpf.world.Spawn The placement.
----@return integer? ref Its network id.
----@return string? err `no_model` when the record names no FiveM model, `failed` when the engine made nothing.
-function server.spawn(spec)
+---@param done fun(ref: integer?, err: string?) Handed its network id, or nil and why: `no_model` when the record names no FiveM model, `failed` when the engine made nothing in time.
+function server.spawn(spec, done)
   local model = fivem_model(spec.model)
   if not model then
-    return nil, "no_model"
+    done(nil, "no_model")
+    return
   end
   local at = spec.position
   local entity
@@ -289,16 +288,51 @@ function server.spawn(spec)
     entity = CreateObjectNoOffset(model, at.x, at.y, at.z, true, true, false)
   end
   if not entity or entity == 0 then
-    return nil, "failed"
+    done(nil, "failed")
+    return
   end
-  SetEntityHeading(entity, spec.heading)
-  SetEntityRoutingBucket(entity, spec.bucket)
-  FreezeEntityPosition(entity, true)
-  SetEntityOrphanMode(entity, server.KEEP_ENTITY)
-  Entity(entity).state:set(server.PLACEMENT, { id = spec.id, type = spec.type }, true)
-  placed_here[entity] = { id = spec.id, model = GetEntityModel(entity) }
-  save_soon()
-  return NetworkGetNetworkIdFromEntity(entity)
+  creating[entity] = true
+  local waited = 0
+  ---Looks for the entity, and sets it up once it is there.
+  local function look()
+    if not creating[entity] then
+      return -- stopped meanwhile, and removed
+    end
+    local ref = DoesEntityExist(entity) and NetworkGetNetworkIdFromEntity(entity) or 0
+    if ref ~= 0 then
+      creating[entity] = nil
+      set_up(entity, spec, model)
+      done(ref)
+      return
+    end
+    if waited >= server.SPAWN_TIMEOUT_MS then
+      -- Deleted whether or not it exists yet: should the engine make it
+      -- after all, the next start's sweep takes it, as this resource's.
+      creating[entity] = nil
+      DeleteEntity(entity)
+      done(nil, "failed")
+      return
+    end
+    waited = waited + server.SPAWN_POLL_MS
+    Citizen.SetTimeout(server.SPAWN_POLL_MS, look)
+  end
+  look()
+end
+
+---The record an entity is, if this run placed it and it is still that
+---entity: in `placed_here`, made by this resource, with its model.
+---@param entity integer The server's handle.
+---@return string? id The record's id.
+function server.mine(entity)
+  local entry = placed_here[entity]
+  if not entry then
+    return nil
+  end
+  if not made_here(entity) or GetEntityModel(entity) ~= entry.model then
+    placed_here[entity] = nil
+    return nil
+  end
+  return entry.id
 end
 
 ---Removes an entity `server.spawn` placed. Any other is another script's,
@@ -308,41 +342,22 @@ function server.despawn(ref)
   local entity = by_ref(ref)
   if entity and server.mine(entity) then
     placed_here[entity] = nil
-    save_soon()
     DeleteEntity(entity)
   end
-end
-
----The record an entity is, if this run placed it and it is still that
----entity: its handle is in `placed_here` with the model it was made with.
----@param entity integer The server's handle.
----@return string? id The record's id.
-function server.mine(entity)
-  local entry = placed_here[entity]
-  if not entry then
-    return nil
-  end
-  if GetEntityModel(entity) ~= entry.model then
-    placed_here[entity] = nil
-    save_soon()
-    return nil
-  end
-  return entry.id
 end
 
 ---Forgets an entity the engine removed, whoever removed it, so its handle
 ---names nothing of ours when FiveM gives it to another entity.
 ---@param entity any The handle, as `entityRemoved` reports it.
 function server.removed(entity)
-  if type(entity) == "number" and placed_here[entity] then
+  if type(entity) == "number" then
     placed_here[entity] = nil
-    save_soon()
   end
 end
 
 ---A networked entity, by its network id (`rpf.world`'s `entity`): where it
 ---is, its model's hash, its bucket, and the record it is if this run placed
----it, from `placed_here`, never from its client-writable tag.
+---it (`server.mine`), never from its client-writable tag.
 ---@param ref any The network id, as a client sent it.
 ---@return { position: { x: number, y: number, z: number }, model: integer, bucket: integer, placement: string? }? entity It, or nil.
 function server.entity(ref)
@@ -359,36 +374,38 @@ function server.entity(ref)
   }
 end
 
----Removes whatever this run placed and still holds, after the core's own
----`clear`, and records that nothing is left: a clean stop leaves nothing
----for the next run's sweep.
+---Removes whatever this run placed or is placing, after the core's own
+---`clear`: a clean stop leaves nothing behind.
 function server.clear()
-  for handle in pairs(placed_here) do
-    if DoesEntityExist(handle) then
-      DeleteEntity(handle)
+  for entity in pairs(placed_here) do
+    if DoesEntityExist(entity) then
+      DeleteEntity(entity)
     end
   end
-  placed_here = {}
-  server.save()
+  -- One still being made may not exist yet; its handle is deleted anyway,
+  -- and if the engine makes it after all, the next start's sweep takes it.
+  for entity in pairs(creating) do
+    DeleteEntity(entity)
+  end
+  placed_here, creating = {}, {}
 end
 
----Removes every entity a previous run of this resource placed and did not
----remove: what a crash, or a stop the engine cut short, left behind. Run
----as the resource starts, before the core places anything, so a restart
----never doubles what was placed. It reads `PLACED_STATE`, which only the
----server writes, never a tag a client could forge onto another resource's
----entity or clear from ours; an entry whose handle now holds another model
----is another entity, and stays.
+---Removes every ped and object an earlier run of this resource made and
+---did not remove: what a crash, or a stop the engine cut short, left
+---behind. Run as the resource starts, before the core places anything, so
+---a restart never doubles what was placed. The engine says which resource
+---made each entity (`GetEntityScript`), which no client can forge and no
+---other script's entity shares, and this resource makes no entity but its
+---placements; a state bag tag is never read.
 function server.sweep()
-  local list = GlobalState[server.PLACED_STATE]
-  for _, entry in ipairs(type(list) == "table" and list or {}) do
-    local handle = type(entry) == "table" and entry.handle
-    if type(handle) == "number" and DoesEntityExist(handle) and GetEntityModel(handle) == entry.model then
-      DeleteEntity(handle)
+  for _, pool in ipairs({ GetAllPeds(), GetAllObjects() }) do
+    for _, entity in ipairs(pool or {}) do
+      if made_here(entity) then
+        DeleteEntity(entity)
+      end
     end
   end
-  placed_here = {}
-  server.save()
+  placed_here, creating = {}, {}
 end
 
 ---The natives the adapter calls that an old FXServer artifact may lack:

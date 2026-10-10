@@ -343,8 +343,7 @@ function fivem.server(env, host, seed, convars)
   ---@field entities table<integer, rpf.mock.FivemEntity> The peds and objects the server created, by handle, until deleted.
   ---@field set_bucket fun(player: integer, bucket: integer) Moves a player to a routing bucket, as another resource would.
   ---@field delete_entity fun(handle: integer) Deletes an entity as any script or the engine would, firing `entityRemoved`.
-  ---@field recycle fun(handle: integer, net: integer, model: any) Gives a handle and network id to a new entity, as FiveM reuses them.
-  ---@field global_state table<string, any> The server's `GlobalState`, as set.
+  ---@field recycle fun(handle: integer, net: integer, model: any, script: string?) Gives a handle and network id to a new entity, as FiveM reuses them, made by `script` (`rpf` unless given).
   local driver = {
     exported = own_exports,
     lockdown = {},
@@ -413,7 +412,10 @@ function fivem.server(env, host, seed, convars)
 
   -- Entities the server creates (J4). Handles start far above any player's
   -- ped (a player's id), and a network id is a different number from its
-  -- handle, as on FiveM, so code that mixes the two up fails here.
+  -- handle, as on FiveM, so code that mixes the two up fails here. The
+  -- creation natives are RPC natives, as on FiveM: the entity exists (and
+  -- has a network id) only on the next tick. Each knows the resource that
+  -- made it (`GetEntityScript`): `rpf`, unless a test says otherwise.
 
   ---A ped or object a fake server created.
   ---@class rpf.mock.FivemEntity
@@ -426,6 +428,9 @@ function fivem.server(env, host, seed, convars)
   ---@field orphan integer? Its orphan mode, as set.
   ---@field net integer Its network id.
   ---@field state table Its state bag, as `Entity(handle).state` reads and sets it.
+  ---@field ready boolean False until the tick after it was asked for: the creation natives are asynchronous.
+  ---@field script string The resource that made it.
+  ---@field hold boolean? Set by a test to keep it from ever becoming ready, as an RPC native whose client never answers.
   driver.entities = {}
   local next_entity = 10000
   local function create(kind, model, x, y, z, heading)
@@ -434,7 +439,7 @@ function fivem.server(env, host, seed, convars)
     function state.set(self, key, value)
       rawset(self, key, value)
     end
-    driver.entities[next_entity] = {
+    local entity = {
       kind = kind,
       model = model,
       position = { x = x, y = y, z = z },
@@ -443,7 +448,15 @@ function fivem.server(env, host, seed, convars)
       frozen = false,
       net = next_entity + 500000,
       state = state,
+      ready = false,
+      script = "rpf",
     }
+    driver.entities[next_entity] = entity
+    p.after(0, function()
+      if not entity.hold then
+        entity.ready = true
+      end
+    end)
     return next_entity
   end
   env.CreatePed = function(_, model, x, y, z, heading)
@@ -453,7 +466,11 @@ function fivem.server(env, host, seed, convars)
     return create("object", model, x, y, z, 0)
   end
   env.DoesEntityExist = function(entity)
-    return driver.entities[entity] ~= nil
+    local found = driver.entities[entity]
+    return found ~= nil and found.ready
+  end
+  env.GetEntityScript = function(entity)
+    return driver.entities[entity].script
   end
   env.DeleteEntity = function(entity)
     driver.delete_entity(entity)
@@ -466,7 +483,7 @@ function fivem.server(env, host, seed, convars)
     end
   end
   -- A handle and network id FiveM gives again, to a new entity.
-  function driver.recycle(handle, net, model)
+  function driver.recycle(handle, net, model, script)
     local state = {}
     function state.set(self, key, value)
       rawset(self, key, value)
@@ -480,6 +497,8 @@ function fivem.server(env, host, seed, convars)
       frozen = false,
       net = net,
       state = state,
+      ready = true,
+      script = script or "rpf",
     }
   end
   env.SetEntityHeading = function(entity, heading)
@@ -501,7 +520,8 @@ function fivem.server(env, host, seed, convars)
     return driver.entities[entity].model
   end
   env.NetworkGetNetworkIdFromEntity = function(entity)
-    return driver.entities[entity].net
+    local found = driver.entities[entity]
+    return found.ready and found.net or 0
   end
   env.NetworkGetEntityFromNetworkId = function(net_id)
     for handle, entity in pairs(driver.entities) do
@@ -531,18 +551,6 @@ function fivem.server(env, host, seed, convars)
   env.GetAllObjects = function()
     return pool("object")
   end
-  -- The server's global state bag: what `GlobalState:set` wrote, kept in
-  -- the driver so a test can set what a previous run left.
-  driver.global_state = driver.global_state or {}
-  env.GlobalState = setmetatable({
-    set = function(_, key, value)
-      driver.global_state[key] = value
-    end,
-  }, {
-    __index = function(_, key)
-      return driver.global_state[key]
-    end,
-  })
   -- Not FiveM's joaat, but a stable number per name, which is all a model
   -- comparison needs.
   env.GetHashKey = function(name)
