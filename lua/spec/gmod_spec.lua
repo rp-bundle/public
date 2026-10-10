@@ -450,6 +450,18 @@ describe("the Gmod adapter's platform members", function()
     assert.is_false(platform.send("{}"))
     assert.is_false(platform.send("{}"))
     assert.are.equal(1, logged(record, "warn", "GWSockets could not send a frame: the socket is gone"))
+
+    -- The next connection is a new one, so it says why again.
+    world:socket_close(socket, "gone")
+    record.time = record.time + 120000
+    world:run_due()
+    local second = record.connects[2].id
+    world:socket_open(second)
+    world.sockets[second].write = function()
+      error("still gone", 0)
+    end
+    assert.is_false(world.core.connection.platform.send("{}"))
+    assert.are.equal(1, logged(record, "warn", "GWSockets could not send a frame: still gone"))
   end)
 
   it("gives up a connection whose Hello cannot be written, and tries again after a backoff", function()

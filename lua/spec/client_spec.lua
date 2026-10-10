@@ -265,6 +265,8 @@ describe("rpf.client", function()
       assert.are.equal(1, #p.connects, "it waits out the backoff first")
 
       p.send = send
+      p.advance(500)
+      assert.are.equal(1, #p.connects, "the backoff is not skipped")
       p.advance(2 * 60 * 1000)
       assert.are.equal(2, #p.connects)
       p.open()
