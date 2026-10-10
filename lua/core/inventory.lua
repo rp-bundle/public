@@ -774,6 +774,25 @@ end
 ---@return rpf.inventory.Error? err Why not.
 ---@return rpf.inventory.Refusal? refusal The broken rule, for `invalid`.
 function inventory.remove(id, item, count, opts)
+  local contents, err, refusal = inventory.plan_remove(id, item, count, opts)
+  if not contents then
+    return nil, err, refusal
+  end
+  return apply(held(id) --[[@as table]], contents)
+end
+
+---What a held container would hold once `remove` took units from it,
+---validated as `remove` would validate it, without changing anything: so a
+---caller taking from several containers can find every refusal before it
+---makes any change (`rpf.facade`).
+---@param id string The container's uuid.
+---@param item string The item's slug.
+---@param count number How many units, a positive integer.
+---@param opts { data: table? }? Which stacks: those with this data (none by default).
+---@return table? contents The contents after, marked as the container's are.
+---@return rpf.inventory.Error? err Why not, as `remove` answers.
+---@return rpf.inventory.Refusal? refusal The broken rule, for `invalid`.
+function inventory.plan_remove(id, item, count, opts)
   opts = opts or {}
   local container = held(id)
   if not container then
@@ -811,7 +830,11 @@ function inventory.remove(id, item, count, opts)
       end
     end
   end
-  return apply(container, contents)
+  local ok, refusal = inventory.check(container, contents)
+  if not ok then
+    return nil, "invalid", refusal
+  end
+  return contents
 end
 
 ---Moves a stack, or some of it, from one held container to another, or

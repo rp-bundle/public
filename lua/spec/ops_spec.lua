@@ -40,10 +40,10 @@ describe("rpf.ops", function()
       runs = runs + 1
       return nil, "refused", "insufficient_funds"
     end
-    assert.are.same({ nil, "refused", "insufficient_funds" }, { rpf.ops.run(id, "money.debit", command) })
-    assert.are.same({ nil, "refused", "insufficient_funds" }, { rpf.ops.run(id, "money.debit", command) })
+    assert.are.same({ nil, "refused", "insufficient_funds" }, { rpf.ops.run(id, "money.debit", nil, command) })
+    assert.are.same({ nil, "refused", "insufficient_funds" }, { rpf.ops.run(id, "money.debit", nil, command) })
     start()
-    assert.are.same({ nil, "refused", "insufficient_funds" }, { rpf.ops.run(id, "money.debit", command) })
+    assert.are.same({ nil, "refused", "insufficient_funds" }, { rpf.ops.run(id, "money.debit", nil, command) })
     assert.are.equal(1, runs)
   end)
 
@@ -51,7 +51,7 @@ describe("rpf.ops", function()
     local id = rpf.ops.new()
     local runs = 0
     -- The command never returns: the process dies inside it.
-    pcall(rpf.ops.run, id, "money.debit", function()
+    pcall(rpf.ops.run, id, "money.debit", nil, function()
       runs = runs + 1
       error({ died = true })
     end)
@@ -66,7 +66,7 @@ describe("rpf.ops", function()
     end
     assert.is_true(warned, "logged for staff")
     assert.are.same({ nil, "unknown" }, {
-      rpf.ops.run(id, "money.debit", function()
+      rpf.ops.run(id, "money.debit", nil, function()
         runs = runs + 1
         return true
       end),
@@ -77,12 +77,12 @@ describe("rpf.ops", function()
   it("answers unknown for a command that throws, and keeps it", function()
     local id = rpf.ops.new()
     assert.are.same({ nil, "unknown" }, {
-      rpf.ops.run(id, "inventory.give", function()
+      rpf.ops.run(id, "inventory.give", nil, function()
         error("half done")
       end),
     })
     assert.are.same({ nil, "unknown" }, {
-      rpf.ops.run(id, "inventory.give", function()
+      rpf.ops.run(id, "inventory.give", nil, function()
         return true
       end),
     })
@@ -90,20 +90,20 @@ describe("rpf.ops", function()
 
   it("refuses a new command when full rather than forget a young result, and makes room only by age", function()
     for _ = 1, rpf.ops.MAX_ENTRIES do
-      assert.is_true(rpf.ops.run(rpf.ops.new(), "money.credit", function()
+      assert.is_true(rpf.ops.run(rpf.ops.new(), "money.credit", nil, function()
         return true
       end))
     end
     local ran = false
     assert.are.same({ nil, "refused", "journal_full" }, {
-      rpf.ops.run(rpf.ops.new(), "money.credit", function()
+      rpf.ops.run(rpf.ops.new(), "money.credit", nil, function()
         ran = true
         return true
       end),
     })
     assert.is_false(ran)
     p.advance(rpf.ops.WINDOW_MS + 1)
-    assert.is_true(rpf.ops.run(rpf.ops.new(), "money.credit", function()
+    assert.is_true(rpf.ops.run(rpf.ops.new(), "money.credit", nil, function()
       return true
     end))
     assert.are.equal(1, rpf.ops.count())
@@ -119,9 +119,37 @@ describe("rpf.ops", function()
   it("refuses an id older than the window, or minted far in the future", function()
     local id = rpf.ops.new()
     p.advance(rpf.ops.WINDOW_MS + 1)
-    assert.are.same({ nil, "refused", "expired_op" }, { rpf.ops.run(id, "money.debit", function() return true end) })
+    assert.are.same({ nil, "refused", "expired_op" }, { rpf.ops.run(id, "money.debit", nil, function() return true end) })
     local ahead = string.format("%d-%s", p.now() + rpf.ops.SKEW_MS + 1000, string.rep("a", 16))
-    assert.are.same({ nil, "refused", "invalid_op" }, { rpf.ops.run(ahead, "money.debit", function() return true end) })
+    assert.are.same({ nil, "refused", "invalid_op" }, { rpf.ops.run(ahead, "money.debit", nil, function() return true end) })
+  end)
+
+  it("records a success on disk only once its change is, and reads it as unknown after a crash before", function()
+    local id = rpf.ops.new()
+    local on_disk = false
+    assert.is_true(rpf.ops.run(id, "money.debit", function()
+      return on_disk
+    end, function()
+      return true
+    end))
+    assert.is_true(rpf.ops.run(id, "money.debit", nil, function() end), "known here at once")
+    local stored = rpf.json.decode(store[rpf.ops.ENTRY_PREFIX .. id])
+    assert.are.equal("pending", stored.state, "but pending on disk until the change is")
+    on_disk = true
+    p.advance(1000)
+    stored = rpf.json.decode(store[rpf.ops.ENTRY_PREFIX .. id])
+    assert.are.equal("done", stored.state)
+
+    -- A second, whose change never reached the disk before the crash.
+    local lost = rpf.ops.new()
+    on_disk = false
+    assert.is_true(rpf.ops.run(lost, "money.debit", function()
+      return on_disk
+    end, function()
+      return true
+    end))
+    start()
+    assert.are.same({ nil, "unknown" }, { rpf.ops.run(lost, "money.debit", nil, function() return true end) })
   end)
 
   it("runs nothing when the intent cannot be written", function()
@@ -130,7 +158,7 @@ describe("rpf.ops", function()
       error("disk full")
     end
     assert.are.same({ nil, "unavailable" }, {
-      rpf.ops.run(rpf.ops.new(), "money.debit", function()
+      rpf.ops.run(rpf.ops.new(), "money.debit", nil, function()
         ran = true
         return true
       end),

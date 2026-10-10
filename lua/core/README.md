@@ -1102,7 +1102,7 @@ authority (K1), behind the same calls. Server only; `rpf.api.characters`,
 | `money.balance(player, account)` | The balance of the character's held account of that name (`rpf.accounts.owned_by`) |
 | `money.debit` / `credit(player, account, amount, reason, op_id)` | One ledger entry between that account and the paying account the setting `economy.addon_account` names: `records.transfer` into it, `accounts.pay` out of it. Without the setting, or with one naming no paying account, `unsupported` |
 | `inventory.count(player, item)` | Plain units (stacks with no data, `inventory.count(id, item, { plain = true })`) across the character's held containers |
-| `inventory.give` / `take(player, item, count, op_id)` | `give` puts every unit in the first container, by name then id, that takes them all (`inventory.add`); `take` checks the plain units are there, then takes from each container in turn (`inventory.remove`) |
+| `inventory.give` / `take(player, item, count, op_id)` | `give` puts every unit in the first container, by name then id, that takes them all (`inventory.add`); `take` checks the plain units are there and works out and validates every container's contents after (`inventory.plan_remove`) before it changes any, so a container that no longer passes its rules refuses the whole take (`invalid_contents`) |
 | `jobs.current(player)` | `{ name, employer, grade, on_duty }` from `rpf.jobs` (the job's slug, its employer's, its rank, duty) |
 | `<domain>.supports(call)` | Whether the call works here: every native call does, except `money.debit` and `credit` without the addon account |
 | `ops.new()` | An op id, `<ms>-<16 hex>`: when it was minted, and the platform's randomness |
@@ -1125,7 +1125,12 @@ never runs. Results go only by age; at `MAX_ENTRIES` (1024) a new command is
 `refused` (`journal_full`) rather than evicting a young result, and an op id
 older than the window is `refused` (`expired_op`), so an old id can never
 pay twice. A command that throws is `unknown`; an intent that cannot be
-written runs nothing and is `unavailable`.
+written runs nothing and is `unavailable`. A success is recorded on disk
+only once its change is (`rpf.sync.flush` queued its report in the
+persisted outbox), tried again each second until then: a crash in between
+would otherwise lose the change while the journal answered a retry `true`.
+Until then the entry is `pending` on disk, which a restart reads as
+`unknown`.
 
 ### Characters (`rpf.characters`, `rpf.picker`)
 

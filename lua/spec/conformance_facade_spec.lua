@@ -226,6 +226,21 @@ conformance.run(busted, "the facade", {
     end,
   },
   {
+    name = "takes nothing when a container on the way no longer passes its rules",
+    run = function(world)
+      local handle = playing(world)
+      local json = world.core.json
+      -- The pockets' contents break a rule they once kept (a limit lowered
+      -- under them): what a take would leave there does not pass, though
+      -- the bag, taken from first, would be fine.
+      world.core.records.entries["container:" .. POCKETS].data.flags =
+        json.array({ json.object({ flag = "max_weight", value = 0 }) })
+      local _, status, why = world.api.inventory.take(handle, "water", 3, world.api.ops.new())
+      assert.are.same({ "refused", "invalid_contents" }, { status, why })
+      assert.are.equal(3, world.api.inventory.count(handle, "water"), "not one unit went")
+    end,
+  },
+  {
     name = "gives a player's job",
     run = function(world)
       local handle = playing(world)

@@ -55,6 +55,14 @@ facade.CALLS = {
 ---The most units one give or take moves: a stack's count is a `u32`.
 local MAX_UNITS = 4294967295
 
+---Whether what a native command changed is on disk: its report queued in
+---the persisted outbox (`rpf.sync.flush`). Until it is, a crash would lose
+---the change, so the journal records the result only then.
+---@return boolean durable True once it is.
+local function durable()
+  return rpf.sync.flush() == true
+end
+
 ---The character a logged-in player has in play.
 ---@param handle any The engine's handle.
 ---@return table? character A copy.
@@ -187,7 +195,7 @@ local function move_money(direction, handle, name, amount, reason, op_id)
   if not rpf.ops.minted_at(op_id) then
     return nil, "refused", "invalid_op"
   end
-  return rpf.ops.run(op_id, "money." .. direction, function()
+  return rpf.ops.run(op_id, "money." .. direction, durable, function()
     local character, err = character_of(handle)
     if not character then
       return nil, "refused", err
@@ -314,7 +322,7 @@ local function move_items(direction, handle, item, count, op_id)
   if not rpf.ops.minted_at(op_id) then
     return nil, "refused", "invalid_op"
   end
-  return rpf.ops.run(op_id, "inventory." .. direction, function()
+  return rpf.ops.run(op_id, "inventory." .. direction, durable, function()
     local character, err = character_of(handle)
     if not character then
       return nil, "refused", err
@@ -340,16 +348,23 @@ local function move_items(direction, handle, item, count, op_id)
     if total < count then
       return nil, "refused", "insufficient"
     end
-    -- Taking units away breaks no container rule, so once the count is
-    -- there each removal below succeeds; one that does not is a bug, and
-    -- `rpf.ops` reports it as unknown.
-    local left = count
+    -- Every container's contents after are worked out and validated
+    -- first, so a container whose contents no longer pass (the catalog
+    -- changed under it) refuses the whole take before any unit goes.
+    local left, after = count, {}
     for i, container in ipairs(containers) do
       local take = math.min(left, plain[i])
       if take > 0 then
-        assert(rpf.inventory.remove(container.id, item, take))
+        local contents = rpf.inventory.plan_remove(container.id, item, take)
+        if not contents then
+          return nil, "refused", "invalid_contents"
+        end
+        after[#after + 1] = { id = container.id, contents = contents }
         left = left - take
       end
+    end
+    for _, change in ipairs(after) do
+      assert(rpf.records.set_contents(change.id, change.contents))
     end
     return true
   end)
@@ -374,7 +389,7 @@ end
 ---@param op_id any From `rpf.ops.new()`.
 ---@return boolean? ok True once taken.
 ---@return string? status `refused`, `unavailable` or `unknown`.
----@return string? why For `refused`: as for `give`, and `insufficient`.
+---@return string? why For `refused`: as for `give`, `insufficient`, and `invalid_contents` for a container whose contents no longer pass its rules (the catalog changed under it).
 function facade.take(handle, item, count, op_id)
   return move_items("take", handle, item, count, op_id)
 end

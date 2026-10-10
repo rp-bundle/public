@@ -145,13 +145,21 @@ end
 ---recorded result; a new one is journaled `pending`, run, and its result
 ---recorded. A command that throws is `unknown`: it may have done part of
 ---its work. Nothing here throws.
+---
+---A success is recorded on disk only once `durable` says the change itself
+---is (a native change's report queued in the persisted outbox): recorded
+---earlier, a crash in between would lose the change while the journal
+---answered a retry `true`. Until then the entry stays `pending` on disk,
+---which a restart reads as `unknown`, and it is tried again each second.
+---Here the result is known at once either way.
 ---@param id any The op id.
 ---@param call string What it is, for the journal and staff.
+---@param durable (fun(): boolean)? Whether the change is on disk yet; nil when the command's own result is the whole of it.
 ---@param run fun(): boolean?, string?, string? The command: true, or nil, a status and a reason.
 ---@return boolean? ok True if it succeeded, now or before.
 ---@return string? status `refused`, `unavailable` or `unknown` when not.
 ---@return string? reason For `refused`, why: the command's own, or `invalid_op`, `expired_op`, `journal_full`.
-function ops.run(id, call, run)
+function ops.run(id, call, durable, run)
   if not platform then
     return nil, "unavailable"
   end
@@ -202,13 +210,36 @@ function ops.run(id, call, run)
   if not entry.ok then
     entry.status, entry.reason = status or "unknown", reason
   end
-  local stored, failure = pcall(save, id, false)
-  if not stored then
-    -- Run, but journaled as pending: after a restart it reads as unknown,
-    -- which is the truth there; here the result is known.
-    log("error", "could not record " .. call .. " " .. id .. "'s result (" .. tostring(failure) .. ")")
-  end
+  ops.settle(id, call, entry.ok and durable or nil)
   return recorded(entry)
+end
+
+---Records a finished entry's result on disk once its change is durable,
+---trying again each second until it is. Run, but journaled as pending
+---meanwhile: after a restart that reads as unknown, which is the truth
+---there, since the change may not have reached the disk.
+---@param id string The op id.
+---@param call string What it was.
+---@param durable (fun(): boolean)? Whether the change is on disk yet.
+function ops.settle(id, call, durable)
+  if entries[id] == nil or not platform then
+    return
+  end
+  local ready = durable == nil
+  if not ready then
+    local ok, answer = pcall(durable --[[@as fun(): boolean]])
+    ready = ok and answer == true
+  end
+  if ready then
+    local stored, failure = pcall(save, id, false)
+    if stored then
+      return
+    end
+    log("error", "could not record " .. call .. " " .. id .. "'s result (" .. tostring(failure) .. "); trying again")
+  end
+  platform.after(1000, function()
+    ops.settle(id, call, durable)
+  end)
 end
 
 ---Loads the journal, turning every intent a restart cut off into `unknown`
