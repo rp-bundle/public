@@ -136,8 +136,20 @@ end
 local function scrub(err, characters)
   local out = tostring(err)
   for _, character in pairs(characters or loaded) do
-    -- Escaped, so a key is matched as written whatever it holds.
-    out = out:gsub(character.key:gsub("%W", "%%%0"), "<key>")
+    -- Found as plain text, never as a pattern: a key is opaque, and Lua
+    -- 5.1's patterns cannot hold every byte one may (a NUL).
+    local key, parts, at = character.key, {}, 1
+    while true do
+      local from, to = out:find(key, at, true)
+      if not from then
+        break
+      end
+      parts[#parts + 1] = out:sub(at, from - 1)
+      parts[#parts + 1] = "<key>"
+      at = to + 1
+    end
+    parts[#parts + 1] = out:sub(at)
+    out = table.concat(parts)
   end
   return out
 end

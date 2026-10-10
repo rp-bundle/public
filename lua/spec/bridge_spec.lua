@@ -510,6 +510,13 @@ describe("rpf.bridge", function()
       assert.are.equal(1, #unknown)
       assert.are.equal("the bridge threw from money.debit", unknown[1].cause)
       kept()
+      -- A key is opaque, whatever bytes it holds.
+      local odd = "50%\0off.*"
+      assert.is_true(rpf.api.bridge.character_loaded(7, { key = odd, name = "Jane Doe" }))
+      assert.are.same({ nil, "unavailable" }, { rpf.bridge.read(function()
+        error("no character " .. odd .. " here", 0)
+      end, "money.balance", rpf.bridge.balance_of) })
+      assert.are.equal(1, #p.logged("error", "money.balance threw: no character <key> here"))
       -- What `start` and then `stop` throw, as a bridge whose start loaded a
       -- character is withdrawn, though the characters are gone by `stop`.
       boot()
