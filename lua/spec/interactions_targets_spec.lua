@@ -83,7 +83,8 @@ describe("rpf.interactions with rules", function()
       end
       error("no answer")
     end
-    local replaced = nil
+    ---@type table
+    local replaced = {}
     local function replacement()
       return true
     end
@@ -107,5 +108,19 @@ describe("rpf.interactions with rules", function()
     assert.is_true(replaced.ok)
     assert.are.equal("inactive", stale.reason)
     assert.are.equal("cooldown", after.reason, "the replacement's cooldown stands")
+  end)
+
+  it("keeps one use per player and interaction, however many there were", function()
+    local world = conformance.boot("mock")
+    local core = world.core
+    local player = { player_id = "p", handle = 1, state = "active" }
+    local rules = assert(core.targets.check_rules("acme_npcs", { cooldown = 10 }))
+    for _ = 1, 3 do
+      core.targets.reserve("acme_npcs.use", rules, player)
+      world:advance(20)
+    end
+    local reservation = assert(core.targets.reserve("acme_npcs.use", rules, player))
+    world.finish()
+    assert.is_number(reservation.before, "a time, not the reservation before it")
   end)
 end)

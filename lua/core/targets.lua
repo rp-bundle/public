@@ -390,7 +390,7 @@ end
 ---@field name string The interaction.
 ---@field player_id string The player.
 ---@field at number When it was taken.
----@field before rpf.targets.Reservation? The use it replaced, put back if it is given back.
+---@field before number? When the use it replaced was, put back if it is given back: a time, never the reservation, so no reservation keeps an earlier one alive.
 
 ---Whether two resolutions of a request name the same target: the same
 ---record (type and id), or the same entity (ref and model) when it is no
@@ -422,7 +422,8 @@ function targets.reserve(name, rules, player)
   end
   used[name] = used[name] or {}
   local at = assert(platform).now()
-  local reservation = { name = name, player_id = player.player_id, at = at, before = used[name][player.player_id] }
+  local previous = used[name][player.player_id]
+  local reservation = { name = name, player_id = player.player_id, at = at, before = previous and previous.at }
   used[name][player.player_id] = reservation
   return reservation
 end
@@ -436,7 +437,10 @@ function targets.release(reservation)
   end
   local by_player = used[reservation.name]
   if by_player and rawequal(by_player[reservation.player_id], reservation) then
-    by_player[reservation.player_id] = reservation.before
+    local before = reservation.before
+    by_player[reservation.player_id] = before
+        and { name = reservation.name, player_id = reservation.player_id, at = before }
+      or nil
   end
 end
 
