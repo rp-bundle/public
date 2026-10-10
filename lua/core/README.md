@@ -1540,9 +1540,18 @@ inventory and jobs (#75). Nothing in it names a framework or treats an engine
 handle as a portable id. `spec/api_spec.lua` holds it to exactly the members
 `api.lua` builds.
 
-CI builds an API reference from the annotations
-(`lua-language-server --doc=lua/core`) and uploads it as the
-`lua-api-reference` artifact, so the reference is always the code's own.
+**The reference (J9).** `dev/luadoc` builds a browsable reference from the
+annotations and prints the path of its `index.html`, which opens from disk,
+search included: a page for `rpf.Api` and each `rpf.api.*` table and type
+`meta/api.lua` declares, and the rest of `lua/core/` under a labelled Internals
+section. Nothing generated is committed, so it is always the code's own; CI
+uploads it as the `lua-api-reference` artifact, and each release's docs site
+carries it. What a reader sees is what the annotations say, so write them
+for an addon's author: say on each table which side it runs on, give the
+calls an author reaches for first a fenced `lua` example, and
+name a type as `` `rpf.X` `` so the reference links it. The landing page is
+`docs/luadoc/docs/index.md`; how the pages are arranged is in
+`docs/site/luadoc.py`.
 
 ## Testing
 

@@ -2,7 +2,9 @@
 
 -- The player client's platform interface. Separate from the server's, because
 -- the two have different capabilities and different trust: the client never
--- holds the server's API key, and the server never sees a player's password.
+-- holds the server's API key, and a player's password goes from the client to
+-- the portal, not through the game server's code (a mitigation, not a
+-- guarantee: the server's owner ships the client).
 -- This file is a definition for the language server and is never loaded.
 
 ---Messages between this client and the game server. Payloads are strings,

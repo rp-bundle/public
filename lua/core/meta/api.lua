@@ -24,7 +24,8 @@
 ---server, `auth` on the player's client, and `VERSION`, `engine`, `events`,
 ---`time` and `interactions` on both (`register` on the server, `send` on the
 ---client). Every table in it is
----read-only.
+---read-only; through FiveM's export it is a plain copy, which a script may
+---change without changing the API anyone else holds.
 ---
 ---**Nothing in it throws.** A call that cannot do what was asked returns nil
 ---(or false) and a reason, a short string such as `"invalid"`, documented on
@@ -95,6 +96,8 @@
 ---   `rpf.AuthPasswordChange`. `auth.account_deleted(deleted)`, an
 ---   `rpf.AuthDeleted`, once `delete_account` has deleted the account.
 ---   Client only.
+---
+---**Both sides.**
 ---@class rpf.api.Events
 local Events = {}
 
@@ -102,17 +105,24 @@ local Events = {}
 ---an addon registers while its code runs (its `start`, a timer, another
 ---handler) is the addon's, and is removed when the addon stops, so an addon
 ---that subscribes in `start` is subscribed once however often it restarts.
+---
+---```lua
+---rpf.events.on("players.active", function(player)
+---  -- player is an rpf.PlayerView: a copy, safe to keep
+---  greet(player.handle, player.name)
+---end)
+---```
 ---@param name string The event name, namespaced like `players.active`. Scripts use their own prefix for their own events.
 ---@param handler function Called with whatever the emit passes.
 ---@return function|string|nil handler The same handler, for `off`. Through FiveM's export, a subscription id instead, since a function does not keep its identity across that boundary (`lua/platform/fivem/README.md`). Nil if refused.
----@return "invalid"? err A name that is not a non-empty string, or a handler that is not a function.
+---@return "invalid"|"inactive"|nil err `invalid` for a name that is not a non-empty string, or a handler that is not a function; `inactive` from code of an addon activation that has ended.
 function Events.on(name, handler) end
 
 ---Registers a handler for the next emit of the name only.
 ---@param name string The event name.
 ---@param handler function Called once.
 ---@return function|string|nil handler The same handler, so it can be removed with `off` before it fires. A subscription id through FiveM's export. Nil if refused.
----@return "invalid"? err As for `on`.
+---@return "invalid"|"inactive"|nil err As for `on`.
 function Events.once(name, handler) end
 
 ---Removes every registration of a handler for a name. The function is the
@@ -146,6 +156,8 @@ function Events.emit(name, ...) end
 ---runs is the addon's, and is cancelled when it stops. A callback that
 ---throws is logged; an `every` keeps going. On FiveM, where a function
 ---crossing an export becomes a reference, ids are strings for that reason.
+---
+---**Both sides.**
 ---@class rpf.api.Time
 local Time = {}
 
@@ -178,6 +190,7 @@ function Time.cancel(id) end
 ---@alias rpf.TimerRefusal
 ---| "invalid" # The delay or period is not a whole number in range, or `fn` is not a function.
 ---| "unavailable" # The adapter has not loaded yet.
+---| "inactive" # Called from code of an addon activation that has ended.
 
 ---Lua addons (`docs/architecture/addons.md`). An addon is a package with a
 ---manifest: the types, fields and permissions it declares. It registers the
@@ -198,6 +211,8 @@ function Time.cancel(id) end
 ---the new starts. On FiveM an addon whose resource stops is unloaded with
 ---it. Whatever an addon set up while its code ran (timers, event handlers,
 ---exports) is taken down when it stops.
+---
+---**Server only.**
 ---@class rpf.api.Addons
 ---@field API integer The newest addon API major this core serves: what a new addon writes as its manifest's `api`.
 ---@field API_MIN integer The oldest addon API major it still serves. An addon written for a major outside `API_MIN`..`API` stays in state `api` (`docs/compatibility.md`).
@@ -224,7 +239,7 @@ function Addons.state(namespace) end
 ---@param name string `<namespace>.<name>`, both identifiers.
 ---@param fn function The function. It runs in the providing addon's context; what it returns goes back to the caller (copied, through FiveM's export).
 ---@return boolean? ok True once provided.
----@return "invalid"|"not_found"|"forbidden"|nil err `invalid` for a bad name or a value that is not a function, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace.
+---@return "invalid"|"not_found"|"forbidden"|"inactive"|nil err `invalid` for a bad name or a value that is not a function, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an activation that has ended.
 function Addons.provide(name, fn) end
 
 ---Calls a function another addon provides, while that addon is active.
@@ -254,6 +269,8 @@ function Addons.call(name, ...) end
 ---  rpf.records.delete("acme_tags.tag", old.id)
 ---end
 ---```
+---
+---**Server only.**
 ---@class rpf.api.Records
 local Records = {}
 
@@ -435,6 +452,8 @@ function Records.batch(ops) end
 ---  -- tell the player why: why == "insufficient_funds", …
 ---end
 ---```
+---
+---**Server only.**
 ---@class rpf.api.Characters
 local Characters = {}
 
@@ -452,6 +471,8 @@ function Characters.supports(call) end
 
 ---A player's money. Accounts are named by whoever owns money here: `accounts`
 ---lists them, so an addon configures which it uses rather than naming one.
+---
+---**Server only.**
 ---@class rpf.api.Money
 local Money = {}
 
@@ -498,6 +519,8 @@ function Money.supports(call) end
 
 ---A player's items, by item slug. Units are plain ones: a stack carrying
 ---data (a bottle with a note) is a thing of its own the facade leaves alone.
+---
+---**Server only.**
 ---@class rpf.api.Inventory
 local Inventory = {}
 
@@ -534,6 +557,8 @@ function Inventory.take(player, item, count, op_id) end
 function Inventory.supports(call) end
 
 ---A player's job.
+---
+---**Server only.**
 ---@class rpf.api.Jobs
 local Jobs = {}
 
@@ -549,6 +574,8 @@ function Jobs.current(player) end
 function Jobs.supports(call) end
 
 ---Operation ids for the facade's commands.
+---
+---**Server only.**
 ---@class rpf.api.Ops
 local Ops = {}
 
@@ -563,6 +590,8 @@ function Ops.new() end
 ---capability, the call says `unsupported` (check `rpf.capabilities()`).
 ---Positions are plain `{ x, y, z }`, in the engine's units, which is how a
 ---record stores one (a `vector3` field).
+---
+---**Server only.**
 ---@class rpf.api.World
 local World = {}
 
@@ -587,6 +616,8 @@ function World.position(player) end
 ---rpf.interactions.send("acme_tags.spray", { text = "hello" })
 ---rpf.events.on("interactions.result", function(result) show(result.ok and "Done" or result.reason) end)
 ---```
+---
+---**Both sides:** `register` on the server, `send` on the client.
 ---@class rpf.api.Interactions
 local Interactions = {}
 
@@ -710,10 +741,19 @@ function Interactions.send(name, payload) end
 
 ---The players on this game server. Read-only: players are moved by the core
 ---(the login flow) and by whichever module owns characters on the server.
+---
+---**Server only.**
 ---@class rpf.api.Players
 local Players = {}
 
 ---One player, by the engine's handle.
+---
+---```lua
+---local player = rpf.players.get(source) -- FiveM's `source`; a Player on Gmod
+---if player and player.state == "active" then
+---  remember(player.player_id) -- the portable id; never store the handle
+---end
+---```
 ---@param handle any The engine's player handle, as the engine hands it over.
 ---@return rpf.PlayerView? player A copy, or nil if not connected.
 function Players.get(handle) end
@@ -768,6 +808,8 @@ function Players.authenticated(handle) end
 ---from whatever command it offers. Nothing here acts on a player either;
 ---the script that kicks or teleports checks `can` first, and reports what
 ---it did with `record`.
+---
+---**Server only.**
 ---@class rpf.api.Staff
 local Staff = {}
 
@@ -837,11 +879,18 @@ function Staff.record(handle, permission, action, target) end
 ---it from the game (E6). Lookups are read-only, and each returns a copy:
 ---config changes only when the portal pushes a new snapshot, an in-game
 ---edit included.
+---
+---**Server only.**
 ---@class rpf.api.Config
 local Config = {}
 
 ---An item definition, by slug, with every field resolved by the portal (E3):
 ---the item's own value, else its base's, else the catalog default.
+---
+---```lua
+---local item = rpf.config.item("water") or rpf.config.item_defaults()
+---local fits = item.weight * count <= capacity_left
+---```
 ---@param slug string The item's slug.
 ---@return rpf.ConfigItem? item A copy, or nil if the config has none by that slug. Treat such an item as `item_defaults()`.
 function Config.item(slug) end
@@ -1057,6 +1106,19 @@ function Config.edit(handle, base_version, changes) end
 ---
 ---Each function starts an attempt and returns at once; the outcome arrives as
 ---an `auth.*` event. The login form itself is the adapter's (Milestone 2).
+---A script on the client reads the outcome rather than asking for the
+---password itself:
+---
+---```lua
+---rpf.events.on("auth.succeeded", function(result)
+---  show_welcome(result.username, result.created)
+---end)
+---if rpf.auth.state() == "authenticated" then
+---  show_welcome(rpf.auth.account().username, false)
+---end
+---```
+---
+---**Client only.**
 ---@class rpf.api.Auth
 ---@field PASSWORD_REUSE_WARNING string P1's warning, shown wherever a player chooses a password.
 local Auth = {}
