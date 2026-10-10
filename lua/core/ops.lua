@@ -313,9 +313,12 @@ end
 ---already happened, or may have, answers so even while its provider is
 ---down, rather than `unavailable`, which would say nothing happened.
 ---@param id any The op id.
----@return boolean known True if the journal has it, inside the window.
+---A lookup that fails (storage threw) is not "never ran": it answers as
+---`run` does then, `unavailable`, logged, so nothing runs and the same op
+---id may be tried again.
+---@return boolean known True if the journal has it, inside the window, or could not say.
 ---@return boolean? ok For a known one, true if it succeeded.
----@return string? status For a known one that did not, `refused` or `unknown`.
+---@return string? status For a known one that did not, `refused`, `unknown`, or `unavailable` when it could not be looked up.
 ---@return string? reason For `refused`, why.
 function ops.known(id)
   local at = ops.minted_at(id)
@@ -327,7 +330,11 @@ function ops.known(id)
   local entry = entries[id]
   if not entry then
     local found, lookup = pcall(recover, id)
-    entry = found and lookup or nil
+    if not found then
+      log("error", "could not look " .. id .. " up in storage (" .. tostring(lookup) .. "); it was not run")
+      return true, nil, "unavailable"
+    end
+    entry = lookup
   end
   if not entry then
     return false

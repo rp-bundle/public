@@ -245,6 +245,26 @@ describe("rpf.ops", function()
     assert.are.equal(3, runs)
   end)
 
+  it("answers unavailable, and says why, when storage fails a lookup, never 'never ran'", function()
+    local id = rpf.ops.new()
+    assert.is_true(rpf.ops.run(id, "money.debit", nil, function()
+      return true
+    end))
+    start()
+    store[rpf.ops.KEY] = nil
+    start()
+    p.kv_get = function()
+      error("disk gone")
+    end
+    assert.are.same({ true, nil, "unavailable" }, { rpf.ops.known(id) })
+    assert.are.equal(1, #p.logged("error", "disk gone"))
+    assert.are.same({ nil, "unavailable" }, {
+      rpf.ops.run(id, "money.debit", nil, function()
+        error("must not run")
+      end),
+    })
+  end)
+
   it("reads an entry it cannot decode as unknown, never as a command to run", function()
     local id = rpf.ops.new()
     local runs = 0
