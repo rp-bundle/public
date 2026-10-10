@@ -190,6 +190,16 @@ keep the job the portal has.
   reference. Nothing in `rpf.api` throws any more: `events.emit` of a core
   name, or of another addon's namespace, returns `nil` and a reason rather
   than raising ([Addons](docs/architecture/addons.md#the-lua-api)).
+- Backups, restore drills and the restore runbook (H2, #51). Postgres
+  archives every WAL segment to an S3-compatible bucket with WAL-G,
+  encrypted before it leaves, and a `backup` service takes a base backup a
+  day and keeps four weeks: an RPO of five minutes, an RTO of four hours,
+  and deleted data gone from every backup within 35 days
+  ([Deployment](docs/deployment.md#backups)). Rauthy keeps its data in the
+  same cluster, so one restore brings both back to the same moment.
+  `deploy/restore-drill` restores the newest backup to a scratch instance,
+  migrates it and starts Rauthy on it, weekly in `restore-drill.yml`; the
+  runbook, rehearsed, is in [Operations](docs/operations.md#restoring-the-database).
 
 ### Database
 
@@ -204,6 +214,19 @@ keep the job the portal has.
 
 ### Deployment
 
+- The database runs the image built from `deploy/postgres/` (the official
+  Postgres 17 with WAL-G), with the `backup` service beside it, and needs a
+  backup bucket at another provider: the `RPF_BACKUP_*` variables, a
+  writer's and a reader's key, an encryption key kept apart from the
+  bucket, and the bucket's access log turned on
+  ([Deployment](docs/deployment.md#backups)). Optional
+  `RPF_ALERT_WEBHOOK_URL` receives backup and drill failures.
+- Rauthy keeps its data in Postgres, in a `rauthy` database and role the
+  database's image creates on its first start (`RPF_RAUTHY_DB_PASSWORD`),
+  instead of its embedded Hiqlite; its `/app/data` volume is only a cache.
+  `deploy/compose.yml` now runs Rauthy behind the same proxy, on a host of
+  its own. Rauthy's `ENC_KEYS` are needed to restore it: keep them with the
+  backups' key.
 - Item images need object storage and a user-content domain: the
   `RPF_STORAGE_*` variables (unset, images are off), an S3-compatible
   bucket, and a separate registrable domain in front of it that passes the
