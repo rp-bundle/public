@@ -337,7 +337,7 @@ function Records.batch(ops) end
 ---@field type string Its type's full name.
 ---@field owner { kind: string, id: string }? Who owns it: a live record's owner. A config record has none.
 ---@field revision number Moves on every change made to it; name it in `update`'s `opts.revision` to refuse a stale write.
----@field fields table Its fields, every default filled in. A field with no value is absent.
+---@field fields table Its fields, every default filled in. A field with no value is absent. A `json` field is opaque data kept whole: a null inside it is the codec's null (`{}` through FiveM's export), and writing the value back unchanged keeps it as stored.
 
 ---A record a `query` found: as the portal has it.
 ---@class rpf.QueriedRecord: rpf.Record

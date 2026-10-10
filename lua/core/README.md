@@ -1052,7 +1052,7 @@ The record calls addons make, which `rpf.api.records` fronts, over
 
 | Call | Does |
 |---|---|
-| `get(type, id)` | A config record, or a held live one: a plain copy, `{ id, type, owner, revision, fields }`, every default filled in, a field with no value absent |
+| `get(type, id)` | A config record, or a held live one: a plain copy, `{ id, type, owner, revision, fields }`, every default filled in, a field with no value absent; a `json` field is kept whole, nulls and shapes included |
 | `list(type, query)` | Every config record, or every held live record, of the type that meets `query` (`where`, `owner`, `order`, `descending`, `limit`), read locally: any field may be filtered or ordered; no value for the order field sorts last; ties by id |
 | `query(type, query, callback)` | `query_records` for unheld live records: `where` (`eq`, `lt`, `lte`, `gt`, `gte`, `prefix`) becomes `RecordQuery.filters`, on indexed fields as the portal requires; `callback(records, next, err)` in the caller's context |
 | `hold(type, ids, callback)`, `release(type, ids)` | `rpf.sync.hold` and `release` for up to 64 records of the type, held for the server (no player's session) |

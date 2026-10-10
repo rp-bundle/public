@@ -19,6 +19,7 @@ local PLAYER = "00000002-0000-4000-8000-000000000002"
 local OTHER = "00000003-0000-4000-8000-000000000003"
 local TAG = "0000000a-0000-4000-8000-00000000000a"
 local SEEDED = "0000000b-0000-4000-8000-00000000000b"
+local SEEDED_TAG = "0000000e-0000-4000-8000-00000000000e"
 
 ---The worked example's addon: a live type of tags, and a config type.
 ---@param limit integer? The tag type's record limit.
@@ -407,13 +408,22 @@ conformance.run(busted, "addon records", {
         fields = { label = "x" },
         held = false,
       }
+      world.portal.records[SEEDED_TAG] = {
+        id = SEEDED_TAG,
+        type = "acme_tags.tag",
+        owner = { kind = "player", id = PLAYER },
+        revision = 1,
+        fields = { text = "t", spot = { x = 0, y = 0, z = 0 }, fades_at = 1 },
+        held = false,
+      }
       local got
-      assert.is_true(api.records.hold("acme_tags.tag", { TAG }, function(held, err)
+      assert.is_true(api.records.hold("acme_tags.tag", { SEEDED_TAG, TAG }, function(held, err)
         got = { held = held, err = err }
       end))
       world:pump()
       assert.are.same({ err = "not_found" }, got)
       assert.is_false(world.portal.records[TAG].held, "given back")
+      assert.is_false(world.portal.records[SEEDED_TAG].held, "and so is the one of the right type it took")
       assert(api.records.hold("acme_tags.mark", { TAG }))
       world:pump()
       assert.are.same({ nil, "not_found" }, { api.records.hold("acme_tags.tag", { TAG }) }, "held as a mark already")
@@ -528,12 +538,21 @@ conformance.run(busted, "addon records", {
       -- Stored with an empty object and an empty array inside, as a staff
       -- edit or an older write would leave it.
       world.core.records.set_addon_fields(mark.id, {
-        meta = json.object({ nested = json.object({}), list = json.array({}), n = 1 }),
+        meta = json.object({
+          nested = json.object({}),
+          list = json.array({}),
+          n = 1,
+          gap = json.array({ json.null, 1 }),
+          none = json.null,
+        }),
       })
       local read = assert(api.records.get("acme_tags.mark", mark.id))
       local after, err = api.records.update("acme_tags.mark", mark.id, { meta = read.fields.meta, lit = false })
       assert.is_nil(err)
       assert.are.equal(1, after.fields.meta.n)
+      local stored = world.core.records.get("addon_record", mark.id).fields.meta
+      assert.are.equal(json.null, stored.none, "a null member kept")
+      assert.are.equal(json.null, stored.gap[1], "and a null in an array")
       world:settle()
       assert.is_false(world.portal.records[mark.id].fields.lit, "false reaches the portal as false")
     end,

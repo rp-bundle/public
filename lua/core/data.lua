@@ -78,6 +78,30 @@ local function plain(value)
 end
 data.plain = plain
 
+---A record's fields as a script sees them: a field with no value is
+---absent, and every other a plain copy, except a `json` field's, which is
+---opaque data and kept whole, nulls and empty tables marked as the codec
+---marks them, so it can be written back unchanged (`reshape`). Through a
+---FiveM export the marks are lost and a null becomes `{}`; writing the
+---value back still restores both from what is stored.
+---@param def table? The type's definition.
+---@param fields table The fields, as stored.
+---@return table fields The copy.
+local function fields_of(def, fields)
+  local out = {}
+  for name, value in pairs(fields) do
+    if value ~= json.null then
+      local field = def and def.fields[name]
+      if type(field) == "table" and field.type == "json" then
+        out[name] = json.copy(value)
+      else
+        out[name] = plain(value)
+      end
+    end
+  end
+  return out
+end
+
 ---A held addon record as a script sees it.
 ---@param entry rpf.records.Entry The held record.
 ---@return table record `{ id, type, owner, revision, fields }`, every default filled in.
@@ -92,7 +116,7 @@ local function view_of(entry)
     type = entry.data.type,
     owner = plain(entry.data.owner),
     revision = entry.version or entry.revision,
-    fields = plain(fields),
+    fields = fields_of(def, fields),
   }
 end
 
@@ -177,7 +201,7 @@ function data.get(type_name, id)
     for _, record in ipairs(rpf.addons.config_records(type_name)) do
       if record.id == id then
         local out = plain(record)
-        out.fields = plain(rpf.manifest.with_defaults(def, record.fields))
+        out.fields = fields_of(def, rpf.manifest.with_defaults(def, record.fields))
         return out
       end
     end
@@ -357,7 +381,7 @@ function data.list(type_name, query)
   if def.authority == "config" then
     for _, record in ipairs(rpf.addons.config_records(type_name)) do
       local out = plain(record)
-      out.fields = plain(rpf.manifest.with_defaults(def, record.fields))
+      out.fields = fields_of(def, rpf.manifest.with_defaults(def, record.fields))
       found[#found + 1] = out
     end
   else
@@ -547,6 +571,14 @@ function data.hold(type_name, ids, callback)
   end
   local ctx = rpf.addons.context()
   local namespace = type_name:match("^([^.]+)%.")
+  -- What this hold takes that was not held before: all of it goes back if
+  -- the hold turns out not to be what was asked for.
+  local fresh = {}
+  for _, ref in ipairs(refs) do
+    if not records.entries[records.key("addon_record", ref.id)] then
+      fresh[#fresh + 1] = ref
+    end
+  end
   rpf.sync.hold({ records = refs }, nil, function(_, why)
     local out = nil
     if not why and not rpf.addons.running(namespace) then
@@ -557,18 +589,18 @@ function data.hold(type_name, ids, callback)
     elseif not why then
       -- The portal holds by id alone: a record of another type it handed
       -- over is not what was asked for, and goes straight back.
-      local strays = {}
+      local strays = false
       out = {}
       for _, ref in ipairs(refs) do
         local entry = records.entries[records.key("addon_record", ref.id)]
         if entry and entry.data.type ~= type_name then
-          strays[#strays + 1] = { kind = "addon_record", id = ref.id }
+          strays = true
         elseif entry and not entry.deleted then
           out[#out + 1] = view_of(entry)
         end
       end
-      if #strays > 0 then
-        local released, failure = rpf.sync.release(strays)
+      if strays then
+        local released, failure = rpf.sync.release(fresh)
         if not released then
           rpf.sync.platform.log("warn", "rpf: could not give back records of another type a hold took (" .. tostring(failure) .. ")")
         end
@@ -701,11 +733,12 @@ function data.create(type_name, fields, opts)
   end
   local record = assert(data.get(type_name, made.id))
   data.announce("records.created", { type = type_name, id = made.id, record = record, by = "addon" })
-  return plain(record)
+  return assert(data.get(type_name, made.id))
 end
 
 ---A value a script wrote, with every empty table it holds marked as the
----stored value marks the empty table at the same place, where it has one.
+---stored value marks the empty table at the same place, where it has one,
+---or read as the null stored there.
 ---A plain copy drops JSON marks (and a FiveM export would anyway), and an
 ---empty table's shape (array or object) is all a mark says, so a `json`
 ---field read and written back unchanged takes its shapes from what is
@@ -715,11 +748,17 @@ end
 ---@param stored any The value stored at the same place, or nil.
 ---@return any value The value, marked where the stored one says how.
 local function reshape(value, stored)
-  if type(value) ~= "table" or type(stored) ~= "table" or json.is_array(value) or json.is_object(value) then
+  if value == json.null or type(value) ~= "table" or type(stored) ~= "table" then
+    return value
+  end
+  if json.is_array(value) or json.is_object(value) then
     return value
   end
   if next(value) == nil then
-    if json.is_array(stored) then
+    if stored == json.null then
+      -- A null a FiveM export turned into `{}`.
+      return json.null
+    elseif json.is_array(stored) then
       return json.array()
     elseif json.is_object(stored) then
       return json.object()
@@ -817,7 +856,7 @@ function data.update(type_name, id, patch, opts)
   end
   local record = view_of(plan.entry)
   data.announce("records.changed", { type = type_name, id = plan.entry.id, record = record, by = "addon" })
-  return plain(record)
+  return view_of(plan.entry)
 end
 
 ---Checks a deletion without making it.
@@ -976,7 +1015,7 @@ function data.batch(ops)
   for _, change in ipairs(changes) do
     data.announce(change.name, change.change)
   end
-  return plain(results)
+  return results
 end
 
 -- Lifecycle ----------------------------------------------------------------
