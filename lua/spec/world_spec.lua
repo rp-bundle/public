@@ -32,14 +32,15 @@ local function manifest()
   }
 end
 
----Installs the addon with `n` props, as a portal push would.
+---Installs the addon with props `from` to `n`, as a portal push would.
 ---@param world spec.ConformanceWorld The world.
----@param n integer How many.
-local function install(world, n)
+---@param n integer The last.
+---@param from integer? The first; 1 unless given.
+local function install(world, n, from)
   local json = world.core.json
   local records = {}
-  for i = 1, n do
-    records[i] = {
+  for i = from or 1, n do
+    records[#records + 1] = {
       id = string.format("%08x-0000-4000-8000-000000000000", i),
       type = "acme_props.prop",
       revision = 1,
@@ -89,6 +90,20 @@ describe("rpf.world's placements", function()
     end
     assert.are.same({ "00000001-0000-4000-8000-000000000000", "00000002-0000-4000-8000-000000000000" }, ids)
     assert.are.equal(1, said(world, "want an entity placed; the rest are left out"))
+  end)
+
+  it("keeps the first MAX_PLACED in order whatever was placed before, so the config alone decides", function()
+    local limit = world.core.world.MAX_PLACED
+    world.core.world.MAX_PLACED = 2
+    install(world, 3, 2)
+    install(world, 3)
+    world.core.world.MAX_PLACED = limit
+    local ids = {}
+    for _, entity in ipairs(world.entities()) do
+      ids[#ids + 1] = entity.placement
+    end
+    table.sort(ids)
+    assert.are.same({ "00000001-0000-4000-8000-000000000000", "00000002-0000-4000-8000-000000000000" }, ids)
   end)
 
   it("places nothing on an engine whose adapter cannot, saying so once", function()

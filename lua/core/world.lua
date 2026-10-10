@@ -425,7 +425,8 @@ local function take_away(id)
 end
 
 ---Brings what is placed in line with what is wanted: despawns what is no
----longer wanted or changed, then spawns what is missing, up to `MAX_PLACED`.
+---longer wanted or changed, then spawns what is missing: the first
+---`MAX_PLACED` in order, whatever was placed before.
 function world.reconcile()
   if stopped or not platform then
     return
@@ -439,32 +440,33 @@ function world.reconcile()
     end
     return
   end
+  -- The limit is on what is wanted, in order, before anything is kept: a
+  -- record earlier in the order displaces a later one already placed, so
+  -- what is placed depends on the config alone, never on its history.
+  if #order > world.MAX_PLACED then
+    if not warned.limit then
+      warned.limit = true
+      log("warn", "rpf: more than " .. world.MAX_PLACED .. " records want an entity placed; the rest are left out")
+    end
+    for i = #order, world.MAX_PLACED + 1, -1 do
+      want[order[i]] = nil
+      order[i] = nil
+    end
+  end
   for id, entry in pairs(placed) do
     local spec = want[id]
     if not spec or key_of(spec) ~= entry.key then
       take_away(id)
     end
   end
-  local count = 0
-  for _ in pairs(placed) do
-    count = count + 1
-  end
   for _, id in ipairs(order) do
     if not placed[id] then
-      if count >= world.MAX_PLACED then
-        if not warned.limit then
-          warned.limit = true
-          log("warn", "rpf: more than " .. world.MAX_PLACED .. " records want an entity placed; the rest are left out")
-        end
-        break
-      end
       local spec = want[id]
       local key = key_of(spec)
       local ok, ref, why = call("spawn", spawn, plain(spec))
       if ok and whole(ref) then
         placed[id] = { type = spec.type, key = key, ref = ref }
         failed[id] = nil
-        count = count + 1
       elseif failed[id] ~= key then
         failed[id] = key
         log("warn", "rpf: could not place " .. spec.type .. " " .. id .. ": " .. tostring(why or "failed"))
