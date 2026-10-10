@@ -103,10 +103,13 @@ refusing its two callbacks when an external selection is configured.
 
 `QBCore:Server:OnPlayerLoaded` is networked, so a client can send it. Like
 every event here, it is only a cue to look at `GetPlayer`. `OnPlayerUnload`
-moves the player back to `character_select`, and while qbx_core is still
-logging them out (`GetPlayer` answers for about 200 ms more) the character
-is not reported again, and a load is `busy` instead of a second `Login`,
-which qbx_core would drop them for.
+moves the player back to `character_select`. While qbx_core is still
+logging them out (`GetPlayer` answers for about 200 ms more), the character
+is not reported again and a load is `busy`, instead of a second `Login`,
+which qbx_core would drop them for. The sweep shows the selection once
+qbx_core has finished. A player has one load in flight at a time, since
+qbx_core's search and `Login` both wait on its database, and the bridge
+checks again that the player is still choosing after the search.
 
 ## The two events the selection sends
 
@@ -139,6 +142,7 @@ it, so run `ensure rpf-qbox` after it.
   `OnPlayerLoaded` changes nothing. Another licence's character is
   refused. The logout window is covered, and so are ox_inventory alone
   stopping, the `money` item, partial gives, the overdraft, a hook's veto,
-  and a native server.
+  and a native server, as are the selection shown again after a logout,
+  and two overlapping loads.
 - `lua-language-server` checks `fivem/` against FiveM's natives and ox_lib,
   and `bridge.lua` with the rest of `lua/`.

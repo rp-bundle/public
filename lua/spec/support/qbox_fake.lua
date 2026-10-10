@@ -44,6 +44,7 @@
 ---@field deferred integer[]? Players whose `Logout` waits to remove them, when logouts are delayed.
 ---@field searches table[] Every filter `SearchPlayers` was called with.
 ---@field veto boolean? Whether qbx_core's money hooks veto every change, as an owner's hook may.
+---@field searching fun()? Runs inside the next `SearchPlayers`, where the real one waits on the database: another request overlapping it.
 ---@field created integer? How many characters qbx_core's creation made, for their citizenids.
 local fake = {}
 fake.__index = fake
@@ -276,6 +277,11 @@ function fake:qbx()
       fw.searches[#fw.searches + 1] = copy(filters)
       -- qbx_core searches every character when no filter is given.
       assert(type(filters) == "table" and type(filters.license) == "string", "searched without a licence")
+      local searching = fw.searching
+      fw.searching = nil
+      if searching then
+        searching()
+      end
       local out = {}
       for citizenid, data in pairs(fw.db) do
         if data.license == filters.license then

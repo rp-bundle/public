@@ -204,11 +204,48 @@ local cases = {
       world:advance(1000)
       assert.are.equal("character_select", api.players.get(handle).state, "GetPlayer still answers, and it is not taken")
       assert.are.same({ error = "busy" }, fw:request(handle, "rpf-qbox:load", "CIT-JANE"), "qbx_core would drop a second login")
+      local shown = fw.shown[handle] or 0
       fw:finish_logouts()
       world:advance(1000)
+      assert.are.equal(shown + 1, fw.shown[handle], "the selection, once qbx_core has finished")
       assert.are.same({ ok = true }, fw:request(handle, "rpf-qbox:load", "CIT-JANE"))
       assert.are.equal("active", api.players.get(handle).state)
       assert.are.same({}, fw.dropped)
+    end,
+  },
+  {
+    name = "shows the selection again once qbx_core has logged a player out",
+    run = function(world)
+      local fw = framework()
+      boot(world, fw)
+      local api = world.api
+      local handle = playing(world, fw)
+      local shown = fw.shown[handle] or 0
+      -- qbx_core's `Logout` fires `OnPlayerUnload` while `GetPlayer` still
+      -- answers, so RPF's cue comes before the player is gone.
+      fw:unload(handle)
+      assert.are.equal("character_select", api.players.get(handle).state)
+      world:advance(1000)
+      assert.are.equal(shown + 1, fw.shown[handle])
+      world:advance(5000)
+      assert.are.equal(shown + 1, fw.shown[handle], "once")
+    end,
+  },
+  {
+    name = "takes one load at a time for a player, so qbx_core never sees a second Login",
+    run = function(world)
+      local fw = framework()
+      boot(world, fw)
+      local handle = world:login(1, PLAYER)
+      fw.db["CIT-JANE"].license = "license2:" .. tostring(handle)
+      local overlapping
+      fw.searching = function()
+        overlapping = fw:request(handle, "rpf-qbox:load", "CIT-JANE")
+      end
+      assert.are.same({ ok = true }, fw:request(handle, "rpf-qbox:load", "CIT-JANE"))
+      assert.are.same({ error = "busy" }, overlapping)
+      assert.are.same({}, fw.dropped)
+      assert.are.equal("active", world.api.players.get(handle).state)
     end,
   },
   {

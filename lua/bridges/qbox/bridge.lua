@@ -127,6 +127,13 @@ function qbox.register(api, fx)
   ---@type table<integer, true>
   local leaving = {}
 
+  ---Players with a load in flight, by server id. qbx_core's search and
+  ---`Login` wait on its database, so a second request could otherwise pass
+  ---the checks while the first waits, and `Login` a player twice, which
+  ---qbx_core drops them for.
+  ---@type table<integer, true>
+  local loading = {}
+
   ---Whether a resource is started.
   ---@param resource string The resource.
   ---@return boolean started True if it is.
@@ -261,6 +268,11 @@ function qbox.register(api, fx)
       if leaving[handle] then
         if not fx.qbx:GetPlayer(handle) then
           leaving[handle] = nil
+          -- The cue came while qbx_core was still logging them out: the
+          -- selection is shown now that it has.
+          if player.state == "character_select" then
+            show(handle)
+          end
         end
       elseif player.state ~= "active" and player.state ~= "dropping" then
         observe(handle)
@@ -397,22 +409,38 @@ function qbox.register(api, fx)
     end
     -- qbx_core drops a player who logs in twice, and is still removing one
     -- it is logging out.
-    if fx.qbx:GetPlayer(handle) then
+    if loading[handle] or fx.qbx:GetPlayer(handle) then
       return { error = "busy" }
     end
-    leaving[handle] = nil
-    local mine = false
-    for _, character in ipairs(characters(handle)) do
-      mine = mine or character.citizenid == citizenid
-    end
-    -- qbx_core drops a player who asks for another licence's character:
-    -- refused here first, the same as one that does not exist.
-    if not mine then
-      return { error = "not_found" }
-    end
+    loading[handle] = true
     local ok, done = pcall(function()
+      local mine = false
+      for _, character in ipairs(characters(handle)) do
+        mine = mine or character.citizenid == citizenid
+      end
+      -- qbx_core drops a player who asks for another licence's character:
+      -- refused here first, the same as one that does not exist.
+      if not mine then
+        return "not_found"
+      end
+      -- The search waited on the database: still choosing, on the same
+      -- connection, and still nothing loaded (qbx_core's own callbacks
+      -- answer any client meanwhile).
+      local still, still_serial = rpf_state(handle)
+      if still ~= "character_select" or still_serial ~= serial then
+        return "not_selecting"
+      end
+      if fx.qbx:GetPlayer(handle) then
+        return "busy"
+      end
+      -- Whatever logout there was has finished.
+      leaving[handle] = nil
       return fx.qbx:Login(handle, citizenid)
     end)
+    loading[handle] = nil
+    if ok and type(done) == "string" then
+      return { error = done }
+    end
     if not ok or done ~= true then
       fx.log("warn", "qbx_core did not log player " .. tostring(handle) .. " in: " .. tostring(ok and done or "it threw"))
       return { error = "failed" }
@@ -437,7 +465,11 @@ function qbox.register(api, fx)
     if not active then
       return
     end
-    if loaded(player.handle) then
+    -- One qbx_core is still logging out is shown the selection by the
+    -- sweep, once it has.
+    if leaving[player.handle] then
+      return
+    elseif loaded(player.handle) then
       observe(player.handle)
     else
       show(player.handle)
@@ -445,6 +477,7 @@ function qbox.register(api, fx)
   end)
   api.events.on("players.dropping", function(player)
     leaving[player.handle] = nil
+    loading[player.handle] = nil
   end)
   api.time.every(qbox.SWEEP_MS, sweep)
 
