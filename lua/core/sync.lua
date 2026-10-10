@@ -373,14 +373,18 @@ local function settle_addons(sent, outcome, stale)
     if entry and entry.created == "sent" then
       if outcome == "applied" or outcome == "resync" then
         entry.created = nil
-        -- Changes or a deletion made while it was in flight go now.
-        again = again or entry.changed.fields == true or entry.deleted == true
+        -- Changes or a deletion made while it was in flight go now, and so
+        -- does the whole report a refused frame left it owing.
+        again = again or entry.changed.fields == true or entry.deleted == true or entry.resync
       else
         entry.created = "pending"
         entry.revision = 0
         entry.patch = nil
         entry.changed = {}
-        again = true
+        -- A lost create goes again at once; a refused one waits for the
+        -- next flush, as every record refused alone does, so a create the
+        -- portal keeps refusing is not resent in a loop.
+        again = again or outcome == "lost"
       end
     end
   end
@@ -914,7 +918,7 @@ end
 ---@param refs rpf.RecordRef[] The records.
 ---@param callback fun(reply: table?, err: string?)? Called with the portal's answer: once, unless the final states were over the frame limit together and went in several frames, when it is called for each.
 ---@return boolean? ok True if every held record named was released.
----@return string? err Why not: `"outbox_full"`, `"too_large"` for a record no frame can carry, or `"backlog"` for an account with more unacknowledged ledger entries than one report carries, which can be released once the portal has acknowledged enough of them. Records that could be queued were released all the same.
+---@return string? err Why not: `"outbox_full"`, `"too_large"` for a record no frame can carry, `"backlog"` for an account with more unacknowledged ledger entries than one report carries, which can be released once the portal has acknowledged enough of them, or `"creating"` for an addon record the portal has not had the create of yet, which can be released once it has. Records that could be queued were released all the same.
 function sync.release(refs, callback)
   if not sync.flush() then
     -- A report that could not be queued may be a payment to one of these
@@ -922,13 +926,18 @@ function sync.release(refs, callback)
     -- lands, and handed back without it.
     return nil, "outbox_full"
   end
-  local entries, seen, backlog = {}, {}, false
+  local entries, seen, backlog, creating = {}, {}, false, false
   for _, ref in ipairs(refs) do
     local key = records.key(ref.kind, ref.id)
     local entry = records.entries[key]
     if entry and not seen[key] then
       seen[key] = true
-      if #entry.transactions > sync.options.max_transactions_per_report then
+      if entry.created then
+        -- An addon record the portal does not have yet (J2): its release
+        -- could only be refused, and this server would have forgotten it.
+        -- It waits for its create, as a backlog waits for its entries.
+        creating = true
+      elseif #entry.transactions > sync.options.max_transactions_per_report then
         -- Its final state would not carry every entry in doubt. The flush
         -- above sent them; it can go once enough are acknowledged.
         backlog = true
@@ -949,6 +958,9 @@ function sync.release(refs, callback)
   end
   if backlog then
     return nil, "backlog"
+  end
+  if creating then
+    return nil, "creating"
   end
   return true
 end

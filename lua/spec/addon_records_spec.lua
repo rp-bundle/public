@@ -206,6 +206,41 @@ describe("live addon records", function()
     assert.are.same({ water = 3 }, change.patch)
   end)
 
+  it("keep a record until the portal has its create, and finish a refused frame's recovery once it does", function()
+    local p = farmed()
+    local record = assert(rpf.records.create_addon_record(
+      "acme_farm.field",
+      { kind = "player", id = PLAYER },
+      { label = "Held on" }
+    ))
+    assert(rpf.records.set_addon_fields(FIELD, { water = 2 }))
+    local ok, err = rpf.sync.release({ { kind = "addon_record", id = record.id } })
+    assert.is_nil(ok)
+    assert.are.equal("creating", err)
+    assert.is_true(rpf.records.is_held("addon_record", record.id))
+
+    -- The frame with the create and the change is refused; each goes alone,
+    -- the create at the next flush, not in a loop.
+    local frame = last_of(p, "state_changed")
+    assert.are.equal(2, #frame.changes)
+    answer(p, frame, "rejected")
+    local sent = #sent_of(p, "state_changed")
+    p.advance(FLUSH * 5)
+    assert.is_true(#sent_of(p, "state_changed") <= sent + 2, "no retry loop")
+    rpf.sync.flush()
+    local create
+    for _, f in ipairs(sent_of(p, "state_changed")) do
+      if f.changes[1].kind == "addon_record_created" and f.id ~= frame.id then
+        create = f
+      end
+    end
+    answer(p, assert(create))
+    -- Its recovery owed a whole report: it goes without another change.
+    p.advance(FLUSH)
+    local whole = last_of(p, "resync")
+    assert.are.equal(record.id, whole.records[#whole.records].id)
+  end)
+
   it("refuse a create of a type the server does not run, or for an owner it does not take", function()
     farmed()
     assert.are.equal(

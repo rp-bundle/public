@@ -41,6 +41,7 @@ edits.REASONS = {
   too_large = "its records are too large to hand back to the portal",
   backlog = "it has payments still to report; try again shortly",
   inactive = "its addon is not active on this server",
+  creating = "it was only just created here; try again in a moment",
 }
 
 ---A refusal as the portal shows it to staff.
