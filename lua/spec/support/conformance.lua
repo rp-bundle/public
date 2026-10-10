@@ -29,6 +29,13 @@ local support = require("spec.support")
 
 conformance.PLATFORMS = { "mock", "fivem", "gmod" }
 
+---The portal's side, as small as the cases need: the addon records it has,
+---and which this server holds. `connect` and `pump` play it.
+---@class spec.FakePortal
+---@field records table<string, { id: string, type: string, owner: table, revision: integer, fields: table, held: boolean }> Live addon records, by id.
+---@field frames table[] Every frame the core sent that the portal read, decoded, in order.
+---@field refuse table<string, string>? Frame types the portal refuses, with the code.
+
 ---One booted game server, as a case sees it.
 ---@class spec.ConformanceWorld
 ---@field platform_name string Which platform: `mock`, `fivem` or `gmod`.
@@ -44,7 +51,14 @@ conformance.PLATFORMS = { "mock", "fivem", "gmod" }
 ---@field next_due fun(): number? When the next timer is due.
 ---@field stop_resource fun(origin: string)? Stops a resource, where there are resources.
 ---@field finish fun() Takes the platform's globals away again.
+---@field socket_open fun(id: integer) The host's socket opened, as the platform hears it.
+---@field socket_message fun(id: integer, text: string) A frame arrived on it.
+---@field connects integer[] The sockets the core asked for, in order.
+---@field sent { id: integer, text: string }[] Every frame the core sent, in order.
+---@field answered integer How many of `sent` the fake portal has read.
+---@field portal spec.FakePortal What the fake portal holds.
 local World = {}
+
 World.__index = World
 
 ---The API as another addon's code sees it: on FiveM, through the export from
@@ -66,6 +80,151 @@ function World:install(entries)
     addons = json.array(entries),
   }))))
   assert(self.core.config.apply(self.server_platform, self.version, "h" .. self.version, snapshot))
+end
+
+---A portal frame for the core: encoded, with a fresh id.
+---@param world spec.ConformanceWorld The world.
+---@param tag string The type.
+---@param fields table The fields.
+---@return string text The frame.
+local function portal_frame(world, tag, fields)
+  support.core = world.core
+  local protocol = world.core.protocol
+  return assert(protocol.encode(protocol.PORTAL_TO_SERVER, support.portal_frame(tag, fields)))
+end
+
+---The fake portal's answer to one frame the core sent, or nil for none.
+---@param frame table The frame, decoded.
+---@return string? tag The answer's type.
+---@return table? fields Its fields.
+function World:answer(frame)
+  local json, portal = self.core.json, self.portal
+  local refused = portal.refuse and portal.refuse[frame.type]
+  if refused then
+    return "rejected", { re = frame.id, code = refused, reason = "refused by the test" }
+  end
+  if frame.type == "declare_holds" then
+    return "state_applied", { re = frame.id, revisions = frame.records }
+  elseif frame.type == "online_players" or frame.type == "declare_addons" then
+    return "ack", { re = frame.id }
+  elseif frame.type == "hold" then
+    local out = {}
+    for _, ref in ipairs(frame.records) do
+      local record = portal.records[ref.id]
+      if ref.kind ~= "addon_record" or not record or record.held then
+        return "rejected", { re = frame.id, code = "not_found", reason = "not this server's to hold" }
+      end
+      out[#out + 1] = record
+    end
+    local held = {}
+    for i, record in ipairs(out) do
+      record.held = true
+      held[i] = {
+        kind = "addon_record",
+        revision = record.revision,
+        record = { id = record.id, type = record.type, owner = record.owner, fields = json.object(record.fields) },
+      }
+    end
+    return "held", { re = frame.id, records = held }
+  elseif frame.type == "state_changed" or frame.type == "resync" or frame.type == "release" then
+    local revisions = {}
+    for _, change in ipairs(frame.changes or frame.records) do
+      local record = portal.records[change.id]
+      if change.kind == "addon_record_created" then
+        local fields = {}
+        for name, value in pairs(change.fields) do
+          if value ~= json.null then
+            fields[name] = value
+          end
+        end
+        portal.records[change.id] = {
+          id = change.id,
+          type = change.type,
+          owner = change.owner,
+          revision = 1,
+          fields = fields,
+          held = true,
+        }
+        revisions[#revisions + 1] = { kind = "addon_record", id = change.id, revision = 1 }
+      elseif change.kind == "addon_record_deleted" then
+        portal.records[change.id] = nil
+      elseif record and change.kind == "addon_record" then
+        for name, value in pairs(change.patch or change.fields or {}) do
+          record.fields[name] = value ~= json.null and value or nil
+        end
+        record.revision = change.revision or record.revision + 1
+        record.held = frame.type ~= "release"
+        revisions[#revisions + 1] = { kind = "addon_record", id = change.id, revision = record.revision }
+      end
+    end
+    if frame.type == "release" then
+      return "ack", { re = frame.id }
+    end
+    return "state_applied", { re = frame.id, revisions = revisions }
+  elseif frame.type == "query_records" then
+    local found = {}
+    for _, record in pairs(portal.records) do
+      local keep = record.type == frame.type_name
+      for _, filter in ipairs(frame.query.filters or {}) do
+        keep = keep and filter.op == "eq" and record.fields[filter.field] == filter.value
+      end
+      if keep then
+        found[#found + 1] = {
+          id = record.id,
+          type = record.type,
+          owner = record.owner,
+          revision = record.revision,
+          held = record.held,
+          fields = json.object(record.fields),
+        }
+      end
+    end
+    table.sort(found, function(a, b)
+      return a.id < b.id
+    end)
+    return "records_queried", { re = frame.id, records = found, next = json.null }
+  end
+  return nil
+end
+
+---Reads every frame the core sent since the last pump and answers each,
+---until it sends nothing more.
+function World:pump()
+  local protocol = self.core.protocol
+  while self.answered < #self.sent do
+    self.answered = self.answered + 1
+    local sent = self.sent[self.answered]
+    local frame = assert(protocol.decode(protocol.SERVER_TO_PORTAL, sent.text))
+    self.portal.frames[#self.portal.frames + 1] = frame
+    local tag, fields = self:answer(frame)
+    if tag and fields then
+      self.socket_message(sent.id, portal_frame(self, tag, fields))
+    end
+  end
+end
+
+---Opens the socket the core asked for, welcomes it, and answers what
+---follows, so the core is connected to the fake portal.
+function World:connect()
+  local id = assert(self.connects[#self.connects], "the core asked for no socket")
+  self.socket_open(id)
+  local protocol = self.core.protocol
+  local hello = assert(protocol.decode(protocol.SERVER_TO_PORTAL, self.sent[#self.sent].text))
+  assert(hello.type == "hello", "the first frame is not a hello")
+  self.answered = #self.sent
+  self.socket_message(id, portal_frame(self, "welcome", {
+    re = hello.id,
+    protocol = protocol.VERSION,
+    server_id = "00000001-0000-4000-8000-000000000001",
+  }))
+  self:pump()
+end
+
+---Lets the core report what it changed: one flush interval, and the
+---portal's answers.
+function World:settle()
+  self:advance(1000)
+  self:pump()
 end
 
 ---Moves the clock on, running every timer as it comes due, in order, so a
@@ -112,6 +271,8 @@ end
 ---@return table host The host.
 local function host_for(world)
   local kv = {}
+  world.connects, world.sent, world.answered = {}, {}, 0
+  world.portal = { records = {}, frames = {} }
   return {
     now = function()
       return world.time
@@ -123,9 +284,12 @@ local function host_for(world)
       kv[key] = value
     end,
     http_request = function() end,
-    connect = function() end,
+    connect = function(id)
+      world.connects[#world.connects + 1] = id
+    end,
     close = function() end,
-    send = function()
+    send = function(id, text)
+      world.sent[#world.sent + 1] = { id = id, text = text }
       return true
     end,
     kick = function() end,
@@ -169,6 +333,7 @@ local function boot_mock()
   end
   world.run_due = p.run_due
   world.next_due = p.next_due
+  world.socket_open, world.socket_message = p.socket_open, p.socket_message
   world.finish = function()
     rawset(_G, "rpf", nil)
   end
@@ -211,6 +376,7 @@ local function boot_fivem()
   world.api = driver.resource("acme")
   world.run_due = driver.run_due
   world.next_due = driver.next_due
+  world.socket_open, world.socket_message = driver.socket_open, driver.socket_message
   world.stop_resource = driver.stop_resource
   world.finish = function()
     for key in pairs(_G) do
@@ -247,6 +413,12 @@ local function boot_gmod()
   end
   world.next_due = function()
     return fake:next_due()
+  end
+  world.socket_open = function(id)
+    fake:socket_open(id)
+  end
+  world.socket_message = function(id, text)
+    fake:socket_message(id, text)
   end
   world.finish = function()
     fake:uninstall()

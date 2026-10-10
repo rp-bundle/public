@@ -200,6 +200,15 @@ keep the job the portal has.
   `deploy/restore-drill` restores the newest backup to a scratch instance,
   migrates it and starts Rauthy on it, weekly in `restore-drill.yml`; the
   runbook, rehearsed, is in [Operations](docs/operations.md#restoring-the-database).
+- The addon API, part 2 (J3, #80). `rpf.api.records` reads, finds, holds
+  and writes addons' records: `get` and `list` locally, `query` through the
+  portal, `hold` and `release` on demand, `create`, `update` (a patch, with
+  an optional `revision` and fields to `clear`), `delete`, and `batch`, all
+  or nothing and reported together. Results are plain copies and refusals
+  are values. `records.created`, `records.changed` and `records.deleted`
+  announce every change to a held addon record, staff edits included. An
+  addon's calls close when it stops, and the records it held for the
+  server are released.
 
 ### Database
 

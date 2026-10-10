@@ -299,10 +299,18 @@ describe("live addon records", function()
     assert.are_not.equal(patch.id, deletion.id)
     answer(p, patch)
     assert.is_true(rpf.records.is_held("addon_record", FIELD), "the patch's answer says nothing of the deletion")
-    -- Refused (another record refers to it): the deletion is undone.
+    -- Refused (another record refers to it): the deletion is undone, and
+    -- scripts are told the record is back (J3).
+    ---@type rpf.data.Change?
+    local back = nil
+    rpf.events.on("records.changed", function(change)
+      back = change
+    end)
     answer(p, deletion, "rejected")
     assert.is_true(rpf.records.is_held("addon_record", FIELD))
     assert.is_nil(rpf.records.entries["addon_record:" .. FIELD].deleted)
+    back = assert(back)
+    assert.are.same({ "portal", "referenced", 7 }, { back.by, back.reason, assert(back.record).fields.water })
   end)
 
   it("send a deletion again on the portal's revision when its frame is stale", function()
@@ -340,6 +348,12 @@ describe("live addon records", function()
 
   it("take a staff edit by command, and let one go to be deleted", function()
     local p = farmed()
+    local told = {}
+    for _, name in ipairs({ "records.changed", "records.deleted" }) do
+      rpf.events.on(name, function(change)
+        told[#told + 1] = name .. " " .. change.by .. " " .. change.type
+      end)
+    end
     p.deliver(support.portal_frame("apply_command", {
       command = { command = "edit_addon_record", record_id = FIELD, base_revision = 1, patch = rpf.json.object({ water = 9 }) },
     }))
@@ -359,6 +373,7 @@ describe("live addon records", function()
     assert.are.equal("applied", last_of(p, "command_applied").outcome.outcome)
     assert.are.equal("addon_record", last_of(p, "release").records[1].kind)
     assert.is_false(rpf.records.is_held("addon_record", FIELD))
+    assert.are.same({ "records.changed staff acme_farm.field", "records.deleted staff acme_farm.field" }, told)
   end)
 end)
 

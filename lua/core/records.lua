@@ -81,6 +81,7 @@ local events = rpf.events
 ---@field patch table? On an addon record, the fields changed since the last report, each at its new value or `json.null` if cleared: what its next change carries.
 ---@field created "pending"|"sent"? On an addon record this server created, until the portal has it: `pending` until a frame carries the create, `sent` until that frame is answered. Such a record is only ever reported as its create, never whole.
 ---@field deleted boolean? On an addon record this server deleted: reported as its deletion, never whole, and forgotten once the portal has it.
+---@field version number? On an addon record, its revision as scripts see it (J3): the portal's when it was held (1 for one created here), moved on by every change made to it here, so a script's compare-and-set sees each change even when several go to the portal in one report.
 ---@field delete_sent boolean? On a deleted addon record, whether a frame carries its deletion. Only `rpf.sync` sets it.
 
 records.KINDS = { character = true, account = true, container = true, addon_record = true }
@@ -218,6 +219,7 @@ function records.take(held, through)
         kind = record.kind,
         id = id,
         revision = record.revision,
+        version = record.kind == "addon_record" and record.revision or nil,
         data = json.copy(data),
         through = through,
         changed = {},
@@ -622,7 +624,7 @@ local function writable_type(type_name)
   if not def or def.authority ~= "live" then
     return nil, "invalid"
   end
-  if rpf.addons.state(namespace) ~= "active" then
+  if not rpf.addons.running(namespace) then
     return nil, "inactive"
   end
   return def
@@ -669,6 +671,7 @@ function records.create_addon_record(type_name, owner, fields, id)
     kind = "addon_record",
     id = id,
     revision = 0,
+    version = 1,
     data = {
       id = id,
       type = type_name,
@@ -709,6 +712,7 @@ function records.set_addon_fields(id, patch)
     return nil, "invalid", refusal
   end
   entry.data.fields = fields
+  entry.version = (entry.version or entry.revision) + 1
   -- A create not sent yet carries every field as it is when it goes; one
   -- already sent does not have these, so they follow it as a patch.
   if entry.created ~= "pending" then

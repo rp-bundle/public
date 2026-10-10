@@ -46,6 +46,7 @@ server_scripts({
   "core/characters.lua",
   "core/jobs.lua",
   "core/edits.lua",
+  "core/data.lua",
   "core/api.lua",
   "shared.lua",
   "ws.lua",
