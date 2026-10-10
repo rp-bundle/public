@@ -273,6 +273,76 @@ describe("the FiveM adapter", function()
       assert.is_true(said)
     end)
 
+    ---Starts a server set up as `prepare` leaves it, and returns the error
+    ---lines it logged. A refusal is one line, and nothing connects.
+    ---@param convars table<string, string> The convars.
+    ---@param prepare fun(driver: table)? Changes the server before it starts.
+    ---@return string refusal The one error line.
+    ---@return table driver The driver.
+    local function refused(convars, prepare)
+      local driver, record = load_side("server", convars)
+      if prepare then
+        prepare(driver)
+      end
+      driver.start()
+      assert.are.same({}, record.connects, "nothing connects")
+      local errors = {}
+      for _, line in ipairs(record.logs) do
+        if line.level == "error" then
+          errors[#errors + 1] = line.message
+        end
+      end
+      assert.are.equal(1, #errors, "one line: " .. table.concat(errors, " | "))
+      assert.is_falsy(errors[1]:find("rpf_sk_secret", 1, true), "the key is never logged")
+      return errors[1], driver
+    end
+
+    it("refuses an address that is not a websocket's, naming rpf_url", function()
+      local line = refused({ rpf_url = "https://portal.example/ws", rpf_api_key = "rpf_sk_secret" })
+      assert.truthy(line:find("rpf_url is not the portal's websocket address", 1, true), line)
+    end)
+
+    it("refuses a key that is not shaped like one, naming rpf_api_key without repeating it", function()
+      local line = refused({ rpf_url = "wss://portal.example/ws", rpf_api_key = "sk_secret" })
+      assert.truthy(line:find("rpf_api_key does not look like a server API key", 1, true), line)
+      assert.is_falsy(line:find("sk_secret", 1, true), line)
+    end)
+
+    it("refuses to start with OneSync off, and says how to turn it on", function()
+      local convars = { onesync = "off" }
+      for name, value in pairs(CONVARS) do
+        convars[name] = value
+      end
+      local line = refused(convars)
+      assert.truthy(line:find("OneSync is off", 1, true), line)
+      assert.truthy(line:find("set onesync on", 1, true), line)
+    end)
+
+    it("refuses to start on an artifact without routing buckets, and says to update it", function()
+      local line = refused(CONVARS, function()
+        rawset(_G, "SetRoutingBucketEntityLockdownMode", nil)
+      end)
+      assert.truthy(line:find("this FXServer artifact has no SetRoutingBucketEntityLockdownMode", 1, true), line)
+      assert.truthy(line:find(rpf.fivem.server.ARTIFACTS_URL, 1, true), line)
+    end)
+
+    it("refuses to start while rpf-ws is not started, and says to ensure it first", function()
+      local line = refused(CONVARS, function(driver)
+        driver.resources["rpf-ws"] = "stopped"
+      end)
+      assert.truthy(line:find("the rpf-ws resource is stopped", 1, true), line)
+      assert.truthy(line:find("`ensure rpf-ws` before `ensure rpf`", 1, true), line)
+    end)
+
+    it("hands no player to a core it refused to start", function()
+      local _, driver = refused({ rpf_url = "wss://portal.example/ws" })
+      driver.add_player(7, "Sam", { "license:0123" })
+      driver.connect_player(7)
+      assert.is_nil(rpf.players.get(7))
+      driver.drop_player(7, "Exiting")
+      assert.is_nil(rpf.players.get(7))
+    end)
+
     it("hands the core players already on the server when it starts", function()
       local driver, record = load_side("server", CONVARS)
       driver.add_player(3, "Early", { "license:abc" })

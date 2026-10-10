@@ -31,6 +31,18 @@ keep the job the portal has.
 
 ### Added
 
+- Setup (H7, #56). [Installing](docs/installing.md) takes an owner from a
+  stock server to a connected one on FiveM and Garry's Mod, with a
+  troubleshooting section keyed by the console lines. Each release also
+  publishes `rpf-txadmin-recipe.yaml`, which txAdmin's deployer turns into a
+  server with the framework installed and OneSync on. The server's **API
+  keys** page shows the portal's websocket address, and on issuing a key the
+  exact `server.cfg` lines for each engine. The FiveM adapter refuses to
+  start, in one line saying what to do, on a malformed `rpf_url` or
+  `rpf_api_key`, an artifact without routing buckets, OneSync off, or
+  `rpf-ws` not started, and a refused start no longer takes player events;
+  the Gmod adapter does the same for a malformed convar and for a GWSockets
+  module that is installed but will not load.
 - Game-server releases (H7, #56). A version tag now also publishes a
   GitHub Release with `rpf-fivem-<version>.zip` (one `[rpf]` folder holding
   the `rpf` and `rpf-ws` resources, for `resources/`), `rpf-gmod-<version>.zip`

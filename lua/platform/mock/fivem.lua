@@ -149,11 +149,15 @@ end
 ---@param env table The global table the adapter will run in. Written to.
 ---@param host rpf.mock.ServerHost The harness's half, as for `mock.server`.
 ---@param seed integer The random seed, as for `mock.server`.
----@param convars table<string, string> The server's convars (`rpf_url`, `rpf_api_key`, …).
+---@param convars table<string, string> The server's convars (`rpf_url`, `rpf_api_key`, …). `onesync` is `on` unless given, as on a current FXServer.
 ---@return rpf.mock.FivemServer driver What the harness drives it with.
 function fivem.server(env, host, seed, convars)
   local p = fivem.mock.server(host, seed)
-  local _, fire = common(env, host, p, convars)
+  local with_defaults = { onesync = "on" }
+  for name, value in pairs(convars) do
+    with_defaults[name] = value
+  end
+  local _, fire = common(env, host, p, with_defaults)
   local net = {}
   local own_exports = {}
   local open = {}
@@ -177,7 +181,8 @@ function fivem.server(env, host, seed, convars)
   ---@field run_due fun() Runs every timer due.
   ---@field next_due fun(): number? When the next timer is due.
   ---@field http_done fun(id: integer, status: integer, body: string, headers: table<string, string>?) Answers a request.
-  local driver = { exported = own_exports, lockdown = {} }
+  ---@field resources table<string, string> Each resource's state as `GetResourceState` reports it: `rpf` and `rpf-ws` started. Anything else is `missing`.
+  local driver = { exported = own_exports, lockdown = {}, resources = { rpf = "started", ["rpf-ws"] = "started" } }
   local buckets = {}
 
   env.os = setmetatable({
@@ -224,6 +229,9 @@ function fivem.server(env, host, seed, convars)
   end
   env.SetRoutingBucketEntityLockdownMode = function(bucket, mode)
     driver.lockdown[bucket] = mode
+  end
+  env.GetResourceState = function(name)
+    return driver.resources[name] or "missing"
   end
   env.DropPlayer = function(player, reason)
     host.kick(tonumber(player), reason)

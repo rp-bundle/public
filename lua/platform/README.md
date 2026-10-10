@@ -96,7 +96,9 @@ not the core.
 [Deployment](../../docs/deployment.md#the-game-server-release)). GWSockets is required: put `gmsv_gwsockets_<platform>.dll` from
 <https://github.com/FredyH/GWSockets> into `garrysmod/lua/bin/`. Gmod has no
 websocket of its own and there is no fallback (#57), so without it the
-adapter logs one line saying so and starts nothing. Then, in `server.cfg`:
+adapter logs one line saying so and starts nothing; one that is installed
+but will not load (a build for another platform) is refused the same way,
+naming the build to install. Then, in `server.cfg`:
 
 ```
 rpf_ws_url "wss://<portal>/ws"
@@ -107,7 +109,10 @@ rpf_api_key "rpf_…"
 `rpf_api_key` is a protected convar: its value never reaches a client.
 Gmod runs `server.cfg` after the map loads, so the adapter looks for the
 convars every second from `InitPostEntity`, says once after ten seconds if
-they are still unset, and starts as soon as they are. It sets
+they are still unset, and starts as soon as they are. A url or key that is
+set but malformed (`rpf.client.target_problem`) is said once, and again
+only if it changes to another mistake, and it starts once it is put right.
+[Installing](../../docs/installing.md) is the owner's guide. It sets
 `sv_hibernate_think 1`, because an empty server otherwise stops its timers
 and GWSockets' `Think`, and with them the portal connection. A portal on a
 private address (development) needs the game started with `-allowlocalhttp`

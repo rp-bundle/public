@@ -89,6 +89,32 @@ describe("rpf.client", function()
     support.load_core()
   end)
 
+  describe("where it is told to connect", function()
+    it("takes a websocket address and a key shaped like a server key", function()
+      for _, url in ipairs({ "wss://portal.example/ws", "ws://127.0.0.1:3000/ws", "wss://portal.example" }) do
+        assert.is_nil(rpf.client.target_problem(url, "rpf_abcdefgh_secret"), url)
+      end
+    end)
+
+    it("names the setting that is wrong, without repeating either value", function()
+      local cases = {
+        { "https://portal.example/ws", "rpf_abcdefgh_secret", "url" },
+        { "portal.example/ws", "rpf_abcdefgh_secret", "url" },
+        { "wss://", "rpf_abcdefgh_secret", "url" },
+        { "wss://portal.example/ws ", "rpf_abcdefgh_secret", "url" },
+        { "wss://portal.example/ws", "abcdefgh_secret", "api_key" },
+        { "wss://portal.example/ws", "rpf_abcdefgh_secret\n", "api_key" },
+      }
+      for _, case in ipairs(cases) do
+        local which, reason = rpf.client.target_problem(case[1], case[2])
+        assert.are.equal(case[3], which, case[1] .. " " .. case[2])
+        reason = assert(reason)
+        assert.is_falsy(reason:find("secret", 1, true), "the key is never repeated")
+        assert.is_falsy(reason:find("portal.example/ws ", 1, true))
+      end
+    end)
+  end)
+
   describe("the handshake", function()
     it("opens with a Hello carrying the instance id, engine and versions", function()
       local p = support.fake_platform()

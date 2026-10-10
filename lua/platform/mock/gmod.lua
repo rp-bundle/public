@@ -34,6 +34,7 @@ local gmod = {}
 ---@field read fun(path: string): string Reads a file under the repository's `lua/` directory, like `core/init.lua`.
 ---@field convars table<string, string>? Convar values `server.cfg` would set, such as `rpf_ws_url`.
 ---@field binary_modules table<string, boolean>? Which binary modules are installed. GWSockets is, unless this says otherwise.
+---@field gwsockets_load_error string? What `require("gwsockets")` raises, for a module that is installed but will not load (built for another platform).
 ---@field query_typed boolean? False for a Gmod build without `sql.QueryTyped`.
 
 ---One fake player entity.
@@ -734,6 +735,9 @@ function gmod.install(side, host, options)
   package.preload.gwsockets = nil
   if modules.gwsockets ~= false then
     package.preload.gwsockets = function()
+      if options.gwsockets_load_error then
+        error(options.gwsockets_load_error, 0)
+      end
       _G.GWSockets = {
         createWebSocket = function(url)
           world.seq = world.seq + 1

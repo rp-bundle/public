@@ -1,0 +1,59 @@
+# A txAdmin recipe (H7): a stock FiveM server with rp-framework installed,
+# from txAdmin's deployer in one step. dev/release-addon fills in @VERSION@
+# and publishes the result as the release's rpf-txadmin-recipe.yaml, so a
+# recipe always installs the release it came with; the release named
+# "latest" is what https://github.com/Sampleeeee/rp-framework/releases/latest/download/rpf-txadmin-recipe.yaml
+# serves. docs/installing.md says how to use it, and why it exists.
+#
+# The base is txAdmin's own "FiveM Basic Server" recipe
+# (citizenfx/txAdmin-recipes, default-fivem), pinned by commit, as are the
+# default resources it downloads, so a recipe deploys the same server
+# whenever it runs.
+
+$engine: 3
+$onesync: on
+name: rp-framework
+author: rp-framework
+version: "@VERSION@"
+description: >-
+  A minimal FiveM server with rp-framework @VERSION@ connected to its hosted
+  portal. Before starting it, paste the server's portal address and API key
+  into server.cfg.
+
+tasks:
+  # txAdmin's default resources, as its own basic recipe takes them.
+  - action: download_github
+    src: https://github.com/citizenfx/cfx-server-data
+    ref: c6afa3909c763e3327ed76825e78453286c99f05
+    subpath: resources
+    dest: ./resources
+  - action: remove_path
+    path: ./resources/[gameplay]/chat
+  - action: download_file
+    url: https://raw.githubusercontent.com/citizenfx/txAdmin-recipes/eb673e230d8ea6b0b3656936ffbf73af3ad924a1/default-fivem/server.cfg
+    path: ./server.cfg
+
+  # The release: one [rpf] folder holding the rpf and rpf-ws resources.
+  - action: download_file
+    url: https://github.com/Sampleeeee/rp-framework/releases/download/v@VERSION@/rpf-fivem-@VERSION@.zip
+    path: ./tmp/rpf-fivem.zip
+  - action: unzip
+    src: ./tmp/rpf-fivem.zip
+    dest: ./resources
+  - action: remove_path
+    path: ./tmp
+
+  # Its two settings, left for the owner to fill in on the deployer's
+  # server.cfg step. Until both are set the resource says so in the console
+  # and does not connect.
+  - action: write_file
+    file: ./server.cfg
+    append: true
+    data: |
+
+      ## rp-framework @VERSION@: paste these two from the portal, on your
+      ## server's API keys page. Keep `set`: `setr` and `sets` publish the key.
+      set rpf_url ""
+      set rpf_api_key ""
+      ensure rpf-ws
+      ensure rpf

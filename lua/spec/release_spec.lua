@@ -281,3 +281,24 @@ describe("the Gmod zip", function()
     assert.is_nil(files["rpf/lua/rpf/platform/gmod/dev.lua"], "its presence alone turns the smoke test's commands on")
   end)
 end)
+
+describe("the txAdmin recipe", function()
+  it("installs this release's FiveM zip, with OneSync on and both resources ensured", function()
+    local recipe = read_file(DIR .. "/rpf-txadmin-recipe.yaml")
+    local zip = "https://github.com/Sampleeeee/rp-framework/releases/download/v"
+      .. VERSION
+      .. "/rpf-fivem-"
+      .. VERSION
+      .. ".zip"
+    assert.truthy(recipe:find(zip, 1, true), "it downloads " .. zip)
+    assert.is_falsy(recipe:find("@VERSION@", 1, true), "every placeholder is filled in")
+    assert.truthy(recipe:find("\n$onesync: on\n", 1, true))
+    -- The zip's one folder lands in resources/, as an owner unzipping it by
+    -- hand puts it.
+    assert.truthy(recipe:find("dest: ./resources\n", 1, true))
+    assert.is_truthy(shipped("fivem")["[rpf]/rpf/fxmanifest.lua"])
+    for _, line in ipairs({ 'set rpf_url ""', 'set rpf_api_key ""', "ensure rpf-ws", "ensure rpf\n" }) do
+      assert.truthy(recipe:find(line, 1, true), line)
+    end
+  end)
+end)

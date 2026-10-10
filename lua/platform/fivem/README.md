@@ -23,6 +23,8 @@ console commands (Testing, below); a release never has it.
 
 ## Installing
 
+[Installing](../../../docs/installing.md) is the owner's guide, with the
+txAdmin recipe and the troubleshooting lines; this is the adapter's view.
 Unzip a release's `rpf-fivem-<version>.zip` into the server's `resources/`,
 which gives it one `[rpf]` folder (FXServer finds resources inside a
 bracketed folder, and starts only what `server.cfg` ensures), or copy both
@@ -36,10 +38,18 @@ ensure rpf
 ```
 
 Use `set`, never `setr` or `sets`: those publish a convar to every client or
-to the server list, and the API key is a secret. Without both convars the
-adapter logs an error and does not connect. The server needs OneSync (the
-input lock's routing buckets, below), which is on by default on a current
-FXServer.
+to the server list, and the API key is a secret. The server needs OneSync
+(the input lock's routing buckets, below), which is on by default on a
+current FXServer.
+
+The adapter refuses to start, in one console line saying what to do
+(`server.refusal`), when either convar is empty, when `rpf_url` is not a
+`ws://`/`wss://` address or `rpf_api_key` is not shaped like a key
+(`rpf.client.target_problem`, which never repeats the key), when the
+artifact lacks a routing-bucket native (`server.NATIVES`), when OneSync is
+off, or when `rpf-ws` is not started. A refused start hands the core no
+player events either. Those lines are what `docs/installing.md`'s
+troubleshooting section is keyed by.
 
 `restart rpf` reconnects at once. `restart rpf-ws` stops `rpf` with it and
 leaves it stopped, because FiveM stops a resource with its dependency but

@@ -247,6 +247,33 @@ client.DEFAULTS = {
 local Client = {}
 Client.__index = Client
 
+---What is wrong with where an adapter was told to connect, in words an
+---owner can act on, or nil if nothing the core can see is. Each adapter
+---checks before it starts the core and names its own setting (`rpf_url`,
+---`rpf_ws_url`, …) before the reason, because the core does not know what
+---the engine calls it. A key that is well formed and wrong only the portal
+---can refuse, as `unauthorised`.
+---
+---Neither value appears in what it returns: the url is the owner's own, but
+---the key is a secret, and the two are reported alike.
+---@param url string The portal's websocket address, as configured.
+---@param api_key string The server's API key, as configured.
+---@return ("url"|"api_key")? which The setting that is wrong.
+---@return string? reason Why, and what it should look like.
+function client.target_problem(url, api_key)
+  if not url:match("^wss?://[^/%s]+") or url:match("%s") then
+    return "url",
+      "is not the portal's websocket address: it starts wss:// (ws:// only for a portal on this machine)"
+        .. " and has no spaces, like wss://portal.example/ws"
+  end
+  if api_key:sub(1, 4) ~= "rpf_" or api_key:match("%s") then
+    return "api_key",
+      "does not look like a server API key, which starts rpf_ and has no spaces;"
+        .. " copy it from the server's API keys page in the portal"
+  end
+  return nil
+end
+
 ---Creates a connection, loading any outbox a previous process left behind.
 ---It does not connect until `start`.
 ---@param platform rpf.ServerPlatform The platform, already checked.

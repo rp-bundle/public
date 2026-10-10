@@ -142,7 +142,9 @@ one that goes is deprecated a release ahead, with the replacement named in
 - The resource and addon names (`rpf`, `rpf-ws`), and the folder layout an
   owner installs: the FiveM release's one `[rpf]` folder holding the two
   resources, and the Gmod release's `rpf` addon folder
-  ([Deployment](deployment.md#the-game-server-release)).
+  ([Deployment](deployment.md#the-game-server-release)), and the release
+  assets' names, which links like the txAdmin recipe's
+  `releases/latest/download/rpf-txadmin-recipe.yaml` name.
 - Convars (`rpf_url`, `rpf_api_key`, …) and their Gmod equivalents.
 - Exports and globals other resources call (`exports.rpf:api()`, the
   `rpf` global on Gmod), and the public Lua API behind them, whose majors

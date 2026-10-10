@@ -43,10 +43,12 @@
 ---@field INSTALL_URL string Where its install instructions are.
 ---@field CONFIG_POLL_S number How often, in seconds, the adapter looks for its convars until they are set.
 ---@field CONFIG_PATIENCE integer How many looks find them unset before the adapter says so.
+---@field CONVARS table<"url"|"api_key"|"portal_url", string> The convars' names, by what each holds, for the lines that name one.
 local server = {}
 
 server.CONFIG_POLL_S = 1
 server.CONFIG_PATIENCE = 10
+server.CONVARS = { url = "rpf_ws_url", api_key = "rpf_api_key", portal_url = "rpf_portal_url" }
 
 server.MODULE = "gwsockets"
 server.INSTALL_URL = "https://github.com/FredyH/GWSockets#usage"
@@ -61,15 +63,15 @@ local lock = include("rpf/platform/gmod/lock.lua") --[[@as rpf.gmod.Lock]]
 -- Made even on a server that refuses to start, so `server.cfg` setting them
 -- does not add "Unknown command" lines beside the one line that matters.
 local url_var =
-  CreateConVar("rpf_ws_url", "", { FCVAR_DONTRECORD }, "The portal's websocket url, wss://<portal>/ws.")
+  CreateConVar(server.CONVARS.url, "", { FCVAR_DONTRECORD }, "The portal's websocket url, wss://<portal>/ws.")
 local key_var = CreateConVar(
-  "rpf_api_key",
+  server.CONVARS.api_key,
   "",
   { FCVAR_PROTECTED, FCVAR_DONTRECORD, FCVAR_UNLOGGED },
   "This server's API key from the portal. A secret."
 )
 local portal_var =
-  CreateConVar("rpf_portal_url", "", { FCVAR_DONTRECORD }, "The portal's HTTP address, if not the websocket's host.")
+  CreateConVar(server.CONVARS.portal_url, "", { FCVAR_DONTRECORD }, "The portal's HTTP address, if not the websocket's host.")
 
 ---Why the framework cannot run on this server, or nil if it can.
 ---@return string? reason One line naming what is missing and how to fix it.
@@ -87,12 +89,24 @@ local function refusal()
 end
 
 local refused = refusal()
+if not refused then
+  -- Installed is not loadable: a module built for another platform or
+  -- branch (a 32-bit build on a 64-bit server, say) fails here, and Gmod's
+  -- own error names no fix.
+  local loaded, err = pcall(require, server.MODULE)
+  if not loaded then
+    refused = "rpf: the GWSockets binary module is installed but would not load ("
+      .. tostring(err)
+      .. "), so the framework will not start. Install the build for this server's platform and branch"
+      .. " (gmsv_gwsockets_win64.dll on a 64-bit Windows server, linux64 on a 64-bit Linux one): "
+      .. server.INSTALL_URL
+  end
+end
 if refused then
   shared.log("error", refused)
   return server
 end
 
-require(server.MODULE)
 local core = load.core("server")
 load.send_client_files(core)
 
@@ -160,12 +174,26 @@ if file.Exists(load.ROOT .. "platform/gmod/dev.lua", "LUA") then
   include(load.ROOT .. "platform/gmod/dev.lua")(core, platform)
 end
 
+---The last thing said about the convars' values, so a wrong one is said
+---once, not on every look, and said again only if it changes.
+---@type string?
+local said = nil
+
 ---Starts the core and wires the engine's events to it, once the url and the
----key are set.
----@return boolean started False while either is still unset.
+---key are set and look right.
+---@return boolean started False while either is unset or wrong.
 local function start()
   local url, key, portal_url = url_var:GetString(), key_var:GetString(), portal_var:GetString()
   if url == "" or key == "" then
+    return false
+  end
+  local which, reason = core.client.target_problem(url, key)
+  if which then
+    local line = "rpf: " .. server.CONVARS[which] .. " " .. reason .. "; the framework is not started."
+    if line ~= said then
+      said = line
+      shared.log("error", line)
+    end
     return false
   end
   core.start_server(platform, { url = url, api_key = key, portal_url = portal_url ~= "" and portal_url or nil })

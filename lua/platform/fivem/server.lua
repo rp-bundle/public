@@ -8,6 +8,7 @@
 ---function in `rpf.fivem.server`, which the busted suite and the fake game
 ---server run against fake FiveM globals (`lua/platform/mock/fivem.lua`).
 ---@class rpf.fivem.server
+---@field started boolean? True once `server.start` has started the core, which the player events wait for.
 local server = {}
 
 local rpf = rpf
@@ -133,26 +134,78 @@ function server.platform(shim, transport)
   return p
 end
 
+---The natives the adapter calls that an old FXServer artifact may lack:
+---the routing buckets that hold a player until they log in (`lock.lua`).
+---Checked by name, so an artifact too old for them is told so at start
+---rather than failing on a player's first join.
+server.NATIVES = {
+  "GetPlayerRoutingBucket",
+  "SetPlayerRoutingBucket",
+  "SetRoutingBucketEntityLockdownMode",
+}
+
+---Where an owner finds a current FXServer artifact.
+server.ARTIFACTS_URL = "https://runtime.fivem.net/artifacts/fivem/"
+
+---Why the core must not start on this server, as the one line an owner
+---reads in the console, or nil if it may. The lines are what
+---`docs/installing.md`'s troubleshooting section is keyed by, so a change to
+---one changes it there too.
+---@param url string `rpf_url`, as set.
+---@param api_key string `rpf_api_key`, as set. Never part of the answer.
+---@return string? refusal What is wrong and what to do about it.
+function server.refusal(url, api_key)
+  if url == "" or api_key == "" then
+    return "rpf: set "
+      .. server.CONVARS.url
+      .. " and "
+      .. server.CONVARS.api_key
+      .. " in server.cfg (with `set`, never `setr` or `sets`, which publish the key); not connecting"
+  end
+  local which, reason = core.client.target_problem(url, api_key)
+  if which then
+    return "rpf: " .. server.CONVARS[which] .. " " .. reason .. "; not connecting"
+  end
+  for _, native in ipairs(server.NATIVES) do
+    if type(_G[native]) ~= "function" then
+      return "rpf: this FXServer artifact has no "
+        .. native
+        .. ", which holding a player until they log in needs; update the server's artifact ("
+        .. server.ARTIFACTS_URL
+        .. "); not connecting"
+    end
+  end
+  if GetConvar("onesync", "off") == "off" then
+    return "rpf: OneSync is off, and holding a player until they log in needs its routing buckets;"
+      .. " turn it on (`set onesync on` in server.cfg, or txAdmin's OneSync setting) and restart the server; not connecting"
+  end
+  local shim = GetResourceState("rpf-ws")
+  if shim ~= "started" then
+    return "rpf: the rpf-ws resource is "
+      .. tostring(shim)
+      .. ", and it carries the portal connection; keep both folders of the release's [rpf] folder in resources/"
+      .. " and `ensure rpf-ws` before `ensure rpf`. If it is there, its own error is above; not connecting"
+  end
+  return nil
+end
+
 ---Starts the core from the convars, then hands it every player already on
 ---the server, which is everyone when the resource is restarted on a live
----server. Logs and does nothing when a convar is missing, rather than
----connecting somewhere wrong.
+---server. Logs one line and does nothing when it may not start
+---(`server.refusal`), rather than connecting somewhere wrong or failing on
+---the first join; until it starts, the engine's player events are not
+---handed on, since there is no core to hand them to.
 ---@param platform rpf.ServerPlatform The platform from `server.platform`.
----@return boolean started False when the convars are not set.
+---@return boolean started False when it refused.
 function server.start(platform)
   local url = GetConvar(server.CONVARS.url, "")
   local api_key = GetConvar(server.CONVARS.api_key, "")
-  if url == "" or api_key == "" then
-    platform.log(
-      "error",
-      "rpf: set "
-        .. server.CONVARS.url
-        .. " and "
-        .. server.CONVARS.api_key
-        .. " in server.cfg (with `set`, never `setr` or `sets`, which publish the key); not connecting"
-    )
+  local refusal = server.refusal(url, api_key)
+  if refusal then
+    platform.log("error", refusal)
     return false
   end
+  server.started = true
   local portal_url = GetConvar(server.CONVARS.portal_url, "")
   core.start_server(platform, {
     url = url,
@@ -200,8 +253,8 @@ end)
 -- `playerJoining`, not `playerConnecting`: a connecting player's `source`
 -- is a temporary id that changes once they join, and the core keeps the
 -- handle for the whole session.
-AddEventHandler("playerJoining", function() core.players.connected(tonumber(source)) end)
-AddEventHandler("playerDropped", function(reason) core.players.dropped(tonumber(source), reason) end)
+AddEventHandler("playerJoining", function() if server.started then core.players.connected(tonumber(source)) end end)
+AddEventHandler("playerDropped", function(reason) if server.started then core.players.dropped(tonumber(source), reason) end end)
 AddEventHandler("chatMessage", function(from) fivem.lock.silence(from) end)
 
 return server

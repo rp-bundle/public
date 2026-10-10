@@ -203,6 +203,38 @@ describe("the Gmod adapter's server", function()
     assert.is_nil(rawget(_G, "rpf"))
   end)
 
+  it("refuses to start when GWSockets is installed but will not load, saying which build to install", function()
+    local _, record = boot("server", { gwsockets_load_error = "Couldn't load module library!" })
+    assert.are.equal(0, #record.connects)
+    assert.are.equal(1, #record.logs)
+    local line = record.logs[1].message
+    assert.truthy(line:find("installed but would not load (Couldn't load module library!)", 1, true), line)
+    assert.truthy(line:find("gmsv_gwsockets_win64.dll", 1, true), line)
+    assert.is_nil(rawget(_G, "rpf"))
+  end)
+
+  it("says once that a convar is wrong, and starts once it is put right", function()
+    local world, record = boot("server", {
+      convars = { rpf_ws_url = "https://portal.test/ws", rpf_api_key = "rpf_sk_test" },
+    })
+    for _ = 1, 5 do
+      record.time = record.time + 1000
+      world:run_due()
+    end
+    assert.are.equal(0, #record.connects)
+    assert.are.equal(1, logged(record, "error", "rpf_ws_url is not the portal's websocket address"))
+    world:set_convar("rpf_api_key", "sk_test")
+    world:set_convar("rpf_ws_url", "wss://portal.test/ws")
+    record.time = record.time + 1000
+    world:run_due()
+    assert.are.equal(1, logged(record, "error", "rpf_api_key does not look like a server API key"))
+    assert.are.equal(0, logged(record, "error", "sk_test"), "the key is never logged")
+    world:set_convar("rpf_api_key", "rpf_sk_test")
+    record.time = record.time + 1000
+    world:run_due()
+    assert.are.equal(1, #record.connects)
+  end)
+
   it("refuses to start on a Gmod without sql.QueryTyped", function()
     local _, record = boot("server", { query_typed = false })
     assert.are.equal(0, #record.connects)
