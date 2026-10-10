@@ -183,6 +183,26 @@ describe("live addon records", function()
     assert.are.same({ "addon_record" }, kinds)
   end)
 
+  it("report a change made while the create is in flight once the create lands", function()
+    local p = farmed()
+    local record = assert(rpf.records.create_addon_record(
+      "acme_farm.field",
+      { kind = "player", id = PLAYER },
+      { label = "East" }
+    ))
+    p.advance(FLUSH)
+    local create = last_of(p, "state_changed")
+    assert(rpf.records.set_addon_fields(record.id, { water = 3 }))
+    p.advance(FLUSH)
+    assert.are.equal(create.id, last_of(p, "state_changed").id, "nothing until the create lands")
+    answer(p, create)
+    p.advance(FLUSH)
+    local change = last_of(p, "state_changed").changes[1]
+    assert.are.equal("addon_record", change.kind)
+    assert.are.equal(1, change.base_revision)
+    assert.are.same({ water = 3 }, change.patch)
+  end)
+
   it("refuse a create of a type the server does not run, or for an owner it does not take", function()
     farmed()
     assert.are.equal(

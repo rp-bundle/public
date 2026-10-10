@@ -380,6 +380,10 @@ local function settle_report(id, reply, err)
       local entry = records.entries[key]
       if entry and entry.created == "sent" then
         entry.created = nil
+        -- Changes made while it was in flight go now.
+        if entry.changed.fields then
+          sync.schedule()
+        end
       end
       if entry and entry.delete_sent and reply.type == "state_applied" then
         records.entries[key] = nil
@@ -435,8 +439,11 @@ local function settle_report(id, reply, err)
         -- portal refused (another record refers to it) is undone here,
         -- and the record reported whole.
         if entry.created == "sent" then
+          -- The create goes again with every field, changes since included.
           entry.created = "pending"
           entry.revision = 0
+          entry.patch = nil
+          entry.changed = {}
         end
         if entry.delete_sent then
           entry.deleted, entry.delete_sent = nil, nil

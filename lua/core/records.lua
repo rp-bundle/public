@@ -709,7 +709,9 @@ function records.set_addon_fields(id, patch)
     return nil, "invalid", refusal
   end
   entry.data.fields = fields
-  if not entry.created then
+  -- A create not sent yet carries every field as it is when it goes; one
+  -- already sent does not have these, so they follow it as a patch.
+  if entry.created ~= "pending" then
     entry.patch = entry.patch or json.object({})
     for name in pairs(patch) do
       local value = fields[name]
