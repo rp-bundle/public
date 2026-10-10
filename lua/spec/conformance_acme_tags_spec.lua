@@ -133,6 +133,26 @@ conformance.run(busted, "the acme_tags example", {
     end,
   },
   {
+    name = "asks for a page again when the portal refuses its hold",
+    run = function(world)
+      world.portal.records[OLD_TAG] = {
+        id = OLD_TAG,
+        type = "acme_tags.tag",
+        owner = { kind = "player", id = PLAYER },
+        revision = 3,
+        fields = { text = "old", spot = { x = 0, y = 0, z = 0 }, fades_at = 1 },
+        held = false,
+      }
+      world.portal.refuse = { hold = "not_found" } -- a tag deleted since the query
+      sprayable(world)
+      assert.are.equal(0, #world.api.records.list("acme_tags.tag"))
+      world.portal.refuse = nil
+      world:advance(30000)
+      world:pump()
+      assert.are.equal(1, #world.api.records.list("acme_tags.tag"), "held on the retry")
+    end,
+  },
+  {
     name = "answers a long reason whole characters at a time, and drops a name no addon could have",
     run = function(world)
       local player = sprayable(world)

@@ -33,11 +33,26 @@ local function hold_all(rpf, after)
         ids[#ids + 1] = tag.id
       end
     end
-    if #ids > 0 then
-      rpf.records.hold(acme_tags.TYPE, ids)
+    -- The next page only once this one's are held: a hold the portal
+    -- refuses (a tag deleted since the query) asks for this page again.
+    local function next_one()
+      if next_page then
+        hold_all(rpf, next_page)
+      end
     end
-    if next_page then
-      hold_all(rpf, next_page)
+    if #ids == 0 then
+      next_one()
+      return
+    end
+    local holding, refused_now = rpf.records.hold(acme_tags.TYPE, ids, function(_, hold_err)
+      if hold_err then
+        retry(hold_err)
+      else
+        next_one()
+      end
+    end)
+    if not holding then
+      retry(refused_now)
     end
   end)
   if not asked then
