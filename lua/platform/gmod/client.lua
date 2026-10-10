@@ -51,4 +51,10 @@ hook.Add("InitPostEntity", "rpf", function()
   core.start_client(platform)
 end)
 
+-- The minimal interaction UI (J4): what is near, as a menu. Gmod's E is
+-- `+use`, so it is a command a player binds (`bind f rpf_interact`).
+concommand.Add("rpf_interact", function()
+  core.targets.open()
+end)
+
 return client

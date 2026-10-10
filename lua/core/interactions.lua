@@ -5,8 +5,10 @@
 ---This is the seam the contract's rule needs (`docs/architecture/addons.md`,
 ---"The Lua API"): a request from a client reaches **only a handler an
 ---active addon registered**, under its own namespace, never an event name
----the client chose. J4 (#81) builds targeting on it (which record, entity
----or zone, distance, cooldowns); J10 (#239) carries it as a request and its
+---the client chose. J4 (#81) adds rules to a registration (`rpf.targets`:
+---a target in the world, distance, bucket, cooldown, permission, the
+---addon's own check), all checked here on the server before the handler
+---runs; J10 (#239) carries it as a request and its
 ---answer, over ox_lib's `lib.callback` on FiveM (`request_server` and
 ---`on_client_request` on the platform), and keeps this rule.
 ---
@@ -57,6 +59,7 @@ interactions.MAX_WAITING = 64
 ---@field handler any The addon's handler: a function, or a FiveM function reference.
 ---@field namespace string The addon that registered it.
 ---@field disown fun() Forgets the addon's ownership of it, once it is replaced.
+---@field rules rpf.targets.Rules? Its rules (J4), if it was registered with any.
 
 ---@type table<string, rpf.interactions.Entry>
 local handlers = {}
@@ -167,14 +170,27 @@ end
 
 -- The server ----------------------------------------------------------------
 
+---Tells every player in the world the rules there are now, once the
+---current code has finished registering (`rpf:target_rules`, for a target
+---resource).
+local push_rules
+
+---Whether every rule with a target, this one among them (in place of any
+---registered under its name), still fits the one `rpf:target_rules` frame
+---a client decodes (`handoff.MAX_LIST_PAYLOAD`), counting addons that are
+---not running too, so a rule accepted now stays deliverable.
+local rules_fit
+
 ---Registers an addon's interaction. Registering a name again replaces it,
 ---and the one replaced goes at once; one registered while the addon's code
 ---runs goes when it stops.
 ---@param name any `<namespace>.<name>`, under an addon loaded here.
----@param handler any `handler(player, payload)`, answering `true` and optionally a table of data for the client, or `false` and a reason for the player.
+---@param handler any `handler(player, payload, target)`, answering `true` and optionally a table of data for the client, or `false` and a reason for the player. `target` is what the rules resolved (`rpf.targets`), nil without a target rule.
+---@param rules any? The rules (`rpf.targets.check_rules`): `label`, `target`, `distance`, `cooldown`, `permission`, `check`.
 ---@return boolean? ok True once registered.
----@return string? err `invalid` for a name or handler that is not one, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an addon activation that has ended.
-function interactions.register(name, handler)
+---@return string? err `invalid` for a name, handler or rules that are not one, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an addon activation that has ended, `too_large` for a rule that would take every rule with a target past what one `rpf:target_rules` frame carries.
+---@return table? detail For rules refused, `{ error = "rules", field = <key> }`.
+function interactions.register(name, handler, rules)
   if not rpf.addons then
     return nil, "invalid"
   end
@@ -191,18 +207,29 @@ function interactions.register(name, handler)
   if rpf.addons.stale() then
     return nil, "inactive"
   end
+  local checked, bad = rpf.targets.check_rules(namespace, rules)
+  if bad then
+    return nil, "invalid", { error = "rules", field = bad }
+  end
+  if checked and not rules_fit(name, namespace, checked) then
+    return nil, "too_large"
+  end
   local previous = handlers[name]
   if previous then
     previous.disown()
   end
+  rpf.targets.forget(name)
   ---@type rpf.interactions.Entry
-  local entry = { handler = handler, namespace = namespace, disown = function() end }
+  local entry = { handler = handler, namespace = namespace, disown = function() end, rules = checked }
   handlers[name] = entry
   entry.disown = rpf.addons.own(function()
     if handlers[name] == entry then
       handlers[name] = nil
+      rpf.targets.forget(name)
+      push_rules()
     end
   end)
+  push_rules()
   return true
 end
 
@@ -320,12 +347,71 @@ local function on_interact(player, payload, respond)
     respond(refusal("inactive"))
     return
   end
-  local ran, ok, extra = rpf.addons.run(
-    rpf.addons.context_of(entry.namespace),
-    entry.handler,
-    player,
-    copy(request.payload) or {}
-  )
+  local given = copy(request.payload) or {}
+  local rules = entry.rules
+  local target = nil
+  -- The activation this request runs in, taken once: a check that yields
+  -- may resume after the addon was disabled, re-enabled or reloaded.
+  local context = rpf.addons.context_of(entry.namespace)
+  if rules then
+    local resolved, refused = rpf.targets.admit(name, rules, player, given)
+    if resolved == nil then
+      respond(refusal(refused or "not_found"))
+      return
+    end
+    target = resolved or nil
+    -- The cooldown starts now, before any addon code runs: a check or a
+    -- handler that yields (FiveM) would otherwise let the same player's
+    -- next request through the admission above meanwhile. A check that
+    -- refuses gives it back.
+    local reservation = rpf.targets.reserve(name, rules, player)
+    if rules.check then
+      local checked, allowed, why = rpf.addons.run(context, rules.check, player, rpf.targets.copy(target))
+      if not checked or allowed ~= true then
+        rpf.targets.release(reservation)
+      end
+      if not checked then
+        p.log("error", "rpf: the check of the interaction " .. name .. " failed: " .. tostring(allowed))
+        respond(refusal("failed"))
+        return
+      end
+      if allowed ~= true then
+        local read, text = pcall(encode_answer, name, false, why)
+        respond(read and text or refusal("refused"))
+        return
+      end
+      -- Still this registration, of this activation: one taken down while
+      -- the check ran must not run its handler as if it belonged to the
+      -- activation that replaced it.
+      local now = rpf.addons.context_of(entry.namespace)
+      if handlers[name] ~= entry or not rpf.addons.running(entry.namespace) or not now or not context or now.run ~= context.run then
+        rpf.targets.release(reservation)
+        respond(refusal("inactive"))
+        return
+      end
+      -- And still allowed: a check that yields may resume after the player
+      -- moved, left or lost the permission, or the target was hidden or
+      -- deleted. Everything but the cooldown, which this request holds, is
+      -- checked again, from the player and the target as they are now.
+      local fresh = rpf.players.get(player.handle)
+      if not fresh or fresh.player_id ~= player.player_id or fresh.state == "dropping" then
+        rpf.targets.release(reservation)
+        respond(refusal("not_logged_in"))
+        return
+      end
+      player = fresh
+      local again, refused_now = rpf.targets.admit(name, rules, player, given, true)
+      if again == nil or not rpf.targets.same(target, again or nil) then
+        -- Gone, out of reach, or now another target than the one the check
+        -- approved (a reused ref): the handler runs on nothing unchecked.
+        rpf.targets.release(reservation)
+        respond(refusal(refused_now or "not_found"))
+        return
+      end
+      target = again or nil
+    end
+  end
+  local ran, ok, extra = rpf.addons.run(context, entry.handler, player, given, rpf.targets.copy(target))
   if not ran then
     p.log("error", "rpf: the interaction " .. name .. " failed: " .. tostring(ok))
     respond(refusal("failed"))
@@ -342,12 +428,96 @@ local function on_interact(player, payload, respond)
   respond(text)
 end
 
----Listens for interactions, and forgets a player's count when they leave.
----Called by `rpf.start_server`.
+---A list marked as a JSON array, whether or not it is empty: `mark` takes
+---an empty table for an object, and the client reads these as arrays.
+---@param list table[] The list, of plain data.
+---@return table marked The array.
+local function list_of(list)
+  if #list == 0 then
+    return json.array({})
+  end
+  return mark(list) or json.array({})
+end
+
+---Checks a rule against the frame's size (declared above, for `register`).
+---@param name string The interaction.
+---@param namespace string Its addon.
+---@param rules rpf.targets.Rules Its rules.
+---@return boolean fits True if every rule still fits one frame.
+rules_fit = function(name, namespace, rules)
+  local entries = {}
+  for other, entry in pairs(handlers) do
+    entries[other] = entry
+  end
+  entries[name] = { rules = rules, namespace = namespace }
+  -- Every string in a rule is checked as UTF-8 by `check_rules`; a throw
+  -- here would still be a refusal, never through the API.
+  local encoded, text = pcall(handoff.encode, handoff.TARGET_RULES, { rules = list_of(rpf.targets.listed(entries, true)) })
+  return encoded and #text <= handoff.MAX_LIST_PAYLOAD
+end
+
+---The rules with a target, encoded for a client.
+---@return string payload The `rpf:target_rules` payload.
+local function rules_payload()
+  return handoff.encode(handoff.TARGET_RULES, { rules = list_of(rpf.targets.listed(handlers)) })
+end
+
+---Whether a push of the rules is waiting to go.
+local pushing = false
+
+---Sends every player in the world the rules there are now, on the next
+---turn of the clock, once however many registrations changed meanwhile.
+push_rules = function()
+  local p = platform --[[@as rpf.ServerPlatform?]]
+  if pushing or not p or not rpf.players then
+    return
+  end
+  pushing = true
+  p.after(0, function()
+    pushing = false
+    local payload = rules_payload()
+    for _, player in ipairs(rpf.players.list()) do
+      if player.state == "active" then
+        p.to_client(player.handle, handoff.TARGET_RULES, payload)
+      end
+    end
+  end)
+end
+
+---Answers a client's `rpf:targets`: the options near them, counted against
+---the same rate as their interactions.
+---@param player rpf.PlayerView The player.
+---@param payload any The raw request.
+---@param respond fun(reply: string) Answers it.
+local function on_targets(player, payload, respond)
+  local empty = handoff.encode(handoff.TARGETS_RESULT, { options = json.array({}) })
+  if not handoff.decode(handoff.TARGETS, payload) or not admit(player.player_id) then
+    respond(empty)
+    return
+  end
+  respond(handoff.encode(handoff.TARGETS_RESULT, { options = list_of(rpf.targets.options(handlers, player)) }))
+end
+
+---Listens for interactions and nearby requests, tells each player the
+---target rules as they arrive in the world and whenever an addon starts or
+---stops, and forgets a player's count when they leave. Called by
+---`rpf.start_server`.
 ---@param p rpf.ServerPlatform The platform.
 function interactions.serve(p)
   platform = p
+  rpf.targets.serve(p)
   rpf.players.on_client_request(handoff.INTERACT, on_interact, refusal("not_logged_in"))
+  rpf.players.on_client_request(
+    handoff.TARGETS,
+    on_targets,
+    handoff.encode(handoff.TARGETS_RESULT, { options = json.array({}) })
+  )
+  rpf.events.on("players.active", function(player)
+    p.to_client(player.handle, handoff.TARGET_RULES, rules_payload())
+  end)
+  rpf.events.on("addons.state", function()
+    push_rules()
+  end)
   rpf.events.on("players.dropping", function(player)
     if player.player_id then
       counts[player.player_id] = nil
@@ -460,10 +630,12 @@ function interactions.request(name, payload, callback)
   end)
 end
 
----Keeps the platform the requests go through. Called by `rpf.start_client`.
+---Keeps the platform the requests go through, and starts the client's
+---half of the targets (`rpf.targets`). Called by `rpf.start_client`.
 ---@param p rpf.ClientPlatform The platform.
 function interactions.start_client(p)
   platform = p
+  rpf.targets.start_client(p)
 end
 
 rpf.interactions = interactions

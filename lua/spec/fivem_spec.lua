@@ -210,7 +210,7 @@ describe("the FiveM adapter", function()
       for _, file in ipairs(rpf.files.client) do
         expected[#expected + 1] = "core/" .. file
       end
-      for _, file in ipairs({ "shared.lua", "ox.lua", "ui.lua", "client.lua" }) do
+      for _, file in ipairs({ "shared.lua", "ox.lua", "ui.lua", "target.lua", "client.lua" }) do
         expected[#expected + 1] = file
       end
       assert.are.same(expected, fakes().scripts(support.read(MANIFEST), "client"))
@@ -1074,6 +1074,110 @@ describe("the FiveM adapter", function()
       assert.are.same({ invincible = true, blocking = true, frozen = true }, driver.peds[7003], "streamed in later")
       driver.from_server("rpf:placed_peds", "not a list")
       assert.are.same({}, driver.peds[7002])
+    end)
+
+    ---The server's rules for a target resource, as it pushes them.
+    ---@param driver table The client's driver.
+    local function push_rules(driver)
+      local json = rpf.json
+      driver.from_server(
+        "rpf:target_rules",
+        rpf.handoff.encode("rpf:target_rules", {
+          rules = json.array({
+            json.object({ name = "acme_npcs.talk", label = "Talk", type = "acme_npcs.greeter", kind = "ped", distance = 3 }),
+            json.object({ name = "acme_npcs.bow", label = "Bow", models = json.array({ "prop_atm_01" }), distance = 2 }),
+            json.object({ name = "acme_npcs.rest", label = "Rest", type = "acme_npcs.area", kind = "zone", distance = 3 }),
+          }),
+        })
+      )
+    end
+
+    it("binds the minimal interaction UI to a key, which asks the server what is near", function()
+      local driver, record = load_side("client", { rpf_interact_key = "F" })
+      driver.start()
+      assert.are.same({ { command = "rpf_interact", description = "Interact with what is near", mapper = "keyboard", key = "F" } }, driver.key_mappings)
+      driver.commands.rpf_interact()
+      assert.are.equal("rpf:targets", record.to_server[#record.to_server].name)
+    end)
+
+    it("offers the rules through ox_target, on placed peds of the type and on the models, and sends a pick by network id", function()
+      local driver, record = load_side("client")
+      driver.resources.ox_target = "started"
+      driver.start()
+      push_rules(driver)
+      local by_call = {}
+      for _, call in ipairs(driver.target_calls) do
+        by_call[call.call] = call
+      end
+      assert.is_nil(by_call.addGlobalObject, "no object rule")
+      local option = by_call.addGlobalPed.args[1][1]
+      assert.are.equal("acme_npcs.talk", option.name)
+      assert.are.equal(3, option.distance)
+      driver.entity_state[7001] = { rpf_placement = { id = "0000000a-0000-4000-8000-00000000000a", type = "acme_npcs.greeter" } }
+      driver.entity_state[7002] = { rpf_placement = { id = "x", type = "acme_npcs.other" } }
+      assert.is_true(option.canInteract(7001))
+      assert.is_false(option.canInteract(7002))
+      assert.is_false(option.canInteract(7003))
+      assert.are.same({ "prop_atm_01" }, by_call.addModel.args[1])
+      driver.net_ids[7001] = 505001
+      option.onSelect({ entity = 7001 })
+      local sent = record.to_server[#record.to_server]
+      assert.are.equal("rpf:interact", sent.name)
+      local request = rpf.json.decode(sent.payload:match("^%d+\n(.*)$"))
+      assert.are.equal("acme_npcs.talk", request.name)
+      assert.are.equal(505001, request.payload.target.ref)
+
+      local before = #driver.target_calls
+      push_rules(driver)
+      assert.are.equal("removeGlobalPed", driver.target_calls[before + 1].call, "the old options go first")
+      assert.are.same({ "acme_npcs.talk" }, driver.target_calls[before + 1].args[1])
+    end)
+
+    it("offers the rules through qb-target when that is what runs, and through nothing when neither does", function()
+      local driver = load_side("client")
+      driver.start()
+      push_rules(driver)
+      assert.are.same({}, driver.target_calls)
+      driver.resources["qb-target"] = "started"
+      push_rules(driver)
+      local calls = {}
+      for _, call in ipairs(driver.target_calls) do
+        calls[#calls + 1] = call.call
+      end
+      assert.are.same({ "AddGlobalPed", "AddTargetModel" }, calls)
+      assert.are.equal(3, driver.target_calls[1].args[1].distance)
+      local label = driver.target_calls[1].args[1].options[1].label
+      assert.are.equal("Talk", label:sub(1, 4), "shown as the rule's label")
+      assert.are_not.equal("Talk", label, "but never a bare label another script may use")
+      assert.are_not.equal(rpf.fivem.target.qb_label("Talk", 1), rpf.fivem.target.qb_label("Talk", 2))
+    end)
+
+    it("offers the rules to a target resource that starts later, and never asks a stopped one to take them back", function()
+      local driver = load_side("client")
+      driver.start()
+      push_rules(driver)
+      assert.are.same({}, driver.target_calls, "nothing to offer them through yet")
+      driver.resources.ox_target = "started"
+      driver.resource_start("ox_target")
+      assert.are.equal("addGlobalPed", driver.target_calls[1].call)
+      driver.resources.ox_target = "stopped"
+      driver.resource_stop("ox_target")
+      local before = #driver.target_calls
+      push_rules(driver)
+      assert.are.equal(before, #driver.target_calls, "a stopped resource's exports are not called")
+      driver.resources["qb-target"] = "started"
+      driver.resource_start("qb-target")
+      assert.are.equal("AddGlobalPed", driver.target_calls[#driver.target_calls - 1].call)
+      -- ox_target starting while qb-target has the options: qb-target's are
+      -- taken back before ox_target is offered them.
+      before = #driver.target_calls
+      driver.resources.ox_target = "started"
+      driver.resource_start("ox_target")
+      assert.are.same(
+        { "qb-target", "RemoveGlobalPed" },
+        { driver.target_calls[before + 1].resource, driver.target_calls[before + 1].call }
+      )
+      assert.are.equal("ox_target", driver.target_calls[#driver.target_calls].resource)
     end)
 
     it("asks the server over lib.callback, and hands back only a string answer", function()

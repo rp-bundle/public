@@ -128,6 +128,28 @@ conformance.run(busted, "the acme_tags example", {
     end,
   },
   {
+    name = "reads a tag the player stands at, aimed by its id, and refuses one out of reach (J4)",
+    run = function(world)
+      local player = sprayable(world)
+      world:activate(world.core.players.by_player_id(PLAYER).handle)
+      assert.is_true(assert(interact(world, player, "acme_tags.spray", { text = "hello" })).ok)
+      local id = assert(interact(world, player, "acme_tags.mine")).data.tags[1].id
+      local read = assert(interact(world, player, "acme_tags.read", { target = { id = id } }))
+      assert.is_true(read.ok, tostring(read.reason))
+      assert.are.equal("hello", read.data.text)
+      local shown = false
+      for _, sent in ipairs(world.to_clients) do
+        if sent.name == "rpf:ui_notify" and sent.payload:find("hello", 1, true) then
+          shown = true
+        end
+      end
+      assert.is_true(shown, "the text is shown to the player")
+      world.place(1, { x = 50, y = 20, z = 30 })
+      local far = assert(interact(world, player, "acme_tags.read", { target = { id = id } }))
+      assert.are.same({ false, "too_far" }, { far.ok, far.reason })
+    end,
+  },
+  {
     name = "answers a player's own tags as data, and refuses another's id as it refuses a missing one",
     run = function(world)
       local player = sprayable(world)

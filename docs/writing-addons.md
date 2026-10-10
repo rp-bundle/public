@@ -251,6 +251,44 @@ handler threw, or answered data that is not plain), `too_large` (data past
 ox_lib's `lib.callback`, and it still reaches only the handler you
 registered.
 
+### Aiming at something in the world
+
+When an interaction is about a thing in the world (talk to this NPC, read
+this tag, use this ATM), give it **rules**, and the server checks the
+target the client names before your handler runs. Your handler gets the
+target already resolved:
+
+```lua
+-- server: greeters are a world-backed config type staff place in the portal
+rpf.interactions.register("acme_npcs.talk", function(player, payload, target)
+  return true, { line = target.record.fields.line }
+end, {
+  target = "acme_npcs.greeter", -- a world-backed type (or { models = { "prop_atm_01" } })
+  label = "Talk",               -- what the menu and ox_target show
+  distance = 2.5,               -- how near; 3 unless you say (Gmod's units are smaller: set it)
+  cooldown = 2000,              -- ms between one player's uses
+  permission = "boss",          -- optional: an addon permission the player holds as linked staff
+  check = function(player, target) return true end, -- optional: your own test, `false, reason` refuses
+})
+```
+
+Before the handler runs, the server checks that the player is in the
+world, holds the permission, is past the cooldown, and that the target is
+a visible record of that type in the player's bucket within `distance`
+(inside a zone's radius), or an entity of one of the models in their
+bucket within `distance`. Then it runs your `check`. A missing, hidden,
+other-bucket or other-type target is `not_found` whatever the reason, and
+one out of reach is `too_far`. The client never decides any of it.
+
+On the client you usually write nothing: players press **E** on FiveM
+(`rpf_interact` on Gmod) for a menu of everything near them they may use,
+and on a FiveM server with ox_target or qb-target your rule also appears on
+the peds and objects RPF placed for the type (and on the models). For your
+own UI, `rpf.interactions.nearby(callback)` gives the same list, and you
+send a pick with `rpf.interactions.request(name, { target = { id = id } },
+callback)`; an entity is `{ target = { ref = ref } }`, its network id on
+FiveM and its index on Gmod.
+
 ## UI
 
 What a player sees: notifications, a menu to pick from, an input dialog and

@@ -708,8 +708,20 @@ function World.placed(type_name, id) end
 ---end)
 ---```
 ---
----**Both sides:** `register` on the server, `send` and `request` on the
----client.
+---**Targets (J4).** Register with rules, and the server checks the target
+---the client names before the handler runs, then hands it over resolved:
+---
+---```lua
+----- server: talk to a greeter staff placed (a world-backed config type)
+---rpf.interactions.register("acme_npcs.talk", function(player, payload, target)
+---  return true, { line = target.record.fields.line }
+---end, { target = "acme_npcs.greeter", label = "Talk", distance = 2.5, cooldown = 2000 })
+----- client: a key opens a menu of what is near (or a target resource does)
+---rpf.interactions.open()
+---```
+---
+---**Both sides:** `register` on the server; `send`, `request`, `open`,
+---`nearby` and `targets` on the client.
 ---@class rpf.api.Interactions
 local Interactions = {}
 
@@ -721,11 +733,34 @@ local Interactions = {}
 ---has logged in, and at most 20 times per player every 10 seconds. The
 ---payload is hostile input: a copy of plain data (at most 4 KiB, 8 deep),
 ---whatever the player's client chose to send.
+---
+---`rules` (J4), all optional, are checked on the server, in this order,
+---before the handler runs; a refusal is the reason the client hears:
+---
+--- - `target`: what the client must name in `payload.target`. A
+---   world-backed type's name (`"acme_npcs.greeter"`): `{ id = <record> }`,
+---   or `{ ref = <entity> }` for the entity RPF placed for one; the record
+---   must be visible, in the player's routing bucket and within `distance`
+---   (inside a zone's radius). Or `{ models = { "prop_atm_01", … } }`: `{
+---   ref = <entity> }` of one of those models, in the player's bucket and
+---   within `distance`. With a target the player must be in the world
+---   (`not_active`), and a target that is missing, hidden, in another bucket
+---   or not this server's is `not_found`; one out of reach is `too_far`.
+--- - `distance`: how near, in the engine's units (metres on FiveM); 3
+---   unless given. Set it for Gmod, whose units are smaller.
+--- - `cooldown`: milliseconds between one player's uses (`cooldown`).
+--- - `permission`: one of the addon's permissions, which the player must
+---   hold as linked staff (`forbidden`).
+--- - `check(player, target)`: the addon's own test, answering `true`, or
+---   `false` and a reason.
+--- - `label`: what the menu (`open`) and a target resource show.
 ---@param name string `<namespace>.<name>`.
----@param handler fun(player: rpf.PlayerView, payload: table): boolean, (table|string)? Answers `true` and, optionally, a table of plain data for a `request` (at most 16 KiB encoded, 8 deep), or `false` and a reason the player's client is told.
+---@param handler fun(player: rpf.PlayerView, payload: table, target: rpf.targets.Target?): boolean, (table|string)? Answers `true` and, optionally, a table of plain data for a `request` (at most 16 KiB encoded, 8 deep), or `false` and a reason the player's client is told. `target` is the resolved target: `{ type, id, record, position, distance }` for a record, `{ ref, model, position, distance }` (with `type` and `id` when RPF placed it) for an entity.
+---@param rules { target: (string|{ type: string?, models: string[]? })?, distance: number?, cooldown: integer?, permission: string?, check: (fun(player: rpf.PlayerView, target: rpf.targets.Target?): boolean, string?)?, label: string? }? The rules.
 ---@return boolean? ok True once registered.
----@return "invalid"|"not_found"|"forbidden"|"inactive"|nil err `invalid` for a bad name or handler, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an activation that has ended.
-function Interactions.register(name, handler) end
+---@return "invalid"|"not_found"|"forbidden"|"inactive"|"too_large"|nil err `invalid` for a bad name, handler or rules, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an activation that has ended, `too_large` when the server's rules with a target would no longer fit what a client reads (64 KiB).
+---@return { error: "rules", field: string }? detail Which rule was refused.
+function Interactions.register(name, handler, rules) end
 
 ---Client only. Asks the server to run an interaction. The answer arrives as
 ---`interactions.result`, with the refusals `request` lists. Use `request`
@@ -752,6 +787,28 @@ function Interactions.send(name, payload) end
 ---@return boolean? ok True once sent; the callback runs only then.
 ---@return "invalid"|"too_large"|"too_many"|"unavailable"|nil err As for `send`, and `invalid` for a callback that cannot be called.
 function Interactions.request(name, payload, callback) end
+
+---Client only. The minimal interaction UI (J4): asks the server what this
+---player may interact with near them, shows it as a menu, and sends the
+---option they pick, telling them if it is refused. RPF binds it to a key
+---(`rpf_interact`); call it from your own key or command too.
+function Interactions.open() end
+
+---Client only. Asks the server what this player may interact with near
+---them, for a UI of your own: `callback(options)`, each `{ name, label,
+---type, id, distance }`, nearest first, at most 16; or `callback(nil,
+---err)` (`timeout`, `failed`, `busy` while one is waiting). Send the one
+---chosen with `request(name, { target = { id = id } }, …)`.
+---@param callback fun(options: { name: string, label: string, type: string, id: string, distance: number }[]?, err: string?) Called once, later.
+---@return boolean? ok True once asked.
+---@return "invalid"|nil err For a callback that cannot be called.
+function Interactions.nearby(callback) end
+
+---Client only. Every interaction with a target the server has, as it last
+---told this client (also announced as `interactions.targets`): `{ name,
+---label, type, kind, models, distance }`. What a target resource offers.
+---@return table[] rules A copy.
+function Interactions.targets() end
 
 ---UI an addon shows a player, the same on every engine (J10): over ox_lib
 ---on FiveM, in Derma on Gmod. It holds what an addon for both engines

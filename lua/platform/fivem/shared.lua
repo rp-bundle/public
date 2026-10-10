@@ -33,6 +33,7 @@ local rpf = rpf
 ---@field lock rpf.fivem.lock The server-side input lock, until a player is `active`.
 ---@field ui rpf.fivem.ui The login and character screens' logic, apart from NUI.
 ---@field client rpf.fivem.client The player-client platform and its engine hooks.
+---@field target rpf.fivem.target The optional ox_target or qb-target adapter (J4).
 rpf.fivem = rpf.fivem or {}
 
 ---How far, in milliseconds, the estimate may run ahead of the wall clock's

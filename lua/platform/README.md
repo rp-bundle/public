@@ -198,7 +198,9 @@ for the clients' `HTTP`.
   animation, since Gmod's NPCs have AI of their own), tagged with the
   networked string `rpf_placement`; the adapter removes tagged entities as
   it starts (a Lua refresh restarts it on the same map), and a map change
-  takes the rest. Drawn on fake globals only so far. All four UI kinds are supported
+  takes the rest. Drawn on fake globals only so far. The minimal
+  interaction UI is the console command `rpf_interact`, which a player
+  binds (E is Gmod's `+use`). All four UI kinds are supported
   (`addon_ui.lua`): a progress bar is X to cancel, as on ox_lib, and an
   input dialog will not submit a required field left empty or a value out
   of its bounds. Drawn on fake Derma only so far: a real Gmod client is

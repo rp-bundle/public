@@ -90,6 +90,13 @@ host, and `set rpf_debug "true"` for the core's debug lines. Other
 resources reach the framework as `exports.rpf:api()`
 ([the FiveM adapter](../lua/platform/fivem/README.md)).
 
+Players open a menu of what they can interact with near them with **E**
+(`rpf_interact`, which each player can rebind in FiveM's key settings).
+Change the default with `setr rpf_interact_key "G"`: `setr`, because each
+player's client reads it. If the server runs **ox_target** or
+**qb-target**, the framework also offers the same interactions through it
+on the peds and objects it places; nothing to configure.
+
 ### Upgrading
 
 Replace the `[rpf]` folder with the new release's and restart the server.
@@ -167,6 +174,10 @@ gap is qbx_core's to do.
 
    `rpf_api_key` is a protected convar: its value never reaches a client.
 4. Start (or restart) the server.
+
+Players open a menu of what they can interact with near them with the
+console command `rpf_interact`, which they bind to a key themselves
+(`bind f rpf_interact`): Garry's Mod's E is already `+use`.
 
 Players need nothing installed: the server sends their client the
 framework's Lua when they join. Optional: `rpf_portal_url
