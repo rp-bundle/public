@@ -924,6 +924,8 @@ function Client:handshake(generation)
     core_version = rpf.VERSION,
     config_version = version,
     config_hash = hash,
+    -- Nil, sent as null, until the first `Welcome` fixes one (K1).
+    domains = rpf.domains.current(),
   })
   local text, err = protocol.encode(OUT, hello)
   if not text then
@@ -1334,7 +1336,9 @@ end
 ---
 ---`Welcome` makes the connection ready: the outbox is swept and then flushed
 ---under its original ids. One naming a protocol other than the one this
----core speaks stops the connection for good (`docs/compatibility.md`). A retryable refusal sends a fresh `Hello` after a
+---core speaks stops the connection for good (`docs/compatibility.md`), and
+---so does one naming a profile other than the one this process fixed at its
+---first `Welcome` (`rpf.domains`, K1). A retryable refusal sends a fresh `Hello` after a
 ---backoff. `suspended` (H5) drops the connection and makes it again after
 ---`suspended_retry_ms` plus jitter, for as long as the suspension lasts, so
 ---a lifted one needs no restart. Any other refusal stops the connection for
@@ -1358,6 +1362,14 @@ function Client:handshake_reply(frame)
           .. ", and this core speaks only protocol "
           .. protocol.VERSION
       )
+      return
+    end
+    local fixed, conflict = rpf.domains.fix(frame.domains)
+    if not fixed then
+      -- The portal adopts only the profile a `Hello` names, so this is a
+      -- portal that changed its mind under a running core, which cannot
+      -- change its own until it restarts (K1).
+      self:stop(conflict --[[@as string]])
       return
     end
     self:remember(frame.id)

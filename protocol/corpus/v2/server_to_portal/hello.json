@@ -8,5 +8,11 @@
   "engine": "mock",
   "core_version": "0.1.0",
   "config_version": 7,
-  "config_hash": "sha256:sample"
+  "config_hash": "sha256:sample",
+  "domains": {
+    "characters": "external",
+    "money": "external",
+    "inventory": "external",
+    "jobs": "external"
+  }
 }

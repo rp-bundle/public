@@ -158,6 +158,7 @@ local function welcome(world, record)
     re = hello.id,
     protocol = world.core.protocol.VERSION,
     server_id = SERVER_ID,
+    domains = support.NATIVE,
   })
   world:socket_message(socket, assert(world.core.protocol.encode(world.core.protocol.PORTAL_TO_SERVER, frame)))
 end

@@ -4,5 +4,11 @@
   "type": "welcome",
   "re": "00000006-0000-4000-8000-000000000006",
   "protocol": 2,
-  "server_id": "00000001-0000-4000-8000-000000000001"
+  "server_id": "00000001-0000-4000-8000-000000000001",
+  "domains": {
+    "characters": "external",
+    "money": "external",
+    "inventory": "external",
+    "jobs": "external"
+  }
 }

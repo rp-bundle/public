@@ -26,7 +26,7 @@ Two numbers are involved, and only one decides compatibility.
 | Protocol | First release | Served by portal releases | Status |
 |---|---|---|---|
 | 1 | 0.1.0 | 0.1.0 and later, until its support window closes | Served |
-| 2 | Unreleased | The next release and later | Current, unreleased: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`), and an item's `image` hash in the config snapshot (P3) |
+| 2 | Unreleased | The next release and later | Current, unreleased: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`), an item's `image` hash in the config snapshot (P3), and the profile (K1) in `hello` and `welcome` |
 
 A row is added when a release ships a new protocol version, and a version's
 last portal release is filled in when one drops it. `CHANGELOG.md` names the
@@ -268,6 +268,8 @@ receiver takes the default (empty, `false` or `None`).
 
 | Field | Where | Default | Why optional |
 |---|---|---|---|
+| `domains` | `hello` | Native | Added by K1. A core from before it runs only the native profile, so an absent field means native, never `null`, which is a core with no profile fixed yet |
+| `domains` | `welcome` | Native | Added by K1, for `welcome`s from before it, which every portal sent while enforcing native. The Lua core requires it |
 | `items`, `item_bases`, `item_defaults`, `employers`, `employer_departments`, `employer_jobs`, `new_character`, `paying_accounts`, `addons` | `ConfigSnapshot` (`config`) | Empty | Sections added after `settings`, so a snapshot from before one still decodes |
 | `payroll` | An employer in `employers` | `None` | Omitted when the employer pays no salaries; added by D7 |
 | `rank`, `salary` | A job in `employer_jobs` | `0`, `None` | Added by D7; `salary` is omitted for an unpaid job |
@@ -291,8 +293,8 @@ Container contents travel both ways (a hold hands them to a game server, a
 state report brings them back); `employment` and an in-game config change's
 definitions (E6, new in protocol 2, so no older core sends one) are only
 ever sent by a game server, and a character's `job` only by the portal;
-everything else in the table is in the config snapshot, which only the
-portal sends. `OPTIONAL` in the protocol
+`domains` is the handshake's, one in each direction; everything else in
+the table is in the config snapshot, which only the portal sends. `OPTIONAL` in the protocol
 tests is the same list as far as the corpus shows it: a snapshot base's
 `stack_limit`, `data` and `rotated` are absent from every sample, so the
 test cannot see them, and this table is where they are recorded.

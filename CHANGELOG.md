@@ -22,7 +22,9 @@ staff (F9: `link_player`, `staff_action`, `player_linked` and
 `staff_permissions`), the `suspended` reject code (H5) and in-game config
 editing (E6: `config_changed`, `config_change_applied` and
 `config_change_discarded`), and an item's `image` hash in the config
-snapshot (P3), which a protocol 1 core ignores; a game server on
+snapshot (P3), which a protocol 1 core ignores, and the profile (K1) in
+`hello` (optional: a core that leaves it out runs native) and `welcome`,
+which a protocol 1 core ignores; a game server on
 protocol 1 is served unchanged, and is simply closed where a protocol 2 one
 is told first, is never sent `staff_permissions`, and is refused
 `forbidden` where a protocol 2 one is refused `suspended`. A message newer
@@ -32,6 +34,19 @@ keep the job the portal has.
 
 ### Added
 
+- Authority per domain, part 1 (K1, #91). A server's **profile** says who
+  owns characters, money, inventory and jobs on it: RPF (native, the
+  default) or the game server's own RP framework (companion). Staff save it
+  as the `domains` setting, inherited like any other; only the two uniform
+  profiles validate, and a switch is refused while the server still holds a
+  record of a domain it would switch. The game server's core fixes its
+  profile at its process's first `Welcome` and reports it in every later
+  `Hello`, so a saved change applies at its next restart, and the portal
+  enforces the profile it is running, showing "pending restart" meanwhile.
+  A restart that turns a domain external archives that domain's records on
+  the server for good. Refusing an external domain's writes, the core's own
+  refusals and the portal's pages follow in later parts; until then, do not
+  run a server as a companion.
 - Release docs (H7, #56). Every release publishes its own docs site on
   GitHub Pages, from its tag: installing, upgrading from the release before
   (`docs/upgrading.md`, which a tag now requires), compatibility, the
@@ -223,6 +238,9 @@ keep the job the portal has.
 
 ### Database
 
+- `20261010083508_domain_authority` is additive: `servers.effective_domains`,
+  defaulted to native, and a nullable `archived_at` on characters, accounts
+  and containers.
 - `20261009213553_item_images` is additive: item images, the storage
   deletion queue and the trigger that fills it, and a nullable
   `guild_plans.max_storage_mib`.

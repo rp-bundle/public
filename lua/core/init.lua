@@ -23,6 +23,7 @@
 ---@field events rpf.events The event bus every module talks through.
 ---@field time rpf.time RFC 3339 parsing.
 ---@field protocol rpf.protocol Frame encoding and decoding.
+---@field domains rpf.domains Authority per domain (K1): the profile this process fixed at its first `Welcome`, and which domains it leaves to the server's framework.
 ---@field config rpf.config The applied config snapshot, its version, and typed lookups.
 ---@field client rpf.client The game server's connection to the portal.
 ---@field players rpf.players The players on this server and their lifecycle.
@@ -89,6 +90,7 @@ rpf.files = {
     "events.lua",
     "time.lua",
     "protocol.lua",
+    "domains.lua",
     "config.lua",
     "client.lua",
     "players.lua",

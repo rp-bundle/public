@@ -48,8 +48,8 @@ game definitions loaded, so a game global is an error too.
 files each side loads after it and in what order:
 
 ```lua
-rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, config.lua,
-                 -- client.lua, players.lua, commands.lua, moderation.lua, staff.lua,
+rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, domains.lua,
+                 -- config.lua, client.lua, players.lua, commands.lua, moderation.lua, staff.lua,
                  -- inventory.lua, manifest.lua, addons.lua, records.lua, sync.lua, accounts.lua,
                  -- handoff.lua, join.lua, characters.lua, jobs.lua, edits.lua, data.lua, ops.lua,
                  -- facade.lua, api.lua
@@ -71,7 +71,7 @@ Every file also keeps the core table in a local (`local rpf = rpf`), so the
 core keeps working after the Gmod adapter replaces the global with the public
 API (see The public API).
 
-The client never loads `protocol.lua`, `client.lua`, `players.lua`,
+The client never loads `protocol.lua`, `domains.lua`, `client.lua`, `players.lua`,
 `commands.lua`, `moderation.lua`, `staff.lua`, `inventory.lua`, `manifest.lua`, `addons.lua`, `records.lua`, `sync.lua`,
 `accounts.lua`, `join.lua`, `characters.lua`, `jobs.lua`, `edits.lua`, `data.lua`, `ops.lua` or `facade.lua`, because the player's client
 must never hold the server's API key and has no players, staff or records to

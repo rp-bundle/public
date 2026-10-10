@@ -29,6 +29,7 @@ server_scripts({
   "core/events.lua",
   "core/time.lua",
   "core/protocol.lua",
+  "core/domains.lua",
   "core/config.lua",
   "core/client.lua",
   "core/players.lua",

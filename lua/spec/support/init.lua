@@ -61,6 +61,12 @@ function support.load_core(side)
   return rpf
 end
 
+---The native profile (K1): RPF owns every domain.
+support.NATIVE = { characters = "rpf", money = "rpf", inventory = "rpf", jobs = "rpf" }
+
+---The companion profile (K1): the server's framework owns every domain.
+support.COMPANION = { characters = "external", money = "external", inventory = "external", jobs = "external" }
+
 ---2026-01-01T00:00:00Z, where every fake clock starts.
 support.EPOCH_MS = 1767225600000
 
@@ -467,6 +473,11 @@ end
 ---@return rpf.Frame frame The frame, not yet encoded.
 function support.portal_frame(tag, fields)
   support.portal_rng = support.portal_rng or support.fake_platform({ seed = 777 })
+  if tag == "welcome" and fields.domains == nil then
+    -- Native, as every portal enforces until staff choose otherwise (K1),
+    -- so a test that is not about profiles need not name one.
+    fields.domains = support.NATIVE
+  end
   return support.core.protocol.envelope(support.portal_rng, tag, fields)
 end
 

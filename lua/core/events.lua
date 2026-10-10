@@ -12,7 +12,7 @@
 --- - **A handler that throws is logged and skipped.** The handlers after it
 ---   still run, so one broken script cannot stop a player's join.
 --- - **Core event names are reserved.** Anything under `players.`, `config.`,
----   `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `addons.` or `rpf.` is emitted only by the core, so a
+---   `auth.`, `records.`, `characters.`, `jobs.`, `staff.`, `addons.`, `domains.` or `rpf.` is emitted only by the core, so a
 ---   script cannot forge a lifecycle event that other scripts would believe,
 ---   and an addon's namespace is its own (`emit_public`).
 ---@class rpf.events
@@ -22,7 +22,7 @@ local events = {}
 
 local rpf = rpf
 
-events.RESERVED = { "players.", "config.", "auth.", "records.", "characters.", "jobs.", "staff.", "addons.", "rpf." }
+events.RESERVED = { "players.", "config.", "auth.", "records.", "characters.", "jobs.", "staff.", "addons.", "domains.", "rpf." }
 events.MAX_DEPTH = 32
 
 ---One registered handler.

@@ -622,6 +622,22 @@ local CONFIG_CHANGE = tagged("change", {
   delete_job = { { "employer", STRING }, { "slug", STRING } },
 })
 
+-- Authority per domain (K1) ------------------------------------------------
+
+---Who owns one domain's records on this server: RPF, or the game server's
+---own framework.
+local AUTHORITY = enum({ "rpf", "external" })
+
+---`Domains`: a profile, who owns each of the four domains. Every domain is
+---named; the portal accepts only all `rpf` (native) or all `external`
+---(companion) as a saved profile.
+local DOMAINS = object({
+  { "characters", AUTHORITY },
+  { "money", AUTHORITY },
+  { "inventory", AUTHORITY },
+  { "jobs", AUTHORITY },
+})
+
 -- Records (C7) ------------------------------------------------------------
 
 local RECORD_KIND = enum({ "character", "account", "container", "addon_record" })
@@ -848,6 +864,7 @@ protocol.messages = {
       { "core_version", STRING },
       { "config_version", nullable(U64) },
       { "config_hash", nullable(STRING) },
+      { "domains", nullable(DOMAINS) },
     }),
     begin_join = message("reply", false, {
       { "identifiers", array_of(STRING) },
@@ -934,6 +951,7 @@ protocol.messages = {
       { "re", UUID },
       { "protocol", U16 },
       { "server_id", UUID },
+      { "domains", DOMAINS },
     }),
     rejected = message("ack", false, {
       { "re", UUID },
