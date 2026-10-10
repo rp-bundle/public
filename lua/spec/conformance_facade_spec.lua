@@ -241,6 +241,25 @@ conformance.run(busted, "the facade", {
     end,
   },
   {
+    name = "records a payment as done only once its ledger entry is on its way to the portal",
+    run = function(world)
+      local handle = playing(world)
+      local op = world.api.ops.new()
+      -- The outbox has no room: the entry is made here, but not queued.
+      local options = world.core.connection.options
+      local entries = options.max_entries
+      options.max_entries = 0
+      assert.is_true(world.api.money.debit(handle, "wallet", 10, "Tag", op))
+      local key = world.core.ops.ENTRY_PREFIX .. op
+      local stored = world.core.json.decode(assert(world.server_platform.kv_get(key)))
+      assert.are.equal("pending", stored.state, "a crash now would read it as unknown")
+      options.max_entries = entries
+      world:advance(1000)
+      stored = world.core.json.decode(assert(world.server_platform.kv_get(key)))
+      assert.are.equal("done", stored.state)
+    end,
+  },
+  {
     name = "gives a player's job",
     run = function(world)
       local handle = playing(world)

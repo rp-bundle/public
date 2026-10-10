@@ -55,12 +55,44 @@ facade.CALLS = {
 ---The most units one give or take moves: a stack's count is a `u32`.
 local MAX_UNITS = 4294967295
 
----Whether what a native command changed is on disk: its report queued in
----the persisted outbox (`rpf.sync.flush`). Until it is, a crash would lose
----the change, so the journal records the result only then.
----@return boolean durable True once it is.
-local function durable()
-  return rpf.sync.flush() == true
+---Whether a ledger entry this server made is on disk: carried by a report
+---queued in the persisted outbox, or acknowledged and gone. A flush is
+---asked for first; whether it went is the entry's own `sent`, not the
+---flush's answer, since an account with a backlog reports its oldest
+---entries first. Until it is, a crash would lose the payment, so the
+---journal records the result only then.
+---@param payer string The paying account, which carries the entry.
+---@param client_id string The entry.
+---@return fun(): boolean durable The check.
+local function entry_on_disk(payer, client_id)
+  return function()
+    rpf.sync.flush()
+    local entry = rpf.records.entries[rpf.records.key("account", payer)]
+    for _, tx in ipairs(entry and entry.transactions or {}) do
+      if tx.client_id == client_id then
+        return tx.sent == true
+      end
+    end
+    return true
+  end
+end
+
+---Whether the contents changes made to containers are on disk: each
+---container's change carried by a queued report (nothing left marked, no
+---whole report owed), or the container let go with its final state.
+---@param ids string[] The containers changed.
+---@return fun(): boolean durable The check.
+local function contents_on_disk(ids)
+  return function()
+    rpf.sync.flush()
+    for _, id in ipairs(ids) do
+      local entry = rpf.records.entries[rpf.records.key("container", id)]
+      if entry and (entry.changed.contents or entry.resync) then
+        return false
+      end
+    end
+    return true
+  end
 end
 
 ---The character a logged-in player has in play.
@@ -195,6 +227,12 @@ local function move_money(direction, handle, name, amount, reason, op_id)
   if not rpf.ops.minted_at(op_id) then
     return nil, "refused", "invalid_op"
   end
+  local on_disk = nil
+  ---Whether the payment is on disk; known once it is made.
+  ---@return boolean durable True once it is.
+  local function durable()
+    return on_disk == nil or on_disk()
+  end
   return rpf.ops.run(op_id, "money." .. direction, durable, function()
     local character, err = character_of(handle)
     if not character then
@@ -209,12 +247,14 @@ local function move_money(direction, handle, name, amount, reason, op_id)
       return nil, "refused", "unsupported"
     end
     local done, failure
+    local payer = direction == "debit" and account.id or server.id
     if direction == "debit" then
       done, failure = rpf.records.transfer(account.id, server.id, amount, reason)
     else
       done, failure = rpf.accounts.pay(server.id, account.id, amount, reason)
     end
     if done then
+      on_disk = entry_on_disk(payer, done)
       return true
     end
     if failure == "not_held" then
@@ -322,6 +362,12 @@ local function move_items(direction, handle, item, count, op_id)
   if not rpf.ops.minted_at(op_id) then
     return nil, "refused", "invalid_op"
   end
+  local changed = {}
+  ---Whether the containers changed are on disk.
+  ---@return boolean durable True once they are.
+  local function durable()
+    return contents_on_disk(changed)()
+  end
   return rpf.ops.run(op_id, "inventory." .. direction, durable, function()
     local character, err = character_of(handle)
     if not character then
@@ -334,6 +380,7 @@ local function move_items(direction, handle, item, count, op_id)
     if direction == "give" then
       for _, container in ipairs(containers) do
         if rpf.inventory.add(container.id, item, count) then
+          changed[#changed + 1] = container.id
           return true
         end
       end
@@ -365,6 +412,7 @@ local function move_items(direction, handle, item, count, op_id)
     end
     for _, change in ipairs(after) do
       assert(rpf.records.set_contents(change.id, change.contents))
+      changed[#changed + 1] = change.id
     end
     return true
   end)
