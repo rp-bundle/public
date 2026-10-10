@@ -660,6 +660,14 @@ describe("the Gmod adapter's client", function()
     return gmod, world, record
   end
 
+  it("offers the minimal interaction UI as a command, which asks the server what is near", function()
+    local world, record = boot("client")
+    assert.is_function(world.commands.rpf_interact)
+    local before = #record.to_server
+    world:command("rpf_interact")
+    assert.is_true(#record.to_server > before, "a request went to the server")
+  end)
+
   it("tells the server it is ready once the player is in the game", function()
     local gmod = load_fake()
     local host, record = fake_host()

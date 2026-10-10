@@ -382,17 +382,27 @@ local interactions = rpf.interactions
 if interactions then
   if rpf.players then
     surface.interactions = freeze({
-      register = function(name, handler)
-        return interactions.register(name, handler)
+      register = function(name, handler, rules)
+        return interactions.register(name, handler, rules)
       end,
     }, "rpf.interactions")
   else
+    local targets = rpf.targets
     surface.interactions = freeze({
       send = function(name, payload)
         return interactions.send(name, payload)
       end,
       request = function(name, payload, callback)
         return interactions.request(name, payload, callback)
+      end,
+      open = function()
+        targets.open()
+      end,
+      nearby = function(callback)
+        return targets.nearby(callback)
+      end,
+      targets = function()
+        return targets.rules()
       end,
     }, "rpf.interactions")
   end

@@ -219,6 +219,25 @@ streams in, the ped staying put, how long creation takes, and
 that `GetEntityScript` still names this resource for an entity an earlier
 run of it made (layer 5).
 
+## Interactions
+
+The core's minimal interaction UI (`rpf.targets.open`, J4) is the command
+`rpf_interact`, mapped to a key with `RegisterKeyMapping`: E unless the
+replicated convar `rpf_interact_key` names another, and each player can
+rebind it in FiveM's settings.
+
+`target.lua` is the optional target-resource adapter. When ox_target or
+qb-target is started, it offers the rules the server sends
+(`interactions.targets`) through it: a type's rule of kind `ped` on every
+ped (`addGlobalPed`, `AddGlobalPed`) and of kind `object` on every object,
+shown only where the entity's `rpf_placement` state bag names the rule's
+type, and a models rule on those models (`addModel`, `AddTargetModel`),
+each with the rule's label and distance. Selecting one sends the
+interaction with the entity's network id, and a refusal is shown with
+ox_lib's notify. New rules replace the old ones, and stopping the
+resource takes them back. Proven on fake exports only: a real FXServer
+with ox_target and with qb-target is still to show the options (layer 5).
+
 ## The websocket shim
 
 FiveM's Lua has no websocket client, so `rpf-ws` owns the socket in FiveM's

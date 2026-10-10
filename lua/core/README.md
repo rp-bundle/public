@@ -52,9 +52,9 @@ rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, 
                  -- config.lua, client.lua, players.lua, commands.lua, moderation.lua, staff.lua,
                  -- inventory.lua, manifest.lua, addons.lua, records.lua, sync.lua, accounts.lua,
                  -- handoff.lua, join.lua, characters.lua, jobs.lua, edits.lua, data.lua, ops.lua,
-                 -- facade.lua, world.lua, interactions.lua, api.lua
+                 -- facade.lua, world.lua, targets.lua, interactions.lua, api.lua
 rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua,
-                 -- picker.lua, interactions.lua, api.lua
+                 -- picker.lua, targets.lua, interactions.lua, api.lua
 ```
 
 Every later file registers itself on `rpf` (`rpf.json = json`) *and* returns
@@ -1275,8 +1275,44 @@ as a request the platform pairs with its answer (`request_server`,
   answer in `TIMEOUT_MS` (10 s) is `timeout`, a later one is dropped, and
   one that cannot be read is `failed`, logged.
 
-J4 (#81) builds targeting on it (which record, entity or zone, distance,
-cooldowns); it keeps the rule.
+**Rules (J4).** `register(name, handler, rules)` checks the rules with
+`rpf.targets.check_rules` (refused `invalid`, with `{ error = "rules",
+field }`), and every request for a registration with rules goes through
+`rpf.targets.admit` (in the world, permission, cooldown, the target) and
+the rules' `check`, in the addon's context, before the handler runs with
+the resolved target as its third argument; the cooldown starts once it
+has. The server answers `rpf:targets` (what is near, `targets.options`)
+on the same rate, and sends `rpf:target_rules` (`targets.listed`) to each
+player as they become `active` and to everyone in the world when a
+registration or an addon's state changes, once per turn of the clock.
+
+### Targets (`rpf.targets`, J4)
+
+What an interaction may be aimed at, and the checks the server makes. Loaded
+on both sides, before `rpf.interactions`.
+
+- **Server.** `check_rules(namespace, rules)` reads an addon's rules (`label`,
+  `target` as a type name or `{ type }` or `{ models }`, `distance` (default
+  `DEFAULT_DISTANCE`, 3, at most `MAX_DISTANCE`), `cooldown` (at most an
+  hour), `permission` (made `addon.<namespace>.<permission>`), `check`),
+  refusing an unknown key. `admit(name, rules, player, payload)` checks the
+  player is `active` when there is a target, holds the permission
+  (`rpf.staff.can`), is past the cooldown, and resolves `payload.target`
+  from the server's state: `{ id }` (or `{ ref }` of the entity the core
+  placed for one) through `rpf.data.get` and the type's `world`, against
+  the player's position and bucket (`rpf.world`), a zone by its radius;
+  `{ ref }` for a models rule through `rpf.world.entity` and
+  `rpf.world.model`. Missing, hidden, other bucket and other type are
+  `not_found`, out of reach `too_far`. `used` starts a cooldown and
+  `forget` drops an interaction's. `options(entries, player)` lists what is
+  near, offered to the player, nearest first, at most `MAX_NEARBY` (16);
+  `listed(entries)` is what a target resource needs.
+- **Client.** `start_client` keeps the server's `rpf:target_rules` and
+  emits `interactions.targets`; `rules()` is a copy. `nearby_client(done)`
+  asks `rpf:targets` (one at a time, `TIMEOUT_MS`), `nearby(callback)` is
+  the public form, and `open()` is the minimal UI: ask, show `rpf.ui`'s
+  menu, send the pick as `{ target = { id } }`, and `tell` the player a
+  refusal through `rpf.ui`'s notify.
 
 ### UI (`rpf.ui`, J10)
 

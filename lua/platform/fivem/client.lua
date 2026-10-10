@@ -158,11 +158,21 @@ function client.platform(screens)
   return p
 end
 
----Starts the client half of the core and its screens.
+---The convar naming the key the minimal interaction UI is bound to by
+---default (J4): replicated with `setr`, read as the client starts. A player
+---can rebind it in FiveM's key settings.
+client.INTERACT_KEY = "rpf_interact_key"
+
+---Starts the client half of the core and its screens, and offers the
+---server's interaction rules through a target resource whenever they come
+---(`target.lua`).
 ---@param platform rpf.ClientPlatform The platform from `client.platform`.
 ---@param screens rpf.fivem.Screens The screens.
 function client.start(platform, screens)
   screens:start()
+  core.events.on("interactions.targets", function(rules)
+    fivem.target.apply(rules)
+  end)
   core.start_client(platform)
   -- The peds the server placed: asked for once, then pushed on change, and
   -- looked for every `PASSIVE_MS` as they stream in and out.
@@ -194,10 +204,13 @@ end
 AddEventHandler("onClientResourceStart", function(name)
   if name == GetCurrentResourceName() then client.start(platform, screens) end
 end)
+-- The minimal interaction UI (J4): what is near, as a menu, on a key.
+RegisterCommand("rpf_interact", function() core.targets.open() end, false)
+RegisterKeyMapping("rpf_interact", "Interact with what is near", "keyboard", GetConvar(client.INTERACT_KEY, "E"))
 -- Stopping the resource takes the page away but not the frozen ped, so a
 -- player stopped mid-login would be left unable to move.
 AddEventHandler("onClientResourceStop", function(name)
-  if name == GetCurrentResourceName() then client.lock(false) end
+  if name == GetCurrentResourceName() then client.lock(false) fivem.target.clear() end
 end)
 
 return client

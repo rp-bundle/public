@@ -35,9 +35,12 @@
 ---@field UI string Server → client, as a request (`request_client`): show a menu, an input dialog or a progress bar an addon asked for (`rpf.ui`, J10).
 ---@field UI_ANSWER string Client → server, as the answer to `UI`: what the player did, raw, for the server to read against what it offered. Never a message of its own.
 ---@field UI_NOTIFY string Server → client: show a notification an addon asked for.
+---@field TARGETS string Client → server, as a request (`request_server`): what this player may interact with near them (J4, `rpf.targets`).
+---@field TARGETS_RESULT string Server → client, as the answer to `TARGETS`: the options, nearest first. Never a message of its own.
+---@field TARGET_RULES string Server → client: every interaction rule with a target, for a target resource to offer (J4).
 ---@field UI_CLOSE string Server → client: close what a `UI` request showed, by its id, because the addon that asked has stopped.
 ---@field MAX_PAYLOAD integer The longest payload decoded, in bytes, of every message but the list of characters. Real ones are a few hundred.
----@field MAX_LIST_PAYLOAD integer The longest list of characters, answer to an interaction, or UI request, decoded, in bytes. Only the client decodes these, from its own server; the server registers no handler for them, so a client cannot make the server decode one.
+---@field MAX_LIST_PAYLOAD integer The longest list of characters, answer to an interaction, UI request, nearby answer or list of target rules, decoded, in bytes. Only the client decodes these, from its own server; the server registers no handler for them, so a client cannot make the server decode one.
 ---@field MAX_UI_ANSWER integer The longest answer to a UI request decoded, in bytes: room for an input dialog's twelve fields of 512 bytes each, every byte escaped. The server decodes one only as the answer to a request it sent that player.
 ---@field schemas table<string, table<string, rpf.handoff.FieldKind>> Each message's fields and their kinds.
 local handoff = {}
@@ -63,6 +66,9 @@ handoff.UI = "rpf:ui"
 handoff.UI_ANSWER = "rpf:ui_answer"
 handoff.UI_NOTIFY = "rpf:ui_notify"
 handoff.UI_CLOSE = "rpf:ui_close"
+handoff.TARGETS = "rpf:targets"
+handoff.TARGETS_RESULT = "rpf:targets_result"
+handoff.TARGET_RULES = "rpf:target_rules"
 handoff.MAX_PAYLOAD = 4096
 handoff.MAX_LIST_PAYLOAD = 65536
 handoff.MAX_UI_ANSWER = 40960
@@ -76,6 +82,8 @@ local LIMITS = {
   [handoff.UI] = handoff.MAX_LIST_PAYLOAD,
   [handoff.UI_NOTIFY] = handoff.MAX_LIST_PAYLOAD,
   [handoff.UI_ANSWER] = handoff.MAX_UI_ANSWER,
+  [handoff.TARGETS_RESULT] = handoff.MAX_LIST_PAYLOAD,
+  [handoff.TARGET_RULES] = handoff.MAX_LIST_PAYLOAD,
 }
 
 ---How one field is checked. A trailing `?` means it may be absent. A
@@ -151,6 +159,13 @@ handoff.schemas = {
   },
   [handoff.UI_CLOSE] = {
     id = "string",
+  },
+  [handoff.TARGETS] = {},
+  [handoff.TARGETS_RESULT] = {
+    options = "table",
+  },
+  [handoff.TARGET_RULES] = {
+    rules = "table",
   },
 }
 

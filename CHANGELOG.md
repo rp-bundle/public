@@ -52,6 +52,18 @@ keep the job the portal has.
   `prop_dynamic`s. `rpf.api.world` gains `bucket`, `model`, `entity` and
   `placed`. The `zone` capability, never supported, is gone: a zone is a
   record's radius, and the core does the arithmetic.
+- Interactions with targets (J4, #81): `rpf.api.interactions.register`
+  takes rules (`target`, `distance`, `cooldown`, `permission`, `check`,
+  `label`), and the server checks the target the client names (a record of
+  a world-backed type, or an entity of given models) for the player being
+  in the world, their permission, their cooldown, the target's visibility,
+  bucket and distance, and the addon's own check, before the handler runs
+  with the target resolved. A minimal interaction UI lists what is near as
+  a menu (FiveM key `rpf_interact`, default E, `setr rpf_interact_key`;
+  Gmod console command `rpf_interact`), and on FiveM the same rules are
+  offered through ox_target or qb-target when one runs. The client API
+  gains `open`, `nearby` and `targets`. The `acme_tags` example reads a tag
+  you stand at.
 
 - Bridges to existing RP frameworks, the Qbox pilot (K3, #93): `rpf-qbox`, a
   resource in the FiveM zip that only a Qbox server ensures, runs RPF beside

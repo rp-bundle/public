@@ -829,8 +829,54 @@ function fivem.client(env, host, seed, convars)
   ---@field run_due fun() Runs every timer due.
   ---@field next_due fun(): number? When the next timer is due.
   ---@field peds table<integer, { invincible: boolean?, blocking: boolean?, frozen: boolean? }> Peds this client has streamed in, by handle, with what the adapter set on them.
-  ---@field net_ids table<integer, integer> Each streamed-in entity's network id, by handle.
-  local driver = { exported = {}, nui_sent = {}, focus = false, frozen = false, feed = {}, peds = {}, net_ids = {} }
+  ---@field commands table<string, function> Commands registered with `RegisterCommand`, by name.
+  ---@field key_mappings { command: string, description: string, mapper: string, key: string }[] Every `RegisterKeyMapping`, in order.
+  ---@field resources table<string, string> Each resource's state as `GetResourceState` reports it on the client; anything unlisted is `missing`.
+  ---@field target_calls { resource: string, call: string, args: table }[] Every call into a target resource's exports (ox_target, qb-target), in order.
+  ---@field entity_state table<integer, table> Each entity's state bag on this client, as `Entity(handle).state` reads it.
+  ---@field net_ids table<integer, integer> Each streamed-in entity's network id, by handle, as `NetworkGetNetworkIdFromEntity` reports it.
+  local driver = {
+    exported = {},
+    nui_sent = {},
+    focus = false,
+    frozen = false,
+    feed = {},
+    peds = {},
+    commands = {},
+    key_mappings = {},
+    resources = { rpf = "started", ox_lib = "started" },
+    target_calls = {},
+    entity_state = {},
+    net_ids = {},
+  }
+  env.RegisterCommand = function(name, handler)
+    driver.commands[name] = handler
+  end
+  env.RegisterKeyMapping = function(command, description, mapper, key)
+    driver.key_mappings[#driver.key_mappings + 1] = { command = command, description = description, mapper = mapper, key = key }
+  end
+  env.GetResourceState = function(name)
+    return driver.resources[name] or "missing"
+  end
+  env.Entity = function(handle)
+    return { state = driver.entity_state[handle] or {} }
+  end
+  env.NetworkGetNetworkIdFromEntity = function(handle)
+    return driver.net_ids[handle] or 0
+  end
+  ---A fake target resource's exports: every call recorded, whatever its name.
+  ---@param resource string The resource.
+  ---@return table exports Its exports, called with `:`.
+  local function target_resource(resource)
+    return setmetatable({}, {
+      __index = function(_, call)
+        return function(_, ...)
+          driver.target_calls[#driver.target_calls + 1] = { resource = resource, call = call, args = { ... } }
+        end
+      end,
+    })
+  end
+  local target_exports = { ox_target = target_resource("ox_target"), ["qb-target"] = target_resource("qb-target") }
   env.IsEntityAPed = function(entity)
     return driver.peds[entity] ~= nil
   end
@@ -1000,6 +1046,9 @@ function fivem.client(env, host, seed, convars)
   env.exports = setmetatable({}, {
     __call = function(_, name, fn)
       driver.exported[name] = fn
+    end,
+    __index = function(_, resource)
+      return target_exports[resource]
     end,
   })
 

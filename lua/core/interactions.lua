@@ -5,8 +5,10 @@
 ---This is the seam the contract's rule needs (`docs/architecture/addons.md`,
 ---"The Lua API"): a request from a client reaches **only a handler an
 ---active addon registered**, under its own namespace, never an event name
----the client chose. J4 (#81) builds targeting on it (which record, entity
----or zone, distance, cooldowns); J10 (#239) carries it as a request and its
+---the client chose. J4 (#81) adds rules to a registration (`rpf.targets`:
+---a target in the world, distance, bucket, cooldown, permission, the
+---addon's own check), all checked here on the server before the handler
+---runs; J10 (#239) carries it as a request and its
 ---answer, over ox_lib's `lib.callback` on FiveM (`request_server` and
 ---`on_client_request` on the platform), and keeps this rule.
 ---
@@ -57,6 +59,7 @@ interactions.MAX_WAITING = 64
 ---@field handler any The addon's handler: a function, or a FiveM function reference.
 ---@field namespace string The addon that registered it.
 ---@field disown fun() Forgets the addon's ownership of it, once it is replaced.
+---@field rules rpf.targets.Rules? Its rules (J4), if it was registered with any.
 
 ---@type table<string, rpf.interactions.Entry>
 local handlers = {}
@@ -167,14 +170,21 @@ end
 
 -- The server ----------------------------------------------------------------
 
+---Tells every player in the world the rules there are now, once the
+---current code has finished registering (`rpf:target_rules`, for a target
+---resource).
+local push_rules
+
 ---Registers an addon's interaction. Registering a name again replaces it,
 ---and the one replaced goes at once; one registered while the addon's code
 ---runs goes when it stops.
 ---@param name any `<namespace>.<name>`, under an addon loaded here.
----@param handler any `handler(player, payload)`, answering `true` and optionally a table of data for the client, or `false` and a reason for the player.
+---@param handler any `handler(player, payload, target)`, answering `true` and optionally a table of data for the client, or `false` and a reason for the player. `target` is what the rules resolved (`rpf.targets`), nil without a target rule.
+---@param rules any? The rules (`rpf.targets.check_rules`): `label`, `target`, `distance`, `cooldown`, `permission`, `check`.
 ---@return boolean? ok True once registered.
----@return string? err `invalid` for a name or handler that is not one, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an addon activation that has ended.
-function interactions.register(name, handler)
+---@return string? err `invalid` for a name, handler or rules that are not one, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an addon activation that has ended.
+---@return table? detail For rules refused, `{ error = "rules", field = <key> }`.
+function interactions.register(name, handler, rules)
   if not rpf.addons then
     return nil, "invalid"
   end
@@ -191,18 +201,26 @@ function interactions.register(name, handler)
   if rpf.addons.stale() then
     return nil, "inactive"
   end
+  local checked, bad = rpf.targets.check_rules(namespace, rules)
+  if bad then
+    return nil, "invalid", { error = "rules", field = bad }
+  end
   local previous = handlers[name]
   if previous then
     previous.disown()
   end
+  rpf.targets.forget(name)
   ---@type rpf.interactions.Entry
-  local entry = { handler = handler, namespace = namespace, disown = function() end }
+  local entry = { handler = handler, namespace = namespace, disown = function() end, rules = checked }
   handlers[name] = entry
   entry.disown = rpf.addons.own(function()
     if handlers[name] == entry then
       handlers[name] = nil
+      rpf.targets.forget(name)
+      push_rules()
     end
   end)
+  push_rules()
   return true
 end
 
@@ -320,12 +338,34 @@ local function on_interact(player, payload, respond)
     respond(refusal("inactive"))
     return
   end
-  local ran, ok, extra = rpf.addons.run(
-    rpf.addons.context_of(entry.namespace),
-    entry.handler,
-    player,
-    copy(request.payload) or {}
-  )
+  local given = copy(request.payload) or {}
+  local rules = entry.rules
+  local target = nil
+  if rules then
+    local resolved, refused = rpf.targets.admit(name, rules, player, given)
+    if resolved == nil then
+      respond(refusal(refused or "not_found"))
+      return
+    end
+    target = resolved or nil
+    if rules.check then
+      local checked, allowed, why = rpf.addons.run(rpf.addons.context_of(entry.namespace), rules.check, player, rpf.targets.copy(target))
+      if not checked then
+        p.log("error", "rpf: the check of the interaction " .. name .. " failed: " .. tostring(allowed))
+        respond(refusal("failed"))
+        return
+      end
+      if allowed ~= true then
+        local read, text = pcall(encode_answer, name, false, why)
+        respond(read and text or refusal("refused"))
+        return
+      end
+    end
+  end
+  local ran, ok, extra = rpf.addons.run(rpf.addons.context_of(entry.namespace), entry.handler, player, given, rpf.targets.copy(target))
+  if rules and rules.cooldown > 0 then
+    rpf.targets.used(name, player)
+  end
   if not ran then
     p.log("error", "rpf: the interaction " .. name .. " failed: " .. tostring(ok))
     respond(refusal("failed"))
@@ -342,12 +382,69 @@ local function on_interact(player, payload, respond)
   respond(text)
 end
 
----Listens for interactions, and forgets a player's count when they leave.
----Called by `rpf.start_server`.
+---The rules with a target, encoded for a client.
+---@return string payload The `rpf:target_rules` payload.
+local function rules_payload()
+  return handoff.encode(handoff.TARGET_RULES, { rules = mark(rpf.targets.listed(handlers)) or json.array({}) })
+end
+
+---Whether a push of the rules is waiting to go.
+local pushing = false
+
+---Sends every player in the world the rules there are now, on the next
+---turn of the clock, once however many registrations changed meanwhile.
+push_rules = function()
+  local p = platform --[[@as rpf.ServerPlatform?]]
+  if pushing or not p or not rpf.players then
+    return
+  end
+  pushing = true
+  p.after(0, function()
+    pushing = false
+    local payload = rules_payload()
+    for _, player in ipairs(rpf.players.list()) do
+      if player.state == "active" then
+        p.to_client(player.handle, handoff.TARGET_RULES, payload)
+      end
+    end
+  end)
+end
+
+---Answers a client's `rpf:targets`: the options near them, counted against
+---the same rate as their interactions.
+---@param player rpf.PlayerView The player.
+---@param payload any The raw request.
+---@param respond fun(reply: string) Answers it.
+local function on_targets(player, payload, respond)
+  local empty = handoff.encode(handoff.TARGETS_RESULT, { options = json.array({}) })
+  if not handoff.decode(handoff.TARGETS, payload) or not admit(player.player_id) then
+    respond(empty)
+    return
+  end
+  local options = mark(rpf.targets.options(handlers, player))
+  respond(options and handoff.encode(handoff.TARGETS_RESULT, { options = options }) or empty)
+end
+
+---Listens for interactions and nearby requests, tells each player the
+---target rules as they arrive in the world and whenever an addon starts or
+---stops, and forgets a player's count when they leave. Called by
+---`rpf.start_server`.
 ---@param p rpf.ServerPlatform The platform.
 function interactions.serve(p)
   platform = p
+  rpf.targets.serve(p)
   rpf.players.on_client_request(handoff.INTERACT, on_interact, refusal("not_logged_in"))
+  rpf.players.on_client_request(
+    handoff.TARGETS,
+    on_targets,
+    handoff.encode(handoff.TARGETS_RESULT, { options = json.array({}) })
+  )
+  rpf.events.on("players.active", function(player)
+    p.to_client(player.handle, handoff.TARGET_RULES, rules_payload())
+  end)
+  rpf.events.on("addons.state", function()
+    push_rules()
+  end)
   rpf.events.on("players.dropping", function(player)
     if player.player_id then
       counts[player.player_id] = nil
@@ -460,10 +557,12 @@ function interactions.request(name, payload, callback)
   end)
 end
 
----Keeps the platform the requests go through. Called by `rpf.start_client`.
+---Keeps the platform the requests go through, and starts the client's
+---half of the targets (`rpf.targets`). Called by `rpf.start_client`.
 ---@param p rpf.ClientPlatform The platform.
 function interactions.start_client(p)
   platform = p
+  rpf.targets.start_client(p)
 end
 
 rpf.interactions = interactions

@@ -1,0 +1,161 @@
+---The optional target-resource adapter (J4): offers the server's interaction
+---rules through ox_target or qb-target, whichever is started, so a player
+---aims at a placed ped or object, or a model, and picks an option from the
+---resource's own eye-target menu.
+---
+---It is presentation and nothing more. The rules come from the server
+---(`rpf:target_rules`, announced by the core as `interactions.targets`), an
+---option is shown only on an entity the core placed for the rule's type
+---(its `rpf_placement` state bag), or of the rule's models, and selecting
+---one sends the same request as the minimal UI, naming the entity by its
+---network id, for the server to check from its own state. A resource that is
+---not running costs nothing: the core's menu (`rpf_interact`) works either
+---way. Points and zones have no entity, so only the menu offers them.
+---@class rpf.fivem.target
+---@field RESOURCES string[] The target resources it knows, in the order it prefers them.
+local target = {}
+
+local rpf = rpf
+local core = rpf
+local fivem = rpf.fivem
+local shared = fivem.shared
+
+target.RESOURCES = { "ox_target", "qb-target" }
+
+---What was offered through which resource, so it can be taken back.
+---@class rpf.fivem.target.Offered
+---@field resource string The resource.
+---@field peds string[] Option names (ox_target) or labels (qb-target) on every ped.
+---@field objects string[] The same, on every object.
+---@field models { models: string[], names: string[] }[] The same, per list of models.
+
+---@type rpf.fivem.target.Offered?
+local offered = nil
+
+---The target resource that is running, if any.
+---@return string? resource Its name.
+function target.resource()
+  for _, name in ipairs(target.RESOURCES) do
+    if GetResourceState(name) == "started" then
+      return name
+    end
+  end
+  return nil
+end
+
+---Sends a rule's interaction at the entity the player selected, by its
+---network id, and tells the player if the server refuses it.
+---@param name string The interaction.
+---@param entity integer The entity, as the target resource hands it over.
+function target.select(name, entity)
+  local ref = NetworkGetNetworkIdFromEntity(entity)
+  core.interactions.request(name, { target = { ref = ref } }, function(ok, reason)
+    if not ok then
+      core.targets.tell(tostring(reason))
+    end
+  end)
+end
+
+---Whether an entity is one the core placed for a type: its tag names it.
+---The server checks again; this only keeps an option off other entities.
+---@param entity integer The entity.
+---@param type_name string The type.
+---@return boolean placed True if it is.
+function target.placed(entity, type_name)
+  local tag = Entity(entity).state[shared.PLACEMENT]
+  return type(tag) == "table" and tag.type == type_name
+end
+
+---Takes back whatever was offered, so a new set of rules starts clean and a
+---stopped resource leaves nothing behind.
+function target.clear()
+  if not offered then
+    return
+  end
+  local resource = exports[offered.resource]
+  if offered.resource == "ox_target" then
+    resource:removeGlobalPed(offered.peds)
+    resource:removeGlobalObject(offered.objects)
+    for _, entry in ipairs(offered.models) do
+      resource:removeModel(entry.models, entry.names)
+    end
+  else
+    resource:RemoveGlobalPed(offered.peds)
+    resource:RemoveGlobalObject(offered.objects)
+    for _, entry in ipairs(offered.models) do
+      resource:RemoveTargetModel(entry.models, entry.names)
+    end
+  end
+  offered = nil
+end
+
+---Offers a set of rules through the running target resource, in place of
+---what was offered before: a type's rule of kind `ped` or `object` on every
+---such entity the core placed for the type, and a models rule on those
+---models.
+---@param rules table[] The rules, as `interactions.targets` announced them.
+function target.apply(rules)
+  target.clear()
+  local resource_name = target.resource()
+  if not resource_name or type(rules) ~= "table" then
+    return
+  end
+  local resource = exports[resource_name]
+  ---@type rpf.fivem.target.Offered
+  local now = { resource = resource_name, peds = {}, objects = {}, models = {} }
+  local ox = resource_name == "ox_target"
+  for _, rule in ipairs(rules) do
+    local name, type_name = rule.name, rule.type
+    local key = ox and name or rule.label
+    local option
+    if ox then
+      option = {
+        name = name,
+        label = rule.label,
+        distance = rule.distance,
+        canInteract = type_name and function(entity)
+          return target.placed(entity, type_name)
+        end or nil,
+        onSelect = function(data)
+          target.select(name, data.entity)
+        end,
+      }
+    else
+      option = {
+        label = rule.label,
+        canInteract = type_name and function(entity)
+          return target.placed(entity, type_name)
+        end or nil,
+        action = function(entity)
+          target.select(name, entity)
+        end,
+      }
+    end
+    if type_name and rule.kind == "ped" then
+      now.peds[#now.peds + 1] = key
+      if ox then
+        resource:addGlobalPed({ option })
+      else
+        resource:AddGlobalPed({ options = { option }, distance = rule.distance })
+      end
+    elseif type_name and rule.kind == "object" then
+      now.objects[#now.objects + 1] = key
+      if ox then
+        resource:addGlobalObject({ option })
+      else
+        resource:AddGlobalObject({ options = { option }, distance = rule.distance })
+      end
+    elseif type(rule.models) == "table" then
+      now.models[#now.models + 1] = { models = rule.models, names = { key } }
+      if ox then
+        resource:addModel(rule.models, { option })
+      else
+        resource:AddTargetModel(rule.models, { options = { option }, distance = rule.distance })
+      end
+    end
+  end
+  offered = now
+end
+
+rpf.fivem.target = target
+return target

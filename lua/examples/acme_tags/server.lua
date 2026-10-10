@@ -130,6 +130,16 @@ function acme_tags.scrub(rpf, player, payload)
   return true
 end
 
+---Reads a tag the player stands at (J4): the interaction's rules made the
+---server find the tag the client named, visible and within reach, before
+---this runs, so all that is left is to answer with its text.
+---@param target table The tag the rules resolved: `{ type, id, record, position, distance }`.
+---@return boolean ok Always true.
+---@return { text: string } data The tag's text.
+function acme_tags.read(target)
+  return true, { text = target.record.fields.text }
+end
+
 ---The spray can: a player's client asks, and this decides. The payload is
 ---whatever the client sent, so it is checked before anything is made.
 ---@param rpf rpf.Api The API.
@@ -181,6 +191,12 @@ function acme_tags.start_server(rpf)
       assert(rpf.time.every(acme_tags.FADE_EVERY, function()
         acme_tags.fade(rpf)
       end))
+      -- Aimed at a tag: the client names one, and the server checks it is
+      -- a tag, near enough, before `read` runs. The menu (`rpf_interact`)
+      -- lists it for any tag within reach.
+      assert(rpf.interactions.register("acme_tags.read", function(_, _, target)
+        return acme_tags.read(target)
+      end, { target = acme_tags.TYPE, label = "Read the tag", distance = 3 }))
       hold_all(rpf, nil)
     end,
   })

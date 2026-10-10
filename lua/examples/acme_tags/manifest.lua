@@ -40,6 +40,9 @@ acme_tags.MANIFEST = {
       list = { "text", "fades_at" },
       actions = { create = false, edit = false, delete = "moderate" },
       limit = 500,
+      -- A tag is a spot on a wall (J4): nothing is placed there, but a
+      -- player can aim an interaction at it by where it is.
+      world = { kind = "point", position = "spot" },
     },
   },
 }

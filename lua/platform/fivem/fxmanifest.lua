@@ -60,6 +60,7 @@ server_scripts({
   "core/bridge.lua",
   "core/facade.lua",
   "core/world.lua",
+  "core/targets.lua",
   "core/interactions.lua",
   "core/ui.lua",
   "core/api.lua",
@@ -79,12 +80,14 @@ client_scripts({
   "core/handoff.lua",
   "core/auth.lua",
   "core/picker.lua",
+  "core/targets.lua",
   "core/interactions.lua",
   "core/ui.lua",
   "core/api.lua",
   "shared.lua",
   "ox.lua",
   "ui.lua",
+  "target.lua",
   "client.lua",
 })
 

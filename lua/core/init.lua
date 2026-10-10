@@ -42,8 +42,9 @@
 ---@field ops rpf.ops Operation ids, and the journal that runs each facade command once (J3).
 ---@field facade rpf.facade The domain-neutral facade: characters, money, items and jobs for addons, from RPF's own modules or the bridge (J3, K2).
 ---@field bridge rpf.bridge The bridge to an existing RP framework on a companion server: its contract, lifecycle and the calls routed to it (K2).
----@field world rpf.world The game world through the adapter's capabilities (J3).
+---@field world rpf.world The game world through the adapter's capabilities, and placements (J3, J4).
 ---@field interactions rpf.interactions Requests a player's client makes to an addon's registered handler (J3).
+---@field targets rpf.targets What an interaction may be aimed at in the world, and the checks before its handler runs (J4).
 ---@field ui rpf.ui The UI an addon shows a player: notifications, menus, input dialogs and progress bars (J10).
 ---@field picker rpf.picker The client side of choosing a character.
 ---@field handoff rpf.handoff The login messages between server and client.
@@ -118,6 +119,7 @@ rpf.files = {
     "bridge.lua",
     "facade.lua",
     "world.lua",
+    "targets.lua",
     "interactions.lua",
     "ui.lua",
     "api.lua",
@@ -130,6 +132,7 @@ rpf.files = {
     "handoff.lua",
     "auth.lua",
     "picker.lua",
+    "targets.lua",
     "interactions.lua",
     "ui.lua",
     "api.lua",
