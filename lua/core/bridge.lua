@@ -126,6 +126,34 @@ local function log(level, message)
   end
 end
 
+---What a bridge or its framework threw, with every framework key the
+---bridge reported taken out, so it may go to the log: a framework's error
+---often names the character it was working on (qbx_core's carry the
+---`citizenid`), and the key never leaves the game server's memory.
+---@param err any What was thrown.
+---@param characters table<any, { key: string }>? The characters whose keys to take out; those in play by default.
+---@return string text The text, safe to log.
+local function scrub(err, characters)
+  local out = tostring(err)
+  for _, character in pairs(characters or loaded) do
+    -- Found as plain text, never as a pattern: a key is opaque, and Lua
+    -- 5.1's patterns cannot hold every byte one may (a NUL).
+    local key, parts, at = character.key, {}, 1
+    while true do
+      local from, to = out:find(key, at, true)
+      if not from then
+        break
+      end
+      parts[#parts + 1] = out:sub(at, from - 1)
+      parts[#parts + 1] = "<key>"
+      at = to + 1
+    end
+    parts[#parts + 1] = out:sub(at)
+    out = table.concat(parts)
+  end
+  return out
+end
+
 ---Whether a value is a string of 1 to `max` bytes.
 ---@param value any The value.
 ---@param max integer The most bytes.
@@ -287,7 +315,7 @@ end
 local function framework(b)
   local ok, running, version = pcall(b.running)
   if not ok then
-    log("error", "the " .. b.name .. " bridge could not say whether its framework is running: " .. tostring(running))
+    log("error", "the " .. b.name .. " bridge could not say whether its framework is running: " .. scrub(running))
     return nil
   end
   return running == true, type(version) == "string" and version or nil
@@ -333,11 +361,12 @@ local function withdraw(why, call_stop)
       rpf.players.advance(player.handle, "character_select")
     end
   end
+  local were = loaded
   loaded = {}
   if call_stop and active and b.stop then
     local ok, err = pcall(b.stop, why)
     if not ok then
-      log("error", "the " .. b.name .. " bridge's stop threw: " .. tostring(err))
+      log("error", "the " .. b.name .. " bridge's stop threw: " .. scrub(err, were))
     end
   end
   active, outage, closing = false, nil, false
@@ -394,7 +423,7 @@ local function evaluate()
     end
     local ok, err = pcall(b.start, selecting)
     if not ok then
-      log("error", "the " .. b.name .. " bridge's start threw: " .. tostring(err))
+      log("error", "the " .. b.name .. " bridge's start threw: " .. scrub(err))
       withdraw("its start threw", true)
       return
     end
@@ -413,7 +442,7 @@ end
 ---fixed and fits. A refusal is logged, once, and changes nothing.
 ---@param def any The bridge's table (`rpf.BridgeDefinition`).
 ---@return boolean? ok True once registered (active or waiting for the profile).
----@return string? err `invalid`, `contract` (another major) or `registered` (one is already).
+---@return string? err `invalid`, `contract` (another major), `registered` (one is already) or `start` (it activated at once, and its `start` threw, which withdrew it).
 ---@return string? field For `invalid`, what was wrong.
 function bridge.register(def)
   local name = type(def) == "table" and type(def.name) == "string" and def.name or "unnamed"
@@ -449,6 +478,10 @@ function bridge.register(def)
   end
   registered = checked
   evaluate()
+  if registered ~= checked then
+    -- Activated at once, and withdrawn: its `start` threw.
+    return nil, "start"
+  end
   return true
 end
 
@@ -477,13 +510,18 @@ end
 ---@param handle any The engine's handle.
 ---@param character any `{ key, name }`: the framework's key for it, opaque, and its name.
 ---@return boolean? ok True once the player is active with it.
----@return string? err `forbidden` (not the bridge's code), `inactive`, `invalid`, `not_found`, `not_registered` (they have not logged in: the framework loaded a character past RPF's gate), `superseded` (the bridge reported another character while this one was moving the player, and that later one stands), or the move's refusal.
+---@return string? err `forbidden` (not the bridge's code), `inactive`, `unavailable` (the bridge said its framework is: the player stays where they are, since nothing could be asked of the character), `invalid`, `not_found`, `not_registered` (they have not logged in: the framework loaded a character past RPF's gate), `superseded` (the bridge reported another character while this one was moving the player, and that later one stands), or the move's refusal.
 function bridge.character_loaded(handle, character)
   if not from_bridge() then
     return nil, "forbidden"
   end
   if not active or closing then
     return nil, "inactive"
+  end
+  if outage then
+    -- In play, the player would be released (FiveM's lock) to a character
+    -- every call about answers `unavailable`.
+    return nil, "unavailable"
   end
   if
     type(character) ~= "table"
@@ -672,7 +710,7 @@ end
 function bridge.read(fn, call, valid, ...)
   local ok, value, err = pcall(fn, ...)
   if not ok then
-    log("error", call .. " threw: " .. tostring(value))
+    log("error", call .. " threw: " .. scrub(value))
     return nil, "unavailable"
   end
   if value == nil then
@@ -709,7 +747,8 @@ function bridge.count_of(value)
   return whole(value, 0, MAX_UNITS) and value or nil
 end
 
----Checks a job a bridge read, and copies what the facade gives.
+---Checks a job a bridge read, and copies what the facade gives. The grade
+---is any finite number: frameworks number grades their own way.
 ---@param value any The value.
 ---@return table? job `{ name, grade, on_duty, employer? }`.
 function bridge.job_of(value)
@@ -718,6 +757,8 @@ function bridge.job_of(value)
     or not text(value.name, bridge.MAX_NAME_BYTES)
     or type(value.grade) ~= "number"
     or value.grade ~= value.grade
+    or value.grade == math.huge
+    or value.grade == -math.huge
     or type(value.on_duty) ~= "boolean"
     or (value.employer ~= nil and not text(value.employer, bridge.MAX_NAME_BYTES))
   then
@@ -726,18 +767,19 @@ function bridge.job_of(value)
   return { name = value.name, grade = value.grade, on_duty = value.on_duty, employer = value.employer }
 end
 
----Checks the account names a bridge listed.
+---Checks the account names a bridge listed: each once.
 ---@param value any The value.
 ---@return string[]? names A copy.
 function bridge.accounts_of(value)
   if not is_list(value) or #value > MAX_ACCOUNTS then
     return nil
   end
-  local out = {}
+  local out, seen = {}, {}
   for i, name in ipairs(value) do
-    if not text(name, bridge.MAX_NAME_BYTES) then
+    if not text(name, bridge.MAX_NAME_BYTES) or seen[name] then
       return nil
     end
+    seen[name] = true
     out[i] = name
   end
   return out
@@ -746,7 +788,9 @@ end
 ---Asks the bridge for a command and classifies what it answered. Only an
 ---answer the bridge gave itself can say nothing changed: a throw, or
 ---anything the contract does not allow, is `unknown`, since the framework
----may have changed something before it.
+---may have changed something before it. What it threw is logged with the
+---framework's keys taken out, and stays out of the journal, which keeps an
+---unknown intent's cause for staff: that says only which call threw.
 ---@param fn function The bridge's function.
 ---@param call string The call, for staff.
 ---@param ... any The call's arguments.
@@ -756,7 +800,8 @@ end
 function bridge.command(fn, call, ...)
   local ok, done, status, reason = pcall(fn, ...)
   if not ok then
-    return nil, "unknown", "the bridge threw from " .. call .. ": " .. tostring(done)
+    log("error", call .. " threw: " .. scrub(done))
+    return nil, "unknown", "the bridge threw from " .. call
   end
   if done == true then
     return true

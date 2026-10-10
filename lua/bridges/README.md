@@ -66,7 +66,7 @@ player still server-side until `active`.
 |---|---|---|
 | `character_loaded(player, { key, name })` | The framework loaded a character, as the bridge's own login call saw it | The player moves to `active`. `key` is the framework's own (a `citizenid`), opaque, kept on this game server only: never sent to the portal, never logged |
 | `character_unloaded(player)` | The framework unloaded it | Back to `character_select` |
-| `unavailable(reason)` | The framework cannot be asked (its resource stopped) | Every facade call is `unavailable` without reaching the bridge |
+| `unavailable(reason)` | The framework cannot be asked (its resource stopped) | Every facade call is `unavailable` without reaching the bridge, and so is `character_loaded`: the player stays where they are |
 | `available()` | It can be asked again | Calls reach the bridge again |
 
 On FiveM only the resource that registered the bridge may report for it,

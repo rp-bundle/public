@@ -47,7 +47,7 @@ end
 ---@field calls string[] Every bridge call that reached the framework, in order.
 ---@field running boolean Whether it runs.
 ---@field version string Its version.
----@field fail table<string, string> How the next call of a name fails: `throw`, `unknown`, `unavailable`, `garbage`.
+---@field fail table<string, string> How the next call of a name fails: `throw`, `leak` (throws naming player 7's character, as qbx_core's errors do), `unknown`, `unavailable`, `garbage`.
 
 ---A bridge table over a fake framework.
 ---@param fw spec.FakeFramework The framework.
@@ -66,6 +66,8 @@ local function bridge_of(fw, overrides)
     fw.fail[name] = nil
     if how == "throw" then
       error("the framework blew up in " .. name)
+    elseif how == "leak" then
+      error("no character " .. KEY .. " for " .. name)
     elseif how == "unknown" then
       return nil, "unknown"
     elseif how == "unavailable" then
@@ -329,6 +331,24 @@ describe("rpf.bridge", function()
       assert.are.same({ "stop" }, fw.calls)
       assert.are.equal(1, #p.logged("error", "start threw"))
     end)
+
+    it("answers start, not true, when its start throws as it registers on a fixed profile", function()
+      boot()
+      welcome(p, support.COMPANION)
+      registered(7)
+      local b = bridge_of(fw, {
+        start = function()
+          error("no framework")
+        end,
+      })
+      assert.are.same({ nil, "start" }, { rpf.api.bridge.register(b) })
+      assert.is_nil(rpf.bridge.active())
+      assert.is_nil(rpf.domains.bridge(), "withdrawn")
+      assert.are.equal("registered", rpf.players.get(7).state)
+      -- Withdrawn, so it may register again.
+      assert.is_true(rpf.api.bridge.register(bridge_of(fw)))
+      assert.are.equal("fakefw", rpf.bridge.active())
+    end)
   end)
 
   describe("the lifecycle", function()
@@ -441,12 +461,14 @@ describe("rpf.bridge", function()
       rpf.api.events.on("players.character_select", function(player)
         rpf.api.bridge.character_loaded(player.handle, character)
       end)
-      assert.is_true(rpf.api.bridge.register(bridge_of(fw, {
-        start = function(selecting)
-          assert(rpf.api.bridge.character_loaded(selecting[1], character))
-          error("half started")
-        end,
-      })))
+      assert.are.same({ nil, "start" }, {
+        rpf.api.bridge.register(bridge_of(fw, {
+          start = function(selecting)
+            assert(rpf.api.bridge.character_loaded(selecting[1], character))
+            error("half started")
+          end,
+        })),
+      })
       assert.is_nil(rpf.bridge.active())
       assert.are.equal("character_select", rpf.players.get(7).state, "held, with nobody behind the character")
       assert.are.same({ nil, "unavailable" }, { rpf.api.characters.current(7) })
@@ -464,6 +486,71 @@ describe("rpf.bridge", function()
       for _, line in ipairs(p.logs) do
         assert.is_nil(line.message:find(KEY, 1, true), "a log line carries the key")
       end
+    end)
+
+    it("keeps the framework's key out of the log and the journal when the framework throws with it", function()
+      ---Checks no log line and nothing stored carries the key.
+      local function kept()
+        p.advance(5000)
+        for _, line in ipairs(p.logs) do
+          assert.is_nil(line.message:find(KEY, 1, true), "a log line carries the key: " .. line.message)
+        end
+        for _, stored in pairs(p.store) do
+          assert.is_nil(stored:find(KEY, 1, true), "the journal carries the key")
+        end
+      end
+      playing()
+      fw.fail["money.balance"] = "leak"
+      assert.are.same({ nil, "unavailable" }, { rpf.api.money.balance(7, "cash") })
+      fw.fail["money.debit"] = "leak"
+      assert.are.same({ nil, "unknown" }, { rpf.api.money.debit(7, "cash", 5, "Tag", op()) })
+      assert.are.equal(1, #p.logged("error", "no character <key> for money.balance"))
+      assert.are.equal(1, #p.logged("error", "no character <key> for money.debit"))
+      local unknown = rpf.api.ops.unknown()
+      assert.are.equal(1, #unknown)
+      assert.are.equal("the bridge threw from money.debit", unknown[1].cause)
+      kept()
+      -- A key is opaque, whatever bytes it holds.
+      local odd = "50%\0off.*"
+      assert.is_true(rpf.api.bridge.character_loaded(7, { key = odd, name = "Jane Doe" }))
+      assert.are.same({ nil, "unavailable" }, { rpf.bridge.read(function()
+        error("no character " .. odd .. " here", 0)
+      end, "money.balance", rpf.bridge.balance_of) })
+      assert.are.equal(1, #p.logged("error", "money.balance threw: no character <key> here"))
+      -- What `start` and then `stop` throw, as a bridge whose start loaded a
+      -- character is withdrawn, though the characters are gone by `stop`.
+      boot()
+      assert.is_true(rpf.addons.from("fakefw_bridge", rpf.api.bridge.register, bridge_of(fw)))
+      welcome(p, support.COMPANION)
+      registered(7)
+      rpf.unload_origin("fakefw_bridge")
+      assert.are.same({ nil, "start" }, {
+        rpf.api.bridge.register(bridge_of(fw, {
+          start = function(selecting)
+            assert(rpf.api.bridge.character_loaded(selecting[1], { key = KEY, name = "Jane Doe" }))
+            error("half started " .. KEY)
+          end,
+          stop = function()
+            error("could not save " .. KEY)
+          end,
+        })),
+      })
+      assert.are.equal(1, #p.logged("error", "half started <key>"))
+      assert.are.equal(1, #p.logged("error", "could not save <key>"))
+      kept()
+    end)
+
+    it("refuses a character reported during an outage, leaving the player where they are", function()
+      boot()
+      assert.is_true(rpf.api.bridge.register(bridge_of(fw)))
+      welcome(p, support.COMPANION)
+      registered(7)
+      assert.is_true(rpf.api.bridge.unavailable("stopping"))
+      assert.are.same({ nil, "unavailable" }, { rpf.api.bridge.character_loaded(7, { key = KEY, name = "Jane Doe" }) })
+      assert.are.equal("character_select", rpf.players.get(7).state)
+      assert.is_true(rpf.api.bridge.available())
+      assert.is_true(rpf.api.bridge.character_loaded(7, { key = KEY, name = "Jane Doe" }))
+      assert.are.equal("active", rpf.players.get(7).state)
     end)
 
     it("forgets a player's character when they leave", function()
@@ -512,6 +599,18 @@ describe("rpf.bridge", function()
       assert.are.same({}, fw.calls)
       rpf.api.bridge.character_unloaded(7)
       assert.are.same({ nil, "no_character" }, { rpf.api.money.balance(7, "cash") })
+    end)
+
+    it("refuses a job with an infinite grade and accounts listed twice", function()
+      playing()
+      for _, grade in ipairs({ math.huge, -math.huge, 0 / 0 }) do
+        fw.jobs[7] = { name = "police", grade = grade, on_duty = true }
+        assert.are.same({ nil, "unavailable" }, { rpf.api.jobs.current(7) }, tostring(grade))
+      end
+      fw.jobs[7] = { name = "police", grade = 2.5, on_duty = true }
+      assert.are.equal(2.5, rpf.api.jobs.current(7).grade, "a framework numbers its grades its own way")
+      assert.is_nil(rpf.bridge.accounts_of({ "cash", "bank", "cash" }))
+      assert.are.same({ "cash", "bank" }, rpf.bridge.accounts_of({ "cash", "bank" }))
     end)
 
     it("runs a command once per op id, and never through RPF's own modules", function()
