@@ -174,3 +174,18 @@ RegisterNetEvent("rpf-qbox:select", function()
   end)
   choose()
 end)
+
+-- RPF's login comes before the selection, and has to show over the game:
+-- once the session starts the loading screen ends, as qbx_core's own
+-- selection ends it. Qbox's recipe leaves it for the selection to end
+-- (`loadscreen:externalShutdown`). Only where qbx_core runs, so a server
+-- where the bridge stays inactive keeps its loading screen as it was.
+CreateThread(function()
+  while not NetworkIsSessionStarted() do
+    Wait(0)
+  end
+  if GetResourceState("qbx_core") == "started" then
+    ShutdownLoadingScreen()
+    ShutdownLoadingScreenNui()
+  end
+end)
