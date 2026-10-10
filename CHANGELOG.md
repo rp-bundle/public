@@ -172,6 +172,12 @@ keep the job the portal has.
   address finds only someone who proved they hold it. Support's
   owner-recovery procedure and its identity checks are in
   [Operations](docs/operations.md#staff-account-recovery).
+- Sign out everywhere else (H3 follow-up, #222). The dashboard shows how
+  many other browsers are signed in to a staff member's account and ends
+  all of them in one click, keeping the one it is pressed in; the way to cut
+  a session off after taking an account back at Rauthy, which does not end
+  the portal's own sessions. Each guild the account is staff in logs it as
+  `staff.sessions.end`, with how many sessions ended.
 
 ### Database
 
