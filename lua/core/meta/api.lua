@@ -730,7 +730,8 @@ function Interactions.request(name, payload, callback) end
 ---```
 ---
 ---Each call returns `true` once it is shown, or nil and why: `invalid` for
----options it cannot show, `unsupported` where the engine has none
+---options it cannot show, `too_large` (server) for options each within
+---bounds but together more than a client takes (64 KiB), `unsupported` where the engine has none
 ---(`rpf.capabilities()`), `busy` while one of its kind is open for the
 ---player, `not_found` (server) for a player not logged in here. The callback
 ---runs once, later: with the result, or nil and why, `cancelled` when the
@@ -761,7 +762,7 @@ function Ui.notify(opts) end
 ---@param opts rpf.UiMenu The menu.
 ---@param callback fun(choice: any, err: string?) Called once.
 ---@return boolean? ok True once shown.
----@return "invalid"|"unsupported"|"busy"|"not_found"|"failed"|"unavailable"|nil err Why not.
+---@return "invalid"|"too_large"|"unsupported"|"busy"|"not_found"|"failed"|"unavailable"|nil err Why not.
 ---@overload fun(player: any, opts: rpf.UiMenu, callback: fun(choice: any, err: string?)): boolean?, string?
 function Ui.menu(opts, callback) end
 
@@ -771,7 +772,7 @@ function Ui.menu(opts, callback) end
 ---@param opts rpf.UiInput The dialog.
 ---@param callback fun(values: table<string, any>?, err: string?) Called once.
 ---@return boolean? ok True once shown.
----@return "invalid"|"unsupported"|"busy"|"not_found"|"failed"|"unavailable"|nil err Why not.
+---@return "invalid"|"too_large"|"unsupported"|"busy"|"not_found"|"failed"|"unavailable"|nil err Why not.
 ---@overload fun(player: any, opts: rpf.UiInput, callback: fun(values: table<string, any>?, err: string?)): boolean?, string?
 function Ui.input(opts, callback) end
 
@@ -782,7 +783,7 @@ function Ui.input(opts, callback) end
 ---@param opts rpf.UiProgress The bar.
 ---@param callback fun(completed: true?, err: string?) Called once.
 ---@return boolean? ok True once shown.
----@return "invalid"|"unsupported"|"busy"|"not_found"|"failed"|"unavailable"|nil err Why not.
+---@return "invalid"|"too_large"|"unsupported"|"busy"|"not_found"|"failed"|"unavailable"|nil err Why not.
 ---@overload fun(player: any, opts: rpf.UiProgress, callback: fun(completed: true?, err: string?)): boolean?, string?
 function Ui.progress(opts, callback) end
 

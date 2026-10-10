@@ -896,6 +896,23 @@ describe("the FiveM adapter", function()
       assert.are.same({ nil, "cancelled" }, got[2])
     end)
 
+    it("stops watching a menu once it is over, however soon the next opens", function()
+      local driver, record = load_side("client")
+      driver.start()
+      local function open()
+        rpf.api.ui.menu({ title = "Pick", options = { { label = "a" } } }, function() end)
+      end
+      open()
+      local baseline = #driver.timers
+      for _ = 1, 5 do
+        driver.pick(1)
+        open()
+        record.time = record.time + rpf.fivem.ox.WATCH_MS
+        driver.run_due()
+      end
+      assert.are.equal(baseline, #driver.timers, "one watch, the open menu's")
+    end)
+
     it("counts a menu another resource's replaced as closed", function()
       local driver, record = load_side("client")
       driver.start()

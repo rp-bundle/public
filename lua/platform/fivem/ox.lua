@@ -199,19 +199,6 @@ function ox.on_server_request(name, handler)
   end)
 end
 
----Calls `done` once, whatever calls it first.
----@param done function The callback.
----@return function once The same callback, which runs once.
-local function once(done)
-  local called = false
-  return function(...)
-    if not called then
-      called = true
-      done(...)
-    end
-  end
-end
-
 ---A notification, over `lib.notify`.
 ---@param spec rpf.ui.NoticeSpec The notification.
 ---@param done fun() Called once it is shown.
@@ -227,7 +214,15 @@ end
 ---@param spec rpf.ui.MenuSpec The menu.
 ---@param done fun(index: integer?) Called once.
 local function menu(spec, done)
-  local finish = once(done)
+  local over = false
+  ---Ends this menu, once; its watch stops with it.
+  ---@param index integer? The option picked, or nil for closed.
+  local function finish(index)
+    if not over then
+      over = true
+      done(index)
+    end
+  end
   local options = {}
   for i, option in ipairs(spec.options) do
     options[i] = {
@@ -249,6 +244,9 @@ local function menu(spec, done)
   })
   lib.showContext(ox.MENU_ID)
   local function watch()
+    if over then
+      return
+    end
     if lib.getOpenContextMenu() ~= ox.MENU_ID then
       finish(nil)
       return

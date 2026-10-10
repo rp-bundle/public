@@ -517,6 +517,29 @@ local function show_client(kind, opts, callback)
   end)
 end
 
+---The options a spec the server sent stands for, so the client checks it
+---with the same rules (`ui.spec`): a spec shows a select's options as
+---labels, and its default by number, which as options are labels with no
+---value, whose values are their numbers.
+---@param kind string The kind.
+---@param spec any The spec, as the server sent it.
+---@return any opts The options it stands for.
+local function from_wire(kind, spec)
+  if kind ~= "input" or type(spec) ~= "table" or type(spec.fields) ~= "table" then
+    return spec
+  end
+  for _, field in ipairs(spec.fields) do
+    if type(field) == "table" and field.kind == "select" and type(field.options) == "table" then
+      local options = {}
+      for i, label in ipairs(field.options) do
+        options[i] = { label = label }
+      end
+      field.options = options
+    end
+  end
+  return spec
+end
+
 ---Answers the server's request to show something: shows it, and sends the
 ---player's raw answer back for the server to read. Anything that cannot be
 ---shown is answered with why.
@@ -527,7 +550,7 @@ local function on_show(payload, respond)
   local kind = request and request.kind
   local spec, kept = nil, {}
   if kind ~= "notify" and request and one_of(kind, ui.KINDS) then
-    spec, kept = ui.spec(kind, plain(request.spec))
+    spec, kept = ui.spec(kind, from_wire(kind, plain(request.spec)))
   end
   if not spec then
     assert(platform).log("warn", "rpf: the server asked for a ui this client cannot read")
@@ -608,7 +631,7 @@ end
 ---@param opts any The caller's options.
 ---@param callback any The callback, for every kind but `notify`.
 ---@return boolean? ok True once sent.
----@return string? err `invalid`, `unsupported`, `not_found` for a player not logged in here, `busy` while one of the kind is open for them, or `unavailable` before the server has started.
+---@return string? err `invalid`, `too_large` for options that are each within bounds but together more than a client takes, `unsupported`, `not_found` for a player not logged in here, `busy` while one of the kind is open for them, or `unavailable` before the server has started.
 local function show_server(handle, kind, opts, callback)
   local p = platform --[[@as rpf.ServerPlatform?]]
   if not p or not rpf.players then
@@ -635,6 +658,11 @@ local function show_server(handle, kind, opts, callback)
   if not ok then
     return nil, "invalid"
   end
+  if #text_or_err > handoff.MAX_LIST_PAYLOAD then
+    -- Every part within its bounds, and still more than a client decodes:
+    -- a select's 32 options in each of 12 fields, say.
+    return nil, "too_large"
+  end
   if kind == "notify" then
     p.to_client(handle, handoff.UI_NOTIFY, text_or_err)
     return true
@@ -647,14 +675,17 @@ local function show_server(handle, kind, opts, callback)
   waiting[player_id] = by_kind
   local ctx = rpf.addons and rpf.addons.context()
   ---Ends the wait, once: reads the answer, or passes on why there is none.
-  ---@param raw any The client's raw answer.
-  ---@param reason string? Why there is none.
-  local function finish(raw, reason)
-    if by_kind[kind] == nil then
+  ---Only this request's own end counts: once it is over, the next of its
+  ---kind for the player may be waiting in its place.
+  ---@type fun(raw: any, reason: string?)
+  local finish
+  finish = function(raw, reason)
+    local current = waiting[player_id]
+    if not current or current[kind] ~= finish then
       return
     end
-    by_kind[kind] = nil
-    if next(by_kind) == nil and waiting[player_id] == by_kind then
+    current[kind] = nil
+    if next(current) == nil then
       waiting[player_id] = nil
     end
     if reason then

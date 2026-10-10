@@ -662,6 +662,7 @@ function fivem.client(env, host, seed, convars)
   ---@field dialog { heading: string, rows: table[], options: table?, answer: fun(values: table?) }? The input dialog on show; `answer` is the player submitting (or nil, cancelling).
   ---@field bar { data: table, finish: fun(completed: boolean?) }? The progress bar on show; `finish` is it ending.
   ---@field pick fun(n: integer) The player picks the open context menu's `n`th option.
+  ---@field timers table[] The timers pending, as the mock platform keeps them.
   ---@field close_context fun() The player closes the open context menu.
   ---@field start fun() `onClientResourceStart` for this resource.
   ---@field stop fun() `onClientResourceStop` for this resource.
@@ -805,6 +806,7 @@ function fivem.client(env, host, seed, convars)
     fire("onClientResourceStop", "", "rpf")
   end
 
+  driver.timers = p.timers
   driver.run_due = p.run_due
   driver.next_due = p.next_due
   return driver

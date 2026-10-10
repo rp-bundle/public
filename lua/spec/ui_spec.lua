@@ -233,6 +233,46 @@ describe("rpf.ui", function()
       assert.are.same({ false, "unsupported" }, { replies[3].ok, replies[3].reason })
     end)
 
+    it("shows a dialog its server sends, a select's options and default included", function()
+      local spec = assert(rpf.ui.spec("input", dialog()))
+      local replies = {}
+      c.server_request_handlers["rpf:ui"](rpf.handoff.encode("rpf:ui", { kind = "input", spec = rpf.json.object(rpf.json.copy(spec)) }), function(reply)
+        replies[#replies + 1] = rpf.json.decode(reply)
+      end)
+      assert.are.equal(1, #c.shown, "shown, not refused")
+      local colour = c.shown[1].spec.fields[4]
+      assert.are.same({ "Red", "Blue" }, colour.options)
+      c.shown[1].done({ "hi", 2, false, 2 })
+      assert.is_true(replies[1].ok)
+      assert.are.same({ "hi", 2, false, 2 }, { replies[1].values[1], replies[1].values[2], replies[1].values[3], replies[1].values[4] })
+    end)
+
+    it("takes the largest request a server may send, and gives the largest answer", function()
+      local options = {}
+      for i = 1, rpf.ui.MAX_OPTIONS do
+        options[i] = { label = string.rep("\1", rpf.ui.MAX_LABEL), description = string.rep("\2", rpf.ui.MAX_LABEL) }
+      end
+      local spec = assert(rpf.ui.spec("menu", { title = "Big", options = options }))
+      local request = rpf.handoff.encode("rpf:ui", { kind = "menu", spec = rpf.json.object(rpf.json.copy(spec)) })
+      assert.is_true(#request > rpf.handoff.MAX_PAYLOAD, "more than an ordinary message")
+      c.server_request_handlers["rpf:ui"](request, function() end)
+      assert.are.equal(1, #c.shown)
+      local fields = {}
+      for i = 1, rpf.ui.MAX_FIELDS do
+        fields[i] = { name = "f" .. i, label = "F", max = rpf.ui.TEXT_LIMIT }
+      end
+      local reply
+      c.server_request_handlers["rpf:ui"](rpf.handoff.encode("rpf:ui", { kind = "input", spec = rpf.json.object(rpf.json.copy(assert(rpf.ui.spec("input", { title = "Long", fields = fields })))) }), function(text)
+        reply = text
+      end)
+      local values = {}
+      for i = 1, rpf.ui.MAX_FIELDS do
+        values[i] = string.rep("\1", rpf.ui.TEXT_LIMIT)
+      end
+      c.shown[2].done(values)
+      assert.truthy(rpf.handoff.decode("rpf:ui_answer", reply), "the server decodes it")
+    end)
+
     it("shows the server's notifications", function()
       c.from_server("rpf:ui_notify", { spec = { text = "Welcome", kind = "success", duration_ms = 3000 } })
       assert.are.same({ text = "Welcome", kind = "success", duration_ms = 3000 }, c.shown[1].spec)
@@ -315,6 +355,40 @@ describe("rpf.ui", function()
       p.advance(rpf.ui.TIMEOUT_MS)
       answer({ ok = true, index = 1 })
       assert.are.equal(2, #got, "nothing after the end")
+    end)
+
+    it("ends each request once, even when the next of its kind waits in its place", function()
+      local got = {}
+      rpf.api.ui.input(7, dialog(), function(_, err)
+        got[#got + 1] = "input:" .. tostring(err)
+      end)
+      rpf.api.ui.menu(7, menu(), function(choice, err)
+        got[#got + 1] = "first:" .. tostring(choice) .. ":" .. tostring(err)
+      end)
+      answer({ ok = true, index = 1 })
+      p.advance(1000)
+      rpf.api.ui.menu(7, menu(), function(choice, err)
+        got[#got + 1] = "second:" .. tostring(choice) .. ":" .. tostring(err)
+      end)
+      local second = p.client_requests[#p.client_requests]
+      -- The first menu's timeout falls due while the second still waits.
+      p.advance(rpf.ui.TIMEOUT_MS - 1000)
+      second.callback(rpf.handoff.encode("rpf:ui_answer", { ok = true, index = 3 }))
+      assert.are.same({ "first:tag-1:nil", "input:timeout", "second:3:nil" }, got)
+    end)
+
+    it("refuses options each within bounds but together more than a client takes", function()
+      local labels = {}
+      for i = 1, rpf.ui.MAX_OPTIONS do
+        labels[i] = { label = string.rep("\1", rpf.ui.MAX_LABEL) }
+      end
+      local fields = {}
+      for i = 1, rpf.ui.MAX_FIELDS do
+        fields[i] = { name = "f" .. i, label = string.rep("\1", rpf.ui.MAX_LABEL), kind = "select", options = labels }
+      end
+      assert.are.same({ nil, "too_large" }, { rpf.api.ui.input(7, { title = "Huge", fields = fields }, function() end) })
+      assert.are.equal(0, #p.client_requests)
+      assert.is_true(rpf.api.ui.menu(7, menu(), function() end), "and it held nothing open")
     end)
 
     it("sends a notification as a message of its own", function()
