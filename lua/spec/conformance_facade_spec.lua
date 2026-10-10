@@ -355,6 +355,28 @@ conformance.run(busted, "the facade", {
     end,
   },
   {
+    name = "waits for a change made behind a create the portal has not answered yet",
+    run = function(world)
+      local handle = selling(world)
+      local api = world.api
+      local owner = { owner = { kind = "player", id = PLAYER } }
+      local badge = assert(api.records.create("acme_badges.badge", { label = "Bronze" }, owner))
+      -- The create goes out, and the portal has not answered it: a change
+      -- made now waits in memory behind it.
+      world:advance(1000)
+      local op = api.ops.new()
+      assert.is_true(api.money.debit(handle, "wallet", 20, "Silver badge", op, function()
+        return api.records.update("acme_badges.badge", badge.id, { label = "Silver" })
+      end))
+      assert.are.equal("pending", stored(world, op).state, "the upgrade is not on disk yet")
+      world:pump()
+      world:settle()
+      world:settle()
+      assert.are.equal("done", stored(world, op).state)
+      assert.are.equal("Silver", world.portal.records[badge.id].fields.label)
+    end,
+  },
+  {
     name = "never runs the change when the payment is refused",
     run = function(world)
       local handle = selling(world)

@@ -719,6 +719,13 @@ function sync.reported(key)
   if entry.resync and not addon_pending(entry) then
     return false
   end
+  if entry.kind == "addon_record" then
+    -- Behind a create the portal has not answered, `change_of` holds a
+    -- later patch or deletion back: held back is not on disk.
+    return entry.created ~= "pending"
+      and not entry.changed.fields
+      and not (entry.deleted and not entry.delete_sent)
+  end
   return change_of(entry) == nil
 end
 
