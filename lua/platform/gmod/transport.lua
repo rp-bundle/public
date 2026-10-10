@@ -23,7 +23,7 @@
 ---   outbox until it is answered, so nothing is lost) and reports its close on
 ---   the next tick.
 ---
----A GWSockets call that raises (`write`, `closeNow`) is logged at `warn`, once
+---A GWSockets call that raises (`open`, `write`, `closeNow`) is logged at `warn`, once
 ---per connection for a send, and the transport keeps its answer to the core: a
 ---failed send is `false`, and a failed close is still reported as a close. What
 ---a refused frame means is the core's to decide; this only keeps the cause,
@@ -98,7 +98,15 @@ function transport.connect(url, handlers)
   function socket:onDisconnected()
     finish(connection, connection.error or "the connection closed")
   end
-  socket:open()
+  local opened, err = pcall(socket.open, socket)
+  if not opened then
+    -- The attempt never started, so GWSockets will report nothing for it: the
+    -- close is ours to owe, or the core never backs off and tries again.
+    shared.log("warn", "rpf: GWSockets could not open the websocket: " .. tostring(err))
+    timer.Simple(0, function()
+      finish(connection, "could not open a websocket: " .. tostring(err))
+    end)
+  end
 end
 
 ---Closes the current connection, or abandons the attempt under way. Its
