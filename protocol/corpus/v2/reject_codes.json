@@ -7,5 +7,6 @@
   "duplicate_instance",
   "expired",
   "rate_limited",
-  "suspended"
+  "suspended",
+  "domain_external"
 ]

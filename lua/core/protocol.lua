@@ -843,6 +843,7 @@ local REJECT_CODES = {
   "expired",
   "rate_limited",
   "suspended",
+  "domain_external",
 }
 
 -- Messages ----------------------------------------------------------------
