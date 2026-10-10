@@ -1179,7 +1179,7 @@ fronts it.
 | `character_unloaded(handle)` | Back to `character_select`, the character forgotten (`no_character` if none) |
 | `unavailable(reason)`, `available()` | The outage every call answers `unavailable` to without reaching the bridge; each change announced as `domains.bridge` |
 | `unload_origin(origin)` | The registering resource stopped (`rpf.unload_origin`): `withdraw`, which moves active players to `character_select`, forgets every character, takes the offer back (`rpf.domains.withdraw_bridge`) and announces `withdrawn` |
-| `supports`, `reach`, `character` | What the facade asks: whether a call works, the bridge's function for it now (or `unsupported`, `unavailable`), and a player's reported character (`not_logged_in`, `no_character`) |
+| `supports`, `reach`, `character` | What the facade asks: whether a call works, the bridge's function for it now (or `unsupported`, `unavailable`), and a player's reported character (`not_logged_in`, `no_character`; `unavailable` during an outage, kept for after it). Every read but `money.accounts` is a player's, so a nil handle is `not_logged_in`, never a call without one |
 | `read(fn, call, valid, ...)` | A read under `pcall`: a throw, a value `valid` refuses (`balance_of`, `count_of`, `job_of`, `accounts_of`) or an error outside `not_found`, `no_character`, `unavailable` is `unavailable`, logged; `jobs.current` may answer nil for no job |
 | `command(fn, call, ...)` | A command under `pcall`: `true`; nil and `refused` (with a reason of at most 64 bytes), `unavailable` or `unknown`; anything else, or a throw, is `unknown` with the cause for staff |
 

@@ -611,12 +611,14 @@ function bridge.reach(domain, call)
   return fn
 end
 
----The character a player has in play, as the bridge reported it.
+---The character a player has in play, as the bridge reported it. While
+---the framework is unavailable this is too, like every other call: the
+---framework may be unloading it as it stops. It is kept for when it is back.
 ---@param handle any The engine's handle.
 ---@return { key: string, name: string }? character A copy.
----@return string? err `unavailable` (no active bridge), `not_logged_in` or `no_character`.
+---@return string? err `unavailable` (no active bridge, or its framework is unavailable), `not_logged_in` or `no_character`.
 function bridge.character(handle)
-  if not active then
+  if not active or outage then
     return nil, "unavailable"
   end
   local player = rpf.players.get(handle)

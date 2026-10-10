@@ -217,11 +217,13 @@ local function external(domain)
 end
 
 ---Reads through the bridge: the call must be supported and reachable, and
----the player logged in with a character the bridge reported loaded.
+---the player logged in with a character the bridge reported loaded. Every
+---read is about a player, whatever handle the caller passed, nil included;
+---`money.accounts`, the one that is not, asks the bridge itself.
 ---@param domain string The domain.
 ---@param call string The call.
 ---@param valid fun(value: any): any The check of what the bridge answers.
----@param handle any The engine's handle, or nil for a call about no player.
+---@param handle any The engine's handle.
 ---@param ... any The call's arguments after the player.
 ---@return any value The value.
 ---@return string? err `unsupported`, `unavailable`, `not_logged_in`, `no_character`, `not_found`.
@@ -229,9 +231,6 @@ local function bridge_read(domain, call, valid, handle, ...)
   local fn, status = rpf.bridge.reach(domain, call)
   if not fn then
     return nil, status
-  end
-  if handle == nil then
-    return rpf.bridge.read(fn, domain .. "." .. call, valid)
   end
   local character, err = rpf.bridge.character(handle)
   if not character then
@@ -325,7 +324,8 @@ end
 ---@return string[] names In the config's order, or the bridge's; empty where none can be had.
 function facade.accounts()
   if external("money") then
-    return bridge_read("money", "accounts", rpf.bridge.accounts_of) or {}
+    local fn = rpf.bridge.reach("money", "accounts")
+    return fn and rpf.bridge.read(fn, "money.accounts", rpf.bridge.accounts_of) or {}
   end
   local out = {}
   for _, account in ipairs(rpf.config.starting_accounts() or {}) do
