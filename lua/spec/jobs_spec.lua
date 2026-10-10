@@ -259,8 +259,8 @@ describe("rpf.jobs", function()
       end
     end)
 
-    it("is internal for now: the public jobs calls are K2's facade", function()
-      assert.is_nil((rpf.api --[[@as table]]).jobs)
+    it("is internal: the public jobs calls are the facade's, which only reads a job", function()
+      assert.is_nil((rpf.api.jobs --[[@as table]]).set_job)
     end)
   end)
 

@@ -38,6 +38,8 @@
 ---@field jobs rpf.jobs Characters' jobs, duty and salaries (D7).
 ---@field edits rpf.edits Staff edits of held records: the commands that change a character, an account or a container this server holds (F5).
 ---@field data rpf.data The record calls addons make (J3), which `rpf.api.records` fronts.
+---@field ops rpf.ops Operation ids, and the journal that runs each facade command once (J3).
+---@field facade rpf.facade The domain-neutral facade's native provider: characters, money, items and jobs for addons (J3).
 ---@field picker rpf.picker The client side of choosing a character.
 ---@field handoff rpf.handoff The login messages between server and client.
 ---@field join rpf.join The server side of a player's login.
@@ -105,6 +107,8 @@ rpf.files = {
     "jobs.lua",
     "edits.lua",
     "data.lua",
+    "ops.lua",
+    "facade.lua",
     "api.lua",
   },
   client = {
@@ -169,6 +173,7 @@ function rpf.start_server(platform, options)
   rpf.jobs.start(platform)
   rpf.edits.start()
   rpf.data.start()
+  rpf.ops.start(platform)
   rpf.config.restore(platform)
   rpf.config.serve(platform, rpf.connection)
   rpf.publish(platform)

@@ -35,6 +35,11 @@
 ---@field time rpf.api.Time The clock, and timers that run on every engine alike.
 ---@field addons rpf.api.Addons Lua addons: registering one with its manifest, its state, and exports between addons (J1–J3). Server only.
 ---@field records rpf.api.Records The records of addons' types: read, query, hold, and write the live ones this server holds (J3). Server only.
+---@field characters rpf.api.Characters The domain-neutral facade (#75, J3): the character a player has in play. Server only.
+---@field money rpf.api.Money The domain-neutral facade: a player's money, and moving it. Server only.
+---@field inventory rpf.api.Inventory The domain-neutral facade: a player's items, and moving them. Server only.
+---@field jobs rpf.api.Jobs The domain-neutral facade: a player's job. Server only.
+---@field ops rpf.api.Ops Operation ids, which make the facade's commands safe to send again. Server only.
 ---@field players rpf.api.Players? The players on this game server. Server only.
 ---@field staff rpf.api.Staff? In-game staff: what a linked staff member may do here, account linking, and staff actions for the audit log. Server only.
 ---@field config rpf.api.Config? Lookups over the config the portal pushed, and linked staff's edits of it in game. Server only.
@@ -393,6 +398,171 @@ function Records.batch(ops) end
 ---@field record rpf.Record? The record now; nil for a deletion.
 ---@field by "addon"|"staff"|"portal" Who changed it.
 ---@field reason string? For a deletion the portal refused, why (`referenced`).
+
+---**The domain-neutral facade** (`docs/architecture/framework-integration.md`).
+---How an addon reaches a player's character, money, items and job, whoever
+---owns them on this server: RPF itself, or (with K2) an existing framework
+---through a bridge. Write against these and the addon runs on both.
+---
+---Every call takes the engine's handle of a player who has logged in, and
+---acts on the character they have in play. A read returns its value, or nil
+---and why. A command returns `true`, or nil, a status and a reason:
+---
+--- - `refused`: nothing changed, and the reason says why (`insufficient_funds`,
+---   `no_space`, `unsupported`, …).
+--- - `unavailable`: nothing changed; whoever owns the domain could not be
+---   asked. Trying again later is fine.
+--- - `unknown`: it may have happened. Never send it again with a new op id,
+---   and never grant what it paid for: staff resolve it.
+---
+---Every command names an op id from `rpf.ops.new()`, minted once per thing
+---the player is doing. Sending the same op id again returns the first
+---answer and never runs twice, so a retry is never a second payment.
+---
+---```lua
+---local op = rpf.ops.new() -- once per purchase, kept with it
+---local ok, status, why = rpf.money.debit(player, "bank", 250, "Spray can", op)
+---if ok then
+---  rpf.inventory.give(player, "spray_can", 1, rpf.ops.new())
+---elseif status == "refused" then
+---  -- tell the player why: why == "insufficient_funds", …
+---end
+---```
+---@class rpf.api.Characters
+local Characters = {}
+
+---The character a player has in play.
+---@param player any The engine's handle.
+---@return { key: string, name: string }? character `key` names it, opaque (an RPF character's id here, a framework's own key on a companion server); `name` its full name.
+---@return rpf.FacadeRead? err Why there is none.
+function Characters.current(player) end
+
+---Whether a call works on this server, before offering a player anything
+---that needs it.
+---@param call string `current`.
+---@return boolean supported True if it does.
+function Characters.supports(call) end
+
+---A player's money. Accounts are named by whoever owns money here: `accounts`
+---lists them, so an addon configures which it uses rather than naming one.
+---@class rpf.api.Money
+local Money = {}
+
+---The names of the accounts a player's money is in (`wallet`, `bank`).
+---@return string[] names The names.
+function Money.accounts() end
+
+---A player's balance in one account.
+---@param player any The engine's handle.
+---@param account string The account's name.
+---@return number? balance The balance, in the server's smallest currency unit.
+---@return rpf.FacadeRead? err Why not.
+function Money.balance(player, account) end
+
+---Takes money from a player. On an RPF server it goes to the paying account
+---the server's `economy.addon_account` setting names; without one, debits
+---are `unsupported`.
+---@param player any The engine's handle.
+---@param account string The player's account's name.
+---@param amount integer A whole amount from 1 to 2^53 − 1.
+---@param reason string Why, for the player's statement and staff; at most 256 bytes.
+---@param op_id string From `rpf.ops.new()`.
+---@return boolean? ok True once taken.
+---@return rpf.FacadeStatus? status Why not.
+---@return string? reason For `refused`: `invalid`, `invalid_op`, `expired_op`, `journal_full`, `not_logged_in`, `no_character`, `no_account`, `unsupported`, `insufficient_funds`, `out_of_range`.
+function Money.debit(player, account, amount, reason, op_id) end
+
+---Pays money to a player, from the account `economy.addon_account` names.
+---@param player any The engine's handle.
+---@param account string The player's account's name.
+---@param amount integer A whole amount from 1 to 2^53 − 1.
+---@param reason string Why; at most 256 bytes.
+---@param op_id string From `rpf.ops.new()`.
+---@return boolean? ok True once paid.
+---@return rpf.FacadeStatus? status Why not.
+---@return string? reason For `refused`, as for `debit`.
+function Money.credit(player, account, amount, reason, op_id) end
+
+---Whether a call works on this server: `debit` and `credit` need the
+---server's addon account set.
+---@param call string `accounts`, `balance`, `debit` or `credit`.
+---@return boolean supported True if it does.
+function Money.supports(call) end
+
+---A player's items, by item slug. Units are plain ones: a stack carrying
+---data (a bottle with a note) is a thing of its own the facade leaves alone.
+---@class rpf.api.Inventory
+local Inventory = {}
+
+---How many of an item a player's character holds.
+---@param player any The engine's handle.
+---@param item string The item's slug.
+---@return number? count The count.
+---@return rpf.FacadeRead? err Why not.
+function Inventory.count(player, item) end
+
+---Gives a player's character units of an item, all into one container.
+---@param player any The engine's handle.
+---@param item string The item's slug.
+---@param count integer How many, from 1.
+---@param op_id string From `rpf.ops.new()`.
+---@return boolean? ok True once given.
+---@return rpf.FacadeStatus? status Why not.
+---@return string? reason For `refused`: `invalid`, `invalid_op`, `expired_op`, `journal_full`, `not_logged_in`, `no_character`, `no_container`, `no_space`.
+function Inventory.give(player, item, count, op_id) end
+
+---Takes units of an item from a player's character.
+---@param player any The engine's handle.
+---@param item string The item's slug.
+---@param count integer How many, from 1.
+---@param op_id string From `rpf.ops.new()`.
+---@return boolean? ok True once taken.
+---@return rpf.FacadeStatus? status Why not.
+---@return string? reason For `refused`: as for `give`, and `insufficient`.
+function Inventory.take(player, item, count, op_id) end
+
+---Whether a call works on this server.
+---@param call string `count`, `give` or `take`.
+---@return boolean supported True if it does.
+function Inventory.supports(call) end
+
+---A player's job.
+---@class rpf.api.Jobs
+local Jobs = {}
+
+---The job of the character a player has in play.
+---@param player any The engine's handle.
+---@return { name: string, employer: string, grade: number, on_duty: boolean }? job Nil for none. `grade` is its seniority at its employer.
+---@return rpf.FacadeRead? err Why not.
+function Jobs.current(player) end
+
+---Whether a call works on this server.
+---@param call string `current`.
+---@return boolean supported True if it does.
+function Jobs.supports(call) end
+
+---Operation ids for the facade's commands.
+---@class rpf.api.Ops
+local Ops = {}
+
+---Mints an op id: one per thing a player does (a purchase), kept with it, so
+---sending that command again can never do it twice. It carries when it was
+---minted, and is refused (`expired_op`) after a day.
+---@return string? op_id The id, or nil before the core has started.
+function Ops.new() end
+
+---Why a facade read has no value.
+---@alias rpf.FacadeRead
+---| "not_logged_in" # The player has not logged in here, or is leaving.
+---| "no_character" # They have no character in play.
+---| "not_found" # No such account (or item slug).
+---| "unavailable" # Whoever owns the domain cannot be asked now.
+
+---How a facade command failed.
+---@alias rpf.FacadeStatus
+---| "refused" # Nothing changed; the third value says why.
+---| "unavailable" # Nothing changed; it could not be asked. Fine to try again later.
+---| "unknown" # It may have happened. Never send it again under a new op id.
 
 ---Where an addon is.
 ---@alias rpf.AddonState
@@ -944,8 +1114,9 @@ local Bridge = {}
 ---@return string? err Why.
 function Bridge.register(bridge) end
 
----Refusals the domain-neutral facade returns instead of throwing. Reserved for
----Milestone 2 (K1, K2): nothing returns them in 0.1.
+---Refusals the domain-neutral facade will return once a server can hand a
+---domain to an existing framework (K1, K2). Nothing returns them yet: on an
+---RPF server, RPF owns every domain.
 ---@alias rpf.api.Refusal
 ---| "domain_external" # The domain (`characters`, `money`, `inventory`, `jobs`) is owned by an existing framework on this server, so RPF's own operation on it is refused. Use the facade, which routes to the bridge.
 ---| "unsupported" # The active provider does not implement this call. Check `supports` first.

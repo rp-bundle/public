@@ -35,6 +35,7 @@ conformance.PLATFORMS = { "mock", "fivem", "gmod" }
 ---@field records table<string, { id: string, type: string, owner: table, revision: integer, fields: table, held: boolean }> Live addon records, by id.
 ---@field frames table[] Every frame the core sent that the portal read, decoded, in order.
 ---@field refuse table<string, string>? Frame types the portal refuses, with the code.
+---@field owned table<string, { kind: string, revision: integer, data: table, balance: integer? }> Characters, accounts and containers, by id: what a hold of their owner or of them hands over.
 
 ---One booted game server, as a case sees it.
 ---@class spec.ConformanceWorld
@@ -51,6 +52,7 @@ conformance.PLATFORMS = { "mock", "fivem", "gmod" }
 ---@field next_due fun(): number? When the next timer is due.
 ---@field stop_resource fun(origin: string)? Stops a resource, where there are resources.
 ---@field finish fun() Takes the platform's globals away again.
+---@field join fun(n: integer): any Puts a player in the game, as the engine hands one over, and returns their handle.
 ---@field socket_open fun(id: integer) The host's socket opened, as the platform hears it.
 ---@field socket_message fun(id: integer, text: string) A frame arrived on it.
 ---@field connects integer[] The sockets the core asked for, in order.
@@ -70,15 +72,17 @@ function World:as(origin)
 end
 
 ---Applies a config whose `addons` section is `entries`, as if the portal
----had pushed it.
+---had pushed it, with any other sections `extra` gives.
 ---@param entries table[] The section, built with `conformance.installed`.
-function World:install(entries)
+---@param extra table? More sections, by name (`settings`, `paying_accounts`, `new_character`, …).
+function World:install(entries, extra)
   self.version = (self.version or 0) + 1
   local json = self.core.json
-  local snapshot = assert(json.decode(assert(json.encode({
-    settings = json.object({}),
-    addons = json.array(entries),
-  }))))
+  local sections = { settings = json.object({}), addons = json.array(entries) }
+  for name, section in pairs(extra or {}) do
+    sections[name] = section
+  end
+  local snapshot = assert(json.decode(assert(json.encode(sections))))
   assert(self.core.config.apply(self.server_platform, self.version, "h" .. self.version, snapshot))
 end
 
@@ -108,18 +112,42 @@ function World:answer(frame)
   elseif frame.type == "online_players" or frame.type == "declare_addons" then
     return "ack", { re = frame.id }
   elseif frame.type == "hold" then
-    local out = {}
+    local out, held = {}, {}
+    ---What a hold hands over of a character, an account or a container.
+    ---@param owned table The portal's copy.
+    local function hand_over(owned)
+      local item = { kind = owned.kind, revision = owned.revision, [owned.kind] = owned.data }
+      if owned.kind == "account" then
+        item.balance = owned.balance
+      end
+      held[#held + 1] = item
+    end
+    local ids = {}
+    for id in pairs(portal.owned) do
+      ids[#ids + 1] = id
+    end
+    table.sort(ids)
+    for _, owner in ipairs(frame.owners) do
+      for _, id in ipairs(ids) do
+        local owned = portal.owned[id]
+        if owned.data.owner.kind == owner.kind and owned.data.owner.id == owner.id then
+          hand_over(owned)
+        end
+      end
+    end
     for _, ref in ipairs(frame.records) do
       local record = portal.records[ref.id]
-      if ref.kind ~= "addon_record" or not record or record.held then
+      if ref.kind ~= "addon_record" and portal.owned[ref.id] then
+        hand_over(portal.owned[ref.id])
+      elseif ref.kind ~= "addon_record" or not record or record.held then
         return "rejected", { re = frame.id, code = "not_found", reason = "not this server's to hold" }
+      else
+        out[#out + 1] = record
       end
-      out[#out + 1] = record
     end
-    local held = {}
-    for i, record in ipairs(out) do
+    for _, record in ipairs(out) do
       record.held = true
-      held[i] = {
+      held[#held + 1] = {
         kind = "addon_record",
         revision = record.revision,
         record = { id = record.id, type = record.type, owner = record.owner, fields = json.object(record.fields) },
@@ -148,6 +176,13 @@ function World:answer(frame)
         revisions[#revisions + 1] = { kind = "addon_record", id = change.id, revision = 1 }
       elseif change.kind == "addon_record_deleted" then
         portal.records[change.id] = nil
+      elseif portal.owned[change.id] then
+        local owned = portal.owned[change.id]
+        owned.revision = change.revision or owned.revision + 1
+        if change.contents then
+          owned.data.contents = change.contents
+        end
+        revisions[#revisions + 1] = { kind = owned.kind, id = change.id, revision = owned.revision }
       elseif record and change.kind == "addon_record" then
         for name, value in pairs(change.patch or change.fields or {}) do
           if value == json.null then
@@ -224,6 +259,34 @@ function World:connect()
   self:pump()
 end
 
+---Puts a player in the game as the engine does, logs them in as an account
+---(the harness's step, standing in for the join), and answers the hold of
+---their session.
+---@param n integer The harness's number for them.
+---@param player_id string Their account.
+---@return any handle The engine's handle for them, as the API takes it.
+function World:login(n, player_id)
+  local handle = self.join(n)
+  local players = self.core.players
+  assert(players.authenticating(handle))
+  assert(players.register(handle, { player_id = player_id, username = "player" .. n }))
+  self:pump()
+  return handle
+end
+
+---Puts a logged-in player's character in play, as the character screen
+---does, and answers the hold of its records.
+---@param handle any The engine's handle.
+---@param character_id string The character.
+function World:select(handle, character_id)
+  local selected = nil
+  assert(self.core.characters.select(handle, character_id, function(_, err)
+    selected = err or true
+  end))
+  self:pump()
+  assert(selected == true, "the character was not selected: " .. tostring(selected))
+end
+
 ---Lets the core report what it changed: one flush interval, and the
 ---portal's answers.
 function World:settle()
@@ -276,7 +339,7 @@ end
 local function host_for(world)
   local kv = {}
   world.connects, world.sent, world.answered = {}, {}, 0
-  world.portal = { records = {}, frames = {} }
+  world.portal = { records = {}, frames = {}, owned = {} }
   return {
     now = function()
       return world.time
@@ -338,6 +401,11 @@ local function boot_mock()
   world.run_due = p.run_due
   world.next_due = p.next_due
   world.socket_open, world.socket_message = p.socket_open, p.socket_message
+  world.join = function(n)
+    p.add_player(n, "Player " .. n, { "license:" .. n })
+    assert(core.players.connected(n))
+    return n
+  end
   world.finish = function()
     rawset(_G, "rpf", nil)
   end
@@ -381,6 +449,11 @@ local function boot_fivem()
   world.run_due = driver.run_due
   world.next_due = driver.next_due
   world.socket_open, world.socket_message = driver.socket_open, driver.socket_message
+  world.join = function(n)
+    driver.add_player(n, "Player " .. n, { "license:" .. n })
+    driver.connect_player(n)
+    return n
+  end
   world.stop_resource = driver.stop_resource
   world.finish = function()
     for key in pairs(_G) do
@@ -423,6 +496,9 @@ local function boot_gmod()
   end
   world.socket_message = function(id, text)
     fake:socket_message(id, text)
+  end
+  world.join = function(n)
+    return fake:connect_player(n, "Player " .. n, string.format("765611980000%05d", n))
   end
   world.finish = function()
     fake:uninstall()

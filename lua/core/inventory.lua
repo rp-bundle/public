@@ -1059,12 +1059,15 @@ function inventory.apply_edit(id, edit)
 end
 
 ---How many units of an item a held container holds, across every stack and
----whatever their data.
+---whatever their data, or with `opts.plain` only the plain ones: units in
+---stacks with no data, which is what `remove` takes by default (the facade
+---counts these, J3).
 ---@param id string The container's uuid.
 ---@param item string The item's slug.
+---@param opts { plain: boolean? }? Whether to count only plain units.
 ---@return number? count The total, or nil if the container is not held.
 ---@return rpf.inventory.Error? err `not_held`.
-function inventory.count(id, item)
+function inventory.count(id, item, opts)
   local container = held(id)
   if not container then
     return nil, "not_held"
@@ -1072,9 +1075,10 @@ function inventory.count(id, item)
   if not well_formed(container.contents) then
     return 0
   end
+  local plain = opts ~= nil and opts.plain == true
   local total = 0
   for _, stack in ipairs(stacks_in(container.contents)) do
-    if stack.item == item then
+    if stack.item == item and (not plain or data_key(stack.data) == "{}") then
       total = total + stack.count
     end
   end
