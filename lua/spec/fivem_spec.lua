@@ -886,6 +886,27 @@ describe("the FiveM adapter", function()
       assert.is_nil(driver.entities[handle])
     end)
 
+    it("forgets an entity something else removed, so a recycled handle is not taken for it", function()
+      local driver = started_server()
+      local spec = { id = "rec", type = "acme_npcs.greeter", kind = "object", position = { x = 0, y = 0, z = 0 }, heading = 0, bucket = 0, model = "prop" }
+      for _, model in ipairs({ "prop", "other" }) do
+        local ref = assert(rpf.fivem.server.spawn(spec))
+        local handle = native("NetworkGetEntityFromNetworkId")(ref)
+        driver.delete_entity(handle)
+        driver.recycle(handle, ref, native("GetHashKey")(model))
+        assert.is_nil(rpf.fivem.server.entity(ref).placement, model)
+        rpf.fivem.server.despawn(ref)
+        assert.is_not_nil(driver.entities[handle], "another script's entity stays: " .. model)
+      end
+      -- Should the event ever be missed, a recycled handle with another
+      -- model is still not ours.
+      local ref = assert(rpf.fivem.server.spawn(spec))
+      local handle = native("NetworkGetEntityFromNetworkId")(ref)
+      driver.entities[handle] = nil
+      driver.recycle(handle, ref, native("GetHashKey")("other"))
+      assert.is_nil(rpf.fivem.server.entity(ref).placement)
+    end)
+
     it("removes only an entity it placed", function()
       local driver = started_server()
       local theirs = native("CreateObjectNoOffset")(2, 0, 0, 0, true, true, false)

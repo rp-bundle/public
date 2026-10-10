@@ -577,7 +577,7 @@ local function boot_fivem(opts)
   world.delete_entity = function(ref)
     for handle, entity in pairs(driver.entities) do
       if entity.net == ref then
-        driver.entities[handle] = nil
+        driver.delete_entity(handle)
       end
     end
   end

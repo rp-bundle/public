@@ -145,6 +145,7 @@ most:
 |---|---|
 | `onResourceStart` (this resource) | Starts the core from the convars, then `players.connected` for everyone already on the server |
 | `onResourceStop` (this resource) | Closes every socket it has open in `rpf-ws`, which outlives a `restart rpf` (a socket left open would keep answering the portal's pings, and the portal would refuse the restarted core as a duplicate instance), puts every held player back in their own routing bucket, and removes every entity the core placed (`rpf.world.clear`) |
+| `entityRemoved` | Forgets a placed entity whoever removed it (`server.removed`), since its handle may be reused |
 | A state bag change of `rpf_placement` (client) | Makes a placed ped passive on that client (`client.placed`) |
 | `playerJoining` | `players.connected(source)` |
 | `playerDropped` | `players.dropped(source, reason)` |
@@ -179,6 +180,10 @@ it the OneSync way, from the server:
   `server.despawn` read that, never the tag. A client clearing the tag
   cannot make the core place a second entity, and one forging it names
   nothing. Only `server.sweep`, at start, has nothing but tags to go on.
+  An entry goes when the engine removes its entity (`entityRemoved`),
+  whoever removed it, and is checked against the model it was made with,
+  because FiveM recycles handles and network ids: another script's entity
+  that inherits one is never taken for ours.
 - **Streaming and range** are OneSync's: a server entity streams to the
   players near it in its bucket, and stays whether or not anyone is near.
 - **Passive peds.** What a ped does is up to its owning client, so

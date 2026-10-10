@@ -342,6 +342,8 @@ function fivem.server(env, host, seed, convars)
   ---@field positions table<integer, { x: number, y: number, z: number }> Where each player's ped stands, as `GetEntityCoords` reports it.
   ---@field entities table<integer, rpf.mock.FivemEntity> The peds and objects the server created, by handle, until deleted.
   ---@field set_bucket fun(player: integer, bucket: integer) Moves a player to a routing bucket, as another resource would.
+  ---@field delete_entity fun(handle: integer) Deletes an entity as any script or the engine would, firing `entityRemoved`.
+  ---@field recycle fun(handle: integer, net: integer, model: any) Gives a handle and network id to a new entity, as FiveM reuses them.
   local driver = {
     exported = own_exports,
     lockdown = {},
@@ -453,7 +455,31 @@ function fivem.server(env, host, seed, convars)
     return driver.entities[entity] ~= nil
   end
   env.DeleteEntity = function(entity)
-    driver.entities[entity] = nil
+    driver.delete_entity(entity)
+  end
+  -- Removed by anyone, the engine says so with `entityRemoved`.
+  function driver.delete_entity(handle)
+    if driver.entities[handle] then
+      driver.entities[handle] = nil
+      fire("entityRemoved", "", handle)
+    end
+  end
+  -- A handle and network id FiveM gives again, to a new entity.
+  function driver.recycle(handle, net, model)
+    local state = {}
+    function state.set(self, key, value)
+      rawset(self, key, value)
+    end
+    driver.entities[handle] = {
+      kind = "object",
+      model = model,
+      position = { x = 0, y = 0, z = 0 },
+      heading = 0,
+      bucket = 0,
+      frozen = false,
+      net = net,
+      state = state,
+    }
   end
   env.SetEntityHeading = function(entity, heading)
     driver.entities[entity].heading = heading

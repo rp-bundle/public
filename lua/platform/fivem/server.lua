@@ -207,7 +207,13 @@ end
 ---but the client that owns an entity can overwrite its state, so nothing
 ---here trusts it for an entity this run knows; only `server.sweep`, which
 ---runs before anything is placed, falls back to it for a previous run's.
----@type table<integer, string>
+---
+---An entry goes when the entity does (`server.removed`, on the engine's
+---`entityRemoved`), whoever removed it, because FiveM recycles handles and
+---network ids: an entry outliving its entity would claim the next one.
+---Each entry keeps the model it was made with too, so a recycled handle
+---that slipped past the event is still not taken for ours.
+---@type table<integer, { id: string, model: integer|string }>
 local placed_here = {}
 
 ---The entity a network id names on the server, or nil.
@@ -253,7 +259,7 @@ function server.spawn(spec)
   FreezeEntityPosition(entity, true)
   SetEntityOrphanMode(entity, server.KEEP_ENTITY)
   Entity(entity).state:set(server.PLACEMENT, { id = spec.id, type = spec.type }, true)
-  placed_here[entity] = spec.id
+  placed_here[entity] = { id = spec.id, model = GetEntityModel(entity) }
   return NetworkGetNetworkIdFromEntity(entity)
 end
 
@@ -262,9 +268,34 @@ end
 ---@param ref any Its network id.
 function server.despawn(ref)
   local entity = by_ref(ref)
-  if entity and placed_here[entity] then
+  if entity and server.mine(entity) then
     placed_here[entity] = nil
     DeleteEntity(entity)
+  end
+end
+
+---The record an entity is, if this run placed it and it is still that
+---entity: its handle is in `placed_here` with the model it was made with.
+---@param entity integer The server's handle.
+---@return string? id The record's id.
+function server.mine(entity)
+  local entry = placed_here[entity]
+  if not entry then
+    return nil
+  end
+  if GetEntityModel(entity) ~= entry.model then
+    placed_here[entity] = nil
+    return nil
+  end
+  return entry.id
+end
+
+---Forgets an entity the engine removed, whoever removed it, so its handle
+---names nothing of ours when FiveM gives it to another entity.
+---@param entity any The handle, as `entityRemoved` reports it.
+function server.removed(entity)
+  if type(entity) == "number" then
+    placed_here[entity] = nil
   end
 end
 
@@ -283,7 +314,7 @@ function server.entity(ref)
     position = { x = at.x, y = at.y, z = at.z },
     model = GetEntityModel(entity),
     bucket = GetEntityRoutingBucket(entity),
-    placement = placed_here[entity],
+    placement = server.mine(entity),
   }
 end
 
@@ -510,6 +541,8 @@ local platform = server.platform(shim, transport)
 AddEventHandler("rpf-ws:open", function(id) transport.opened(id) end)
 AddEventHandler("rpf-ws:message", function(id, text) transport.received(id, text) end)
 AddEventHandler("rpf-ws:close", function(id, code, reason) transport.closed(id, code, reason) end)
+-- An entity the engine removed, whoever removed it: its handle may be reused.
+AddEventHandler("entityRemoved", function(entity) server.removed(entity) end)
 AddEventHandler("onResourceStart", function(name)
   if name == GetCurrentResourceName() then server.start(platform) end
 end)
