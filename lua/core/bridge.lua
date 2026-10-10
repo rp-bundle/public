@@ -99,6 +99,12 @@ local registered = nil
 ---its `start` ran.
 local active = false
 
+---Whether the bridge is being withdrawn: its reports are refused from the
+---first move withdrawal makes, since a bridge answering the moves' cue
+---(`players.character_select`) at once would put a player back in play
+---with no provider behind them.
+local closing = false
+
 ---Why the bridge's framework is unavailable, while it says so.
 ---@type string?
 local outage = nil
@@ -321,6 +327,7 @@ local function withdraw(why, call_stop)
   if not b then
     return
   end
+  closing = true
   for _, player in ipairs(rpf.players.list()) do
     if player.state == "active" and active then
       rpf.players.advance(player.handle, "character_select")
@@ -333,7 +340,7 @@ local function withdraw(why, call_stop)
       log("error", "the " .. b.name .. " bridge's stop threw: " .. tostring(err))
     end
   end
-  active, outage = false, nil
+  active, outage, closing = false, nil, false
   rpf.domains.withdraw_bridge()
   log("warn", "the " .. b.name .. " bridge is withdrawn (" .. why .. "); players stay at registered until a bridge registers again")
   announce("withdrawn", why)
@@ -475,7 +482,7 @@ function bridge.character_loaded(handle, character)
   if not from_bridge() then
     return nil, "forbidden"
   end
-  if not active then
+  if not active or closing then
     return nil, "inactive"
   end
   if
@@ -535,7 +542,7 @@ function bridge.character_unloaded(handle)
   if not from_bridge() then
     return nil, "forbidden"
   end
-  if not active then
+  if not active or closing then
     return nil, "inactive"
   end
   local player, err = reportable(handle)

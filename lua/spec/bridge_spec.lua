@@ -430,6 +430,28 @@ describe("rpf.bridge", function()
       assert.are.equal("character_select", rpf.players.get(8).state)
     end)
 
+    it("lets no report put a player back in play while the bridge is withdrawn", function()
+      boot()
+      assert.is_true(rpf.addons.from("fakefw_bridge", rpf.api.bridge.register, bridge_of(fw)))
+      welcome(p, support.COMPANION)
+      registered(7)
+      rpf.unload_origin("fakefw_bridge")
+      -- An auto-selecting bridge, whose start loads a character and throws.
+      local character = { key = KEY, name = "Jane Doe" }
+      rpf.api.events.on("players.character_select", function(player)
+        rpf.api.bridge.character_loaded(player.handle, character)
+      end)
+      assert.is_true(rpf.api.bridge.register(bridge_of(fw, {
+        start = function(selecting)
+          assert(rpf.api.bridge.character_loaded(selecting[1], character))
+          error("half started")
+        end,
+      })))
+      assert.is_nil(rpf.bridge.active())
+      assert.are.equal("character_select", rpf.players.get(7).state, "held, with nobody behind the character")
+      assert.are.same({ nil, "unavailable" }, { rpf.api.characters.current(7) })
+    end)
+
     it("keeps the framework's key on this server: in no frame and no log line", function()
       playing()
       rpf.api.money.debit(7, "cash", 5, "Tag", op())
