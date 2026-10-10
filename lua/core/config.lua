@@ -41,7 +41,9 @@
 ---(E3), so every item in `items` has its weight, size and stack limit, and
 ---nothing here ever resolves one. `item_bases` is reference data for scripts
 ---that treat a category alike; `item_defaults` is what an item the config
----does not define behaves as.
+---does not define behaves as. An item with an image carries it as `image`,
+---its content hash (P3), never a URL: the image is a player's client's to
+---fetch from the portal, and the hash is what tells it the image changed.
 ---
 ---**`paying_accounts` (#169) names the accounts this server pays out of**,
 ---by `name`, each with the `id` `rpf.accounts.pay` takes. Only which

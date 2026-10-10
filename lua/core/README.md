@@ -457,6 +457,13 @@ the base as staff wrote it, for a script that treats every `weapon` alike.
 `item_defaults()` is what an item the config does not define behaves as, the
 same fallback the portal applies when it validates contents.
 
+An item staff gave an image has `image`, the image's content hash (P3): the
+SHA-256 of the stored PNG, 64 lowercase hex digits. Never a URL, and the core
+fetches nothing: a player's client fetches the image from the portal
+(`/api/v1/player/items/<slug>/image`, with its API token), which redirects
+it to the user-content domain, and keeps it under the hash, which changes
+exactly when the image does.
+
 `new_character` (E5) arrives **checked**. `config.starting_accounts()` is
 what the portal opens, and funds with ledger entries from the server's
 starting funds, when it creates a character; the core never pays a starting

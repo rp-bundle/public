@@ -26,7 +26,7 @@ Two numbers are involved, and only one decides compatibility.
 | Protocol | First release | Served by portal releases | Status |
 |---|---|---|---|
 | 1 | 0.1.0 | 0.1.0 and later, until its support window closes | Served |
-| 2 | Unreleased | The next release and later | Current, unreleased: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), and in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`) |
+| 2 | Unreleased | The next release and later | Current, unreleased: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`), and an item's `image` hash in the config snapshot (P3) |
 
 A row is added when a release ships a new protocol version, and a version's
 last portal release is filled in when one drops it. `CHANGELOG.md` names the
@@ -274,6 +274,7 @@ receiver takes the default (empty, `false` or `None`).
 | `job` | A character in `held` and `character_created` | `None` | Omitted when the character has no job, so a frame for one re-encodes as it did before D7 |
 | `employment` | A character's `StateChange` and `RecordReport` (`state_changed`, `resync`, `release`) | `None`: says nothing of the job | A field added by D7 to frames a game server sends, which a core from before it leaves out; `{"job": null}` is what clears a job |
 | `base` | An item in `items` | `None` | Omitted when the item has no base |
+| `image` | An item in `items` | `None` | Omitted when the item has no image; added by P3, and ignored by an older core, which keeps the snapshot whole |
 | `weight`, `size`, `stack_limit` | An item base in `item_bases` | `None` | Omitted when the base leaves it to the item or the defaults |
 | `description` | An employer, department or job | Empty | Free text, possibly empty |
 | `department` | A job in `employer_jobs` | `None` | Omitted when the job has none |

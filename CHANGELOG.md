@@ -21,7 +21,8 @@ adds the `restarting` notice (below), a character's job (D7), in-game
 staff (F9: `link_player`, `staff_action`, `player_linked` and
 `staff_permissions`), the `suspended` reject code (H5) and in-game config
 editing (E6: `config_changed`, `config_change_applied` and
-`config_change_discarded`); a game server on
+`config_change_discarded`), and an item's `image` hash in the config
+snapshot (P3), which a protocol 1 core ignores; a game server on
 protocol 1 is served unchanged, and is simply closed where a protocol 2 one
 is told first, is never sent `staff_permissions`, and is refused
 `forbidden` where a protocol 2 one is refused `suspended`. A message newer
@@ -66,6 +67,17 @@ keep the job the portal has.
   speaks has been announced as going (`rpf_protocol::SUNSETS`, empty
   until a release deprecates one)
   ([Compatibility](docs/compatibility.md#seeing-who-is-behind)).
+- Item images and object storage (P3, #49). Staff with `config.items.edit`
+  upload a PNG, JPEG or WebP of at most 256 KiB for an item on its items
+  page; the portal re-encodes it as a PNG of its pixels alone, at most 256
+  pixels a side, and stores it in S3-compatible object storage. The config
+  snapshot and the player API's item catalog name each image by its
+  SHA-256, and `GET /api/v1/player/items/{slug}/image` redirects a player's
+  client to a short-lived signed URL on the user-content domain, a separate
+  registrable domain from the portal's. A guild's images count against its
+  plan's new storage allowance (50 MiB standard), which the operator's
+  console sets. Uploads and removals are audited as
+  `config.item_image.set` and `config.item_image.delete`.
 - In-game config editing (E6, #48). A linked staff member changes their
   server's settings, items, item bases, employers, departments and jobs in
   game with `rpf.api.config.edit(handle, base_version, changes)`, with the
@@ -163,6 +175,9 @@ keep the job the portal has.
 
 ### Database
 
+- `20261009213553_item_images` is additive: item images, the storage
+  deletion queue and the trigger that fills it, and a nullable
+  `guild_plans.max_storage_mib`.
 - `20261009035000_player_links` is additive: player links, link codes and
   failed link attempts.
 - `20261008222809_character_jobs` is additive: a character's job, a job's
@@ -171,6 +186,13 @@ keep the job the portal has.
 
 ### Deployment
 
+- Item images need object storage and a user-content domain: the
+  `RPF_STORAGE_*` variables (unset, images are off), an S3-compatible
+  bucket, and a separate registrable domain in front of it that passes the
+  `Host` through and adds `X-Content-Type-Options: nosniff` and a
+  sandboxing `Content-Security-Policy` to every response
+  ([Deployment](docs/deployment.md#the-user-content-domain)). The portal
+  refuses to start with a user-content URL on its own site.
 - New optional environment variables `RPF_SHUTDOWN_NOTICE_SECS`,
   `RPF_SHUTDOWN_RETRY_AFTER_MS` and `RPF_SHUTDOWN_GRACE_SECS`; the defaults
   suit a single process behind a proxy. The orchestrator's kill timeout must
