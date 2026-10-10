@@ -267,11 +267,18 @@ local function conditions(def, where)
 end
 
 ---Compares two values of an indexed kind: numbers as numbers, strings byte
----for byte (the portal's `collate "C"`), anything else not at all.
+---for byte (the portal's `collate "C"`), booleans `false` first (as the
+---portal keys them), anything else not at all.
 ---@param a any One value.
 ---@param b any The other.
 ---@return integer? order -1, 0 or 1; nil when they do not compare.
 local function compare(a, b)
+  if type(a) == "boolean" and type(b) == "boolean" then
+    if a == b then
+      return 0
+    end
+    return a and 1 or -1
+  end
   if type(a) ~= type(b) or (type(a) ~= "number" and type(a) ~= "string") then
     return nil
   end
@@ -958,25 +965,33 @@ drain = function(namespace)
     return
   end
   local prefix = namespace .. "."
-  local refs = {}
+  local refs, deleting = {}, false
   for _, entry in pairs(records.entries) do
-    if
-      entry.kind == "addon_record"
-      and entry.through == nil
-      and not entry.deleted
-      and entry.data.type:sub(1, #prefix) == prefix
-    then
-      refs[#refs + 1] = { kind = "addon_record", id = entry.id }
+    if entry.kind == "addon_record" and entry.through == nil and entry.data.type:sub(1, #prefix) == prefix then
+      if entry.deleted then
+        -- Gone once the portal has the deletion; back, to be released, if
+        -- it refuses it (another record refers to it).
+        deleting = true
+      else
+        refs[#refs + 1] = { kind = "addon_record", id = entry.id }
+      end
     end
-  end
-  if #refs == 0 then
-    return
   end
   table.sort(refs, function(a, b)
     return a.id < b.id
   end)
-  local ok, err = rpf.sync.release(refs)
-  if not ok and err == "too_large" then
+  ---@type boolean?, string?
+  local ok, err = true, nil
+  if #refs > 0 then
+    ok, err = rpf.sync.release(refs)
+  end
+  if ok and deleting then
+    ok, err = nil, "deleting"
+  end
+  if ok then
+    return
+  end
+  if err == "too_large" then
     rpf.sync.platform.log("error", "rpf: a record of " .. namespace .. " is too large to release, and stays held")
   elseif not ok then
     rpf.sync.platform.log(

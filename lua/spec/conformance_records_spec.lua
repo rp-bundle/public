@@ -53,7 +53,7 @@ local function tags(limit)
         schema = 1,
         authority = "live",
         owners = { "player" },
-        fields = { label = { type = "string" } },
+        fields = { label = { type = "string" }, lit = { type = "boolean", index = true } },
       },
     },
   }
@@ -476,6 +476,43 @@ conformance.run(busted, "addon records", {
       options.max_bytes = budget
       assert.are.equal("outbox_full", err)
       assert.are.equal("a", api.records.get("acme_tags.tag", record.id).fields.text, "nothing was made")
+    end,
+  },
+  {
+    name = "lets a record go whose deletion the portal refused after its addon stopped",
+    run = function(world)
+      local api = installed(world)
+      local record = assert(api.records.create("acme_tags.tag", tag(), OWNER))
+      world:settle()
+      assert(api.records.delete("acme_tags.tag", record.id))
+      world.portal.refuse = { state_changed = "forbidden" } -- another record refers to it
+      world:advance(1000) -- the deletion goes, and is refused
+      world:install({ conformance.installed(world.core, tags(), false) })
+      world:pump()
+      world.portal.refuse = nil
+      world:advance(1000)
+      world:pump()
+      world:advance(1000)
+      world:pump()
+      assert.is_false(world.portal.records[record.id].held, "released once it came back")
+    end,
+  },
+  {
+    name = "orders booleans false first, as the portal does",
+    run = function(world)
+      local api = installed(world)
+      assert(api.records.create("acme_tags.mark", { label = "on", lit = true }, OWNER))
+      assert(api.records.create("acme_tags.mark", { label = "off", lit = false }, OWNER))
+      local labels = function(list)
+        local out = {}
+        for i, record in ipairs(list) do
+          out[i] = record.fields.label
+        end
+        return out
+      end
+      assert.are.same({ "off", "on" }, labels(api.records.list("acme_tags.mark", { order = "lit" })))
+      assert.are.same({ "on", "off" }, labels(api.records.list("acme_tags.mark", { order = "lit", descending = true })))
+      assert.are.same({ "on" }, labels(api.records.list("acme_tags.mark", { where = { lit = { gt = false } } })))
     end,
   },
   {
