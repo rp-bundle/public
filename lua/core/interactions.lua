@@ -401,7 +401,9 @@ local function on_interact(player, payload, respond)
       end
       player = fresh
       local again, refused_now = rpf.targets.admit(name, rules, player, given, true)
-      if again == nil then
+      if again == nil or not rpf.targets.same(target, again or nil) then
+        -- Gone, out of reach, or now another target than the one the check
+        -- approved (a reused ref): the handler runs on nothing unchecked.
         rpf.targets.release(reservation)
         respond(refusal(refused_now or "not_found"))
         return

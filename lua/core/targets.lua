@@ -390,6 +390,23 @@ end
 ---@field at number When it was taken.
 ---@field before number? The use it replaced.
 
+---Whether two resolutions of a request name the same target: the same
+---record (type and id), or the same entity (ref and model) when it is no
+---record. What the target an addon's check approved must still be when
+---its handler runs.
+---@param a rpf.targets.Target? One.
+---@param b rpf.targets.Target? The other.
+---@return boolean same True if they do.
+function targets.same(a, b)
+  if a == nil or b == nil then
+    return a == b
+  end
+  if a.id ~= nil or b.id ~= nil then
+    return a.type == b.type and a.id == b.id
+  end
+  return a.ref == b.ref and a.model == b.model
+end
+
 ---Starts a player's cooldown for an interaction as their request is
 ---admitted, before any addon code runs, so a check or handler that yields
 ---cannot let their next request past `admit` meanwhile.
