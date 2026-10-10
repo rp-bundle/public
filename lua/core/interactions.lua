@@ -71,14 +71,15 @@ local platform = nil
 ---Whether a value is plain data a handler may be given: strings, numbers,
 ---booleans and tables of them, nested at most `MAX_DEPTH` deep. Decoded
 ---JSON is already, apart from depth; this keeps the rule in one place.
----Tables are walked with `next`, never `pairs`, so a script's table with a
----`__pairs` that throws is refused rather than thrown through the API.
+---Tables are walked with `next`, never `pairs`, and compared with
+---`rawequal`, so a script's table with a `__pairs` or `__eq` that throws is
+---refused rather than thrown through the API.
 ---@param value any The value.
 ---@param depth integer How deep it is.
 ---@return boolean plain True if it is.
 local function plain(value, depth)
   local kind = type(value)
-  if kind == "string" or kind == "number" or kind == "boolean" or value == json.null then
+  if kind == "string" or kind == "number" or kind == "boolean" or rawequal(value, json.null) then
     return true
   end
   if kind ~= "table" or depth > interactions.MAX_DEPTH then
@@ -100,7 +101,7 @@ end
 ---@param value any Plain data (`plain`).
 ---@return any? marked The copy, or nil for a table that mixes the two kinds of key, or numbers that are not 1 to n.
 local function mark(value)
-  if type(value) ~= "table" or value == json.null then
+  if type(value) ~= "table" or rawequal(value, json.null) then
     return value
   end
   local count, numbers = 0, 0
@@ -142,7 +143,7 @@ end
 ---@param value any The value.
 ---@return any copy The copy.
 local function copy(value)
-  if value == json.null then
+  if rawequal(value, json.null) then
     return nil
   end
   if type(value) ~= "table" then
@@ -330,7 +331,15 @@ local function on_interact(player, payload, respond)
     respond(refusal("failed"))
     return
   end
-  respond(encode_answer(name, ok == true, extra))
+  -- The answer is the addon's data, read here after its code has run: a
+  -- throw while reading it is still the addon's, and still answered.
+  local read, text = pcall(encode_answer, name, ok == true, extra)
+  if not read then
+    p.log("error", "rpf: the interaction " .. name .. " answered something that could not be read: " .. tostring(text))
+    respond(refusal("failed"))
+    return
+  end
+  respond(text)
 end
 
 ---Listens for interactions, and forgets a player's count when they leave.

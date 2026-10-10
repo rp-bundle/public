@@ -16,12 +16,14 @@
 ---dialogs hand their values to Lua, and a password must never reach Lua.
 ---@class rpf.fivem.ox
 ---@field RESOURCE string The resource's name.
+---@field MAX_UNANSWERED integer The most requests this client has open over `lib.callback` at once: ox_lib keeps each until its answer comes and never expires one sent with a callback, so past this a request is answered with nothing rather than left in its table.
 ---@field MINIMUM string The oldest release the adapter accepts. 3.40.0 is the first whose server checks who answers a server-to-client callback, which `rpf.api.ui` relies on.
 ---@field RELEASES_URL string Where an owner gets it.
 local ox = {}
 
 ox.RESOURCE = "ox_lib"
 ox.MINIMUM = "3.40.0"
+ox.MAX_UNANSWERED = 256
 ox.RELEASES_URL = "https://github.com/overextended/ox_lib/releases"
 
 ---The three numbers of a `MAJOR.MINOR.PATCH` version, anything after them
@@ -105,15 +107,29 @@ function ox.on_client_request(name, handler)
   end)
 end
 
+---How many of this client's requests ox_lib holds without an answer yet.
+local unanswered = 0
+
 ---Asks the server, over `lib.callback`, with no client-side rate limit:
 ---the core keeps its own, and its own timeout. ox_lib keeps its own record
----of the request until the answer comes, which the server always sends
----(`on_client_request`); only a server that stops mid-request leaves one.
+---of the request until the answer comes, and never expires one sent with a
+---callback. The server always answers (`on_client_request`), but one that
+---stops mid-request, or a handler that never returns, leaves a record for
+---good, so past `MAX_UNANSWERED` of them a request is answered with
+---nothing, later, rather than sent.
 ---@param name string The request's name.
 ---@param payload string The request.
 ---@param callback fun(reply: string?) Called with the answer.
 function ox.request_server(name, payload, callback)
+  if unanswered >= ox.MAX_UNANSWERED then
+    Citizen.SetTimeout(0, function()
+      callback(nil)
+    end)
+    return
+  end
+  unanswered = unanswered + 1
   lib.callback(name, false, function(reply)
+    unanswered = unanswered - 1
     callback(type(reply) == "string" and reply or nil)
   end, payload)
 end

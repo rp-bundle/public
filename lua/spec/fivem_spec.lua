@@ -818,6 +818,31 @@ describe("the FiveM adapter", function()
       assert.are.same({ "answer" }, replies)
     end)
 
+    it("answers with nothing past MAX_UNANSWERED requests ox_lib holds, until one is answered", function()
+      local driver, record = load_side("client")
+      driver.start()
+      local ox = rpf.fivem.ox
+      local replies = {}
+      for _ = 1, ox.MAX_UNANSWERED + 1 do
+        ox.request_server("rpf:test", "{}", function(reply)
+          replies[#replies + 1] = reply == nil and "nil" or reply
+        end)
+      end
+      local sent = 0
+      for _, message in ipairs(record.to_server) do
+        if message.name == "rpf:test" then
+          sent = sent + 1
+        end
+      end
+      assert.are.equal(ox.MAX_UNANSWERED, sent, "the last was not sent")
+      driver.run_due()
+      assert.are.same({ "nil" }, replies)
+      driver.from_server("rpf:test", "1\nanswer")
+      local before = #record.to_server
+      ox.request_server("rpf:test", "{}", function() end)
+      assert.are.equal(before + 1, #record.to_server, "sent again once one was answered")
+    end)
+
     it("is a complete client platform", function()
       local driver = load_side("client")
       local start_client = rpf.start_client

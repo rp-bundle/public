@@ -310,6 +310,17 @@ describe("rpf.interactions", function()
       assert.are.equal(4, #p.logged("error", "acme_tags.read answered data that is not"))
     end)
 
+    it("reads data without running its metamethods, so one that throws is not reached", function()
+      local sly = setmetatable({ n = 1 }, {
+        __eq = function()
+          error("an __eq that throws")
+        end,
+      })
+      local answer = answering(true, { inner = sly })
+      assert.is_true(answer.ok)
+      assert.are.equal(1, answer.data.inner.n)
+    end)
+
     it("answers too_large for data past the limit", function()
       local answer = answering(true, { text = string.rep("x", rpf.interactions.MAX_ANSWER) })
       assert.are.same({ false, "too_large" }, { answer.ok, answer.reason })
