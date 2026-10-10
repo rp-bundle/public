@@ -522,6 +522,35 @@ describe("rpf.addons", function()
       assert.are.equal(before, rpf.api_subscribed_names())
     end)
 
+    it("holds back what a stop handler registers until the reload around it has finished", function()
+      local ran = {}
+      local function versions(name)
+        return {
+          start = function()
+            ran[#ran + 1] = "start " .. name
+          end,
+          stop = function()
+            ran[#ran + 1] = "stop " .. name
+            if name == "first" then
+              rpf.addons.register(manifest("acme_kit"), versions("from stop"))
+            end
+          end,
+        }
+      end
+      rpf.addons.register(manifest("acme_kit"), versions("first"))
+      support.connected(p)
+      configure(p, { installed(manifest("acme_kit")) })
+      rpf.addons.register(manifest("acme_kit"), versions("second"))
+      assert.are.same({
+        "start first",
+        "stop first",
+        "start second",
+        "stop second",
+        "start from stop",
+      }, ran, "every start is stopped before the next")
+      assert.are.equal("active", (rpf.addons.state("acme_kit")))
+    end)
+
     it("waits for an evaluation to end before it forgets an origin's addons", function()
       local ran = {}
       unloaded_ticks = 0

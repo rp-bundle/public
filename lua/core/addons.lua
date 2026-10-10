@@ -161,6 +161,11 @@ local reloading = 0
 ---How deep that may go: past it, a registration a handler makes is refused
 ---in the log.
 local MAX_RELOADS = 16
+---How many takings-out are under way. While one is, registrations its
+---handlers make (a `stop` registering its addon again) wait in `deferred`
+---until it has finished, so no registration is started and then forgotten
+---by the taking-out around it.
+local holding = 0
 
 ---Whether an evaluation is running, and whether another was asked for
 ---while it ran (a handler registering an addon), with a retry or not.
@@ -547,7 +552,7 @@ function addons.evaluate(retry)
   evaluating = true
   local ok, err = pcall(addons.evaluate_once, retry)
   local rounds = 0
-  while ok and (pending_retry ~= nil or #deferred > 0) and rounds <= 4 * rpf.manifest.MAX_ADDONS_PER_SERVER do
+  while ok and (pending_retry ~= nil or (#deferred > 0 and holding == 0)) and rounds <= 4 * rpf.manifest.MAX_ADDONS_PER_SERVER do
     rounds = rounds + 1
     if pending_retry ~= nil then
       local again = pending_retry
@@ -574,7 +579,10 @@ function addons.evaluate(retry)
       evaluating = true
     end
   end
-  evaluating, pending_retry, deferred = false, nil, {}
+  evaluating, pending_retry = false, nil
+  if holding == 0 then
+    deferred = {}
+  end
   if not ok then
     error(err, 0)
   end
@@ -750,8 +758,13 @@ local forget
 local function take_out(namespace, reason, gone)
   local addon = loaded[namespace]
   addon.leaving, addon.gone = reason, gone or nil
-  addons.evaluate(false)
+  holding = holding + 1
+  local ok, err = pcall(addons.evaluate, false)
+  holding = holding - 1
   forget(namespace)
+  if not ok then
+    error(err, 0)
+  end
 end
 
 ---Forgets an addon already stopped: its registration, its declaration, its
@@ -846,9 +859,14 @@ function addons.unload_origin(origin)
     log("info", namespace .. " is unloaded: its code stopped")
     loaded[namespace].leaving, loaded[namespace].gone = "its code stopped", true
   end
-  addons.evaluate(false)
+  holding = holding + 1
+  local ok, err = pcall(addons.evaluate, false)
+  holding = holding - 1
   for _, namespace in ipairs(gone) do
     forget(namespace)
+  end
+  if not ok then
+    error(err, 0)
   end
   take_down(function(entry)
     return entry.origin == origin
