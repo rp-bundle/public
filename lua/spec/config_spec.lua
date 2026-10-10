@@ -62,11 +62,19 @@ describe("rpf.config", function()
     assert.is_true((rpf.config.apply(p, frame.version, frame.hash, frame.snapshot)))
 
     -- Resolved by the portal: every field is there, and the base is named.
-    assert.are.same(
-      { slug = "pistol", name = "Pistol", base = "weapon", weight = 12, size = { x = 2, y = 1 }, stack_limit = 1 },
-      rpf.config.item("pistol")
-    )
+    -- The image travels as its content hash (P3), and an item without one
+    -- has no `image` at all.
+    assert.are.same({
+      slug = "pistol",
+      name = "Pistol",
+      base = "weapon",
+      weight = 12,
+      size = { x = 2, y = 1 },
+      stack_limit = 1,
+      image = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    }, rpf.config.item("pistol"))
     assert.is_nil(rpf.config.item("water_bottle").base)
+    assert.is_nil(rpf.config.item("water_bottle").image)
     assert.are.equal(10, rpf.config.item("water_bottle").stack_limit)
 
     -- A base as staff wrote it: what it does not set is absent.

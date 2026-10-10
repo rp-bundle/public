@@ -379,6 +379,7 @@ function Config.edit(handle, base_version, changes) end
 ---@field weight number Weight of one unit.
 ---@field size rpf.ConfigSize Footprint in a grid container, before rotation.
 ---@field stack_limit number The most that may sit in one stack.
+---@field image string? The item's image by content hash (P3): the SHA-256 of the image, 64 lowercase hex digits, nil if staff uploaded none. A player's client fetches it from the portal at `/api/v1/player/items/<slug>/image` with its API token, and may keep what it fetched under this hash, which changes exactly when the image does.
 
 ---An item base as the config snapshot carries it (E3): what staff wrote,
 ---with the fields it leaves to the defaults absent.
