@@ -57,6 +57,7 @@ server_scripts({
   "core/edits.lua",
   "core/data.lua",
   "core/ops.lua",
+  "core/bridge.lua",
   "core/facade.lua",
   "core/world.lua",
   "core/interactions.lua",

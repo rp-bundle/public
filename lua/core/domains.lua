@@ -29,8 +29,9 @@
 ---domains, no player gets past `registered` (`may_play`, which
 ---`rpf.players.advance` asks), and one log line says why: a server with
 ---RPF's domains off and nothing in their place would let players into a
----world nobody keeps. K2 registers the bridge, checks its contract, and
----offers it here (`accept_bridge`).
+---world nobody keeps. `rpf.bridge` (K2) registers the bridge, checks its
+---contract, and offers it here (`accept_bridge`), or takes it back
+---(`withdraw_bridge`).
 ---@class rpf.domains
 ---@field NAMES string[] The four domains, in the portal's order.
 ---@field NATIVE rpf.Domains The native profile, which a `Welcome` leaves out rather than names. Not to be changed: `fix` copies it.
@@ -213,6 +214,14 @@ function domains.accept_bridge(name, provides)
   offered = { name = name, provides = set }
   gate_logged = false
   return true
+end
+
+---Takes the offered bridge back (K2: its resource stopped, or its `start`
+---threw), so a server whose framework owns its domains holds new players at
+---`registered` again, and another bridge may be offered.
+function domains.withdraw_bridge()
+  offered = nil
+  gate_logged = false
 end
 
 ---The accepted bridge's name: one is offered and fits the fixed profile.

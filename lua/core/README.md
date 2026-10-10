@@ -1095,9 +1095,9 @@ the portal refused, which puts the record back (`records.changed`, `by =
 How an addon reaches a player's character, money, items and job whoever
 owns them (`docs/architecture/framework-integration.md`, decided in #75).
 `rpf.facade` is the native provider: each call goes to RPF's own module.
-K2 (#92) adds a bridge, and the routing to it by the server's domain
-authority (K1), behind the same calls. Server only; `rpf.api.characters`,
-`money`, `inventory`, `jobs` and `ops` front it.
+For a domain the server's framework owns (K1), each call goes to the
+bridge instead (`rpf.bridge`, K2, below), behind the same calls. Server
+only; `rpf.api.characters`, `money`, `inventory`, `jobs` and `ops` front it.
 
 | Call | Native |
 |---|---|
@@ -1161,6 +1161,36 @@ persisted outbox) as well as the command's own change. An `apply` that
 throws or answers nil or false makes the command `unknown`, with the money
 or items already moved: nothing compensates. A non-callable `apply` is
 `refused` (`invalid`) before anything is journaled.
+
+### Bridges (`rpf.bridge`, K2)
+
+The bridge to an existing RP framework on a companion server
+(`docs/architecture/framework-integration.md`, "The bridge contract";
+`lua/bridges/README.md` for the rules a bridge follows). `rpf.api.bridge`
+fronts it.
+
+| Part | What |
+|---|---|
+| `CONTRACT` | `{ major = 1, minor = 0 }`. Another major is refused; a later minor's unknown calls are left out |
+| `CALLS` | The optional calls, by domain: `money.accounts`, `balance`, `debit`, `credit`; `inventory.count`, `give`, `take`; `jobs.current`. `characters.current` is the core's, from the lifecycle |
+| `register(def)` | Checks the table whole (`invalid` naming the field, `contract`, `registered`), logs a refusal once, notes the registering origin, offers it to `rpf.domains.accept_bridge`, and activates it if the profile is fixed already |
+| activation | On `domains.fixed`, or at `register` after it: a native profile leaves it inactive (an `error` line naming `domains` if `running()` says the framework runs); a profile it does not fit leaves it inactive and the gate holds players; one it fits makes it active, warns outside `tested_with`, runs `start` with the engine handles already at `character_select` (a bridge registering again picks them up; withdrawing it, after its `stop`, if `start` throws), announces `domains.bridge` (`active`), and moves every `registered` player to `character_select`, as it does each later one on `players.registered` |
+| `character_loaded(handle, { key, name })` | `forbidden` from another origin, `inactive`, `invalid` (key or name not 1 to 128 bytes), `not_found`, `not_registered` (logged). Same key: rename. Otherwise through `character_select` to `active`, holding `{ key, name }` in memory by handle |
+| `character_unloaded(handle)` | Back to `character_select`, the character forgotten (`no_character` if none) |
+| `unavailable(reason)`, `available()` | The outage every call answers `unavailable` to without reaching the bridge; each change announced as `domains.bridge` |
+| `unload_origin(origin)` | The registering resource stopped (`rpf.unload_origin`): `withdraw`, which moves active players to `character_select`, forgets every character, takes the offer back (`rpf.domains.withdraw_bridge`) and announces `withdrawn` |
+| `supports`, `reach`, `character` | What the facade asks: whether a call works, the bridge's function for it now (or `unsupported`, `unavailable`), and a player's reported character (`not_logged_in`, `no_character`; `unavailable` during an outage, kept for after it). Every read but `money.accounts` is a player's, so a nil handle is `not_logged_in`, never a call without one |
+| `read(fn, call, valid, ...)` | A read under `pcall`: a throw, a value `valid` refuses (`balance_of`, `count_of`, `job_of`, `accounts_of`) or an error outside `not_found`, `no_character`, `unavailable` is `unavailable`, logged; `jobs.current` may answer nil for no job |
+| `command(fn, call, ...)` | A command under `pcall`: `true`; nil and `refused` (with a reason of at most 64 bytes), `unavailable` or `unknown`; anything else, or a throw, is `unknown` with the cause for staff |
+
+The facade (above) asks the journal first (`rpf.ops.known`): an op id it
+has answers as recorded, outage or not, since `unavailable` would say a
+command that may have happened did not. A new one asks `reach` before it
+journals anything, so an unsupported call and an outage leave no intent
+behind; the command itself
+runs inside `rpf.ops.run`, with the player checked first, and `apply`
+after a `true`. The journal drops an `unavailable` result on both paths,
+since nothing changed, so the same op id may be sent again.
 
 ### The game world (`rpf.world`, J3)
 
@@ -1560,7 +1590,7 @@ internal.
 | `staff` | server | `can`, `permissions`, `link`, `record` (F9, `rpf.staff` above) |
 | `config` | server | `item`, `item_base`, `item_defaults`, `employer`, `department`, `job`, `starting_accounts`, `default_job`, `setting`, `version`, and `edit` (E6, above) |
 | `auth` | client | `login`, `register`, `change_password`, `delete_account`, `logout`, `state`, `account`, `api_token`, `PASSWORD_REUSE_WARNING` |
-| `bridge` | — | Reserved for K2 (Milestone 2), nil now |
+| `bridge` | server | `CONTRACT_MAJOR`, `CONTRACT_MINOR`, `register`, `character_loaded`, `character_unloaded`, `unavailable`, `available` (K2, `rpf.bridge` above) |
 
 **Nothing in it throws** (J1's rule for addons, `docs/architecture/addons.md`):
 a call that cannot do what it was asked returns nil (or false) and a reason
@@ -1571,7 +1601,7 @@ function from a script takes a FiveM function reference too
 Every member is a closure over its module or a plain value, never a module
 table, the connection or the platform, so nothing internal is reachable, and
 every table in it refuses writes, so one script cannot replace `events.on`
-for the others or claim `bridge` first. That stops accidents, not attackers:
+for the others. That stops accidents, not attackers:
 `rawset` and the debug library reach past it.
 
 `meta/api.lua` is the `---@meta` definition of this surface for server

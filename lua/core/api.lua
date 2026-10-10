@@ -16,13 +16,13 @@
 ---   the outbox, a session token or a player's live record.
 --- - **It is read-only.** Every table in it refuses writes, so one script
 ---   cannot replace `rpf.events.on` for every other script sharing the Lua
----   state, or claim a name the API reserves (`bridge`, K2). That stops
+---   state, or claim a name the API reserves. That stops
 ---   accidents, not attackers: `rawset` and the debug library still reach
 ---   past it, and on Gmod it is all the server owner's own code anyway.
 ---
 ---What a side gets follows what it loaded: `players`, `staff`, `config`,
----`addons`, `records` and the facade (`characters`, `money`, `inventory`,
----`jobs`, `ops`) on the server, `auth` on the client, and `events`, `time`,
+---`addons`, `records`, the facade (`characters`, `money`, `inventory`,
+---`jobs`, `ops`) and `bridge` on the server, `auth` on the client, and `events`, `time`,
 ---`engine` and `VERSION` on both.
 local rpf = rpf
 local events = rpf.events
@@ -58,9 +58,10 @@ end
 
 ---Names the public API keeps for later milestones. They are absent (nil)
 ---now, and the frozen table stops a script from claiming them first, so a
----later release can fill them without breaking anyone.
+---later release can fill them without breaking anyone. `bridge`, reserved
+---until K2, is filled now.
 ---@type string[]
-local RESERVED = { "bridge" }
+local RESERVED = {}
 
 ---What `events.on` and `once` registered for each handler a script passed,
 ---by name, so `off` with the script's handler finds them: a script's
@@ -315,6 +316,29 @@ if facade then
       return rpf.ops.unknown()
     end,
   }, "rpf.ops")
+end
+
+local bridge = rpf.bridge
+if bridge then
+  surface.bridge = freeze({
+    CONTRACT_MAJOR = bridge.CONTRACT.major,
+    CONTRACT_MINOR = bridge.CONTRACT.minor,
+    register = function(definition)
+      return bridge.register(definition)
+    end,
+    character_loaded = function(player, character)
+      return bridge.character_loaded(player, character)
+    end,
+    character_unloaded = function(player)
+      return bridge.character_unloaded(player)
+    end,
+    unavailable = function(reason)
+      return bridge.unavailable(reason)
+    end,
+    available = function()
+      return bridge.available()
+    end,
+  }, "rpf.bridge")
 end
 
 local world = rpf.world

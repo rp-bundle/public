@@ -13,7 +13,10 @@
 --- - **After it ran** the result replaces `pending`, and stays as a
 ---   tombstone for `WINDOW_MS`. A repeated `op_id` inside the window gets the
 ---   recorded result without running again, so an addon that is not sure a
----   payment went through may simply send it again.
+---   payment went through may simply send it again. An `unavailable` result
+---   is the exception: it says nothing changed because nothing could be
+---   asked, so it is dropped rather than kept, and the same op id may be
+---   sent again once the provider is back.
 --- - **After a restart** an intent still `pending` is `unknown`: it is
 ---   surfaced to staff and never run again, because nobody can tell whether
 ---   it happened. An addon must not grant what it was paying for.
@@ -304,6 +307,41 @@ local function recover(id)
   return entry
 end
 
+---Whether an op id has a result in the journal, and what it is: what
+---`run` would answer at once, without running anything. The facade asks
+---this before it asks whether a provider can be reached, so a command that
+---already happened, or may have, answers so even while its provider is
+---down, rather than `unavailable`, which would say nothing happened.
+---@param id any The op id.
+---A lookup that fails (storage threw) is not "never ran": it answers as
+---`run` does then, `unavailable`, logged, so nothing runs and the same op
+---id may be tried again.
+---@return boolean known True if the journal has it, inside the window, or could not say.
+---@return boolean? ok For a known one, true if it succeeded.
+---@return string? status For a known one that did not, `refused`, `unknown`, or `unavailable` when it could not be looked up.
+---@return string? reason For `refused`, why.
+function ops.known(id)
+  local at = ops.minted_at(id)
+  if not platform or not at or platform.now() - at > ops.WINDOW_MS then
+    return false
+  end
+  ---@cast id string
+  ---@type rpf.ops.Entry?
+  local entry = entries[id]
+  if not entry then
+    local found, lookup = pcall(recover, id)
+    if not found then
+      log("error", "could not look " .. id .. " up in storage (" .. tostring(lookup) .. "); it was not run")
+      return true, nil, "unavailable"
+    end
+    entry = lookup
+  end
+  if not entry then
+    return false
+  end
+  return true, recorded(entry)
+end
+
 ---Runs a command once per op id. A repeated id inside the window gets the
 ---recorded result; a new one is journaled `pending`, run, and its result
 ---recorded. A command that throws is `unknown`: it may have done part of
@@ -379,6 +417,15 @@ function ops.run(id, call, durable, run, detail)
   local ran, ok, status, reason = pcall(run)
   if not ran then
     ok, status, reason = nil, "unknown", "it threw part way: " .. tostring(ok)
+  end
+  if ok ~= true and status == "unavailable" then
+    -- Nothing changed: forget the intent, so the same id may run later.
+    entries[id] = nil
+    local forgot, failure = pcall(save, id, true)
+    if not forgot then
+      log("error", "could not take " .. id .. " back out of the journal (" .. tostring(failure) .. ")")
+    end
+    return nil, "unavailable"
   end
   entry.state = "done"
   entry.ok = ok == true
