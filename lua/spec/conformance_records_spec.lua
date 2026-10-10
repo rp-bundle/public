@@ -375,7 +375,16 @@ conformance.run(busted, "addon records", {
     name = "refuses a query whose parts are not their shape, without throwing",
     run = function(world)
       local api = installed(world)
-      for _, query in ipairs({ { owner = 42 }, { after = 5 }, { order = 1 }, { limit = "ten" } }) do
+      local queries = {
+        { owner = 42 },
+        { after = 5 },
+        { order = 1 },
+        { limit = "ten" },
+        { limit = math.huge },
+        { limit = 1.5 },
+        { where = { text = {} } },
+      }
+      for _, query in ipairs(queries) do
         local ok, err = api.records.query("acme_tags.tag", query, function() end)
         assert.is_nil(ok)
         assert.are.equal("invalid", err)
@@ -452,6 +461,21 @@ conformance.run(busted, "addon records", {
       assert.are.equal("invalid", select(2, api.records.update("acme_tags.tag", record.id, { text = "x" }, 42)))
       assert.are.equal("invalid", select(2, api.records.update("acme_tags.tag", record.id, nil, { revision = "1" })))
       assert.are.same({ nil, "invalid" }, { api.records.delete("acme_tags.tag", record.id, false) })
+    end,
+  },
+  {
+    name = "makes no batch whose report the outbox has no room for",
+    run = function(world)
+      local api = installed(world)
+      local record = assert(api.records.create("acme_tags.tag", tag("a"), OWNER))
+      world:settle()
+      local options = world.core.connection.options
+      local budget = options.max_bytes
+      options.max_bytes = 0
+      local _, err = api.records.batch({ { op = "update", type = "acme_tags.tag", id = record.id, patch = { text = "b" } } })
+      options.max_bytes = budget
+      assert.are.equal("outbox_full", err)
+      assert.are.equal("a", api.records.get("acme_tags.tag", record.id).fields.text, "nothing was made")
     end,
   },
   {

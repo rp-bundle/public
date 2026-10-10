@@ -440,6 +440,12 @@ function data.query(type_name, query, callback)
   if q.owner ~= nil and (type(q.owner) ~= "table" or type(q.owner.kind) ~= "string" or type(q.owner.id) ~= "string") then
     return nil, "invalid", { error = "query", field = "owner" }
   end
+  for _, name in ipairs({ "limit", "schema" }) do
+    local n = q[name]
+    if n ~= nil and (n ~= math.floor(n) or n < 0 or n > 1000000) then
+      return nil, "invalid", { error = "query", field = name }
+    end
+  end
   local wire = json.object({ filters = json.array({}) })
   for _, filter in ipairs(filters) do
     wire.filters[#wire.filters + 1] = json.object(filter)
@@ -454,7 +460,13 @@ function data.query(type_name, query, callback)
     wire.after = json.object(q.after)
   end
   local ctx = rpf.addons.context()
-  local sent, why = records.query_addon_records(type_name, wire, function(found, next_page, failure)
+  -- A value the codec cannot write (an empty table as a comparison's value)
+  -- is the caller's mistake, and a refusal, not a throw.
+  local encoded, why_not = pcall(json.encode, wire)
+  if not encoded or why_not == nil then
+    return nil, "invalid", { error = "query", field = "where" }
+  end
+  local queued, sent, why = pcall(records.query_addon_records, type_name, wire, function(found, next_page, failure)
     local page = nil
     if found then
       page = {}
@@ -467,6 +479,10 @@ function data.query(type_name, query, callback)
       rpf.sync.platform.log("error", "rpf: a records.query callback failed: " .. tostring(thrown))
     end
   end)
+  if not queued then
+    rpf.sync.platform.log("error", "rpf: a records.query could not be sent: " .. tostring(sent))
+    return nil, "invalid", { error = "query", field = "" }
+  end
   if not sent then
     return nil, why
   end
@@ -880,8 +896,20 @@ function data.batch(ops)
     plan.op, plan.type = op.op, op.type
     plans[i] = plan
   end
-  -- Older changes go first, so the batch's report carries only the batch.
+  -- Older changes go first, so the batch's report carries only the batch;
+  -- and the outbox must have room for that report, or the writes, once
+  -- made, would wait among later ones and could go in pieces. The size is
+  -- an upper bound: each write's fields as written, twice over, and room
+  -- for its envelope.
   if not rpf.sync.flush() then
+    return nil, "outbox_full", { index = 0 }
+  end
+  local bytes = 1024
+  for _, plan in ipairs(plans) do
+    local ok, text = pcall(json.encode, json.copy(plan.fields or plan.patch or json.object({})))
+    bytes = bytes + 512 + 2 * ((ok and text) and #text or rpf.manifest.MAX_RECORD_BYTES)
+  end
+  if not rpf.sync.connection:has_room("state_changed", bytes) then
     return nil, "outbox_full", { index = 0 }
   end
   local results, changes = {}, {}
