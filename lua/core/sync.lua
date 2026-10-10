@@ -704,6 +704,31 @@ function sync.flush()
   return ok
 end
 
+---Whether every change made to a held record so far is on disk: carried by
+---a report queued in the persisted outbox, or the record let go with its
+---final state. What the journal waits on before it records a composite
+---operation's grant as done (`rpf.facade`, `rpf.ops`). Asks nothing of the
+---portal: a caller that wants the answer to become true flushes first.
+---@param key string The record, as `rpf.records.key` names it.
+---@return boolean reported True once nothing of it is waiting in memory.
+function sync.reported(key)
+  local entry = rpf.records.entries[key]
+  if entry == nil then
+    return true
+  end
+  if entry.resync and not addon_pending(entry) then
+    return false
+  end
+  if entry.kind == "addon_record" then
+    -- Behind a create the portal has not answered, `change_of` holds a
+    -- later patch or deletion back: held back is not on disk.
+    return entry.created ~= "pending"
+      and not entry.changed.fields
+      and not (entry.deleted and not entry.delete_sent)
+  end
+  return change_of(entry) == nil
+end
+
 ---Schedules a flush `flush_interval_ms` from now, or
 ---`offline_flush_interval_ms` while the portal is unreachable, unless one is
 ---already scheduled.

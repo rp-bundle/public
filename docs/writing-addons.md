@@ -217,8 +217,23 @@ end
   op id; sending it again returns the first answer. An op id is good for a
   day.
 - **`unknown` is for staff.** It means the game server cannot tell whether
-  the command happened (it stopped mid-way). It is logged, and never run
-  again. Do not compensate on your own.
+  the command happened (it stopped mid-way). It is logged with what it was,
+  announced as `domains.op_unknown`, listed by `rpf.ops.unknown()`, and
+  never run again. Do not compensate on your own.
+
+To charge for a change to your own records (a badge, an upgrade), pass the
+change as `apply` after the op id. Hold the record and check everything
+first, so the change cannot fail; `apply` runs only once the money moved,
+in the same intent, and the intent completes only once what it wrote is on
+its way to the portal. If the server dies in between, or `apply` throws or
+answers nil, the debit is `unknown` and staff grant or refund it by hand.
+
+```lua
+local op = rpf.ops.new()
+local ok, status, why = rpf.money.debit(player, "bank", 500, "Gold tag", op, function()
+  return rpf.records.update("acme_tags.tag", tag.id, { colour = "gold" }, { revision = tag.revision })
+end)
+```
 
 Do not build anything that sells in-game money or items for real money:
 the Cfx.re platform rules forbid it, and RPF connects nothing to a payment.

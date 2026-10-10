@@ -328,12 +328,47 @@ end
 
 -- Changing held records -----------------------------------------------------
 
+---The records written while `records.watch` runs a function, by key, or
+---nil when nothing is watching.
+---@type table<string, true>?
+local watching = nil
+
 ---Asks for a flush after a change, so changes made together go out in one
----report.
-local function touched()
+---report, and notes the record for `records.watch`.
+---@param entry rpf.records.Entry The record changed.
+local function touched(entry)
+  if watching then
+    watching[records.key(entry.kind, entry.id)] = true
+  end
   if rpf.sync then
     rpf.sync.schedule()
   end
+end
+
+---Runs a function and lists the held records it wrote: what the grant of a
+---composite operation changed (`rpf.facade`), so the journal can tell when
+---each change is on disk (`rpf.sync.reported`). Nested, an outer watch
+---sees the inner one's records too.
+---@param fn function The function: an addon's, so it may throw.
+---@return string[] keys The records it wrote, as `records.key` names them, sorted.
+---@return boolean ok False if it threw.
+---@return any result What it returned first, or the error.
+---@return any err What it returned second.
+function records.watch(fn)
+  local outer = watching
+  local mine = {}
+  watching = mine
+  local ok, result, err = pcall(fn)
+  watching = outer
+  local keys = {}
+  for key in pairs(mine) do
+    keys[#keys + 1] = key
+    if outer then
+      outer[key] = true
+    end
+  end
+  table.sort(keys)
+  return keys, ok, result, err
 end
 
 ---Trims a character's name (the portal's whitespace, `records.WHITESPACE`)
@@ -417,7 +452,7 @@ function records.set_character(id, fields)
     entry.data[field] = value
     entry.changed[field] = true
   end
-  touched()
+  touched(entry)
   return true
 end
 
@@ -458,7 +493,7 @@ function records.set_job(id, ref)
   end
   entry.data.job = new
   entry.changed.job = true
-  touched()
+  touched(entry)
   return true
 end
 
@@ -490,7 +525,7 @@ function records.set_contents(id, contents)
   end
   entry.data.contents = json.copy(contents)
   entry.changed.contents = true
-  touched()
+  touched(entry)
   return true
 end
 
@@ -560,7 +595,7 @@ function records.transfer(from, to, amount, description)
     description = description,
     sent = false,
   }
-  touched()
+  touched(payer)
   return client_id
 end
 
@@ -632,7 +667,7 @@ function records.adjust(account_id, funds_account, amount, client_id, descriptio
     description = description,
     sent = false,
   }
-  touched()
+  touched(entry)
   return client_id
 end
 
@@ -719,7 +754,7 @@ function records.create_addon_record(type_name, owner, fields, id)
     created = "pending",
   }
   records.entries[key] = entry
-  touched()
+  touched(entry)
   return view(entry)
 end
 
@@ -761,7 +796,7 @@ function records.set_addon_fields(id, patch)
     end
     entry.changed.fields = true
   end
-  touched()
+  touched(entry)
   return view(entry)
 end
 
@@ -785,7 +820,7 @@ function records.delete_addon_record(id)
   entry.deleted = true
   entry.patch = nil
   entry.changed = {}
-  touched()
+  touched(entry)
   return true
 end
 

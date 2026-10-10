@@ -34,6 +34,19 @@ keep the job the portal has.
 
 ### Added
 
+- Bridges to existing RP frameworks, part 1 (K2, #92): an addon pays for a
+  change to its own records in one intent. Each facade command
+  (`rpf.api.money.debit`, `credit`, `rpf.api.inventory.give`, `take`)
+  takes an optional `apply` after its op id, run only once the command
+  went through; the intent completes only once what `apply` wrote is on
+  its way to the portal, so a server that dies between the payment and the
+  grant reads `unknown` after its restart, and nothing is refunded
+  automatically. Every `unknown` is logged at `error` with what it was
+  (the player's account, the account or item, the amount and the reason),
+  announced as `domains.op_unknown`, and listed by `rpf.api.ops.unknown()`
+  for a staff tool in game. The journal never runs an op id twice when a
+  crash lost its index: an id it does not know is looked up by its own
+  storage key first.
 - Authority per domain, part 1 (K1, #91). A server's **profile** says who
   owns characters, money, inventory and jobs on it: RPF (native, the
   default) or the game server's own RP framework (companion). Staff save it

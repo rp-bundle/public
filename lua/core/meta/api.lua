@@ -90,6 +90,11 @@
 ---   linked to a staff account, and `staff.link_failed(failure)`, an
 ---   `rpf.StaffLinkFailure`, when it was not. The player has been told
 ---   either way. Server only.
+--- - `domains.op_unknown(unknown)`, an `rpf.OpUnknown`, when a facade
+---   command's result is `unknown`: it threw, its provider could not say,
+---   its `apply` failed after it went through, or a restart cut it off (at
+---   start, before any addon has subscribed: `rpf.ops.unknown()` lists those
+---   too). Staff must resolve it by hand. Server only.
 --- - `auth.required(prompt)`, an `rpf.AuthPrompt`: show the login form.
 ---   `auth.succeeded(result)`, an `rpf.AuthResult`. `auth.failed(failure)`, an
 ---   `rpf.AuthFailure`. `auth.password_change_required(change)`, an
@@ -443,6 +448,22 @@ function Records.batch(ops) end
 ---the player is doing. Sending the same op id again returns the first
 ---answer and never runs twice, so a retry is never a second payment.
 ---
+---**Paying for a change to your own records** (a composite operation) is
+---one command with an `apply` after its op id. Hold the record and check
+---everything first, so `apply` cannot fail; `apply` runs only once the
+---money (or the items) moved, inside the same journaled intent, and the
+---intent completes once what it wrote is on its way to the portal. If the
+---server dies in between, or `apply` throws or answers nil, the command is
+---`unknown` and staff resolve it: nothing is refunded automatically, since
+---nothing can tell a lost payment from a lost grant.
+---
+---```lua
+---local op = rpf.ops.new()
+---local ok, status, why = rpf.money.debit(player, "bank", 500, "Gold tag", op, function()
+---  return rpf.records.update("acme_tags.tag", tag.id, { colour = "gold" }, { revision = tag.revision })
+---end)
+---```
+---
 ---```lua
 ---local op = rpf.ops.new() -- once per purchase, kept with it
 ---local ok, status, why = rpf.money.debit(player, "bank", 250, "Spray can", op)
@@ -495,10 +516,11 @@ function Money.balance(player, account) end
 ---@param amount integer A whole amount from 1 to 2^53 − 1.
 ---@param reason string Why, for the player's statement and staff; at most 256 bytes.
 ---@param op_id string From `rpf.ops.new()`.
----@return boolean? ok True once taken.
+---@param apply (fun(): any)? Your change this pays for: run once the money moved, in the same intent. Answer non-nil (what `rpf.records.update` returns does); nil, false or a throw make the debit `unknown`.
+---@return boolean? ok True once taken (and applied).
 ---@return rpf.FacadeStatus? status Why not.
 ---@return string? reason For `refused`: `invalid`, `invalid_op`, `expired_op`, `journal_full`, `not_logged_in`, `no_character`, `no_account`, `unsupported`, `insufficient_funds`, `out_of_range`.
-function Money.debit(player, account, amount, reason, op_id) end
+function Money.debit(player, account, amount, reason, op_id, apply) end
 
 ---Pays money to a player, from the account `economy.addon_account` names.
 ---@param player any The engine's handle.
@@ -506,10 +528,11 @@ function Money.debit(player, account, amount, reason, op_id) end
 ---@param amount integer A whole amount from 1 to 2^53 − 1.
 ---@param reason string Why; at most 256 bytes.
 ---@param op_id string From `rpf.ops.new()`.
----@return boolean? ok True once paid.
+---@param apply (fun(): any)? Your change this goes with, as for `debit`.
+---@return boolean? ok True once paid (and applied).
 ---@return rpf.FacadeStatus? status Why not.
 ---@return string? reason For `refused`, as for `debit`.
-function Money.credit(player, account, amount, reason, op_id) end
+function Money.credit(player, account, amount, reason, op_id, apply) end
 
 ---Whether a call works on this server: `debit` and `credit` need the
 ---server's addon account set.
@@ -528,7 +551,7 @@ local Inventory = {}
 ---@param player any The engine's handle.
 ---@param item string The item's slug.
 ---@return number? count The count.
----@return rpf.FacadeRead? err Why not.
+---@return rpf.FacadeRead? err Why not. An item nobody holds counts 0, so `not_found` is only for an item that is not a string.
 function Inventory.count(player, item) end
 
 ---Gives a player's character units of an item, all into one container.
@@ -536,20 +559,22 @@ function Inventory.count(player, item) end
 ---@param item string The item's slug.
 ---@param count integer How many, from 1.
 ---@param op_id string From `rpf.ops.new()`.
----@return boolean? ok True once given.
+---@param apply (fun(): any)? Your change this goes with, as for `rpf.money.debit`.
+---@return boolean? ok True once given (and applied).
 ---@return rpf.FacadeStatus? status Why not.
 ---@return string? reason For `refused`: `invalid`, `invalid_op`, `expired_op`, `journal_full`, `not_logged_in`, `no_character`, `no_container`, `no_space`.
-function Inventory.give(player, item, count, op_id) end
+function Inventory.give(player, item, count, op_id, apply) end
 
 ---Takes units of an item from a player's character.
 ---@param player any The engine's handle.
 ---@param item string The item's slug.
 ---@param count integer How many, from 1.
 ---@param op_id string From `rpf.ops.new()`.
----@return boolean? ok True once taken.
+---@param apply (fun(): any)? Your change this pays for, as for `rpf.money.debit`.
+---@return boolean? ok True once taken (and applied).
 ---@return rpf.FacadeStatus? status Why not.
 ---@return string? reason For `refused`: as for `give`, and `insufficient`.
-function Inventory.take(player, item, count, op_id) end
+function Inventory.take(player, item, count, op_id, apply) end
 
 ---Whether a call works on this server.
 ---@param call string `count`, `give` or `take`.
@@ -584,6 +609,21 @@ local Ops = {}
 ---minted, and is refused (`expired_op`) after a day.
 ---@return string? op_id The id, or nil before the core has started.
 function Ops.new() end
+
+---The commands whose result is `unknown`, oldest first: each may or may not
+---have happened, and staff must resolve it by hand (grant what was paid
+---for, or refund it through whoever owns the money). For a staff tool in
+---game; the server's log has a line for each too. Each is listed for a day.
+---@return rpf.OpUnknown[] unknown Copies.
+function Ops.unknown() end
+
+---A facade command whose result is `unknown`.
+---@class rpf.OpUnknown
+---@field op_id string Its op id.
+---@field call string What it was: `money.debit`, `money.credit`, `inventory.give` or `inventory.take`.
+---@field at number When its op id was minted, in milliseconds since the Unix epoch.
+---@field detail { player: string?, account: string?, amount: number?, item: string?, count: number?, reason: string? } What it was: the player's account (`player_id`), and the command's arguments.
+---@field cause string What went wrong, for staff.
 
 ---The game world, through capabilities the engine's adapter declares. The
 ---core never branches on the engine: where an adapter does not support a
@@ -661,7 +701,7 @@ function Interactions.send(name, payload) end
 ---@alias rpf.FacadeStatus
 ---| "refused" # Nothing changed; the third value says why.
 ---| "unavailable" # Nothing changed; it could not be asked. Fine to try again later.
----| "unknown" # It may have happened. Never send it again under a new op id.
+---| "unknown" # It may have happened. Never send it again under a new op id; staff resolve it (`rpf.ops.unknown()`).
 
 ---Where an addon is.
 ---@alias rpf.AddonState
@@ -1244,9 +1284,11 @@ local Bridge = {}
 ---@return string? err Why.
 function Bridge.register(bridge) end
 
----Refusals the domain-neutral facade will return once a server can hand a
----domain to an existing framework (K1, K2). Nothing returns them yet: on an
----RPF server, RPF owns every domain.
+---Refusals for a domain an existing framework owns on this server (K1, K2),
+---and for a call nobody implements here. RPF's own modules answer
+---`domain_external` for an external domain; the facade answers
+---`unsupported` for a call its provider does not implement (a native
+---debit or credit without the server's `economy.addon_account`, too).
 ---@alias rpf.api.Refusal
 ---| "domain_external" # The domain (`characters`, `money`, `inventory`, `jobs`) is owned by an existing framework on this server, so RPF's own operation on it is refused. Use the facade, which routes to the bridge.
 ---| "unsupported" # The active provider does not implement this call. Check `supports` first.

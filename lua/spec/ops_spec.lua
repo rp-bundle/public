@@ -5,8 +5,9 @@
 
 -- The operation journal (`rpf.ops`, J3): each facade command runs at most
 -- once per op id, a repeat gets the recorded result, a restart turns an
--- intent it cut off into `unknown`, tombstones go only by age, and a full
--- journal refuses rather than forgets.
+-- intent it cut off into `unknown`, tombstones go only by age, a full
+-- journal refuses rather than forgets, a lost index never lets an id run
+-- twice, and every `unknown` is surfaced to staff with what it was.
 
 local support = require("spec.support")
 
@@ -62,9 +63,13 @@ describe("rpf.ops", function()
     start()
     local warned = false
     for _, line in ipairs(p.logs) do
-      warned = warned or (line.level == "warn" and line.message:find(id, 1, true) ~= nil)
+      warned = warned or (line.level == "error" and line.message:find(id, 1, true) ~= nil)
     end
     assert.is_true(warned, "logged for staff")
+    local listed = rpf.ops.unknown()
+    assert.are.equal(1, #listed)
+    assert.are.equal(id, listed[1].op_id)
+    assert.are.equal("cut off by a restart", listed[1].cause)
     assert.are.same({ nil, "unknown" }, {
       rpf.ops.run(id, "money.debit", nil, function()
         runs = runs + 1
@@ -89,10 +94,17 @@ describe("rpf.ops", function()
   end)
 
   it("refuses a new command when full rather than forget a young result, and makes room only by age", function()
-    for _ = 1, rpf.ops.MAX_ENTRIES do
-      assert.is_true(rpf.ops.run(rpf.ops.new(), "money.credit", nil, function()
-        return true
-      end))
+    local first = rpf.ops.new()
+    local runs = 0
+    ---A credit that counts its runs.
+    ---@return boolean ok True.
+    local function credit()
+      runs = runs + 1
+      return true
+    end
+    assert.is_true(rpf.ops.run(first, "money.credit", nil, credit))
+    for _ = 2, rpf.ops.MAX_ENTRIES do
+      assert.is_true(rpf.ops.run(rpf.ops.new(), "money.credit", nil, credit))
     end
     local ran = false
     assert.are.same({ nil, "refused", "journal_full" }, {
@@ -102,6 +114,10 @@ describe("rpf.ops", function()
       end),
     })
     assert.is_false(ran)
+    -- The oldest result is still young, so it was kept: its id answers from
+    -- the journal, full or not, and never runs a second time.
+    assert.is_true(rpf.ops.run(first, "money.credit", nil, credit))
+    assert.are.equal(rpf.ops.MAX_ENTRIES, runs)
     p.advance(rpf.ops.WINDOW_MS + 1)
     assert.is_true(rpf.ops.run(rpf.ops.new(), "money.credit", nil, function()
       return true
@@ -164,5 +180,105 @@ describe("rpf.ops", function()
       end),
     })
     assert.is_false(ran)
+  end)
+  it("surfaces every unknown with what it was, as it happens", function()
+    local seen = {}
+    rpf.events.on("domains.op_unknown", function(unknown)
+      seen[#seen + 1] = unknown
+    end)
+    local id = rpf.ops.new()
+    local detail = { player = "00000002-0000-4000-8000-000000000002", account = "bank", amount = 250, reason = "Car" }
+    assert.are.same({ nil, "unknown" }, {
+      rpf.ops.run(id, "money.debit", nil, function()
+        return nil, "unknown", "the framework did not answer"
+      end, detail),
+    })
+    assert.are.equal(1, #seen)
+    assert.are.same({
+      op_id = id,
+      call = "money.debit",
+      at = rpf.ops.minted_at(id),
+      detail = detail,
+      cause = "the framework did not answer",
+    }, seen[1])
+    assert.are.same(seen, rpf.ops.unknown())
+    assert.are.equal(1, #p.logged("error", "account=bank amount=250"))
+    -- A repeat answers from the journal, and is not surfaced again.
+    assert.are.same({ nil, "unknown" }, { rpf.ops.run(id, "money.debit", nil, function() return true end) })
+    assert.are.equal(1, #seen)
+    -- The detail is kept on disk, so a restart can still say what it was.
+    start()
+    assert.are.same(detail, rpf.ops.unknown()[1].detail)
+  end)
+
+  it("never runs an id twice when a crash lost the index, looking it up by its own key", function()
+    local runs = 0
+    ---A debit that counts its runs.
+    ---@return boolean ok True.
+    local function debit()
+      runs = runs + 1
+      return true
+    end
+    local done, cut = rpf.ops.new(), rpf.ops.new()
+    assert.is_true(rpf.ops.run(done, "money.debit", nil, debit))
+    pcall(rpf.ops.run, cut, "money.debit", nil, debit)
+    local entry = rpf.json.decode(store[rpf.ops.ENTRY_PREFIX .. cut])
+    entry.state = "pending"
+    store[rpf.ops.ENTRY_PREFIX .. cut] = rpf.json.encode(entry)
+    store[rpf.ops.KEY] = "{not json"
+    start()
+    assert.are.equal(1, #p.logged("error", "index could not be read"))
+    assert.is_true(rpf.ops.run(done, "money.debit", nil, debit), "the recorded result, found by its key")
+    assert.are.same({ nil, "unknown" }, { rpf.ops.run(cut, "money.debit", nil, debit) })
+    assert.are.equal(2, runs, "neither ran again")
+    assert.are.equal(cut, rpf.ops.unknown()[1].op_id, "the cut-off one is surfaced when found")
+    -- Found, they are in the index again, so the next restart knows them.
+    start()
+    assert.are.equal(2, rpf.ops.count())
+    -- An id minted before the restart with nothing stored never ran: it
+    -- runs. (A millisecond on, since the fake platform's randomness starts
+    -- over with each boot.)
+    p.advance(1)
+    local fresh = rpf.ops.new()
+    start()
+    assert.is_true(rpf.ops.run(fresh, "money.debit", nil, debit))
+    assert.are.equal(3, runs)
+  end)
+
+  it("reads an entry it cannot decode as unknown, never as a command to run", function()
+    local id = rpf.ops.new()
+    local runs = 0
+    assert.is_true(rpf.ops.run(id, "money.debit", nil, function()
+      runs = runs + 1
+      return true
+    end))
+    store[rpf.ops.ENTRY_PREFIX .. id] = "garbage"
+    start()
+    assert.are.same({ nil, "unknown" }, {
+      rpf.ops.run(id, "money.debit", nil, function()
+        runs = runs + 1
+        return true
+      end),
+    })
+    assert.are.equal(1, runs)
+  end)
+
+  it("says when it cannot tell whether a change is on disk, once, and keeps trying", function()
+    local id = rpf.ops.new()
+    local checks = 0
+    assert.is_true(rpf.ops.run(id, "money.debit", function()
+      checks = checks + 1
+      if checks < 3 then
+        error("the outbox is broken")
+      end
+      return true
+    end, function()
+      return true
+    end))
+    p.advance(1000)
+    p.advance(1000)
+    assert.are.equal(3, checks)
+    assert.are.equal(1, #p.logged("error", "the outbox is broken"))
+    assert.are.equal("done", rpf.json.decode(store[rpf.ops.ENTRY_PREFIX .. id]).state)
   end)
 end)

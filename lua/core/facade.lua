@@ -30,6 +30,18 @@
 ---**Retries.** Every command names an `op_id` from `rpf.ops.new()`, and runs
 ---at most once per id (`rpf.ops`): a repeated id gets the recorded result.
 ---
+---**Composite operations** (`docs/architecture/framework-integration.md`,
+---"Conflict rules"). A command may name an `apply` after its op id: the
+---addon's change to its own records that the command pays for. It runs
+---inside the same journaled intent, only once the command went through,
+---and the intent completes only once what `apply` wrote is on disk (its
+---report queued in the persisted outbox), so a crash between the payment
+---and the grant reads `unknown` after the restart rather than a payment
+---that answers `true` with nothing granted. An `apply` that throws or
+---answers nil is `unknown` too. Nothing compensates: staff resolve it.
+---So `apply` must not be able to fail: the addon holds its records and
+---checks everything before it sends the command.
+---
 ---**Money** moves between the character's account and the server's paying
 ---account `economy.addon_account` names, as one ledger entry: a debit pays
 ---into it, a credit out of it. Without that setting, or with one naming no
@@ -97,6 +109,57 @@ local function contents_on_disk(ids)
     end
     return true
   end
+end
+
+---Runs an addon's `apply` once its command went through, noting the
+---records it wrote so the journal can wait for them.
+---@param apply any The addon's function, or nil for none.
+---@param written string[] Where the records it wrote are added.
+---@return boolean? ok True if it ran and answered something other than nil or false.
+---@return string? status `unknown` if not: the command happened, the grant may not have.
+---@return string? cause For staff.
+local function then_apply(apply, written)
+  if apply == nil then
+    return true
+  end
+  local keys, ran, result, err = rpf.records.watch(apply)
+  for _, key in ipairs(keys) do
+    written[#written + 1] = key
+  end
+  if not ran then
+    return nil, "unknown", "it went through, and then its apply threw: " .. tostring(result)
+  end
+  if not result then
+    return nil, "unknown", "it went through, and then its apply answered " .. tostring(err)
+  end
+  return true
+end
+
+---Whether the records an `apply` wrote are on disk.
+---@param written string[] The records, as `rpf.records.key` names them.
+---@return boolean durable True once each is.
+local function applied_on_disk(written)
+  if #written == 0 then
+    return true
+  end
+  rpf.sync.flush()
+  for _, key in ipairs(written) do
+    if not rpf.sync.reported(key) then
+      return false
+    end
+  end
+  return true
+end
+
+---What the journal keeps of a command, for staff: the player's account and
+---the command's arguments.
+---@param handle any The engine's handle.
+---@param fields table The arguments, by `rpf.ops.Detail` name.
+---@return rpf.ops.Detail detail The detail.
+local function detail_of(handle, fields)
+  local player = rpf.players.get(handle)
+  fields.player = player and player.player_id or nil
+  return fields
 end
 
 ---The character a logged-in player has in play.
@@ -241,25 +304,29 @@ end
 ---@param amount any The amount.
 ---@param reason any Why, for the statement and staff.
 ---@param op_id any The operation's id.
+---@param apply any The addon's change this pays for, or nil.
 ---@return boolean? ok True once moved.
 ---@return string? status `refused`, `unavailable` or `unknown`.
 ---@return string? why For `refused`, why.
-local function move_money(direction, handle, name, amount, reason, op_id)
+local function move_money(direction, handle, name, amount, reason, op_id, apply)
   if not provided("money") then
     return nil, "unavailable"
   end
-  if not valid_entry(amount, reason) then
+  if not valid_entry(amount, reason) or (apply ~= nil and not rpf.callable(apply)) then
     return nil, "refused", "invalid"
   end
   if not rpf.ops.minted_at(op_id) then
     return nil, "refused", "invalid_op"
   end
   local on_disk = nil
-  ---Whether the payment is on disk; known once it is made.
-  ---@return boolean durable True once it is.
+  local written = {}
+  ---Whether the payment, and what `apply` wrote, are on disk; known once
+  ---they are made.
+  ---@return boolean durable True once they are.
   local function durable()
-    return on_disk == nil or on_disk()
+    return (on_disk == nil or on_disk()) and applied_on_disk(written)
   end
+  local detail = detail_of(handle, { account = name, amount = amount, reason = reason })
   return rpf.ops.run(op_id, "money." .. direction, durable, function()
     local character, err = character_of(handle)
     if not character then
@@ -282,7 +349,7 @@ local function move_money(direction, handle, name, amount, reason, op_id)
     end
     if done then
       on_disk = entry_on_disk(payer, done)
-      return true
+      return then_apply(apply, written)
     end
     if failure == "not_held" then
       -- The server's account is held after every `Welcome`; until its hold
@@ -293,7 +360,7 @@ local function move_money(direction, handle, name, amount, reason, op_id)
       return nil, "refused", "unsupported"
     end
     return nil, "refused", failure
-  end)
+  end, detail)
 end
 
 ---Takes money from a player, into the addon account.
@@ -302,11 +369,12 @@ end
 ---@param amount any A whole amount from 1.
 ---@param reason any Why, at most 256 bytes.
 ---@param op_id any From `rpf.ops.new()`.
+---@param apply any? The addon's change this pays for, run once the money moved (a composite operation).
 ---@return boolean? ok True once moved.
 ---@return string? status `refused`, `unavailable` or `unknown`.
 ---@return string? why For `refused`: `invalid`, `invalid_op`, `expired_op`, `journal_full`, `not_logged_in`, `no_character`, `no_account`, `unsupported`, `insufficient_funds`, `out_of_range`.
-function facade.debit(handle, name, amount, reason, op_id)
-  return move_money("debit", handle, name, amount, reason, op_id)
+function facade.debit(handle, name, amount, reason, op_id, apply)
+  return move_money("debit", handle, name, amount, reason, op_id, apply)
 end
 
 ---Pays money to a player, out of the addon account.
@@ -315,11 +383,12 @@ end
 ---@param amount any A whole amount from 1.
 ---@param reason any Why, at most 256 bytes.
 ---@param op_id any From `rpf.ops.new()`.
+---@param apply any? The addon's change this goes with, run once the money moved.
 ---@return boolean? ok True once moved.
 ---@return string? status `refused`, `unavailable` or `unknown`.
 ---@return string? why For `refused`, as for `debit`.
-function facade.credit(handle, name, amount, reason, op_id)
-  return move_money("credit", handle, name, amount, reason, op_id)
+function facade.credit(handle, name, amount, reason, op_id, apply)
+  return move_money("credit", handle, name, amount, reason, op_id, apply)
 end
 
 -- Items --------------------------------------------------------------------
@@ -356,7 +425,7 @@ end
 ---@param handle any The engine's handle.
 ---@param item any The item's slug.
 ---@return number? count The count.
----@return string? err `unavailable` where the server's framework owns the domain (K1), `not_logged_in`, `no_character` or `not_found` (not an item slug).
+---@return string? err `unavailable` where the server's framework owns the domain (K1), `not_logged_in`, `no_character` or `not_found` (an item that is not a string; an item nobody holds counts 0).
 function facade.count(handle, item)
   if not provided("inventory") then
     return nil, "unavailable"
@@ -382,25 +451,35 @@ end
 ---@param item any The item's slug.
 ---@param count any How many.
 ---@param op_id any The operation's id.
+---@param apply any The addon's change this goes with, or nil.
 ---@return boolean? ok True once moved.
 ---@return string? status `refused`, `unavailable` or `unknown`.
 ---@return string? why For `refused`, why.
-local function move_items(direction, handle, item, count, op_id)
+local function move_items(direction, handle, item, count, op_id, apply)
   if not provided("inventory") then
     return nil, "unavailable"
   end
-  if type(item) ~= "string" or type(count) ~= "number" or count ~= math.floor(count) or count < 1 or count > MAX_UNITS then
+  if
+    type(item) ~= "string"
+    or type(count) ~= "number"
+    or count ~= math.floor(count)
+    or count < 1
+    or count > MAX_UNITS
+    or (apply ~= nil and not rpf.callable(apply))
+  then
     return nil, "refused", "invalid"
   end
   if not rpf.ops.minted_at(op_id) then
     return nil, "refused", "invalid_op"
   end
   local changed = {}
-  ---Whether the containers changed are on disk.
+  local written = {}
+  ---Whether the containers changed, and what `apply` wrote, are on disk.
   ---@return boolean durable True once they are.
   local function durable()
-    return contents_on_disk(changed)()
+    return contents_on_disk(changed)() and applied_on_disk(written)
   end
+  local detail = detail_of(handle, { item = item, count = count })
   return rpf.ops.run(op_id, "inventory." .. direction, durable, function()
     local character, err = character_of(handle)
     if not character then
@@ -414,7 +493,7 @@ local function move_items(direction, handle, item, count, op_id)
       for _, container in ipairs(containers) do
         if rpf.inventory.add(container.id, item, count) then
           changed[#changed + 1] = container.id
-          return true
+          return then_apply(apply, written)
         end
       end
       return nil, "refused", "no_space"
@@ -447,8 +526,8 @@ local function move_items(direction, handle, item, count, op_id)
       assert(rpf.records.set_contents(change.id, change.contents))
       changed[#changed + 1] = change.id
     end
-    return true
-  end)
+    return then_apply(apply, written)
+  end, detail)
 end
 
 ---Gives a player's character plain units of an item.
@@ -456,11 +535,12 @@ end
 ---@param item any The item's slug.
 ---@param count any How many, a whole number from 1.
 ---@param op_id any From `rpf.ops.new()`.
+---@param apply any? The addon's change this goes with, run once the units moved.
 ---@return boolean? ok True once given.
 ---@return string? status `refused`, `unavailable` or `unknown`.
 ---@return string? why For `refused`: `invalid`, `invalid_op`, `expired_op`, `journal_full`, `not_logged_in`, `no_character`, `no_container`, `no_space`.
-function facade.give(handle, item, count, op_id)
-  return move_items("give", handle, item, count, op_id)
+function facade.give(handle, item, count, op_id, apply)
+  return move_items("give", handle, item, count, op_id, apply)
 end
 
 ---Takes plain units of an item from a player's character.
@@ -468,11 +548,12 @@ end
 ---@param item any The item's slug.
 ---@param count any How many, a whole number from 1.
 ---@param op_id any From `rpf.ops.new()`.
+---@param apply any? The addon's change this pays for, run once the units moved (a composite operation).
 ---@return boolean? ok True once taken.
 ---@return string? status `refused`, `unavailable` or `unknown`.
 ---@return string? why For `refused`: as for `give`, `insufficient`, and `invalid_contents` for a container whose contents no longer pass its rules (the catalog changed under it).
-function facade.take(handle, item, count, op_id)
-  return move_items("take", handle, item, count, op_id)
+function facade.take(handle, item, count, op_id, apply)
+  return move_items("take", handle, item, count, op_id, apply)
 end
 
 -- Jobs ---------------------------------------------------------------------
