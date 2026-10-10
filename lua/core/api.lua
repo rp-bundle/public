@@ -102,14 +102,16 @@ local function subscribe(name, handler, once)
     registration.disown()
   end
   ---The handler as registered: forgets itself first if it runs once, then
-  ---runs the script's handler in its subscriber's context.
+  ---runs the script's handler in its subscriber's context, which is none
+  ---for a script that subscribed outside any addon's code: it must not run
+  ---as whichever addon emitted.
   ---@param ... any The event's arguments.
   ---@return any ... The handler's results.
   registration.fn = function(...)
     if once then
       forget()
     end
-    if not ctx then
+    if not addons then
       return handler(...)
     end
     local ok, err = addons.run(ctx, handler, ...)

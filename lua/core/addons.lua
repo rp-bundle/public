@@ -134,8 +134,9 @@ local MAIN = {}
 local owned = {}
 ---How many things have been owned, for their order.
 local owned_count = 0
----Each export an addon provides, by its full name.
----@type table<string, { fn: any, namespace: string }>
+---Each export an addon provides, by its full name, with how to forget its
+---ownership once it is replaced or taken out.
+---@type table<string, { fn: any, namespace: string, disown: fun() }>
 local provided = {}
 ---Log lines from before a platform was bound, at most 32, written out by
 ---`start`: a manifest refused while Gmod loads addons, before the core starts,
@@ -745,6 +746,7 @@ forget = function(namespace)
   for name, export in pairs(provided) do
     if export.namespace == namespace then
       provided[name] = nil
+      export.disown()
     end
   end
   take_down(function(entry)
@@ -859,9 +861,14 @@ function addons.provide(name, fn)
   if not addons.may_use(name) then
     return nil, "forbidden"
   end
+  local previous = provided[name]
+  if previous then
+    -- The replaced function goes now, not when its addon stops.
+    previous.disown()
+  end
   local export = { fn = fn, namespace = namespace }
   provided[name] = export
-  addons.own(function()
+  export.disown = addons.own(function()
     if provided[name] == export then
       provided[name] = nil
     end

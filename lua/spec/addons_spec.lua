@@ -451,6 +451,33 @@ describe("rpf.addons", function()
       assert.are.equal(before, rpf.addons.owned_count())
     end)
 
+    it("runs a script's handler as nobody's, whichever addon emitted", function()
+      rpf.addons.register(manifest("acme_kit"))
+      local ran, seen = false, nil
+      rpf.api.events.on("acme_kit.ping", function()
+        ran, seen = true, rpf.addons.context()
+      end)
+      rpf.addons.run({ namespace = "acme_kit" }, function()
+        rpf.api.events.emit("acme_kit.ping")
+      end)
+      assert.is_true(ran)
+      assert.is_nil(seen)
+    end)
+
+    it("forgets a replaced export's ownership at once", function()
+      rpf.addons.register(manifest("acme_kit"))
+      support.connected(p)
+      local before = rpf.addons.owned_count()
+      rpf.addons.run({ namespace = "acme_kit" }, function()
+        for i = 1, 100 do
+          rpf.addons.provide("acme_kit.f", function()
+            return i
+          end)
+        end
+      end)
+      assert.are.equal(before + 1, rpf.addons.owned_count())
+    end)
+
     it("waits for an evaluation to end before it forgets an origin's addons", function()
       local ran = {}
       rpf.addons.register(manifest("acme_a"), {
