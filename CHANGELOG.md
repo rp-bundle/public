@@ -31,6 +31,14 @@ keep the job the portal has.
 
 ### Added
 
+- Release docs (H7, #56). Every release publishes its own docs site on
+  GitHub Pages, from its tag: installing, upgrading from the release before
+  (`docs/upgrading.md`, which a tag now requires), compatibility, the
+  changelog and the Lua API reference, one directory per release that no
+  later tag rebuilds, with `latest` and per-line aliases and a version
+  switcher on every page. The Release's notes link it. CI builds the site
+  strictly on every pull request, so a broken link fails there
+  ([Deployment](docs/deployment.md#the-docs-site)).
 - Setup (H7, #56). [Installing](docs/installing.md) takes an owner from a
   stock server to a connected one on FiveM and Garry's Mod, with a
   troubleshooting section keyed by the console lines. Each release also
