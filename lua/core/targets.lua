@@ -85,8 +85,10 @@ targets.TIMEOUT_MS = 10000
 
 ---@type rpf.ServerPlatform|rpf.ClientPlatform|nil
 local platform = nil
----When each player last used each interaction, by name then player id.
----@type table<string, table<string, number>>
+---Each player's last use of each interaction, by name then player id: the
+---reservation that started its cooldown (`reserve`), known by identity, so
+---a stale request giving its own back can never give back a newer one.
+---@type table<string, table<string, rpf.targets.Reservation>>
 local used = {}
 
 ---Whether a value is a finite number.
@@ -358,7 +360,7 @@ function targets.admit(name, rules, player, payload, again)
   end
   if rules.cooldown > 0 and not again then
     local last = used[name] and used[name][player.player_id]
-    if last and assert(platform).now() - last < rules.cooldown then
+    if last and assert(platform).now() - last.at < rules.cooldown then
       return nil, "cooldown"
     end
   end
@@ -388,7 +390,7 @@ end
 ---@field name string The interaction.
 ---@field player_id string The player.
 ---@field at number When it was taken.
----@field before number? The use it replaced.
+---@field before rpf.targets.Reservation? The use it replaced, put back if it is given back.
 
 ---Whether two resolutions of a request name the same target: the same
 ---record (type and id), or the same entity (ref and model) when it is no
@@ -421,7 +423,7 @@ function targets.reserve(name, rules, player)
   used[name] = used[name] or {}
   local at = assert(platform).now()
   local reservation = { name = name, player_id = player.player_id, at = at, before = used[name][player.player_id] }
-  used[name][player.player_id] = at
+  used[name][player.player_id] = reservation
   return reservation
 end
 
@@ -433,7 +435,7 @@ function targets.release(reservation)
     return
   end
   local by_player = used[reservation.name]
-  if by_player and by_player[reservation.player_id] == reservation.at then
+  if by_player and rawequal(by_player[reservation.player_id], reservation) then
     by_player[reservation.player_id] = reservation.before
   end
 end
@@ -455,7 +457,7 @@ local function offered(name, rules, player)
     return false
   end
   local last = used[name] and used[name][player.player_id]
-  return not (rules.cooldown > 0 and last and assert(platform).now() - last < rules.cooldown)
+  return not (rules.cooldown > 0 and last and assert(platform).now() - last.at < rules.cooldown)
 end
 
 ---The options near a player: each type's rule's records within its reach,

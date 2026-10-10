@@ -49,4 +49,63 @@ describe("rpf.interactions with rules", function()
     assert.are.equal("not_found", answer.reason)
     assert.is_false(ran)
   end)
+
+  it("never gives back a newer registration's cooldown when a stale request gives its own back", function()
+    local world = conformance.boot("mock")
+    local core = world.core
+    local json = core.json
+    local manifest = conformance.manifest("acme_npcs")
+    assert(world.api.addons.register(manifest, {}))
+    world:install({ conformance.installed(core, manifest) })
+    world:connect()
+    world:activate(world:login(1, "00000002-0000-4000-8000-000000000002"))
+    local real = core.targets.admit
+    -- Every check but the target's own: the stub stands in for a record.
+    core.targets.admit = function(...)
+      local resolved, err = real(...)
+      if resolved == nil and err ~= "not_found" then
+        return nil, err
+      end
+      return { type = "acme_npcs.thing", id = "one", position = { x = 0, y = 0, z = 0 }, distance = 0 }
+    end
+    local sent = 0
+    ---Sends `acme_npcs.use` from player 1's client and gives the answer.
+    ---@return table answer The answer.
+    local function use()
+      sent = sent + 1
+      local before = #world.to_clients
+      world.from_client(1, "rpf:interact", sent .. "\n" .. assert(json.encode(json.object({ name = "acme_npcs.use", payload = json.object({}) }))))
+      -- The last answer: one made while this request ran comes before it.
+      for i = #world.to_clients, before + 1, -1 do
+        if world.to_clients[i].name == "rpf:interact" then
+          return assert(json.decode(world.to_clients[i].payload:match("^%d+\n(.*)$")))
+        end
+      end
+      error("no answer")
+    end
+    local replaced = nil
+    local function replacement()
+      return true
+    end
+    assert(world.api.interactions.register("acme_npcs.use", function()
+      return true
+    end, {
+      target = "acme_npcs.thing",
+      cooldown = 5000,
+      check = function()
+        -- As a check that yields might resume: meanwhile the interaction was
+        -- replaced, and the replacement used, in the same millisecond.
+        assert(world.api.interactions.register("acme_npcs.use", replacement, { target = "acme_npcs.thing", cooldown = 5000 }))
+        replaced = use()
+        return true
+      end,
+    }))
+    local stale = use()
+    local after = use()
+    core.targets.admit = real
+    world.finish()
+    assert.is_true(replaced.ok)
+    assert.are.equal("inactive", stale.reason)
+    assert.are.equal("cooldown", after.reason, "the replacement's cooldown stands")
+  end)
 end)
