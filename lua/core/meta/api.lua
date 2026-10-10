@@ -34,6 +34,7 @@
 ---@field events rpf.api.Events The event bus. The only way scripts hear what the core does.
 ---@field time rpf.api.Time The clock, and timers that run on every engine alike.
 ---@field addons rpf.api.Addons Lua addons: registering one with its manifest, its state, and exports between addons (J1–J3). Server only.
+---@field records rpf.api.Records The records of addons' types: read, query, hold, and write the live ones this server holds (J3). Server only.
 ---@field players rpf.api.Players? The players on this game server. Server only.
 ---@field staff rpf.api.Staff? In-game staff: what a linked staff member may do here, account linking, and staff actions for the audit log. Server only.
 ---@field config rpf.api.Config? Lookups over the config the portal pushed, and linked staff's edits of it in game. Server only.
@@ -64,6 +65,11 @@
 --- - `addons.state(change)`, an `rpf.AddonStateChange`, whenever a loaded
 ---   addon's state changes (it started, it stopped, staff disabled it, …).
 ---   Server only.
+--- - `records.created(change)`, `records.changed(change)` and
+---   `records.deleted(change)`, an `rpf.RecordChange`, after a live addon
+---   record held here was created, changed or deleted: by an addon, by a
+---   staff edit from the portal, or (`records.changed`, `by = "portal"`)
+---   put back because the portal refused its deletion. Server only.
 --- - `staff.changed(change)`, an `rpf.StaffChange`, once for each player
 ---   whose staff permissions here changed: a push from the portal gave them
 ---   new ones or took some away, or they left. Server only.
@@ -217,6 +223,176 @@ function Addons.provide(name, fn) end
 ---@return boolean ok True if it ran.
 ---@return any ... What it returned; or, when `ok` is false, why: `"not_found"`, `"inactive"` or `"failed"`.
 function Addons.call(name, ...) end
+
+---The records of addons' types (`docs/architecture/addons.md`). Every call
+---names the type, so an addon keeps no handle (on FiveM it could not), and
+---what comes back is a plain copy: a field with no value is absent.
+---
+---A `config` type's records are staff's, written in the portal and read
+---here. A `live` type's records are game state: this server writes only
+---those it **holds**, and the portal has each change in the next report.
+---Nothing throws: a call that cannot do what it was asked returns nil, a
+---reason, and for `invalid` the rule broken.
+---
+---```lua
+---local tag, err, rule = rpf.records.create("acme_tags.tag", { text = "hi", spot = pos, fades_at = rpf.time.now() + DAY },
+---  { owner = { kind = "player", id = player.player_id } })
+---if not tag then return false, err end
+---for _, old in ipairs(rpf.records.list("acme_tags.tag", { where = { fades_at = { lt = rpf.time.now() } } })) do
+---  rpf.records.delete("acme_tags.tag", old.id)
+---end
+---```
+---@class rpf.api.Records
+local Records = {}
+
+---One record: a config type's, or a live one this server holds.
+---@param type string The type's full name, `<namespace>.<name>`.
+---@param id string The record's id.
+---@return rpf.Record? record A copy.
+---@return rpf.RecordRefusal? err `not_found`, `inactive`, or `not_held` for a live record this server does not hold (`query` finds those, `hold` takes one).
+function Records.get(type, id) end
+
+---The records of a type here, read locally: every record of a config type,
+---or every held record of a live one, that meets the query. Any field may
+---be filtered or ordered on here. Records with no value for the order field
+---come last; ties go by id.
+---@param type string The type.
+---@param query rpf.RecordQuery? What to keep, and in what order.
+---@return rpf.Record[]? records Copies.
+---@return rpf.RecordRefusal? err `not_found`, `inactive`, or `invalid`.
+---@return table? rule For `invalid`, what was wrong: `{ error = "query", field = … }`.
+function Records.list(type, query) end
+
+---Asks the portal for a live type's records, including those this server
+---does not hold, one page at a time. Filters and order must be on indexed
+---fields. To change one, `hold` it first.
+---@param type string The type.
+---@param query rpf.RecordQuery? What to find; `limit` up to 100 a page, `after` the `next` the last page came with.
+---@param callback fun(records: rpf.QueriedRecord[]?, next: table?, err: string?) Called once: a page and the cursor for the next (nil after the last), or nil and why.
+---@return boolean? ok True once the question is on its way.
+---@return rpf.RecordRefusal? err `not_found`, `inactive`, `invalid`, or `outbox_full` / `outbox_unavailable`.
+function Records.query(type, query, callback) end
+
+---Holds live records, so this server may change them until it releases
+---them. The portal refuses the whole hold if any is not this server's, or
+---is held by another server.
+---@param type string The type.
+---@param ids string[] 1 to 64 records' ids.
+---@param callback fun(records: rpf.Record[]?, err: string?)? Called once: copies of those now held, or nil and the portal's refusal.
+---@return boolean? ok True once the hold is on its way.
+---@return rpf.RecordRefusal? err `not_found`, `inactive` or `invalid`.
+function Records.hold(type, ids, callback) end
+
+---Lets held records go, each with its final state, for the portal (and
+---staff) to write. An addon's records held for the server are released for
+---it when it stops.
+---@param type string The type.
+---@param ids string[] 1 to 64 records' ids.
+---@return boolean? ok True once every one named is released.
+---@return string? err `not_found`, `inactive`, `invalid`, or why some stayed held: `outbox_full`, `too_large`, `creating` (its create has not reached the portal yet).
+function Records.release(type, ids) end
+
+---Makes a live record, held by this server from the start; the portal has it
+---once the next report carries it. Its fields are checked whole first.
+---@param type string The type.
+---@param fields table The fields, by name. Unset ones take their defaults.
+---@param opts rpf.RecordCreateOptions Who owns it, and its id if you mint one.
+---@return rpf.Record? record A copy of the new record.
+---@return rpf.RecordRefusal? err Why not.
+---@return table? rule For `invalid`, the rule broken, as the portal names it (`{ error = "too_long", field = "text" }`, `{ error = "owner" }`).
+function Records.create(type, fields, opts) end
+
+---Changes fields of a held record: only those the patch names, the record
+---checked whole after.
+---@param type string The type.
+---@param id string The record's id.
+---@param patch table? The fields to set, by name.
+---@param opts rpf.RecordWriteOptions? `revision` to refuse a stale write, `clear` to clear fields.
+---@return rpf.Record? record A copy of the record now, with its new revision.
+---@return rpf.RecordRefusal? err Why not.
+---@return table? rule For `invalid`, the rule broken.
+function Records.update(type, id, patch, opts) end
+
+---Deletes a held record. If another live record refers to it, the portal
+---refuses, the record comes back, and `records.changed` says so.
+---@param type string The type.
+---@param id string The record's id.
+---@param opts rpf.RecordWriteOptions? `revision` to refuse a stale delete.
+---@return boolean? ok True once it is gone here.
+---@return rpf.RecordRefusal? err Why not.
+function Records.delete(type, id, opts) end
+
+---Writes several records all or nothing: every write is checked first, and
+---if one would be refused none is made. They then go to the portal together,
+---in one report when they fit one frame.
+---@param ops rpf.RecordOp[] 1 to 64 writes, each record at most once.
+---@return (rpf.Record|boolean)[]? results For each write: the record, or true for a delete.
+---@return rpf.RecordRefusal? err The first refusal.
+---@return table? detail `{ index = n, … }`: which write (0 for the batch itself), and for `invalid` the rule.
+function Records.batch(ops) end
+
+---A record as a script gets it.
+---@class rpf.Record
+---@field id string Its id, a uuid.
+---@field type string Its type's full name.
+---@field owner { kind: string, id: string }? Who owns it: a live record's owner. A config record has none.
+---@field revision number Moves on every change made to it; name it in `update`'s `opts.revision` to refuse a stale write.
+---@field fields table Its fields, every default filled in. A field with no value is absent. A `json` field is opaque data kept whole: a null inside it is the codec's null (`{}` through FiveM's export), and writing the value back unchanged keeps it as stored.
+
+---A record a `query` found: as the portal has it.
+---@class rpf.QueriedRecord: rpf.Record
+---@field held boolean Whether this server holds it; if so, `get` has the newer copy.
+
+---What `list` and `query` keep.
+---@class rpf.RecordQuery
+---@field where table<string, any>? By field: a value (equal), or comparisons, `{ gte = 1, lt = 5 }`, of `eq`, `lt`, `lte`, `gt`, `gte`, `prefix`. All must hold.
+---@field owner { kind: string, id: string }? Only this owner's records.
+---@field order string? The field to order by; by id otherwise.
+---@field descending boolean? Largest first.
+---@field limit integer? At most this many.
+---@field after table? `query` only: the `next` the page before came with.
+
+---Options for `create`.
+---@class rpf.RecordCreateOptions
+---@field owner { kind: "player"|"character"|"employer"|"server", id: string } Who owns it: a kind the type's `owners` lists.
+---@field id string? Its id, a lowercase uuid, if you mint one (to make a create you may retry); minted otherwise.
+
+---Options for `update` and `delete`.
+---@class rpf.RecordWriteOptions
+---@field revision number? Refuse as `stale` unless the record is still at this revision.
+---@field clear string[]? `update` only: nullable fields to clear.
+
+---One write in a `batch`.
+---@class rpf.RecordOp
+---@field op "create"|"update"|"delete" What to do.
+---@field type string The record's type.
+---@field id string? The record's id: required to update or delete.
+---@field fields table? A create's fields.
+---@field owner table? A create's owner.
+---@field patch table? An update's fields.
+---@field clear string[]? An update's fields to clear.
+---@field revision number? An update's or delete's expected revision.
+
+---Why a records call refused.
+---@alias rpf.RecordRefusal
+---| "not_found" # No such installed type, or no such config record.
+---| "inactive" # The type's addon is not running here.
+---| "not_held" # This server does not hold that live record (it may exist: `query`, then `hold`).
+---| "stale" # The record moved on since the revision named.
+---| "invalid" # The write breaks a rule of the type, or a query is not one: the third value says which.
+---| "conflict" # A create named an id this server already holds.
+---| "limit" # The type's `limit` of records is held here already.
+---| "busy" # A batch named a record whose create or last whole report the portal has not answered yet; a moment later it can go.
+---| "outbox_full" # Too much is waiting for the portal; try again later.
+---| "unknown" # A batch write failed after it was checked; logged. Should not happen.
+
+---What a `records.*` event carries.
+---@class rpf.RecordChange
+---@field type string The record's type.
+---@field id string The record's id.
+---@field record rpf.Record? The record now; nil for a deletion.
+---@field by "addon"|"staff"|"portal" Who changed it.
+---@field reason string? For a deletion the portal refused, why (`referenced`).
 
 ---Where an addon is.
 ---@alias rpf.AddonState

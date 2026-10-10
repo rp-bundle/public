@@ -1011,6 +1011,15 @@ function addons.state(namespace)
   return addon.state, addon.reason
 end
 
+---Whether an addon's calls are open: it is active, or its `start` handler
+---is running (which may set up records and read its config records).
+---@param namespace string The addon.
+---@return boolean running True if so.
+function addons.running(namespace)
+  local addon = loaded[namespace]
+  return addon ~= nil and (addon.state == "active" or addon.starting == true)
+end
+
 ---A type's definition as installed here: the config's own record of it
 ---when the installation keeps one apart from its manifest (a type kept for
 ---its records, or one ahead after a rollback), else the manifest's.

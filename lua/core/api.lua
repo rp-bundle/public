@@ -20,8 +20,8 @@
 ---   accidents, not attackers: `rawset` and the debug library still reach
 ---   past it, and on Gmod it is all the server owner's own code anyway.
 ---
----What a side gets follows what it loaded: `players`, `staff`, `config` and
----`addons` on the server, `auth` on the client, and `events`, `time`,
+---What a side gets follows what it loaded: `players`, `staff`, `config`,
+---`addons` and `records` on the server, `auth` on the client, and `events`, `time`,
 ---`engine` and `VERSION` on both.
 local rpf = rpf
 local events = rpf.events
@@ -222,6 +222,39 @@ if addons then
       return addons.call(name, ...)
     end,
   }, "rpf.addons")
+end
+
+local data = rpf.data
+if data then
+  surface.records = freeze({
+    get = function(type_name, id)
+      return data.get(type_name, id)
+    end,
+    list = function(type_name, query)
+      return data.list(type_name, query)
+    end,
+    query = function(type_name, query, callback)
+      return data.query(type_name, query, callback)
+    end,
+    hold = function(type_name, ids, callback)
+      return data.hold(type_name, ids, callback)
+    end,
+    release = function(type_name, ids)
+      return data.release(type_name, ids)
+    end,
+    create = function(type_name, fields, opts)
+      return data.create(type_name, fields, opts)
+    end,
+    update = function(type_name, id, patch, opts)
+      return data.update(type_name, id, patch, opts)
+    end,
+    delete = function(type_name, id, opts)
+      return data.delete(type_name, id, opts)
+    end,
+    batch = function(ops)
+      return data.batch(ops)
+    end,
+  }, "rpf.records")
 end
 
 local players = rpf.players

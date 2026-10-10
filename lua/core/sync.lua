@@ -396,6 +396,13 @@ local function settle_addons(sent, outcome, stale)
       elseif outcome == "refused" then
         entry.deleted, entry.delete_sent = nil, nil
         entry.revision = base
+        rpf.data.announce("records.changed", {
+          type = entry.data.type,
+          id = entry.id,
+          record = rpf.data.view(entry.id),
+          by = "portal",
+          reason = "referenced",
+        })
       else
         entry.delete_sent = nil
         entry.revision = (stale and stale[key]) or base

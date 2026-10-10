@@ -51,7 +51,7 @@ files each side loads after it and in what order:
 rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, config.lua,
                  -- client.lua, players.lua, commands.lua, moderation.lua, staff.lua,
                  -- inventory.lua, manifest.lua, addons.lua, records.lua, sync.lua, accounts.lua,
-                 -- handoff.lua, join.lua, characters.lua, jobs.lua, edits.lua, api.lua
+                 -- handoff.lua, join.lua, characters.lua, jobs.lua, edits.lua, data.lua, api.lua
 rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua,
                  -- picker.lua, api.lua
 ```
@@ -72,7 +72,7 @@ API (see The public API).
 
 The client never loads `protocol.lua`, `client.lua`, `players.lua`,
 `commands.lua`, `moderation.lua`, `staff.lua`, `inventory.lua`, `manifest.lua`, `addons.lua`, `records.lua`, `sync.lua`,
-`accounts.lua`, `join.lua`, `characters.lua`, `jobs.lua` or `edits.lua`, because the player's client
+`accounts.lua`, `join.lua`, `characters.lua`, `jobs.lua`, `edits.lua` or `data.lua`, because the player's client
 must never hold the server's API key and has no players, staff or records to
 manage.
 
@@ -1045,6 +1045,47 @@ drain); creating and querying need it active. Staff edits arrive as
 first applies the patch at the revision staff saw, the second releases the
 record, with its final state, for the portal to delete.
 
+### Addons' records (`rpf.data`, J3)
+
+The record calls addons make, which `rpf.api.records` fronts, over
+`rpf.records`, `rpf.sync`, `rpf.addons` and the config:
+
+| Call | Does |
+|---|---|
+| `get(type, id)` | A config record, or a held live one: a plain copy, `{ id, type, owner, revision, fields }`, every default filled in, a field with no value absent; a `json` field is kept whole, nulls and shapes included |
+| `list(type, query)` | Every config record, or every held live record, of the type that meets `query` (`where`, `owner`, `order`, `descending`, `limit`), read locally: any field may be filtered or ordered; no value for the order field sorts last; ties by id |
+| `query(type, query, callback)` | `query_records` for unheld live records: `where` (`eq`, `lt`, `lte`, `gt`, `gte`, `prefix`) becomes `RecordQuery.filters`, on indexed fields as the portal requires; `callback(records, next, err)` in the caller's context |
+| `hold(type, ids, callback)`, `release(type, ids)` | `rpf.sync.hold` and `release` for up to 64 records of the type, held for the server (no player's session) |
+| `create(type, fields, opts)` | `records.create_addon_record` with `opts.owner` and an optional `opts.id`, after checking the owner kind, the id, the type's `limit` of held records and the fields |
+| `update(type, id, patch, opts)` | `records.set_addon_fields`, `opts.clear` naming the nullable fields to clear (`json.null`, which an export cannot carry), `opts.revision` refusing a stale write. An empty table in what is written takes its shape (array or object) from the stored value at the same place, so a `json` field read and written back unchanged is accepted though the plain copy lost its marks |
+| `delete(type, id, opts)` | `records.delete_addon_record`, `opts.revision` likewise |
+| `batch(ops)` | Every write checked against the records as they are, none made unless all would be; what was queued before is flushed first, then the writes are made and flushed, so they go in one report when they fit one frame (64 records, `max_records_per_frame`). A record whose create or whole report is still unanswered goes in a report of its own, so a batch naming one is `busy` until it is |
+
+Refusals: `not_found` (no such installed type, or config record),
+`inactive` (its addon is not running: `rpf.addons.running`, which a `start`
+handler counts as; or the caller is code of an activation that has ended,
+`rpf.addons.stale`), `not_held` (a live record not held here, of another
+type, or being deleted), `stale`, `busy` (a batch, above), `invalid` with the rule as the portal
+names it (`{ error, field }`), `conflict`, `limit`, `outbox_full`. A
+record's `revision` here is `entry.version`: the portal's revision when it
+was held (1 when created here), moved on by every change made here, so a
+compare-and-set between scripts sees each change even when several reach
+the portal in one report.
+
+An addon's calls close when it stops being active, and the records it held
+for the server (none a player's session holds) are released with their
+final state, after its `stop` ran; a release that cannot finish yet (a
+create still on its way, a full outbox) is tried again each second while
+the addon stays inactive, and a hold answered after the addon stopped is
+given back. Its held records still drain to the portal as J2 made them
+(staff edits, reports, releases).
+
+Events, reserved, each an `rpf.data.Change` (`{ type, id, record, by,
+reason }`): `records.created`, `records.changed` and `records.deleted` after
+an addon's write, a staff edit (`rpf.edits`, `by = "staff"`), or a deletion
+the portal refused, which puts the record back (`records.changed`, `by =
+"portal"`, `reason = "referenced"`).
+
 ### Characters (`rpf.characters`, `rpf.picker`)
 
 A logged-in player's characters (D5): list, create, select and switch. Server
@@ -1383,6 +1424,7 @@ internal.
 | `events` | both | `on`, `once`, `off`, `emit`. `emit` refuses a core name (`reserved`) or another addon's namespace (`forbidden`) |
 | `time` | both | `now`, `after`, `every`, `cancel`: `rpf.time`'s timers |
 | `addons` | server | `API`, `API_MIN`, `register`, `state`, `provide`, `call` (`rpf.addons` above) |
+| `records` | server | `get`, `list`, `query`, `hold`, `release`, `create`, `update`, `delete`, `batch` (`rpf.data` above) |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
 | `staff` | server | `can`, `permissions`, `link`, `record` (F9, `rpf.staff` above) |
 | `config` | server | `item`, `item_base`, `item_defaults`, `employer`, `department`, `job`, `starting_accounts`, `default_job`, `setting`, `version`, and `edit` (E6, above) |

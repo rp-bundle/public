@@ -207,6 +207,12 @@ function edits.edit_addon_record(command)
     return false, reason(err, refusal)
   end
   report()
+  rpf.data.announce("records.changed", {
+    type = done.type,
+    id = command.record_id,
+    record = rpf.data.view(command.record_id),
+    by = "staff",
+  })
   return true
 end
 
@@ -221,10 +227,12 @@ function edits.delete_addon_record(command)
   if not ok then
     return false, why
   end
+  local type_name = rpf.records.entries[rpf.records.key("addon_record", command.record_id)].data.type
   local done, err = rpf.sync.release({ { kind = "addon_record", id = command.record_id } })
   if not done then
     return false, reason(err)
   end
+  rpf.data.announce("records.deleted", { type = type_name, id = command.record_id, by = "staff" })
   return true
 end
 
