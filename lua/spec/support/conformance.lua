@@ -284,15 +284,9 @@ end
 ---@param storage table<string, string>? What the new process finds.
 function World:restart(storage)
   local kv = storage or self:snapshot()
-  local portal, time = self.portal, self.time
+  local name, portal, time = self.platform_name, self.portal, self.time
   self.finish()
-  local fresh = conformance.boot(self.platform_name, { kv = kv, portal = portal, time = time })
-  for key in pairs(self) do
-    self[key] = nil
-  end
-  for key, value in pairs(fresh) do
-    self[key] = value
-  end
+  conformance.boot(name, { kv = kv, portal = portal, time = time, into = self })
 end
 
 ---Puts a player in the game as the engine does, logs them in as an account
@@ -373,6 +367,7 @@ end
 ---@field kv table<string, string>? The storage it finds.
 ---@field portal spec.FakePortal? The fake portal, which outlives a game server.
 ---@field time number? The clock.
+---@field into table? The world table to boot into (`World:restart`).
 
 ---A host for a mock platform: a clock the world moves, storage, and a log;
 ---the socket and HTTP go nowhere, since the cases install addons by config.
@@ -419,9 +414,15 @@ end
 
 ---A fresh world, not booted.
 ---@param name string The platform.
+---@param into table? A table to make the world in, emptied first (a restart's), so whoever holds it holds the new one, and the platform's closures share its clock.
 ---@return spec.ConformanceWorld world The world.
-local function new_world(name)
-  return setmetatable({ platform_name = name, logs = {}, time = support.EPOCH_MS, origins = false }, World)
+local function new_world(name, into)
+  local world = into or {}
+  for key in pairs(world) do
+    world[key] = nil
+  end
+  world.platform_name, world.logs, world.time, world.origins = name, {}, support.EPOCH_MS, false
+  return setmetatable(world, World)
 end
 
 ---The globals that exist now, to take away what a boot added.
@@ -438,7 +439,7 @@ end
 ---@param opts spec.BootOptions? What it carries over.
 ---@return spec.ConformanceWorld world The world.
 local function boot_mock(opts)
-  local world = new_world("mock")
+  local world = new_world("mock", opts and opts.into)
   local core = support.load_core("server")
   local mock = dofile(support.path("lua/platform/mock/init.lua"))
   local p = mock.server(host_for(world, opts), 1)
@@ -480,7 +481,7 @@ end
 ---@param opts spec.BootOptions? What it carries over.
 ---@return spec.ConformanceWorld world The world.
 local function boot_fivem(opts)
-  local world = new_world("fivem")
+  local world = new_world("fivem", opts and opts.into)
   world.origins = true
   rawset(_G, "rpf", nil)
   local before = global_names()
@@ -527,7 +528,7 @@ end
 ---@param opts spec.BootOptions? What it carries over.
 ---@return spec.ConformanceWorld world The world.
 local function boot_gmod(opts)
-  local world = new_world("gmod")
+  local world = new_world("gmod", opts and opts.into)
   local gmod = dofile(support.path("lua/platform/mock/gmod.lua"))
   local fake = gmod.install("server", host_for(world, opts), {
     read = function(relative)

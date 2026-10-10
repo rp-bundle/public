@@ -33,13 +33,28 @@ mock_bridge.SUPPORTS = {
   "jobs.current",
 }
 
+---How a mock bridge is shaped, for a suite run against another framework
+---shape.
+---@class spec.MockBridgeOptions
+---@field accounts string[]? The account names it lists: `cash` and `bank` unless given.
+---@field items boolean? False for a framework with no item inventory (DarkRP's): it supports no item call.
+
 ---Registers the mock bridge over a framework, through the API as the
 ---bridge's own code sees it.
 ---@param api table `rpf.api` as the bridge's resource sees it.
 ---@param fw spec.MockFramework The framework.
+---@param opts spec.MockBridgeOptions? Its shape.
 ---@return boolean? ok What `register` answered.
 ---@return string? err Why not.
-function mock_bridge.register(api, fw)
+function mock_bridge.register(api, fw, opts)
+  opts = opts or {}
+  local accounts = opts.accounts or { "cash", "bank" }
+  local supports = {}
+  for _, call in ipairs(mock_bridge.SUPPORTS) do
+    if opts.items ~= false or call:sub(1, 10) ~= "inventory." then
+      supports[#supports + 1] = call
+    end
+  end
   ---The loaded character's key, or nil.
   ---@param player any The engine's handle.
   ---@return string? key The key.
@@ -80,7 +95,7 @@ function mock_bridge.register(api, fw)
     version = "1.0.0",
     contract = { major = api.bridge.CONTRACT_MAJOR, minor = api.bridge.CONTRACT_MINOR },
     provides = { "characters", "money", "inventory", "jobs" },
-    supports = mock_bridge.SUPPORTS,
+    supports = supports,
     tested_with = { "1.0" },
     running = function()
       return fw.running, "1.0.3"
@@ -100,7 +115,11 @@ function mock_bridge.register(api, fw)
     end,
     money = {
       accounts = function()
-        return { "cash", "bank" }
+        local out = {}
+        for i, name in ipairs(accounts) do
+          out[i] = name
+        end
+        return out
       end,
       balance = function(player, account)
         local key = key_of(player)

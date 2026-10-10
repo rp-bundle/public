@@ -47,7 +47,7 @@ local COMPANION = { characters = "external", money = "external", inventory = "ex
 ---@field origin string Its resource's name, where the platform names the calling code (FiveM).
 ---@field framework fun(): spec.FrameworkDriver A fresh fake of its framework, running, with nobody loaded.
 ---@field register fun(api: table, fw: spec.FrameworkDriver): boolean?, string? Registers the bridge as its own code does, through the API as its resource sees it.
----@field accounts string[] The account names the bridge lists; the cases use the first two.
+---@field accounts string[] The account names the bridge lists; the cases use the first two, or the one twice (DarkRP's `wallet`).
 ---@field item string? An item the framework knows, for the inventory cases; nil when the bridge supports no item call.
 ---@field job boolean Whether the bridge reads jobs.
 
@@ -141,7 +141,9 @@ function suite.cases(kit)
     local fw = kit.framework()
     local money = {}
     money[cash] = 500
-    money[bank] = 1000
+    if bank ~= cash then
+      money[bank] = 1000
+    end
     fw:seed("CIT-JANE", money, kit.item and { [kit.item] = 3 } or nil, kit.job and { name = "police", grade = 2, on_duty = true } or nil)
     return fw
   end
@@ -216,8 +218,9 @@ function suite.cases(kit)
         assert.are.equal(1, fw.changes["money.debit"])
         assert.are.same({ nil, "refused", "insufficient_funds" }, { api.money.debit(handle, cash, 5000, "Car", api.ops.new()) })
         assert.are.equal(300, fw:balance("CIT-JANE", cash))
+        local before = fw:balance("CIT-JANE", bank)
         assert.is_true(api.money.credit(handle, bank, 50, "Refund", api.ops.new()))
-        assert.are.equal(1050, fw:balance("CIT-JANE", bank))
+        assert.are.equal(before + 50, fw:balance("CIT-JANE", bank))
         -- Arguments are RPF's rules on both paths: never reach the framework.
         local max = world.core.protocol.MAX_AMOUNT
         for _, amount in ipairs({ 0, -5, 1.5, max + 1 }) do
@@ -296,6 +299,9 @@ function suite.cases(kit)
         assert.is_true(api.money.debit(handle, cash, 120, "Car", op))
         restart(world, kit, fw, disk)
         assert.are.equal(1, world:logged("error", "cut off by a restart"))
+        local before = world.server_platform.now()
+        world:advance(1000)
+        assert.are.equal(before + 1000, world.server_platform.now(), "the restarted platform keeps the world's clock")
         api = world.api
         assert.are.same({ nil, "unknown" }, { api.money.debit(handle, cash, 120, "Car", op) })
         assert.are.equal(1, fw.changes["money.debit"], "charged once")
@@ -313,6 +319,7 @@ function suite.cases(kit)
         companion(world, kit, fw)
         local api = world.api
         local handle = playing(world, fw, "CIT-JANE")
+        local start = fw:balance("CIT-JANE", bank)
         local owner = { owner = { kind = "player", id = PLAYER } }
         local badge = assert(api.records.create("acme_badges.badge", { label = "Bronze" }, owner))
         world:settle()
@@ -327,7 +334,7 @@ function suite.cases(kit)
         end))
         world:settle()
         assert.are.equal("Silver", world.portal.records[badge.id].fields.label)
-        assert.are.equal(900, fw:balance("CIT-JANE", bank))
+        assert.are.equal(start - 100, fw:balance("CIT-JANE", bank))
         assert.is_true(api.money.debit(handle, bank, 100, "Silver badge", op, function()
           granted = granted + 1
           return true
@@ -343,6 +350,7 @@ function suite.cases(kit)
         companion(world, kit, fw)
         local api = world.api
         local handle = playing(world, fw, "CIT-JANE")
+        local start = fw:balance("CIT-JANE", bank)
         local badge = assert(api.records.create("acme_badges.badge", { label = "Bronze" }, { owner = { kind = "player", id = PLAYER } }))
         world:settle()
         local granted = 0
@@ -358,7 +366,7 @@ function suite.cases(kit)
         world:settle()
         assert.are.equal(0, granted)
         assert.are.equal("Bronze", world.portal.records[badge.id].fields.label)
-        assert.are.equal(700, fw:balance("CIT-JANE", bank), "charged, and not refunded: staff resolve it")
+        assert.are.equal(start - 300, fw:balance("CIT-JANE", bank), "charged, and not refunded: staff resolve it")
         assert.is_nil(fw.changes["money.credit"])
         assert.are.equal(1, #api.ops.unknown())
       end,
@@ -370,6 +378,7 @@ function suite.cases(kit)
         companion(world, kit, fw)
         local api = world.api
         local handle = playing(world, fw, "CIT-JANE")
+        local start = fw:balance("CIT-JANE", bank)
         local badge = assert(api.records.create("acme_badges.badge", { label = "Bronze" }, { owner = { kind = "player", id = PLAYER } }))
         world:settle()
         local op = api.ops.new()
@@ -386,7 +395,7 @@ function suite.cases(kit)
         api = world.api
         assert.are.equal(1, world:logged("error", "cut off by a restart"))
         assert.are.equal("Bronze", world.portal.records[badge.id].fields.label, "the grant was lost")
-        assert.are.equal(900, fw:balance("CIT-JANE", bank), "the debit was not: nothing compensates")
+        assert.are.equal(start - 100, fw:balance("CIT-JANE", bank), "the debit was not: nothing compensates")
         assert.is_nil(fw.changes["money.credit"])
         local listed = api.ops.unknown()
         assert.are.equal(1, #listed)

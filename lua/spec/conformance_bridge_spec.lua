@@ -24,3 +24,16 @@ suite.run(busted, {
   item = "water",
   job = true,
 })
+
+-- A framework with one account and no items (DarkRP's shape): the suite
+-- holds without a second account, and the item calls are unsupported.
+suite.run(busted, {
+  name = "single-account mock",
+  origin = "mockfw_bridge",
+  framework = mock_framework.new,
+  register = function(api, fw)
+    return mock_bridge.register(api, fw --[[@as spec.MockFramework]], { accounts = { "wallet" }, items = false })
+  end,
+  accounts = { "wallet" },
+  job = true,
+})
