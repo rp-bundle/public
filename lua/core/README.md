@@ -102,7 +102,7 @@ step.
 | Engine | `engine` | `"fivem"`, `"gmod"` or `"mock"`. Reported in `Hello`, never branched on |
 | Transport | `connect(url, handlers)` | Opens the websocket. `handlers` has `open()`, `message(text)` and `close(reason)`. One connection at a time |
 | | `disconnect()` | Closes the open connection or abandons the attempt. Its `close` is still called, and the core ignores it |
-| | `send(text) -> boolean` | Sends one text frame. `false` when there is no open connection |
+| | `send(text) -> boolean` | Sends one text frame. `false` when there is no open connection or the engine's call failed (the platform logs why). A `Hello` that returns `false` is a failed attempt, retried after a backoff |
 | Http | `http_request(method, url, headers, body, callback)` | `callback(status, body, headers)`, exactly once. `status` is 0 when no response arrived |
 | Clock | `now() -> ms` | Wall-clock milliseconds since the Unix epoch |
 | | `after(delay_ms, callback)` | Runs `callback` once, later. No cancel: the core ignores a timer it no longer wants |

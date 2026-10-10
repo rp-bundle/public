@@ -907,7 +907,8 @@ end
 
 ---Sends this connection's `Hello`. It is minted fresh for each connection and
 ---never enters the outbox, because it only means anything on the connection
----it opens.
+---it opens. If the platform refuses it, the connection is given up at once
+---and retried after a backoff, rather than left to be noticed dead later.
 ---@param generation integer The connection it belongs to.
 function Client:handshake(generation)
   if generation ~= self.generation then
@@ -930,7 +931,11 @@ function Client:handshake(generation)
     return
   end
   self.hello_id = hello.id
-  self.platform.send(text)
+  if not self.platform.send(text) then
+    -- A Hello that never left cannot be answered; waiting for the socket
+    -- to be noticed dead would only delay the same retry.
+    self:reconnect("could not send Hello")
+  end
 end
 
 -- Sending -------------------------------------------------------------------

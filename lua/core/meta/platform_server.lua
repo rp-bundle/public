@@ -35,7 +35,7 @@ function Transport.disconnect() end
 
 ---Sends one text frame on the open connection.
 ---@param text string The frame, already encoded.
----@return boolean sent False when there is no open connection. The core keeps the frame in its outbox either way.
+---@return boolean sent False when there is no open connection, or the engine's call failed (the platform logs why, once per connection). The core keeps the frame in its outbox either way; a `Hello` that comes back false is a failed attempt, retried after a backoff.
 function Transport.send(text) end
 
 ---The best randomness the engine offers, for ids and backoff jitter.

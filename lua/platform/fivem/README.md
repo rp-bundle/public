@@ -142,6 +142,11 @@ These are the platform's transport members with a connection id, plus
 FiveM server offers Lua. The events are server-local, never network events,
 so no client can forge a frame. They are emitted through `setImmediate`,
 because ws calls back on Node's thread, where FXServer allows no natives.
+An export that raises (`rpf-ws` stopped) is not the same as `false`: `ws.lua`
+logs it at `warn`, once per connection, with the error, and still returns
+`false`. A `send` that returns `false` because the socket is not open is
+ordinary and logs nothing. A `Hello` the platform refuses makes the core drop
+the connection and back off at once.
 A binary frame closes the socket (1003); the
 protocol is text only. A handshake that takes over 30 seconds is abandoned,
 so a portal that accepts TCP and says nothing cannot leave the core waiting.

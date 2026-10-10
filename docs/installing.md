@@ -229,6 +229,15 @@ below); GWSockets words its own way:
 - A certificate error: the portal's certificate is not trusted from the game
   server, or `wss://` was used for a portal that only speaks `ws://`.
 
+**`rpf: the rpf-ws resource could not send a frame on socket …`** (FiveM) or
+**`rpf: GWSockets could not send a frame: …`** (Garry's Mod): the engine's
+websocket call failed, and the words after the colon are why. It is logged
+once per connection. The core treats the connection as dead and reconnects
+with a growing delay, so a `disconnected` line follows. On FiveM it usually
+means `rpf-ws` was stopped or restarted while `rpf` kept running: `ensure
+rpf-ws`, then `restart rpf`. A `could not close …` line is the same for the
+call that closes a socket.
+
 **`rpf: stopped: the portal refused Hello (duplicate_instance): another live instance is connected`**:
 another game server process is connected with this server's key, and the
 portal checked that it is still answering. Two game servers share one

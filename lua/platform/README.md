@@ -24,7 +24,11 @@ function.
    - `connect` / `disconnect` / `send`: `open` once or `close` once per
      `connect`, never both for a failed attempt, nothing after `close`, never
      synchronously inside `connect`, one connection at a time. Text frames,
-     byte for byte. If the engine's Lua has no websocket, a shim in another
+     byte for byte. `send` returns `false`
+     for a frame that did not leave, and logs why at `warn`, once per
+     connection, when the engine call raised: the core decides what a refused
+     frame means (a refused `Hello` is a failed attempt, retried after a
+     backoff). If the engine's Lua has no websocket, a shim in another
      runtime owns it and frames cross as strings, with the contract written
      in both languages and a test holding them together (FiveM's
      `ws-shim/`).

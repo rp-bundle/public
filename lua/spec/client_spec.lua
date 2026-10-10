@@ -252,6 +252,27 @@ describe("rpf.client", function()
       assert.are.equal(1, #sent_of(p, "player_dropped"), "the outbox waited it out")
     end)
 
+    it("gives up a connection whose Hello the platform refuses, and tries again after a backoff", function()
+      local p = support.fake_platform()
+      local connection = rpf.start_server(p, { url = "ws://portal", api_key = "k" })
+      local send = p.send
+      p.send = function()
+        return false
+      end
+      p.open()
+      assert.are.equal(1, #p.disconnects, "the refused connection was closed at once")
+      assert.are.equal("connecting", connection.state)
+      assert.are.equal(1, #p.connects, "it waits out the backoff first")
+
+      p.send = send
+      p.advance(2 * 60 * 1000)
+      assert.are.equal(2, #p.connects)
+      p.open()
+      assert.are.equal(1, #sent_of(p, "hello"))
+      welcome(p)
+      assert.are.equal("ready", connection.state)
+    end)
+
     it("sends a fresh Hello after a backoff when refused with retry", function()
       local p = support.fake_platform()
       local connection = rpf.start_server(p, { url = "ws://portal", api_key = "k" })
