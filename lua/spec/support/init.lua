@@ -123,6 +123,10 @@ function support.fake_platform(opts)
     p.store[key] = value
   end
 
+  function p.thread()
+    return nil
+  end
+
   -- MINSTD: every product stays below 2^53, so it is exact on LuaJIT too.
   function p.random_hex(n)
     local digits = {}

@@ -184,6 +184,12 @@ function mock.server(host, seed)
   p.players = {}
   p.client_handlers = {}
 
+  ---No coroutines here: the harness runs everything on one thread.
+  ---@return nil thread Always nil.
+  function p.thread()
+    return nil
+  end
+
   -- MINSTD: every product stays below 2^53, so it is exact on LuaJIT too.
   function p.random_hex(n)
     local digits = {}

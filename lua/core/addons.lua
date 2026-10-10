@@ -118,12 +118,22 @@ addons.STATES = {
 
 ---@type table<string, rpf.addons.Loaded>
 local loaded = {}
----The context the code now running was called in, or nil for the core's own.
----@type rpf.addons.Context?
-local context = nil
----What addons and resources set up, oldest first.
----@type rpf.addons.Owned[]
+---The context each coroutine's code is running in, by the platform's name
+---for the coroutine (`platform.thread`), or `MAIN` where it has none: an
+---addon's handler that yields leaves its context on its own coroutine, not
+---on whatever runs while it waits. Weak keys, so a finished coroutine's
+---entry goes with it.
+---@type table<any, rpf.addons.Context>
+local contexts = setmetatable({}, { __mode = "k" })
+---The key for code with no coroutine of its own to name.
+local MAIN = {}
+---What addons and resources set up, by entry, each with the order it was
+---set up in; an entry is dropped as soon as it is taken down or disowned,
+---so a long-running addon's finished timers are not kept.
+---@type table<rpf.addons.Owned, integer>
 local owned = {}
+---How many things have been owned, for their order.
+local owned_count = 0
 ---Each export an addon provides, by its full name.
 ---@type table<string, { fn: any, namespace: string }>
 local provided = {}
@@ -264,12 +274,36 @@ local function own_state(namespace, addon)
   return "active", nil
 end
 
+---The key of the coroutine running now.
+---@return any key The platform's name for it, or `MAIN`.
+local function thread_key()
+  local key = platform and platform.thread()
+  if key == nil then
+    return MAIN
+  end
+  return key
+end
+
+---The context of the code running now.
+---@return rpf.addons.Context? context The context, or nil for the core's own code.
+local function current()
+  return contexts[thread_key()]
+end
+
+---Sets the context of the coroutine running now.
+---@param key any The coroutine's key, as `thread_key` gave it.
+---@param ctx rpf.addons.Context? The context.
+local function set(key, ctx)
+  contexts[key] = ctx
+end
+
 ---Puts the context back after a call, passing its results through.
+---@param key any The coroutine's key.
 ---@param saved rpf.addons.Context? The context before the call.
 ---@param ... any `pcall`'s results.
 ---@return any ... The same results.
-local function restore(saved, ...)
-  context = saved
+local function restore(key, saved, ...)
+  set(key, saved)
   return ...
 end
 
@@ -281,14 +315,16 @@ end
 ---@return boolean ok False if it threw.
 ---@return any ... Its results, or the error.
 function addons.run(ctx, fn, ...)
-  local saved = context
-  context = ctx
-  return restore(saved, pcall(fn, ...))
+  local key = thread_key()
+  local saved = contexts[key]
+  set(key, ctx)
+  return restore(key, saved, pcall(fn, ...))
 end
 
 ---The context code is running in now.
 ---@return rpf.addons.Context? context A copy, or nil for the core's own code.
 function addons.context()
+  local context = current()
   if not context then
     return nil
   end
@@ -296,12 +332,13 @@ function addons.context()
 end
 
 ---Rethrows after the context is back, or passes results through.
+---@param key any The coroutine's key.
 ---@param saved rpf.addons.Context? The context before the call.
 ---@param ok boolean `pcall`'s first result.
 ---@param ... any The rest.
 ---@return any ... The results.
-local function finish(saved, ok, ...)
-  context = saved
+local function finish(key, saved, ok, ...)
+  set(key, saved)
   if not ok then
     error((...), 0)
   end
@@ -318,6 +355,8 @@ end
 ---@param ... any Its arguments.
 ---@return any ... Its results. An error it throws is thrown again.
 function addons.from(origin, fn, ...)
+  local key = thread_key()
+  local context = contexts[key]
   if origin == nil or (context and context.origin == origin) then
     return fn(...)
   end
@@ -331,9 +370,8 @@ function addons.from(origin, fn, ...)
       sole = namespace
     end
   end
-  local saved = context
-  context = { namespace = sole or nil, origin = origin }
-  return finish(saved, pcall(fn, ...))
+  set(key, { namespace = sole or nil, origin = origin })
+  return finish(key, context, pcall(fn, ...))
 end
 
 ---The namespaces the code now running is known to belong to: the addon
@@ -342,6 +380,7 @@ end
 ---handler), which `may_use` lets through.
 ---@return table<string, true>? namespaces The set.
 local function caller_namespaces()
+  local context = current()
   if not context then
     return nil
   end
@@ -382,31 +421,35 @@ end
 ---@param cleanup fun() Takes it down. Called at most once.
 ---@return fun() disown Forgets it without taking it down, for something its maker took down itself.
 function addons.own(cleanup)
+  local context = current()
   if not context or (context.namespace == nil and context.origin == nil) then
     return function() end
   end
   ---@type rpf.addons.Owned
   local entry = { namespace = context.namespace, origin = context.origin, cleanup = cleanup }
-  owned[#owned + 1] = entry
+  owned_count = owned_count + 1
+  owned[entry] = owned_count
   return function()
     entry.done = true
+    owned[entry] = nil
   end
 end
 
 ---Takes down everything owned that `test` picks, oldest first, and forgets it.
 ---@param test fun(entry: rpf.addons.Owned): boolean Which.
 local function take_down(test)
-  local kept, due = {}, {}
-  for _, entry in ipairs(owned) do
-    if not entry.done then
-      if test(entry) then
-        due[#due + 1] = entry
-      else
-        kept[#kept + 1] = entry
-      end
+  local due = {}
+  for entry in pairs(owned) do
+    if test(entry) then
+      due[#due + 1] = entry
     end
   end
-  owned = kept
+  table.sort(due, function(a, b)
+    return owned[a] < owned[b]
+  end)
+  for _, entry in ipairs(due) do
+    owned[entry] = nil
+  end
   for _, entry in ipairs(due) do
     entry.done = true
     local ok, err = pcall(entry.cleanup)
@@ -414,6 +457,17 @@ local function take_down(test)
       log("error", "could not take down something an addon set up: " .. tostring(err))
     end
   end
+end
+
+---How many things are owned now, for tests and diagnostics: a long-running
+---addon's finished timers must not add up here.
+---@return integer count The count.
+function addons.owned_count()
+  local count = 0
+  for _ in pairs(owned) do
+    count = count + 1
+  end
+  return count
 end
 
 ---Calls one of an addon's handlers under `pcall`, in the addon's context,
@@ -649,6 +703,7 @@ function addons.register(manifest, handlers)
   for name, handler in pairs(handlers or {}) do
     copy[name] = handler
   end
+  local context = current()
   local origin = context and context.origin
   if evaluating then
     deferred[#deferred + 1] = { manifest = checked, handlers = copy, origin = origin }
@@ -656,6 +711,10 @@ function addons.register(manifest, handlers)
   end
   return apply(checked, copy, origin)
 end
+
+---Forgets a stopped addon; defined beside `take_out`.
+---@type fun(namespace: string)
+local forget
 
 ---Takes an addon out: stops it and whatever requires it, in order, takes
 ---down what it set up, and forgets it. What stays is the portal's: its
@@ -667,6 +726,13 @@ local function take_out(namespace, reason, gone)
   local addon = loaded[namespace]
   addon.leaving, addon.gone = reason, gone or nil
   addons.evaluate(false)
+  forget(namespace)
+end
+
+---Forgets an addon already stopped: its registration, its declaration, its
+---exports, and whatever its code set up.
+---@param namespace string The addon.
+forget = function(namespace)
   loaded[namespace] = nil
   declared[namespace] = nil
   for name, export in pairs(provided) do
@@ -732,9 +798,15 @@ function addons.unload_origin(origin)
       gone[#gone + 1] = namespace
     end
   end
+  -- Every one is marked gone before anything stops, so stopping one that
+  -- another of the same origin requires calls none of their handlers.
   for _, namespace in ipairs(gone) do
     log("info", namespace .. " is unloaded: its code stopped")
-    take_out(namespace, "its code stopped", true)
+    loaded[namespace].leaving, loaded[namespace].gone = "its code stopped", true
+  end
+  addons.evaluate(false)
+  for _, namespace in ipairs(gone) do
+    forget(namespace)
   end
   take_down(function(entry)
     return entry.origin == origin

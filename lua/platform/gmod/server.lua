@@ -137,6 +137,7 @@ local platform = {
   kv_get = shared.kv_get,
   kv_set = shared.kv_set,
   random_hex = random.hex,
+  thread = coroutine.running,
   identifiers = identifiers,
   name = function(player)
     return IsValid(player) and player:Nick() or ""

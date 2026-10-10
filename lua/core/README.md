@@ -109,6 +109,7 @@ step.
 | Storage | `kv_get(key) -> string?` | Reads a persisted string |
 | | `kv_set(key, value?)` | Writes one, or deletes it with `nil`. Strings only, so the core owns the encoding |
 | Random | `random_hex(n) -> string` | `n` lowercase hex digits from the best randomness the engine offers |
+| Thread | `thread() -> any` | The running coroutine (`coroutine.running`), or nil where there are none (the mock), so `rpf.addons` keeps whose code is running per coroutine without the core touching `coroutine` |
 | Players | `identifiers(player) -> string[]` | Every identifier the engine knows, verbatim. Reference data, never identity |
 | | `name(player) -> string` | The in-game name |
 | | `kick(player, reason)` | Disconnects a player |
@@ -993,7 +994,10 @@ is running, and the engine's name for the code that called the public API.
 On FiveM the adapter names the calling resource on every export call
 (`addons.from(GetInvokingResource(), …)`), and a registration belongs to
 its resource; on Gmod every addon shares one Lua state and the origin is
-nil. From it:
+nil. The context is kept per coroutine (`platform.thread`), so a handler
+that yields leaves it on its own coroutine, not on whatever runs while it
+waits; and what is owned is forgotten as soon as it is taken down, so a
+long-running addon's finished timers do not add up. From it:
 
 - **Ownership.** A timer (`rpf.time`), an event subscription
   (`rpf.api.events.on`) or an export made while an addon's code runs is the

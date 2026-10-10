@@ -182,10 +182,21 @@ end
 ---@param events rpf.api.Events The public API's events.
 ---@return table events Plain functions, for the export.
 function shared.export_events(events)
-  ---Each live subscription's handler as `rpf.events` holds it, by id.
-  ---@type table<string, function>
+  ---Each live subscription, by id: its handler as `rpf.events` holds it, and
+  ---how to forget its ownership once the id goes.
+  ---@type table<string, { registered: function, disown: fun() }>
   local subscriptions = {}
   local count = 0
+
+  ---Forgets an id, and the core's record that its subscriber owns it.
+  ---@param id string The id.
+  local function drop(id)
+    local subscription = subscriptions[id]
+    subscriptions[id] = nil
+    if subscription then
+      subscription.disown()
+    end
+  end
 
   ---Registers a handler and names it.
   ---@param register fun(name: string, handler: function): function `events.on` or `events.once`.
@@ -201,7 +212,7 @@ function shared.export_events(events)
     local registered = call
     if one_shot and type(call) == "function" then
       registered = function(...)
-        subscriptions[id] = nil
+        drop(id)
         return call(...)
       end
     end
@@ -209,7 +220,16 @@ function shared.export_events(events)
     if not ok then
       return nil, err
     end
-    subscriptions[id] = registered
+    -- The core takes the handler down when the addon or resource that
+    -- subscribed stops; its id goes with it, or this table would keep the
+    -- other resource's function reference for as long as `rpf` runs.
+    local disown = function() end
+    if rpf.addons then
+      disown = rpf.addons.own(function()
+        subscriptions[id] = nil
+      end)
+    end
+    subscriptions[id] = { registered = registered, disown = disown }
     return id
   end
 
@@ -221,9 +241,12 @@ function shared.export_events(events)
       return subscribe(events.once, name, handler, true)
     end),
     off = shared.from_caller(function(name, id)
-      local registered = subscriptions[id]
-      subscriptions[id] = nil
-      return registered ~= nil and events.off(name, registered)
+      local subscription = subscriptions[id]
+      if not subscription or not events.off(name, subscription.registered) then
+        return false
+      end
+      drop(id)
+      return true
     end),
     emit = shared.from_caller(function(name, ...)
       return events.emit(name, ...)

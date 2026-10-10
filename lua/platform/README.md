@@ -34,6 +34,9 @@ function.
    - `now` is the wall clock in milliseconds; `after` runs later, never inside
      the caller.
    - `random_hex` from the best source the engine has.
+   - `thread` names the running coroutine (`coroutine.running`), or returns
+     nil where there are none, so the core keeps whose code is running per
+     coroutine.
    - `identifiers` verbatim, with the engine account identifier the portal's
      `ENGINE_IDENTIFIERS` names for this engine. **Add the engine to that list
      in the same PR**, or none of its players can log in.

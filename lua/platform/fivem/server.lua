@@ -75,6 +75,8 @@ function server.platform(shim, transport)
   -- Node's cryptographic generator, through the shim. If the shim cannot
   -- answer, Lua's generator stands in so ids are still minted, and the
   -- console says so once; nothing connects without the shim anyway.
+  p.thread = coroutine.running
+
   function p.random_hex(n)
     local ok, hex = pcall(shim.random_hex, shim, n)
     if ok and type(hex) == "string" and #hex == n then

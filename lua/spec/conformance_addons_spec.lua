@@ -295,6 +295,26 @@ conformance.run(busted, "the addon lifecycle", {
     end,
   },
   {
+    name = "keeps a subscription's id when off names the wrong event, and drops it with its resource",
+    origins = true,
+    run = function(world)
+      local api = world:as("acme_res")
+      local heard = 0
+      local id = assert(api.events.on("scripts.ping", function()
+        heard = heard + 1
+      end))
+      assert.is_false(api.events.off("scripts.pong", id))
+      assert.is_true(api.events.off("scripts.ping", id), "the id still works")
+      local again = assert(api.events.on("scripts.ping", function()
+        heard = heard + 1
+      end))
+      world:unload("acme_res")
+      world.api.events.emit("scripts.ping")
+      assert.are.equal(0, heard)
+      assert.is_false(api.events.off("scripts.ping", again), "gone with its resource")
+    end,
+  },
+  {
     name = "refuses another resource emitting under an addon's namespace, outside any handler",
     origins = true,
     run = function(world)

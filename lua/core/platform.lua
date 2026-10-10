@@ -38,6 +38,7 @@ platform.SERVER = members({
   "kv_get",
   "kv_set",
   "random_hex",
+  "thread",
   "identifiers",
   "name",
   "kick",

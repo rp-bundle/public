@@ -404,6 +404,55 @@ describe("rpf.addons", function()
       end)
     end)
 
+    it("keeps a context to its own coroutine, so one that yields leaves nothing on another", function()
+      support.connected(p)
+      local running = "main"
+      p.thread = function()
+        return running
+      end
+      local seen = {}
+      rpf.addons.run({ namespace = "acme_kit" }, function()
+        running = "elsewhere" -- what a yield hands the thread to
+        seen.elsewhere = rpf.addons.context()
+        running = "main"
+        seen.back = rpf.addons.context()
+      end)
+      assert.is_nil(seen.elsewhere)
+      assert.are.equal("acme_kit", seen.back.namespace)
+      assert.is_nil(rpf.addons.context(), "and put back after")
+    end)
+
+    it("forgets a finished timer's ownership at once, so a long-running addon's do not add up", function()
+      support.connected(p)
+      local before = rpf.addons.owned_count()
+      rpf.addons.run({ namespace = "acme_kit" }, function()
+        for _ = 1, 100 do
+          rpf.time.after(10, function() end)
+        end
+        local id = rpf.time.after(10, function() end)
+        rpf.time.cancel(id)
+      end)
+      p.advance(10)
+      assert.are.equal(before, rpf.addons.owned_count())
+    end)
+
+    it("calls none of a stopped origin's handlers, even one requiring another of its addons", function()
+      local ran = {}
+      rpf.addons.from("acme_res", function()
+        rpf.addons.register(manifest("acme_child", nil, { acme_base = "^1.0.0" }), recording("acme_child", ran))
+        rpf.addons.register(manifest("acme_base"), recording("acme_base", ran))
+      end)
+      support.connected(p)
+      configure(p, {
+        installed(manifest("acme_base")),
+        installed(manifest("acme_child", nil, { acme_base = "^1.0.0" })),
+      })
+      assert.are.same({ "start acme_base", "start acme_child" }, ran)
+      rpf.addons.unload_origin("acme_res")
+      assert.are.same({ "start acme_base", "start acme_child" }, ran)
+      assert.is_nil(rpf.addons.state("acme_child"))
+    end)
+
     it("gives an active addon's types and config records, and nothing while it is not", function()
       rpf.addons.register(manifest("acme_kit"))
       support.connected(p)
