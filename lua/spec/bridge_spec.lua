@@ -356,6 +356,27 @@ describe("rpf.bridge", function()
       assert.are.equal("CIT-9", rpf.api.characters.current(7).key)
     end)
 
+    it("keeps a character the bridge reports while answering the cue of a switch", function()
+      playing()
+      -- A bridge that auto-selects: its framework loads a character the
+      -- moment the player reaches character_select.
+      local auto = nil
+      rpf.api.events.on("players.character_select", function(player)
+        if auto then
+          assert.is_true(rpf.api.bridge.character_loaded(player.handle, auto))
+        end
+      end)
+      auto = { key = "CIT-9", name = "Joe" }
+      assert.is_true(rpf.api.bridge.character_loaded(7, { key = "CIT-9", name = "Joe" }))
+      assert.are.equal("active", rpf.players.get(7).state)
+      assert.are.same({ key = "CIT-9", name = "Joe" }, rpf.api.characters.current(7))
+      -- Another character answered on the cue is the later report, and stands.
+      auto = { key = "CIT-10", name = "Al" }
+      assert.are.same({ nil, "superseded" }, { rpf.api.bridge.character_loaded(7, { key = "CIT-11", name = "Bo" }) })
+      assert.are.equal("active", rpf.players.get(7).state)
+      assert.are.equal("CIT-10", rpf.api.characters.current(7).key)
+    end)
+
     it("refuses a character for a player who has not logged in, and says the gate is not holding", function()
       playing()
       assert(rpf.players.connected(8))

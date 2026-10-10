@@ -470,7 +470,7 @@ end
 ---@param handle any The engine's handle.
 ---@param character any `{ key, name }`: the framework's key for it, opaque, and its name.
 ---@return boolean? ok True once the player is active with it.
----@return string? err `forbidden` (not the bridge's code), `inactive`, `invalid`, `not_found`, `not_registered` (they have not logged in: the framework loaded a character past RPF's gate), or the move's refusal.
+---@return string? err `forbidden` (not the bridge's code), `inactive`, `invalid`, `not_found`, `not_registered` (they have not logged in: the framework loaded a character past RPF's gate), `superseded` (the bridge reported another character while this one was moving the player, and that later one stands), or the move's refusal.
 function bridge.character_loaded(handle, character)
   if not from_bridge() then
     return nil, "forbidden"
@@ -502,6 +502,20 @@ function bridge.character_loaded(handle, character)
     rpf.players.advance(handle, "character_select")
   elseif player.state == "registered" then
     to_select(handle)
+  end
+  -- The move to `character_select` is the bridge's cue, and a bridge may
+  -- answer it at once with a report of its own: that later report stands.
+  local now = rpf.players.get(handle)
+  if not now or now.state == "dropping" then
+    return nil, "not_found"
+  end
+  if now.state == "active" then
+    local current = loaded[handle]
+    if current and current.key == character.key then
+      current.name = character.name
+      return true
+    end
+    return nil, "superseded"
   end
   loaded[handle] = { key = character.key, name = character.name }
   local moved, why = rpf.players.advance(handle, "active")
