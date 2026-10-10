@@ -641,9 +641,10 @@ end
 ---@param busted spec.Busted The spec file's `describe`, `it`, `before_each` and `after_each`.
 ---@param title string What the cases cover.
 ---@param cases { name: string, origins: boolean?, run: fun(world: spec.ConformanceWorld) }[] The cases. One with `origins` runs only where the platform names the calling code.
-function conformance.run(busted, title, cases)
+---@param platforms string[]? The platforms to run on: every one unless given.
+function conformance.run(busted, title, cases, platforms)
   local describe, it, before_each, after_each = busted.describe, busted.it, busted.before_each, busted.after_each
-  for _, name in ipairs(conformance.PLATFORMS) do
+  for _, name in ipairs(platforms or conformance.PLATFORMS) do
     describe(title .. " on " .. name, function()
       local world
 

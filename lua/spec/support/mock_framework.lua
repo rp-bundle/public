@@ -72,6 +72,14 @@ function framework:player(player)
   return self.characters[player]
 end
 
+---The key of the character a player has loaded.
+---@param player any The engine's handle.
+---@return string? key The key, or nil.
+function framework:loaded(player)
+  local character = self.characters[player]
+  return character and character.key or nil
+end
+
 ---Runs one state-changing call: fails as the test asked, after the change,
 ---since a real framework export can fail part way.
 ---@param name string The call.

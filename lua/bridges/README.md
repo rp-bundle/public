@@ -11,8 +11,8 @@ Each bridge is a package of its own under `lua/bridges/<framework>/`: a
 resource on FiveM, an addon on Gmod. It is engine-specific, because it calls
 its framework's exports or hooks, and it ships free and open source with the
 rest of the game side. No framework name, id or setting appears in Rust, the
-protocol, the schema or the portal. None is built yet; K3 (#93, Qbox) and K4
-(#94, DarkRP) are the pilots.
+protocol, the schema or the portal. The pilots are K3 (#93), Qbox, built
+in [`qbox/`](qbox/README.md), and K4 (#94), DarkRP.
 
 ## The contract
 
@@ -102,6 +102,10 @@ reach it already checked: whole, from 1 to `MAX_AMOUNT`.
    private functions.
 3. **No re-triggering framework events.** A bridge may react to one, but
    never fires the framework's own internal events itself (Qbox forbids it).
+   One exception: a bridge whose client stands in for a module the
+   framework switched off, as the Qbox bridge's selection stands in for
+   qbx_core's, sends what that module sends after its own server-side
+   login, and nothing else ([`qbox/`](qbox/README.md#the-two-events-the-selection-sends)).
 4. **Framework events are notifications.** React to drive the lifecycle;
    never copy an event's payload into RPF state.
 5. **Never trust a networked event alone.** A client can fire one. Drive
@@ -121,12 +125,20 @@ reach it already checked: whole, from 1 to `MAX_AMOUNT`.
 
 Every bridge runs the shared conformance suite
 (`lua/spec/support/bridge_conformance.lua`, `docs/testing.md`) against a
-fake of its framework, on every engine the harness boots. It brings a kit
-(`spec.BridgeKit`): a fake of its framework, a driver over that fake the
-cases act through (`spec.FrameworkDriver`: load and unload a character,
-stop and start the framework, make a call fail part way, run something
-inside one), and how its own code registers it. The mock bridge
-(`lua/spec/support/mock_bridge.lua`, over `mock_framework.lua`) is the
-worked example. Then one smoke test on a real server:
+fake of its framework, on every engine the harness boots that its
+framework runs on (`platforms`: a FiveM bridge's players are server ids,
+so it runs on FiveM and on the mock platform, never on Gmod). It brings a
+kit (`spec.BridgeKit`): a fake of its framework, a driver over that fake
+the cases act through (`spec.FrameworkDriver`: load and unload a
+character, say which one is loaded, stop and start the framework, make a
+call fail part way, run something inside one), and how its own code
+registers it. A bridge that is its framework's selection, as the Qbox
+bridge is, keeps a player who has not logged in to RPF from loading
+anything at all; one that is not leaves the core to refuse the character
+and log that the gate is not holding. The gate case holds either way. The
+mock bridge (`lua/spec/support/mock_bridge.lua`, over `mock_framework.lua`)
+is the worked example, and the Qbox bridge
+([`qbox/`](qbox/README.md), over `spec/support/qbox_fake.lua`) is a real
+one. Then one smoke test on a real server:
 an RPF login, a framework character reaching `active`, a debit through the
 facade, and the framework's resource restarting mid-session.
