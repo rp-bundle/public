@@ -174,3 +174,201 @@ describe("rpf.domains", function()
     assert.are.same(support.NATIVE, rpf.domains.current())
   end)
 end)
+
+-- K1 part 3: RPF's own modules refuse a domain the framework owns, and a
+-- companion server lets nobody past `registered` without its bridge.
+describe("rpf.domains on a companion server", function()
+  local PLAYER = "00000002-0000-4000-8000-000000000002"
+  local ID = "00000009-0000-4000-8000-000000000009"
+  local p
+
+  ---Starts the core on `profile`, connected.
+  ---@param profile rpf.Domains The profile the portal adopts.
+  local function start(profile)
+    support.load_core()
+    p = support.fake_platform()
+    rpf.start_server(p, { url = "ws://portal", api_key = "rpf_test_secret" })
+    p.open()
+    welcome(p, profile)
+  end
+
+  ---A player at `registered`, with an account of their own.
+  ---@param handle integer The engine's handle.
+  local function registered(handle)
+    assert(rpf.players.connected(handle))
+    assert(rpf.players.authenticating(handle))
+    local player_id = string.format("00000002-0000-4000-8000-%012d", handle)
+    assert(rpf.players.register(handle, { player_id = player_id, username = "sam" .. handle }))
+  end
+
+  it("refuses every one of RPF's own domain operations with domain_external", function()
+    start(support.COMPANION)
+    local calls = {
+      characters = {
+        selected = function() return rpf.characters.selected(PLAYER) end,
+        deselect = function() return rpf.characters.deselect(7) end,
+        select = function() return rpf.characters.select(7, ID, function() end) end,
+        create = function()
+          return rpf.characters.create(7, { first_name = "J", last_name = "D", gender = "female" }, function() end)
+        end,
+        remove = function() return rpf.characters.remove(ID) end,
+        set_character = function() return rpf.records.set_character(ID, { first_name = "J" }) end,
+      },
+      money = {
+        balance = function() return rpf.accounts.balance(ID) end,
+        get = function() return rpf.accounts.get(ID) end,
+        transfer = function() return rpf.accounts.transfer(ID, PLAYER, 1, "x") end,
+        pay = function() return rpf.accounts.pay(ID, PLAYER, 1, "x") end,
+        records_transfer = function() return rpf.records.transfer(ID, PLAYER, 1, "x") end,
+        adjust = function() return rpf.records.adjust(ID, PLAYER, 1, ID, "x") end,
+      },
+      inventory = {
+        add = function() return rpf.inventory.add(ID, "water", 1) end,
+        remove = function() return rpf.inventory.remove(ID, "water", 1) end,
+        plan_remove = function() return rpf.inventory.plan_remove(ID, "water", 1) end,
+        move = function() return rpf.inventory.move(ID, 1, ID) end,
+        split = function() return rpf.inventory.split(ID, 1, 1) end,
+        apply_edit = function() return rpf.inventory.apply_edit(ID, { op = "take", index = 1, count = 1 }) end,
+        count = function() return rpf.inventory.count(ID, "water") end,
+        set_contents = function() return rpf.records.set_contents(ID, rpf.json.object({})) end,
+      },
+      jobs = {
+        job_of = function()
+          local ref, def, err = rpf.jobs.job_of(ID)
+          return ref or def, err
+        end,
+        on_duty = function() return rpf.jobs.on_duty(ID) end,
+        set_job = function() return rpf.jobs.set_job(ID, "lspd", "officer") end,
+        rank_of = function() return rpf.jobs.rank_of(ID) end,
+        set_job_record = function() return rpf.records.set_job(ID, { employer = "lspd", job = "officer" }) end,
+      },
+    }
+    for domain, by_name in pairs(calls) do
+      for name, call in pairs(by_name) do
+        local value, err = call()
+        assert.is_falsy(value, domain .. "." .. name)
+        assert.are.equal("domain_external", err, domain .. "." .. name)
+      end
+    end
+    -- Lists are empty, and say why; the yes/no questions say no.
+    local list, why = rpf.characters.list(PLAYER)
+    assert.are.same({}, list)
+    assert.are.equal("domain_external", why)
+    local owned, owned_why = rpf.accounts.owned_by("player", PLAYER)
+    assert.are.same({}, owned)
+    assert.are.equal("domain_external", owned_why)
+    assert.is_false(rpf.characters.loaded(PLAYER))
+    assert.is_false(rpf.jobs.has_rank(ID, "lspd", 0))
+    assert.is_false(rpf.jobs.is_on_duty(ID))
+    -- An addon record a character would own: that character is the framework's.
+    local record, record_err = rpf.records.create_addon_record("acme.pet", { kind = "character", id = ID }, {})
+    assert.is_nil(record)
+    assert.are.equal("domain_external", record_err)
+  end)
+
+  it("refuses staff commands on an external domain's records, in words staff read", function()
+    start(support.COMPANION)
+    for name, command in pairs({
+      adjust_balance = { account_id = ID, base_revision = 1, funds_account = PLAYER, amount = 1, client_id = ID, description = "x" },
+      give_item = { container_id = ID, base_revision = 1, item = "water", count = 1 },
+      take_item = { container_id = ID, base_revision = 1, index = 0, count = 1 },
+      move_item = { container_id = ID, base_revision = 1, index = 0, position = { x = 0, y = 0 }, rotated = false },
+      edit_character = { character_id = ID, base_revision = 1, first_name = "J" },
+      delete_character = { character_id = ID, base_revision = 1 },
+    }) do
+      local applied, reason = rpf.edits[name](command)
+      assert.is_false(applied, name)
+      assert.are.equal(rpf.edits.REASONS.domain_external, reason, name)
+    end
+  end)
+
+  it("answers the facade unavailable, and supports nothing, without a bridge", function()
+    start(support.COMPANION)
+    registered(7)
+    for domain, calls in pairs(rpf.facade.CALLS) do
+      for call in pairs(calls) do
+        assert.is_false(rpf.facade.supports(domain, call), domain .. "." .. call)
+      end
+    end
+    local op = rpf.ops.new()
+    for name, call in pairs({
+      current_character = function() return rpf.facade.current_character(7) end,
+      balance = function() return rpf.facade.balance(7, "bank") end,
+      debit = function() return rpf.facade.debit(7, "bank", 1, "x", op) end,
+      credit = function() return rpf.facade.credit(7, "bank", 1, "x", op) end,
+      count = function() return rpf.facade.count(7, "water") end,
+      give = function() return rpf.facade.give(7, "water", 1, op) end,
+      take = function() return rpf.facade.take(7, "water", 1, op) end,
+      current_job = function() return rpf.facade.current_job(7) end,
+    }) do
+      local value, status = call()
+      assert.is_nil(value, name)
+      assert.are.equal("unavailable", status, name)
+    end
+    assert.are.same({}, rpf.facade.accounts())
+  end)
+
+  it("keeps players at registered without a bridge, and says why once", function()
+    start(support.COMPANION)
+    registered(7)
+    registered(8)
+    local moved, why = rpf.players.advance(7, "character_select")
+    assert.is_false(moved)
+    assert.are.equal("no_bridge", why)
+    assert.is_false((rpf.players.advance(8, "character_select")))
+    assert.are.equal("registered", rpf.players.get(7).state)
+    assert.are.equal(1, #p.logged("error", "no bridge to that framework is registered"))
+  end)
+
+  it("lets players on once a bridge provides exactly the external domains", function()
+    start(support.COMPANION)
+    registered(7)
+    assert.is_true((rpf.domains.accept_bridge("qbox", { "characters", "money", "inventory", "jobs" })))
+    assert.are.equal("qbox", rpf.domains.bridge())
+    assert.is_true((rpf.players.advance(7, "character_select")))
+    assert.is_false((rpf.domains.accept_bridge("esx", { "money" })), "at most one")
+  end)
+
+  it("refuses a bridge that provides other domains, naming both", function()
+    support.load_core()
+    p = support.fake_platform()
+    -- Offered when its resource starts, before the portal is reached.
+    assert.is_true((rpf.domains.accept_bridge("darkrp", { "money", "jobs" })))
+    rpf.start_server(p, { url = "ws://portal", api_key = "rpf_test_secret" })
+    p.open()
+    welcome(p, support.COMPANION)
+    registered(7)
+    assert.is_nil(rpf.domains.bridge())
+    assert.is_false((rpf.players.advance(7, "character_select")))
+    assert.are.equal(1, #p.logged("error", "the darkrp bridge provides money, jobs"))
+  end)
+
+  it("lets a native server's players on with no bridge", function()
+    start(support.NATIVE)
+    registered(7)
+    assert.is_true((rpf.players.advance(7, "character_select")))
+    assert.is_nil(rpf.domains.bridge())
+  end)
+end)
+
+describe("rpf.domains with a bridge on a native server", function()
+  it("lets players on, keeps the bridge inactive, and says so once", function()
+    support.load_core()
+    local p = support.fake_platform()
+    assert.is_true((rpf.domains.accept_bridge("qbox", { "characters", "money", "inventory", "jobs" })))
+    rpf.start_server(p, { url = "ws://portal", api_key = "rpf_test_secret" })
+    p.open()
+    welcome(p, support.NATIVE)
+    for handle = 7, 8 do
+      assert(rpf.players.connected(handle))
+      assert(rpf.players.authenticating(handle))
+      assert(rpf.players.register(handle, {
+        player_id = string.format("00000002-0000-4000-8000-%012d", handle),
+        username = "sam" .. handle,
+      }))
+      assert.is_true((rpf.players.advance(handle, "character_select")))
+    end
+    assert.is_nil(rpf.domains.bridge())
+    assert.are.equal(1, #p.logged("warn", "the bridge stays inactive"))
+  end)
+end)

@@ -261,7 +261,10 @@ end
 ---native server, a framework bridge (K2) on a companion one. It goes through
 ---the same transition check as every other move, and it refuses the login
 ---gate's states and `dropping`, so a character owner can neither let a
----player past login nor forget one the engine still has.
+---player past login nor forget one the engine still has. On a server whose
+---framework owns its domains it refuses every move with `"no_bridge"` until
+---a bridge that fits is accepted (`rpf.domains.may_play`, K1), so a player
+---stays at `registered` rather than reach a world nobody keeps.
 ---@param handle rpf.PlayerHandle The player.
 ---@param to "character_select"|"active" The state to move to.
 ---@return boolean moved True if the player moved.
@@ -272,6 +275,12 @@ function players.advance(handle, to)
   end
   if to == "dropping" then
     return false, "rpf: a player is dropped by the engine, through players.dropped"
+  end
+  -- A server whose framework owns its domains lets nobody in until the
+  -- bridge to that framework is accepted (K1): failing closed, logged once.
+  local open, closed = rpf.domains.may_play()
+  if not open then
+    return false, closed
   end
   return move(handle, to, nil)
 end

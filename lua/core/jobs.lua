@@ -95,6 +95,14 @@ local function log(level, message)
   end
 end
 
+---`"domain_external"` if this server's framework owns `domain` (K1), so
+---RPF keeps no record of it here and its own module refuses, or nil.
+---@param domain string One of `rpf.domains.NAMES`.
+---@return string? err The refusal.
+local function external(domain)
+  return rpf.domains.is_external(domain) and "domain_external" or nil
+end
+
 ---Whether a value is a whole number, the way JSON carries one.
 ---@param value any The value.
 ---@return boolean whole True for a number with no fractional part.
@@ -141,7 +149,12 @@ end
 ---@param character_id string The character's uuid.
 ---@return rpf.JobRef? ref A copy of the job it holds, or nil for none or a character this server does not hold.
 ---@return rpf.ConfigJob? def A copy of the job's definition, or nil when it has none or the config no longer has it, which counts as no job.
+---@return string? err `"domain_external"` where the server's framework owns the domain (K1).
 function jobs.job_of(character_id)
+  local refused = external("jobs")
+  if refused then
+    return nil, nil, refused
+  end
   local ref = stored_job(character_id)
   if not ref then
     return nil, nil
@@ -288,6 +301,10 @@ end
 ---@return boolean? ok True if it is on duty.
 ---@return string? err `"not_in_play"` unless some player is playing it, `"no_job"` when it has none or its job is no longer in the config.
 function jobs.on_duty(character_id)
+  local refused = external("jobs")
+  if refused then
+    return nil, refused
+  end
   if type(character_id) ~= "string" or not in_play(character_id) then
     return nil, "not_in_play"
   end
@@ -320,6 +337,9 @@ end
 ---@param character_id string The character's uuid.
 ---@return boolean on_duty True during a shift.
 function jobs.is_on_duty(character_id)
+  if external("jobs") then
+    return false
+  end
   return type(character_id) == "string" and duty[character_id] ~= nil
 end
 
@@ -340,6 +360,10 @@ end
 ---@return boolean? ok True if the character has that job (or none) now.
 ---@return string? err `"not_held"` for a character this server does not hold, `"invalid"` unless both are strings or both nil, `"not_found"` for a job that is not in the applied config. Nothing changes on an error.
 function jobs.set_job(character_id, employer, job)
+  local refused = external("jobs")
+  if refused then
+    return nil, refused
+  end
   if type(character_id) ~= "string" or not records.is_held("character", character_id) then
     return nil, "not_held"
   end
@@ -373,7 +397,12 @@ end
 ---the same employer compare.
 ---@param character_id string The character's uuid.
 ---@return number? rank The job's configured rank, or nil with no job, a job no longer in the config, or a character not held.
+---@return string? err `"domain_external"` where the server's framework owns the domain (K1).
 function jobs.rank_of(character_id)
+  local refused = external("jobs")
+  if refused then
+    return nil, refused
+  end
   local _, def = jobs.job_of(character_id)
   if not def or not is_whole(def.rank) then
     return nil
@@ -388,6 +417,9 @@ end
 ---@param minimum string|number A job slug at that employer, whose configured rank is the bar, or a whole number.
 ---@return boolean ranked False for a character with no job (or one no longer in the config), a job at another employer, a slug that is not a job there, or a minimum that is neither.
 function jobs.has_rank(character_id, employer, minimum)
+  if external("jobs") then
+    return false
+  end
   local ref = stored_job(character_id)
   local rank = jobs.rank_of(character_id)
   if not ref or not rank or ref.employer ~= employer then

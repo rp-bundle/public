@@ -21,6 +21,7 @@
 ---resend gets the first answer.
 ---@class rpf.edits
 ---@field REASONS table<string, string> Why an edit was refused, by the error the call that made it returned, in words for the staff member.
+---@field DOMAINS table<string, string> The domain of each record kind a command edits (K1), so one the server's framework owns is refused.
 local edits = {}
 
 local rpf = rpf
@@ -42,7 +43,12 @@ edits.REASONS = {
   backlog = "it has payments still to report; try again shortly",
   inactive = "its addon is not active on this server",
   creating = "it was only just created here; try again in a moment",
+  domain_external = "this server's own framework manages it, not RPF",
 }
+
+---The domain each record kind belongs to (K1). An addon record is RPF's on
+---every server, so it has none.
+edits.DOMAINS = { character = "characters", account = "money", container = "inventory" }
 
 ---A refusal as the portal shows it to staff.
 ---@param err string? The error a call returned.
@@ -63,6 +69,11 @@ end
 ---@return boolean ok True if the edit may go ahead.
 ---@return string? reason Why not, for staff.
 local function at(kind, id, revision)
+  -- RPF keeps no record of a domain the server's framework owns (K1).
+  local domain = edits.DOMAINS[kind]
+  if domain and rpf.domains.is_external(domain) then
+    return false, reason("domain_external")
+  end
   local ok, err = rpf.records.current(kind, id, revision)
   if not ok then
     return false, reason(err)

@@ -23,6 +23,10 @@
 ---provider could not be asked), or `unknown` (it may have happened; never
 ---retry it, and never grant what it paid for). Nothing throws.
 ---
+---**Authority (K1).** A domain the server's framework owns is not RPF's to
+---answer: its calls are `unavailable` and `supports` is false until K2's
+---bridge provides them, and nothing reaches RPF's own module.
+---
 ---**Retries.** Every command names an `op_id` from `rpf.ops.new()`, and runs
 ---at most once per id (`rpf.ops`): a repeated id gets the recorded result.
 ---
@@ -137,6 +141,17 @@ local function addon_account()
   return rpf.config.paying_account(name)
 end
 
+---Whether a domain has a provider on this server: RPF's own module while
+---the domain is RPF's (K1). An external one is the framework's, reached
+---through its bridge (K2); until that exists it has none, and its calls are
+---`unavailable`, nothing changed, rather than ever reaching RPF's module,
+---which would be a second writer of the framework's records.
+---@param domain string The domain.
+---@return boolean provided True if a call may go ahead.
+local function provided(domain)
+  return not rpf.domains.is_external(domain)
+end
+
 ---Whether a call works on this server, before an addon offers a player
 ---anything that needs it.
 ---@param domain string `characters`, `money`, `inventory` or `jobs`.
@@ -144,7 +159,7 @@ end
 ---@return boolean supported True if it works here.
 function facade.supports(domain, call)
   local calls = facade.CALLS[domain]
-  if not calls or not calls[call] then
+  if not calls or not calls[call] or not provided(domain) then
     return false
   end
   if domain == "money" and (call == "debit" or call == "credit") then
@@ -158,8 +173,11 @@ end
 ---The character a player has in play.
 ---@param handle any The engine's handle.
 ---@return { key: string, name: string }? character `key` is the character's id here, opaque to an addon; `name` its full name.
----@return string? err `not_logged_in` or `no_character`.
+---@return string? err `unavailable` where the server's framework owns the domain (K1), `not_logged_in` or `no_character`.
 function facade.current_character(handle)
+  if not provided("characters") then
+    return nil, "unavailable"
+  end
   local character, err = character_of(handle)
   if not character then
     return nil, err
@@ -172,6 +190,9 @@ end
 ---The account names an addon may use: those every character is opened with.
 ---@return string[] names In the config's order.
 function facade.accounts()
+  if not provided("money") then
+    return {}
+  end
   local out = {}
   for _, account in ipairs(rpf.config.starting_accounts() or {}) do
     out[#out + 1] = account.name
@@ -183,8 +204,11 @@ end
 ---@param handle any The engine's handle.
 ---@param name any The account's name.
 ---@return number? balance The balance.
----@return string? err `not_logged_in`, `no_character` or `not_found`.
+---@return string? err `unavailable` where the server's framework owns the domain (K1), `not_logged_in`, `no_character` or `not_found`.
 function facade.balance(handle, name)
+  if not provided("money") then
+    return nil, "unavailable"
+  end
   local character, err = character_of(handle)
   if not character then
     return nil, err
@@ -221,6 +245,9 @@ end
 ---@return string? status `refused`, `unavailable` or `unknown`.
 ---@return string? why For `refused`, why.
 local function move_money(direction, handle, name, amount, reason, op_id)
+  if not provided("money") then
+    return nil, "unavailable"
+  end
   if not valid_entry(amount, reason) then
     return nil, "refused", "invalid"
   end
@@ -329,8 +356,11 @@ end
 ---@param handle any The engine's handle.
 ---@param item any The item's slug.
 ---@return number? count The count.
----@return string? err `not_logged_in`, `no_character` or `not_found` (not an item slug).
+---@return string? err `unavailable` where the server's framework owns the domain (K1), `not_logged_in`, `no_character` or `not_found` (not an item slug).
 function facade.count(handle, item)
+  if not provided("inventory") then
+    return nil, "unavailable"
+  end
   local character, err = character_of(handle)
   if not character then
     return nil, err
@@ -356,6 +386,9 @@ end
 ---@return string? status `refused`, `unavailable` or `unknown`.
 ---@return string? why For `refused`, why.
 local function move_items(direction, handle, item, count, op_id)
+  if not provided("inventory") then
+    return nil, "unavailable"
+  end
   if type(item) ~= "string" or type(count) ~= "number" or count ~= math.floor(count) or count < 1 or count > MAX_UNITS then
     return nil, "refused", "invalid"
   end
@@ -447,8 +480,11 @@ end
 ---A player's character's job.
 ---@param handle any The engine's handle.
 ---@return { name: string, employer: string, grade: number, on_duty: boolean }? job `name` the job's slug, `employer` its employer's, `grade` its rank there; nil for no job (or one the config no longer has).
----@return string? err `not_logged_in` or `no_character`.
+---@return string? err `unavailable` where the server's framework owns the domain (K1), `not_logged_in` or `no_character`.
 function facade.current_job(handle)
+  if not provided("jobs") then
+    return nil, "unavailable"
+  end
   local character, err = character_of(handle)
   if not character then
     return nil, err

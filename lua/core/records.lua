@@ -376,12 +376,24 @@ function records.check_gender(value)
   return nil
 end
 
+---`"domain_external"` if this server's framework owns `domain` (K1), so
+---RPF keeps no record of it here and its own module refuses, or nil.
+---@param domain string One of `rpf.domains.NAMES`.
+---@return string? err The refusal.
+local function external(domain)
+  return rpf.domains.is_external(domain) and "domain_external" or nil
+end
+
 ---Changes a held character's names or gender. Only the fields given change.
 ---@param id string The character's uuid.
 ---@param fields { first_name: string?, last_name: string?, gender: any? } The new values.
 ---@return boolean? ok True if changed.
 ---@return string? err `"not_held"`, or `"invalid"` for an empty or overlong name or an unknown or overlong gender. Nothing changes on an error.
 function records.set_character(id, fields)
+  local refused = external("characters")
+  if refused then
+    return nil, refused
+  end
   local entry = records.entries[records.key("character", id)]
   if not entry then
     return nil, "not_held"
@@ -422,6 +434,10 @@ end
 ---@return boolean? ok True if it is the character's job now.
 ---@return string? err `"not_held"`, or `"invalid"` for a ref that is not two strings. Nothing changes on an error.
 function records.set_job(id, ref)
+  local refused = external("jobs")
+  if refused then
+    return nil, refused
+  end
   local entry = records.entries[records.key("character", id)]
   if not entry then
     return nil, "not_held"
@@ -460,6 +476,10 @@ end
 ---@return string? err `"not_held"`, or `"invalid"` for contents that break a rule. Nothing changes on an error.
 ---@return rpf.inventory.Refusal? refusal For `"invalid"`, the first rule broken, as the portal's `ContentsError` names it.
 function records.set_contents(id, contents)
+  local refused = external("inventory")
+  if refused then
+    return nil, refused
+  end
   local entry = records.entries[records.key("container", id)]
   if not entry then
     return nil, "not_held"
@@ -502,6 +522,10 @@ end
 ---@return string? client_id The entry's id, or nil if refused.
 ---@return string? err `"not_held"`, `"invalid"` (a bad amount, the same account twice, or a description that is not a string of at most `MAX_DESCRIPTION_BYTES`), `"insufficient_funds"` or `"out_of_range"`. Nothing changes on an error.
 function records.transfer(from, to, amount, description)
+  local refused = external("money")
+  if refused then
+    return nil, refused
+  end
   local payer = records.entries[records.key("account", from)]
   local payee = records.entries[records.key("account", to)]
   if not payer or not payee then
@@ -560,6 +584,10 @@ end
 ---@return string? client_id The entry's id, or nil if refused.
 ---@return string? err `"not_held"`, `"invalid"`, `"insufficient_funds"` or `"out_of_range"`. Nothing changes on an error.
 function records.adjust(account_id, funds_account, amount, client_id, description)
+  local refused = external("money")
+  if refused then
+    return nil, refused
+  end
   local entry = records.entries[records.key("account", account_id)]
   if not entry then
     return nil, "not_held"
@@ -644,6 +672,13 @@ end
 ---@return string? err `"invalid"`, `"inactive"`, or `"conflict"` for an id this server already holds.
 ---@return table? refusal For `"invalid"`, the rule its fields break.
 function records.create_addon_record(type_name, owner, fields, id)
+  if type(owner) == "table" and owner.kind == "character" then
+    -- A character to own it is the framework's on a companion server.
+    local refused = external("characters")
+    if refused then
+      return nil, refused
+    end
+  end
   local def, err = writable_type(type_name)
   if not def then
     return nil, err

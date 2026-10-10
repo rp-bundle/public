@@ -714,6 +714,14 @@ local function position_ok(position)
   return type(position) == "table" and integer_in(position.x, I32_MIN, I32_MAX) and integer_in(position.y, I32_MIN, I32_MAX)
 end
 
+---`"domain_external"` if this server's framework owns `domain` (K1), so
+---RPF keeps no record of it here and its own module refuses, or nil.
+---@param domain string One of `rpf.domains.NAMES`.
+---@return string? err The refusal.
+local function external(domain)
+  return rpf.domains.is_external(domain) and "domain_external" or nil
+end
+
 ---Validates new contents for a container and, if they pass, makes them its
 ---contents, marked for the next report.
 ---@param container table The container's record copy.
@@ -741,6 +749,10 @@ end
 ---@return rpf.inventory.Error? err Why not.
 ---@return rpf.inventory.Refusal? refusal The broken rule, for `invalid`.
 function inventory.add(id, item, count, opts)
+  local refused = external("inventory")
+  if refused then
+    return nil, refused
+  end
   opts = opts or {}
   local container = held(id)
   if not container then
@@ -774,6 +786,10 @@ end
 ---@return rpf.inventory.Error? err Why not.
 ---@return rpf.inventory.Refusal? refusal The broken rule, for `invalid`.
 function inventory.remove(id, item, count, opts)
+  local refused = external("inventory")
+  if refused then
+    return nil, refused
+  end
   local contents, err, refusal = inventory.plan_remove(id, item, count, opts)
   if not contents then
     return nil, err, refusal
@@ -793,6 +809,10 @@ end
 ---@return rpf.inventory.Error? err Why not, as `remove` answers.
 ---@return rpf.inventory.Refusal? refusal The broken rule, for `invalid`.
 function inventory.plan_remove(id, item, count, opts)
+  local refused = external("inventory")
+  if refused then
+    return nil, refused
+  end
   opts = opts or {}
   local container = held(id)
   if not container then
@@ -850,6 +870,10 @@ end
 ---@return rpf.inventory.Refusal? refusal The broken rule, for `invalid`.
 ---@return string? container For `invalid`, the container whose rule broke.
 function inventory.move(from, index, to, opts)
+  local refused = external("inventory")
+  if refused then
+    return nil, refused
+  end
   opts = opts or {}
   local source, target = held(from), held(to)
   if not source or not target then
@@ -917,6 +941,10 @@ end
 ---@return rpf.inventory.Error? err Why not.
 ---@return rpf.inventory.Refusal? refusal The broken rule, for `invalid`.
 function inventory.split(id, index, count, opts)
+  local refused = external("inventory")
+  if refused then
+    return nil, refused
+  end
   opts = opts or {}
   local container = held(id)
   if not container then
@@ -1070,6 +1098,10 @@ end
 ---@return rpf.inventory.Error? err Why not, `not_held` included.
 ---@return rpf.inventory.Refusal? refusal The broken rule, for `invalid`.
 function inventory.apply_edit(id, edit)
+  local refused = external("inventory")
+  if refused then
+    return nil, refused
+  end
   local container = held(id)
   if not container then
     return nil, "not_held"
@@ -1091,6 +1123,10 @@ end
 ---@return number? count The total, or nil if the container is not held.
 ---@return rpf.inventory.Error? err `not_held`.
 function inventory.count(id, item, opts)
+  local refused = external("inventory")
+  if refused then
+    return nil, refused
+  end
   local container = held(id)
   if not container then
     return nil, "not_held"
