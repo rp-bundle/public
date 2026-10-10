@@ -13,12 +13,14 @@
 --- - **One implicit character per player.** DarkRP sets a player up on
 ---   join, so there is no selection: the character is the player's DarkRP
 ---   data, keyed by their SteamID64, reported once DarkRP has loaded it and
----   the player has reached `character_select`. Nothing unloads it while
----   they are connected; the core forgets it when they leave.
+---   the player has reached `character_select`. Only DarkRP taking the
+---   load back unloads it while they are connected; the core forgets it
+---   when they leave.
 --- - **The gate is a hold.** There is no character load to defer, so every
 ---   player RPF does not have `active` is kept out of DarkRP's play on the
----   server: unspawned, with team changes, DarkRP's commands, salary and
----   voice refused, and other players' commands that name them refused too.
+---   server: unspawned, with team changes, DarkRP's commands, votes, salary
+---   and voice refused, and other players' commands that name them refused
+---   too.
 ---   It holds from registration on whatever the profile, and DarkRP's own
 ---   spawn puts a player in once RPF has them `active`.
 --- - **Classified by when.** `addMoney` answers nothing, and a
@@ -196,8 +198,10 @@ function darkrp.register(api, fx)
   end
 
   ---Looks at a player's DarkRP data on any cue: reports it for a player
-  ---choosing, and again for one playing whose roleplay name changed. Says
-  ---once a connection that DarkRP could not load it.
+  ---choosing, and again for one playing whose roleplay name changed, and
+  ---takes one playing back to `character_select` (and so the hold) if
+  ---DarkRP no longer has it loaded. Says once a connection that DarkRP
+  ---could not load it.
   ---@param handle any The player, as the cue gave it.
   local function observe(handle)
     if not active or not fx.valid(handle) then
@@ -210,7 +214,7 @@ function darkrp.register(api, fx)
     end
     local loaded = character(handle)
     if not loaded then
-      if state == "character_select" and fx.failed(handle) and not said[handle] then
+      if fx.failed(handle) and not said[handle] then
         said[handle] = true
         fx.log(
           "error",
@@ -219,6 +223,15 @@ function darkrp.register(api, fx)
             .. "'s data, so they stay out of play: DarkRP itself saves nothing for them until they rejoin. Check DarkRP's"
             .. " database connection"
         )
+      end
+      -- DarkRP took back what it had loaded (a new player's first save
+      -- failed after their wallet was set): what they play with now is
+      -- money DarkRP will not keep.
+      if state == "active" then
+        local ok, err = bridge.character_unloaded(handle)
+        if not ok then
+          fx.log("warn", "RPF did not take " .. tostring(handle) .. "'s character unloading: " .. tostring(err))
+        end
       end
       return
     end
@@ -327,6 +340,12 @@ function darkrp.register(api, fx)
   fx.hook("PlayerCanHearPlayersVoice", function(_, talker)
     if refused(talker) then
       return false, false
+    end
+  end)
+  -- DarkRP's `vote` console command asks only this, not `canChatCommand`.
+  fx.hook("canVote", function(handle)
+    if refused(handle) then
+      return false, darkrp.REFUSED
     end
   end)
   fx.hook("canDemote", function(_, target)

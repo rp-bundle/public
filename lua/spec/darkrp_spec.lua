@@ -119,6 +119,7 @@ local function asked(fw, handle, other)
     team = { fw:change_team(handle, "medic") },
     forced = { fw:change_team(handle, "citizen", true) },
     command = fw:command(handle, "job"),
+    vote = fw:vote(handle),
     paid = paid,
     heard = fw:hears(other, handle),
     demote = { fw:ask("canDemote", other, handle, "rdm") },
@@ -150,6 +151,7 @@ local cases = {
         team = { false, bridge.REFUSED },
         forced = { false, bridge.REFUSED },
         command = false,
+        vote = false,
         paid = 0,
         heard = false,
         demote = { false, bridge.ABSENT },
@@ -172,6 +174,7 @@ local cases = {
         team = { true },
         forced = { true },
         command = true,
+        vote = true,
         paid = 45,
         heard = true,
         demote = { true },
@@ -245,6 +248,26 @@ local cases = {
       assert.is_false(fw.players[handle].alive)
       assert.are.same({ nil, "no_character" }, { api.money.balance(handle, "wallet") })
       assert.are.equal(1, bridge_logged(fw, "error", "DarkRP could not load"))
+    end,
+  },
+  {
+    name = "takes a player back out of play when DarkRP loses their data after loading it",
+    run = function(world)
+      local fw = framework()
+      boot(world, fw)
+      local api = world.api
+      local handle = playing(world, fw)
+      -- A new player's first save failed: DarkRP's `onError`, after the
+      -- wallet was set.
+      fw:fail(handle)
+      assert.are.equal("character_select", api.players.get(handle).state)
+      assert.are.same({ nil, "no_character" }, { api.characters.current(handle) })
+      assert.is_false(fw.players[handle].alive, "held again")
+      assert.is_false(fw:command(handle, "job"))
+      assert.are.same({ nil, "refused", "no_character" }, { api.money.debit(handle, "wallet", 1, "x", api.ops.new()) })
+      assert.are.equal(1, bridge_logged(fw, "error", "DarkRP could not load"))
+      world:advance(5 * bridge.SWEEP_MS)
+      assert.are.equal(1, bridge_logged(fw, "error", "DarkRP could not load"), "said once")
     end,
   },
   {

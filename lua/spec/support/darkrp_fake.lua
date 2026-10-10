@@ -324,7 +324,8 @@ function fake:restore(player, key, name)
   self:tick()
 end
 
----DarkRP gives up loading a player's data, as its `onError` does.
+---DarkRP gives up loading a player's data, as its `onError` does: before
+---the data arrived, or after it, when a new player's first save fails.
 ---@param player any The engine's handle.
 function fake:fail(player)
   local data = self:player(player)
@@ -502,6 +503,14 @@ end
 function fake:ask(event, ...)
   local answer, message = self:call(event, ...)
   return answer ~= false, message
+end
+
+---A player votes from the console (`vote <id> yea`): `canVote`, which is
+---all DarkRP's own `vote` command asks.
+---@param player any The engine's handle.
+---@return boolean counted True if the vote counts.
+function fake:vote(player)
+  return (self:ask("canVote", player, {}))
 end
 
 ---A player changes their roleplay name (`/rpname`).

@@ -84,10 +84,14 @@ bridge only reads it.
   (`DarkRPDataRetrievalFailed`) it plays on with the starting money and
   saves nothing for that player. The bridge keeps them held at
   `character_select`, and logs it once at `error`, since a debit there would
-  move money DarkRP will never save.
+  move money DarkRP will never save. DarkRP can also give up after the data
+  was loaded: a new player's first save runs after their wallet is set, and
+  its failure takes the load back. A player in play then has their
+  character unloaded, and is held again.
 - **A changed `rpname` is a rename**, reported on the same key.
-- **Nothing unloads it while the player is connected.** Leaving is the only
-  unload, and the core forgets the character itself as the player drops.
+- **Nothing else unloads it while the player is connected.** Leaving is
+  the usual unload, and the core forgets the character itself as the
+  player drops.
   A map change ends the Lua state; on the next map Gmod hands everyone over
   again, DarkRP loads their data again, and they log in again (silently, with
   their remember token).
@@ -111,6 +115,7 @@ actions refused, chat dropped), a held player is:
 | Respawning | `PlayerDeathThink` | `false` |
 | Team changes | `playerCanChangeTeam`, which DarkRP asks whatever `force` says | `false, "Log in first."` |
 | DarkRP's commands | `canChatCommand`, which every command asks, typed in chat or sent as `darkrp <command>` from the console (the F4 menu's job changes and purchases) | `false` |
+| Votes | `canVote`, which is all DarkRP's own `vote` console command asks | `false, "Log in first."` |
 | Salary | `playerGetSalary` | `true, "", 0`, as DarkRP's AFK module does it |
 | Voice | `PlayerCanHearPlayersVoice`, since DarkRP's `deadvoice` lets the dead talk | `false, false` |
 | Others' commands that name them | `canDemote`, `canWanted`, `canRequestWarrant`, `canRequestHit` | `false, "That player is not playing yet."` |
