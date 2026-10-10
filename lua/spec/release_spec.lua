@@ -161,13 +161,14 @@ describe("the FiveM zip", function()
   end
 
   ---Every quoted file name in a manifest, as `dev/fivem-resources` reads
-  ---them: scripts on both sides, the page and its files.
+  ---them: scripts on both sides, the page and its files. A script in
+  ---another resource (`@ox_lib/init.lua`) is that resource's, never copied.
   ---@param path string The manifest.
   ---@param resource string The resource's folder in the zip, with a trailing slash.
   ---@return table<string, true> names The set, as paths in the zip.
   local function named(path, resource)
     local names = {}
-    for name in read_file(path):gmatch('"([^"]+%.[%a]+)"') do
+    for name in read_file(path):gmatch('"([^"@][^"]*%.[%a]+)"') do
       if name:match("%.lua$") or name:match("%.js$") or name:match("%.html$") or name:match("%.css$") then
         names[resource .. name] = true
       end
@@ -192,6 +193,9 @@ describe("the FiveM zip", function()
     end
     assert.are.same(sorted(expected), sorted(files))
     assert.is_nil(files["[rpf]/rpf/dev.lua"], "a release never carries the smoke test's commands")
+    for name in pairs(files) do
+      assert.is_nil(name:find("ox_lib", 1, true), "ox_lib is a prerequisite, never bundled: " .. name)
+    end
   end)
 
   it("starts the server from the packaged files and says Hello as this release", function()
@@ -297,8 +301,16 @@ describe("the txAdmin recipe", function()
     -- hand puts it.
     assert.truthy(recipe:find("dest: ./resources\n", 1, true))
     assert.is_truthy(shipped("fivem")["[rpf]/rpf/fxmanifest.lua"])
-    for _, line in ipairs({ 'set rpf_url ""', 'set rpf_api_key ""', "ensure rpf-ws", "ensure rpf\n" }) do
+    for _, line in ipairs({ 'set rpf_url ""', 'set rpf_api_key ""', "ensure ox_lib", "ensure rpf-ws", "ensure rpf\n" }) do
       assert.truthy(recipe:find(line, 1, true), line)
     end
+    assert.truthy(recipe:find("ensure ox_lib\n      ensure rpf-ws\n      ensure rpf\n", 1, true), "ox_lib first")
+  end)
+
+  it("installs the ox_lib release the adapter names as its minimum, from ox_lib's own release", function()
+    local recipe = read_file(DIR .. "/rpf-txadmin-recipe.yaml")
+    local minimum = assert(support.read("lua/platform/fivem/ox.lua"):match('ox%.MINIMUM = "([%d.]+)"'))
+    local zip = "https://github.com/overextended/ox_lib/releases/download/v" .. minimum .. "/ox_lib.zip"
+    assert.truthy(recipe:find(zip, 1, true), "it downloads " .. zip)
   end)
 end)

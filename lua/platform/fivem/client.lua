@@ -63,6 +63,9 @@ function client.platform(screens)
     end)
   end
 
+  -- Requests ride ox_lib's `lib.callback` (`ox.lua`).
+  p.request_server = fivem.ox.request_server
+
   return p
 end
 

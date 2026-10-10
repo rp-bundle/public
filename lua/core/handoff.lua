@@ -8,7 +8,8 @@
 ---client asks to create, select or put one away (`rpf.characters`,
 ---`rpf.picker`). The `interact` pair is J3's: a client asks an addon's
 ---registered interaction to run, and is told how it went
----(`rpf.interactions`). They travel over the engine's own client messaging, not the
+---(`rpf.interactions`), as a request and its answer, which the platform
+---pairs (J10). They travel over the engine's own client messaging, not the
 ---portal protocol, and both halves ship in the same addon, so they are not
 ---an external contract and have no corpus. They are still hostile input on
 ---the server, where any client can send anything, so every payload is
@@ -27,10 +28,10 @@
 ---@field CHARACTER_SELECT string Client → server: play this character, putting away the one in play first.
 ---@field CHARACTER_DESELECT string Client → server: put the character in play away, back to choosing.
 ---@field CHARACTER_RESULT string Server → client: how a create, select or deselect went.
----@field INTERACT string Client → server: run an addon's registered interaction, by name, with a payload (J3).
----@field INTERACTION_RESULT string Server → client: how an interaction went.
+---@field INTERACT string Client → server, as a request (`request_server`): run an addon's registered interaction, by name, with a payload (J3, J10).
+---@field INTERACTION_RESULT string Server → client, as the answer to `INTERACT`: how it went, and the handler's data. Never a message of its own: the platform pairs it with its request.
 ---@field MAX_PAYLOAD integer The longest payload decoded, in bytes, of every message but the list of characters. Real ones are a few hundred.
----@field MAX_LIST_PAYLOAD integer The longest list of characters decoded, in bytes. Only the client decodes one, from its own server; the server registers no handler for it, so a client cannot make the server decode one.
+---@field MAX_LIST_PAYLOAD integer The longest list of characters, or answer to an interaction, decoded, in bytes. Only the client decodes either, from its own server; the server registers no handler for them, so a client cannot make the server decode one.
 ---@field schemas table<string, table<string, rpf.handoff.FieldKind>> Each message's fields and their kinds.
 local handoff = {}
 
@@ -106,9 +107,9 @@ handoff.schemas = {
     payload = "table?",
   },
   [handoff.INTERACTION_RESULT] = {
-    name = "string",
     ok = "boolean",
     reason = "string?",
+    data = "table?",
   },
 }
 
@@ -170,7 +171,7 @@ function handoff.decode(name, payload)
   if type(payload) ~= "string" then
     return nil, "the payload is not a string"
   end
-  if #payload > (name == handoff.CHARACTERS and handoff.MAX_LIST_PAYLOAD or handoff.MAX_PAYLOAD) then
+  if #payload > ((name == handoff.CHARACTERS or name == handoff.INTERACTION_RESULT) and handoff.MAX_LIST_PAYLOAD or handoff.MAX_PAYLOAD) then
     return nil, "the payload is too long"
   end
   local value, err = json.decode(payload)

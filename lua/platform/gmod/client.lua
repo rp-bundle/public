@@ -33,6 +33,7 @@ local platform = {
   after = shared.after,
   to_server = messages.to_server,
   on_server = messages.on_server,
+  request_server = messages.request_server,
   log = shared.log,
   expose = shared.expose,
 }

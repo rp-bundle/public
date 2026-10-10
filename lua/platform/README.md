@@ -50,6 +50,11 @@ function.
      in the same PR**, or none of its players can log in.
    - `to_client` / `on_client` carry strings byte for byte, whatever the
      engine's message size limit; the platform supplies the sender.
+   - `on_client_request` answers a client's `request_server` (J10): the
+     platform pairs a request with its answer and supplies the sender, and
+     the core always answers. Use the engine's own pairing where it has one
+     (ox_lib's `lib.callback` on FiveM), or number them (Gmod's `net`, the
+     mock: `<number>\n<body>`).
    - `expose` publishes `rpf.api` the way scripts on this engine share code.
      Where each resource has its own Lua state, that is an export of a plain
      copy: read-only views do not survive serialisation, and neither does a
@@ -60,6 +65,8 @@ function.
      it.
 2. **The client platform table**, every member of `rpf.ClientPlatform`
    (`meta/platform_client.lua`), with the same rules where they overlap.
+   `request_server` hands its callback the server's answer, or nothing;
+   the core keeps its own timeout.
 3. **The engine events**, two lines each: a player handed over calls
    `core.players.connected(handle)`, a player gone calls
    `core.players.dropped(handle, reason)`. Use the handle the engine keeps
@@ -93,7 +100,7 @@ function.
 | `client.lua` | The client platform; starts the client core on `InitPostEntity` |
 | `shared.lua` | Clock, SQLite storage, `HTTP`, logging, `expose` |
 | `transport.lua` | The websocket, over GWSockets |
-| `messages.lua` | `net` messages, in parts past `net`'s 64 KiB |
+| `messages.lua` | `net` messages, in parts past `net`'s 64 KiB, and requests with their answers, numbered |
 | `random.lua` | `random_hex`: SHA-256 in counter mode over an entropy pool |
 | `lock.lua` | The input lock |
 | `ui.lua` | The Derma login form and character screen |
@@ -168,9 +175,10 @@ The language-server check for this directory runs on its own
 
 Two resources: `rpf` (the core, the adapter and its NUI screens) and
 `rpf-ws` (the websocket shim, bundled with `ws`), assembled by
-`dev/fivem-resources`. [`fivem/README.md`](fivem/README.md) has the
+`dev/fivem-resources`, and ox_lib, a prerequisite the owner installs,
+which `ox.lua` builds on (J10). [`fivem/README.md`](fivem/README.md) has the
 install, the convars, how each platform member is done, the shim's
 contract, the screens and the input lock, the tests, and the layer-5 run on
 a real FXServer (resource KVP held the outbox's bounds). Its
 language-server check runs on its own (`lua/platform/fivem/.luarc.json`)
-with the FiveM natives `dev/fivem-natives` fetches.
+with the FiveM natives and ox_lib's annotations `dev/fivem-natives` fetches.

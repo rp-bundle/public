@@ -344,6 +344,9 @@ if interactions then
       send = function(name, payload)
         return interactions.send(name, payload)
       end,
+      request = function(name, payload, callback)
+        return interactions.request(name, payload, callback)
+      end,
     }, "rpf.interactions")
   end
 end

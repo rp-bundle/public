@@ -23,6 +23,11 @@
 ---- **The socket and HTTP are the host's.** It sends, and tells the mock what
 ---  happened (`socket_open`, `socket_message`, `socket_close`, `http_done`),
 ---  which is where its fault injection sits.
+---- **Requests are messages.** A request and its answer (`request_server`,
+---  `on_client_request`) cross the host as two messages under the
+---  request's name, each `<id>\n<body>` (`mock.frame`), which is also how
+---  the Gmod adapter and the FiveM fakes' `lib.callback` frame them, so a
+---  harness plays any engine's client the same way.
 ---
 ---No engine is involved, so this is not a game adapter: it does not wire
 ---engine events, and the harness calls `rpf.players.connected` and `dropped`
@@ -30,6 +35,30 @@
 ---harness runs it under both.
 ---@class rpf.mock
 local mock = {}
+
+---Frames a request or its answer for the host: the id the asking side
+---numbered it with, a newline, and the body.
+---@param id integer The request's number.
+---@param body string The request or answer, already encoded.
+---@return string text The framed text.
+function mock.frame(id, body)
+  return tostring(id) .. "\n" .. body
+end
+
+---Reads a framed request or answer.
+---@param text any What arrived: hostile on the server.
+---@return integer? id The request's number, or nil for text that is not framed.
+---@return string? body The body.
+function mock.unframe(text)
+  if type(text) ~= "string" then
+    return nil
+  end
+  local id, body = text:match("^(%d%d?%d?%d?%d?%d?%d?%d?%d?)\n(.*)$")
+  if not id then
+    return nil
+  end
+  return tonumber(id), body
+end
 
 ---What the harness supplies to a mock server platform. Each member is the
 ---host's half of the platform member it backs.
@@ -167,6 +196,7 @@ end
 ---@field socket integer? The id of the latest connection attempt. `send` uses only this one.
 ---@field players table<any, { name: string, identifiers: string[] }> What the engine knows about each connected player.
 ---@field client_handlers table<string, fun(player: any, payload: string)> Handlers registered with `on_client`, by name.
+---@field request_handlers table<string, fun(player: any, payload: string, respond: fun(reply: string))> Answerers registered with `on_client_request`, by name.
 ---@field add_player fun(player: any, name: string, identifiers: string[]) Tells the mock about a player before the harness hands them to the core.
 ---@field remove_player fun(player: any) Forgets a player after the harness has told the core they left.
 ---@field positions table<any, { x: number, y: number, z: number }> Where each player is, as the harness sets it, for the `position` capability.
@@ -184,6 +214,7 @@ function mock.server(host, seed)
   p.sockets = {}
   p.players = {}
   p.client_handlers = {}
+  p.request_handlers = {}
 
   ---No coroutines here: the harness runs everything on one thread.
   ---@return nil thread Always nil.
@@ -268,6 +299,10 @@ function mock.server(host, seed)
     p.client_handlers[name] = handler
   end
 
+  function p.on_client_request(name, handler)
+    p.request_handlers[name] = handler
+  end
+
   function p.add_player(player, name, identifiers)
     p.players[player] = { name = name, identifiers = identifiers }
   end
@@ -303,11 +338,24 @@ function mock.server(host, seed)
     end
   end
 
-  -- The engine drops a message whose name nothing registered.
+  -- The engine drops a message whose name nothing registered, and a
+  -- request that is not framed: there is no number to answer it under.
   function p.from_client(player, name, payload)
     local handler = p.client_handlers[name]
     if handler then
       handler(player, payload)
+      return
+    end
+    local answerer = p.request_handlers[name]
+    local id, body = mock.unframe(payload)
+    if answerer and id then
+      local answered = false
+      answerer(player, body --[[@as string]], function(reply)
+        if not answered then
+          answered = true
+          host.to_client(player, name, mock.frame(id, reply))
+        end
+      end)
     end
   end
 
@@ -318,7 +366,8 @@ end
 ---with.
 ---@class rpf.mock.Client: rpf.ClientPlatform, rpf.mock.Common
 ---@field server_handlers table<string, fun(payload: string)> Handlers registered with `on_server`, by name.
----@field from_server fun(name: string, payload: string) A message arrived from the game server.
+---@field waiting table<string, table<integer, fun(reply: string?)>> Callbacks for requests the server has not answered, by name and number.
+---@field from_server fun(name: string, payload: string) A message arrived from the game server: a message, or the answer to a request.
 
 ---Builds a mock player client platform.
 ---@param host rpf.mock.ClientHost The harness's half.
@@ -327,6 +376,7 @@ end
 function mock.client(host, seed)
   local p = common(host, seed) --[[@as rpf.mock.Client]]
   p.server_handlers = {}
+  p.waiting = {}
 
   function p.to_server(name, payload)
     host.to_server(name, payload)
@@ -336,10 +386,27 @@ function mock.client(host, seed)
     p.server_handlers[name] = handler
   end
 
+  function p.request_server(name, payload, callback)
+    p.seq = p.seq + 1
+    p.waiting[name] = p.waiting[name] or {}
+    p.waiting[name][p.seq] = callback
+    host.to_server(name, mock.frame(p.seq, payload))
+  end
+
   function p.from_server(name, payload)
     local handler = p.server_handlers[name]
     if handler then
       handler(payload)
+      return
+    end
+    local id, body = mock.unframe(payload)
+    if not id or not p.waiting[name] then
+      return
+    end
+    local callback = p.waiting[name][id]
+    if callback then
+      p.waiting[name][id] = nil
+      callback(body)
     end
   end
 

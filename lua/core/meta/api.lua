@@ -44,7 +44,7 @@
 ---@field jobs rpf.api.Jobs The domain-neutral facade: a player's job. Server only.
 ---@field ops rpf.api.Ops Operation ids, which make the facade's commands safe to send again. Server only.
 ---@field world rpf.api.World The game world, through what the engine's adapter supports (J3). Server only.
----@field interactions rpf.api.Interactions Requests a player's client makes to an addon: `register` a handler on the server, `send` a request on the client (J3).
+---@field interactions rpf.api.Interactions Requests a player's client makes to an addon: `register` a handler on the server, `send` or `request` on the client (J3, J10).
 ---@field capabilities fun(): table<string, boolean> Which game-world capabilities this engine supports, by name: `position`, `model`, `zone`, `entity`. Ask before offering a player something that needs one. Server only.
 ---@field players rpf.api.Players? The players on this game server. Server only.
 ---@field staff rpf.api.Staff? In-game staff: what a linked staff member may do here, account linking, and staff actions for the audit log. Server only.
@@ -82,7 +82,8 @@
 ---   staff edit from the portal, or (`records.changed`, `by = "portal"`)
 ---   put back because the portal refused its deletion. Server only.
 --- - `interactions.result(result)`, an `rpf.InteractionResult`, when the
----   server answered an interaction this client sent. Client only.
+---   server answered an interaction this client sent with `send`, or the
+---   answer did not come in time (`timeout`). Client only.
 --- - `staff.changed(change)`, an `rpf.StaffChange`, once for each player
 ---   whose staff permissions here changed: a push from the portal gave them
 ---   new ones or took some away, or they left. Server only.
@@ -647,42 +648,64 @@ function World.position(player) end
 ---
 ---```lua
 ----- server
----rpf.interactions.register("acme_tags.spray", function(player, payload)
----  if type(payload.text) ~= "string" then return false, "Say something." end
+---rpf.interactions.register("acme_tags.read", function(player, payload)
 ---  -- resolve every id in payload inside this player's scope before using it
----  return true
+---  local tag = rpf.records.get("acme_tags.tag", payload.id)
+---  if not tag or tag.owner.id ~= player.player_id then
+---    return false, "not_found" -- not there and not yours are one answer
+---  end
+---  return true, { text = tag.fields.text }
 ---end)
 ----- client
----rpf.interactions.send("acme_tags.spray", { text = "hello" })
----rpf.events.on("interactions.result", function(result) show(result.ok and "Done" or result.reason) end)
+---rpf.interactions.request("acme_tags.read", { id = id }, function(ok, result)
+---  if ok then show(result.text) else show("No: " .. result) end
+---end)
 ---```
 ---
----**Both sides:** `register` on the server, `send` on the client.
+---**Both sides:** `register` on the server, `send` and `request` on the
+---client.
 ---@class rpf.api.Interactions
 local Interactions = {}
 
 ---Server only. Registers an interaction, under the addon's own namespace.
----One registered while the addon's code runs goes when it stops.
+---One registered while the addon's code runs goes when it stops;
+---registering the name again replaces it.
 ---
 ---The handler runs only while the addon is active, only for a player who
 ---has logged in, and at most 20 times per player every 10 seconds. The
 ---payload is hostile input: a copy of plain data (at most 4 KiB, 8 deep),
 ---whatever the player's client chose to send.
 ---@param name string `<namespace>.<name>`.
----@param handler fun(player: rpf.PlayerView, payload: table): boolean, string? Answers `true`, or `false` and a reason the player's client is told.
+---@param handler fun(player: rpf.PlayerView, payload: table): boolean, (table|string)? Answers `true` and, optionally, a table of plain data for a `request` (at most 16 KiB encoded, 8 deep), or `false` and a reason the player's client is told.
 ---@return boolean? ok True once registered.
 ---@return "invalid"|"not_found"|"forbidden"|"inactive"|nil err `invalid` for a bad name or handler, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an activation that has ended.
 function Interactions.register(name, handler) end
 
 ---Client only. Asks the server to run an interaction. The answer arrives as
----`interactions.result`: `unknown` when nothing is registered by that name,
----`inactive` while its addon is not, `invalid` for a payload that is not
----plain data, `failed` when the handler threw, or the handler's own reason.
+---`interactions.result`, with the refusals `request` lists. Use `request`
+---to hear the answer, and the handler's data, in a callback instead.
 ---@param name string `<namespace>.<name>`.
 ---@param payload table? Plain data, at most 4 KiB encoded.
 ---@return boolean? ok True once sent.
----@return "invalid"|"too_large"|"unavailable"|nil err Why not.
+---@return "invalid"|"too_large"|"too_many"|"unavailable"|nil err `invalid` for a bad name or a payload that is not plain data, `too_large` past 4 KiB, `too_many` while 64 requests wait for an answer, `unavailable` before the client has started.
 function Interactions.send(name, payload) end
+
+---Client only. Asks the server to run an interaction and hands the answer
+---to `callback`, once: `callback(true, data)`, with the table the handler
+---answered (empty if it gave none), or `callback(false, reason)`. The
+---reason is the handler's own, or `unknown` when nothing is registered by
+---that name, `inactive` while its addon is not, `invalid` for a payload the
+---server refused, `failed` when the handler threw (or answered data that is
+---not plain), `too_large` for data past 16 KiB, `too_many` past the rate,
+---`not_logged_in` before the player has, or `timeout` when no answer came
+---in 10 seconds. On FiveM it travels over ox_lib's `lib.callback`, but
+---only to the handler an addon registered.
+---@param name string `<namespace>.<name>`.
+---@param payload table? Plain data, at most 4 KiB encoded.
+---@param callback fun(ok: boolean, result: table|string) Called once, later: `true` and the data, or `false` and why.
+---@return boolean? ok True once sent; the callback runs only then.
+---@return "invalid"|"too_large"|"too_many"|"unavailable"|nil err As for `send`, and `invalid` for a callback that cannot be called.
+function Interactions.request(name, payload, callback) end
 
 ---What `interactions.result` carries.
 ---@class rpf.InteractionResult

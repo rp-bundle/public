@@ -167,6 +167,7 @@ local platform = {
   end,
   to_client = messages.to_client,
   on_client = messages.on_client,
+  on_client_request = messages.on_client_request,
   log = shared.log,
   expose = shared.expose,
 }

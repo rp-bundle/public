@@ -201,7 +201,7 @@ describe("the FiveM adapter", function()
       for _, file in ipairs(rpf.files.server) do
         expected[#expected + 1] = "core/" .. file
       end
-      for _, file in ipairs({ "shared.lua", "ws.lua", "lock.lua", "server.lua" }) do
+      for _, file in ipairs({ "shared.lua", "ox.lua", "ws.lua", "lock.lua", "server.lua" }) do
         expected[#expected + 1] = file
       end
       assert.are.same(expected, scripts)
@@ -210,10 +210,17 @@ describe("the FiveM adapter", function()
       for _, file in ipairs(rpf.files.client) do
         expected[#expected + 1] = "core/" .. file
       end
-      for _, file in ipairs({ "shared.lua", "ui.lua", "client.lua" }) do
+      for _, file in ipairs({ "shared.lua", "ox.lua", "ui.lua", "client.lua" }) do
         expected[#expected + 1] = file
       end
       assert.are.same(expected, fakes().scripts(support.read(MANIFEST), "client"))
+    end)
+
+    it("depends on ox_lib, and loads its loader before any script of its own", function()
+      local manifest = fakes().manifest(support.read(MANIFEST))
+      assert.are.same({ "rpf-ws", "ox_lib" }, manifest.dependencies)
+      assert.are.same({ "@ox_lib/init.lua" }, manifest.shared)
+      assert.are.same({ "@ox_lib/init.lua" }, fakes().imports(support.read(MANIFEST)))
     end)
 
     it("names a file that exists for every script", function()
@@ -340,6 +347,36 @@ describe("the FiveM adapter", function()
       assert.truthy(line:find("`ensure rpf-ws` before `ensure rpf`", 1, true), line)
     end)
 
+    it("refuses to start without ox_lib, or with one too old, and says where to get it", function()
+      local line = refused(CONVARS, function(driver)
+        driver.resources.ox_lib = nil
+      end)
+      assert.truthy(line:find("ox_lib is missing, and RPF's FiveM adapter is built on it", 1, true), line)
+      assert.truthy(line:find("`ensure ox_lib` before `ensure rpf`", 1, true), line)
+      assert.truthy(line:find(rpf.fivem.ox.RELEASES_URL, 1, true), line)
+      line = refused(CONVARS, function(driver)
+        driver.metadata.ox_lib.version = "3.39.0"
+      end)
+      assert.truthy(line:find("ox_lib is version 3.39.0, and RPF needs 3.40.0 or newer", 1, true), line)
+      line = refused(CONVARS, function(driver)
+        driver.metadata.ox_lib.version = nil
+      end)
+      assert.truthy(line:find("ox_lib is version nil", 1, true), line)
+    end)
+
+    it("compares ox_lib's versions number by number", function()
+      load_side("server")
+      local ox = rpf.fivem.ox
+      assert.is_true(ox.at_least("3.40.0", "3.40.0"))
+      assert.is_true(ox.at_least("3.40.1", "3.40.0"))
+      assert.is_true(ox.at_least("3.100.0", "3.40.0"), "not compared as text")
+      assert.is_true(ox.at_least("v4.0.0", "3.40.0"))
+      assert.is_false(ox.at_least("3.39.9", "3.40.0"))
+      assert.is_false(ox.at_least("2.99.99", "3.40.0"))
+      assert.is_false(ox.at_least("3.40", "3.40.0"))
+      assert.is_false(ox.at_least(nil, "3.40.0"))
+    end)
+
     it("hands no player to a core it refused to start", function()
       local _, driver = refused({ rpf_url = "wss://portal.example/ws" })
       driver.add_player(7, "Sam", { "license:0123" })
@@ -444,6 +481,69 @@ describe("the FiveM adapter", function()
       driver.from_client(4, "rpf:test", { not_a = "string" })
       driver.from_client(4, "rpf:unregistered", "{}")
       assert.are.same({ { player = 4, payload = "{}" } }, heard)
+    end)
+
+    it("answers a client's request over lib.callback, with the core's answer, from FiveM's source", function()
+      local driver = started_server()
+      local platform = rpf.connection.platform
+      local heard = {}
+      platform.on_client_request("rpf:test", function(player, payload, respond)
+        heard[#heard + 1] = { player = player, payload = payload }
+        respond("answer to " .. payload)
+      end)
+      local callback = assert(driver.callbacks["rpf:test"], "registered with lib.callback")
+      local answer
+      local thread = coroutine.create(function()
+        answer = callback(4, "{}")
+      end)
+      assert.is_true(coroutine.resume(thread))
+      assert.are.equal("answer to {}", answer)
+      assert.are.same({ { player = 4, payload = "{}" } }, heard)
+    end)
+
+    it("waits on its thread for an answer the core gives later", function()
+      local driver = started_server()
+      local platform = rpf.connection.platform
+      local later
+      platform.on_client_request("rpf:test", function(_, _, respond)
+        later = respond
+      end)
+      local answer
+      local thread = coroutine.create(function()
+        answer = driver.callbacks["rpf:test"](4, "{}")
+      end)
+      assert.is_true(coroutine.resume(thread))
+      assert.is_nil(answer)
+      later("done")
+      assert.are.equal("done", answer)
+    end)
+
+    it("answers a request whose payload is not a string with nothing, never reaching the core", function()
+      local driver = started_server()
+      local platform = rpf.connection.platform
+      local reached = false
+      platform.on_client_request("rpf:test", function(_, _, respond)
+        reached = true
+        respond("x")
+      end)
+      for _, payload in ipairs({ { not_a = "string" }, 42, false }) do
+        assert.is_nil(driver.callbacks["rpf:test"](4, payload))
+      end
+      assert.is_false(reached)
+    end)
+
+    it("refuses a hostile client's interaction by its unknown name, over lib.callback", function()
+      local driver, record = started_server()
+      driver.add_player(4, "Sam", { "license:4" })
+      driver.connect_player(4)
+      rpf.players.authenticating(4)
+      assert(rpf.players.register(4, { player_id = "00000002-0000-4000-8000-000000000004", username = "sam" }))
+      driver.from_client(4, "rpf:interact", "7\n" .. assert(rpf.json.encode(rpf.json.object({ name = "players.kick" }))))
+      local sent = record.to_clients[#record.to_clients]
+      assert.are.equal("rpf:interact", sent.name)
+      local id, reply = sent.payload:match("^(%d+)\n(.*)$")
+      assert.are.equal("7", id)
+      assert.are.same({ ok = false, reason = "unknown" }, (rpf.json.decode(reply)))
     end)
 
     it("kicks, notifies and messages a player through the engine", function()
@@ -704,6 +804,44 @@ describe("the FiveM adapter", function()
         })
       )
     end
+
+    it("asks the server over lib.callback, and hands back only a string answer", function()
+      local driver, record = load_side("client")
+      driver.start()
+      local replies = {}
+      rpf.fivem.ox.request_server("rpf:test", "{}", function(reply)
+        replies[#replies + 1] = reply == nil and "nil" or reply
+      end)
+      local asked = record.to_server[#record.to_server]
+      assert.are.same({ name = "rpf:test", payload = "1\n{}" }, asked)
+      driver.from_server("rpf:test", "1\nanswer")
+      assert.are.same({ "answer" }, replies)
+    end)
+
+    it("answers with nothing past MAX_UNANSWERED requests ox_lib holds, until one is answered", function()
+      local driver, record = load_side("client")
+      driver.start()
+      local ox = rpf.fivem.ox
+      local replies = {}
+      for _ = 1, ox.MAX_UNANSWERED + 1 do
+        ox.request_server("rpf:test", "{}", function(reply)
+          replies[#replies + 1] = reply == nil and "nil" or reply
+        end)
+      end
+      local sent = 0
+      for _, message in ipairs(record.to_server) do
+        if message.name == "rpf:test" then
+          sent = sent + 1
+        end
+      end
+      assert.are.equal(ox.MAX_UNANSWERED, sent, "the last was not sent")
+      driver.run_due()
+      assert.are.same({ "nil" }, replies)
+      driver.from_server("rpf:test", "1\nanswer")
+      local before = #record.to_server
+      ox.request_server("rpf:test", "{}", function() end)
+      assert.are.equal(before + 1, #record.to_server, "sent again once one was answered")
+    end)
 
     it("is a complete client platform", function()
       local driver = load_side("client")

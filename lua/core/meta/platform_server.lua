@@ -102,6 +102,16 @@ function ToClients.to_client(player, name, payload) end
 ---@param handler fun(player: rpf.PlayerHandle, payload: string) Called for each message. The payload is hostile input.
 function ToClients.on_client(name, handler) end
 
+---Registers the answerer for one request name from clients: the other half
+---of the client's `request_server` (J10). The platform pairs the answer
+---with the request and supplies the sender, as for `on_client`; on FiveM it
+---is ox_lib's `lib.callback.register`, so a client reaches the name only
+---through it. A request whose payload is not a string never reaches the
+---handler.
+---@param name string The request's name, namespaced `rpf:`.
+---@param handler fun(player: rpf.PlayerHandle, payload: string, respond: fun(reply: string)) Called for each request. The payload is hostile input. The handler calls `respond` exactly once, with the answer encoded; the core always answers, so a client's request never holds anything open.
+function ToClients.on_client_request(name, handler) end
+
 ---What the engine can do with the game world for addons (J3), each a
 ---function, or `false` where this adapter does not support it: the core
 ---never branches on the engine, so an engine difference is one of these.

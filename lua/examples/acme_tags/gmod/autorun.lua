@@ -16,10 +16,20 @@ if SERVER then
 else
   include("acme_tags/manifest.lua")
   include("acme_tags/client.lua")
-  -- `spray <text>` in the console sprays a tag.
+  ---Shows the player a line in chat.
+  ---@param message string The line.
+  local function tell(message)
+    chat.AddText(message)
+  end
+  -- In the console: `spray <text>` sprays a tag, `tags` lists the player's
+  -- own, and `scrub <n>` scrubs one of those.
   concommand.Add("spray", function(_, _, args)
-    acme_tags.ask(rpf, table.concat(args, " "), function(message)
-      chat.AddText(message)
-    end)
+    acme_tags.ask(rpf, table.concat(args, " "), tell)
+  end)
+  concommand.Add("tags", function()
+    acme_tags.show_mine(rpf, tell)
+  end)
+  concommand.Add("scrub", function(_, _, args)
+    acme_tags.ask_scrub(rpf, tonumber(args[1]), tell)
   end)
 end

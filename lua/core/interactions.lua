@@ -1,32 +1,43 @@
----Interactions (J3): a player's client asks an addon to do something, by a
----name the addon registered, and the addon's handler decides on the server.
+---Interactions (J3, J10): a player's client asks an addon to do something,
+---by a name the addon registered, and the addon's handler decides on the
+---server.
 ---
 ---This is the seam the contract's rule needs (`docs/architecture/addons.md`,
 ---"The Lua API"): a request from a client reaches **only a handler an
 ---active addon registered**, under its own namespace, never an event name
 ---the client chose. J4 (#81) builds targeting on it (which record, entity
----or zone, distance, cooldowns), and J10 (#239) the request/response
----transport over ox_lib's callbacks on FiveM; both keep this rule.
+---or zone, distance, cooldowns); J10 (#239) carries it as a request and its
+---answer, over ox_lib's `lib.callback` on FiveM (`request_server` and
+---`on_client_request` on the platform), and keeps this rule.
 ---
 ---On the server, `register(name, handler)`: `name` is
 ---`<namespace>.<name>` under an addon loaded here, its own when the caller
 ---is known; the handler runs with the player (a copy, as `players.get`
 ---gives it) and the payload, in the addon's context, under `pcall`, only
 ---while the addon is active and only for a player who has logged in
----(`players.on_client`). It answers `true`, or `false` and a reason for the
----player's client. Everything in the request is hostile input: the payload
----is a JSON object, at most `handoff.MAX_PAYLOAD` bytes, nested at most
----`MAX_DEPTH` deep, of plain data, handed over as a copy; ids in it are the
----handler's to resolve inside the caller's scope. A player may send at most
----`MAX_PER_WINDOW` requests each `WINDOW_MS`; past that they are dropped.
+---(`players.on_client_request`). It answers `true` and, if it likes, a
+---table of data for the client, or `false` and a reason. Everything in the
+---request is hostile input: the payload is a JSON object, at most
+---`handoff.MAX_PAYLOAD` bytes, nested at most `MAX_DEPTH` deep, of plain
+---data, handed over as a copy; ids in it are the handler's to resolve
+---inside the caller's scope. A player may send at most `MAX_PER_WINDOW`
+---requests each `WINDOW_MS`; past that they are answered `too_many` and
+---the handler is not run. Every request is answered, whatever it was,
+---because ox_lib's transport holds a request open until it is.
 ---
----On the client, `send(name, payload)`. The answer arrives as the reserved
----event `interactions.result` (`{ name, ok, reason }`).
+---On the client, `request(name, payload, callback)` hears the answer as a
+---callback, `callback(true, data)` or `callback(false, reason)`, and
+---`send(name, payload)` as the reserved event `interactions.result`
+---(`{ name, ok, reason }`). An answer that has not come in `TIMEOUT_MS` is
+---`timeout`, and one that comes later is dropped.
 ---@class rpf.interactions
----@field MAX_DEPTH integer How deeply a payload may nest.
+---@field MAX_DEPTH integer How deeply a payload, or the data in an answer, may nest.
 ---@field MAX_PER_WINDOW integer The most requests one player's client may send in `WINDOW_MS`.
 ---@field WINDOW_MS integer The window the rate is counted over.
 ---@field MAX_REASON_BYTES integer The longest reason a handler may give; a longer one is cut.
+---@field MAX_ANSWER integer The longest answer, encoded, in bytes: a handler's data past it is refused `too_large`.
+---@field TIMEOUT_MS integer How long a client waits for an answer.
+---@field MAX_WAITING integer The most requests one client may have waiting for an answer at once.
 local interactions = {}
 
 local rpf = rpf
@@ -37,35 +48,44 @@ interactions.MAX_DEPTH = 8
 interactions.MAX_PER_WINDOW = 20
 interactions.WINDOW_MS = 10000
 interactions.MAX_REASON_BYTES = 128
+interactions.MAX_ANSWER = 16384
+interactions.TIMEOUT_MS = 10000
+interactions.MAX_WAITING = 64
 
 ---What an interaction's handler is told and how its answer goes.
 ---@class rpf.interactions.Entry
 ---@field handler any The addon's handler: a function, or a FiveM function reference.
 ---@field namespace string The addon that registered it.
+---@field disown fun() Forgets the addon's ownership of it, once it is replaced.
 
 ---@type table<string, rpf.interactions.Entry>
 local handlers = {}
 ---Requests counted per player in the current window, by player id.
 ---@type table<string, { since: number, count: integer }>
 local counts = {}
+---How many of this client's requests are waiting for an answer.
+local waiting = 0
 ---@type rpf.ServerPlatform|rpf.ClientPlatform|nil
 local platform = nil
 
 ---Whether a value is plain data a handler may be given: strings, numbers,
 ---booleans and tables of them, nested at most `MAX_DEPTH` deep. Decoded
 ---JSON is already, apart from depth; this keeps the rule in one place.
+---Tables are walked with `next`, never `pairs`, and compared with
+---`rawequal`, so a script's table with a `__pairs` or `__eq` that throws is
+---refused rather than thrown through the API.
 ---@param value any The value.
 ---@param depth integer How deep it is.
 ---@return boolean plain True if it is.
 local function plain(value, depth)
   local kind = type(value)
-  if kind == "string" or kind == "number" or kind == "boolean" or value == json.null then
+  if kind == "string" or kind == "number" or kind == "boolean" or rawequal(value, json.null) then
     return true
   end
   if kind ~= "table" or depth > interactions.MAX_DEPTH then
     return false
   end
-  for key, item in pairs(value) do
+  for key, item in next, value do
     if (type(key) ~= "string" and type(key) ~= "number") or not plain(item, depth + 1) then
       return false
     end
@@ -73,19 +93,64 @@ local function plain(value, depth)
   return true
 end
 
+---A copy of plain data marked the way the codec needs (`rpf.json`): a table
+---whose keys are 1 to n is an array, one whose keys are strings (or none)
+---an object. The other side gets a copy without marks, so an empty table
+---arrives as an empty table either way. Reads are raw, as `plain`'s are, so
+---a script's table with an `__index` that throws is refused, not thrown.
+---@param value any Plain data (`plain`).
+---@return any? marked The copy, or nil for a table that mixes the two kinds of key, or numbers that are not 1 to n.
+local function mark(value)
+  if type(value) ~= "table" or rawequal(value, json.null) then
+    return value
+  end
+  local count, numbers = 0, 0
+  for key in next, value do
+    count = count + 1
+    if type(key) == "number" then
+      numbers = numbers + 1
+    end
+  end
+  local out = {}
+  if numbers > 0 then
+    if numbers ~= count then
+      return nil
+    end
+    for i = 1, count do
+      if rawget(value, i) == nil then
+        return nil
+      end
+      local item = mark(rawget(value, i))
+      if item == nil then
+        return nil
+      end
+      out[i] = item
+    end
+    return json.array(out)
+  end
+  for key, item in next, value do
+    local marked = mark(item)
+    if marked == nil then
+      return nil
+    end
+    out[key] = marked
+  end
+  return json.object(out)
+end
+
 ---A copy of a payload with no JSON marks and no `json.null`, as every value
 ---the API hands a script is.
 ---@param value any The value.
 ---@return any copy The copy.
 local function copy(value)
-  if value == json.null then
+  if rawequal(value, json.null) then
     return nil
   end
   if type(value) ~= "table" then
     return value
   end
   local out = {}
-  for key, item in pairs(value) do
+  for key, item in next, value do
     out[key] = copy(item)
   end
   return out
@@ -102,10 +167,11 @@ end
 
 -- The server ----------------------------------------------------------------
 
----Registers an addon's interaction. Registering a name again replaces it;
----one registered while the addon's code runs goes when it stops.
+---Registers an addon's interaction. Registering a name again replaces it,
+---and the one replaced goes at once; one registered while the addon's code
+---runs goes when it stops.
 ---@param name any `<namespace>.<name>`, under an addon loaded here.
----@param handler any `handler(player, payload)`, answering `true`, or `false` and a reason for the player.
+---@param handler any `handler(player, payload)`, answering `true` and optionally a table of data for the client, or `false` and a reason for the player.
 ---@return boolean? ok True once registered.
 ---@return string? err `invalid` for a name or handler that is not one, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an addon activation that has ended.
 function interactions.register(name, handler)
@@ -125,10 +191,14 @@ function interactions.register(name, handler)
   if rpf.addons.stale() then
     return nil, "inactive"
   end
+  local previous = handlers[name]
+  if previous then
+    previous.disown()
+  end
   ---@type rpf.interactions.Entry
-  local entry = { handler = handler, namespace = namespace }
+  local entry = { handler = handler, namespace = namespace, disown = function() end }
   handlers[name] = entry
-  rpf.addons.own(function()
+  entry.disown = rpf.addons.own(function()
     if handlers[name] == entry then
       handlers[name] = nil
     end
@@ -171,63 +241,86 @@ local function cut_utf8(text, n)
   return text:sub(1, at)
 end
 
----Answers a request.
----@param handle any The player's handle.
----@param name string The interaction.
----@param ok boolean Whether it went through.
----@param reason any Why not, for the player.
-local function answer(handle, name, ok, reason)
-  local p = assert(platform) --[[@as rpf.ServerPlatform]]
-  if type(reason) ~= "string" then
-    reason = nil
-  else
-    reason = cut_utf8(reason, interactions.MAX_REASON_BYTES)
-  end
-  -- A reason the codec cannot write (not UTF-8) is dropped, never thrown:
-  -- the answer still goes.
-  local encoded, text = pcall(handoff.encode, handoff.INTERACTION_RESULT, { name = name, ok = ok, reason = reason })
-  if not encoded then
-    p.log("warn", "rpf: the interaction " .. name .. " gave a reason that is not text; answering without it")
-    text = handoff.encode(handoff.INTERACTION_RESULT, { name = name, ok = ok })
-  end
-  p.to_client(handle, handoff.INTERACTION_RESULT, text)
+---Encodes a refusal.
+---@param reason string Why.
+---@return string answer The answer, encoded.
+local function refusal(reason)
+  return handoff.encode(handoff.INTERACTION_RESULT, { ok = false, reason = reason })
 end
 
----Runs one request from a logged-in player's client.
----@param player rpf.PlayerView The player, as `players.on_client` gives them.
----@param payload any The raw payload.
-local function on_interact(player, payload)
+---Encodes a handler's answer. A reason the codec cannot write (not UTF-8)
+---is dropped, never thrown: the answer still goes. Data that is not plain,
+---or cannot be encoded, is the addon's bug, logged, and answered `failed`;
+---data past `MAX_ANSWER` is `too_large`.
+---@param name string The interaction.
+---@param ok boolean Whether it went through.
+---@param extra any The handler's second result: data if it went through, a reason if not.
+---@return string answer The answer, encoded.
+local function encode_answer(name, ok, extra)
   local p = assert(platform)
-  local request = handoff.decode(handoff.INTERACT, payload)
+  if not ok then
+    local reason = type(extra) == "string" and cut_utf8(extra, interactions.MAX_REASON_BYTES) or nil
+    local encoded, text = pcall(handoff.encode, handoff.INTERACTION_RESULT, { ok = false, reason = reason })
+    if not encoded then
+      p.log("warn", "rpf: the interaction " .. name .. " gave a reason that is not text; answering without it")
+      text = handoff.encode(handoff.INTERACTION_RESULT, { ok = false })
+    end
+    return text
+  end
+  if extra == nil then
+    return handoff.encode(handoff.INTERACTION_RESULT, { ok = true })
+  end
+  local data = type(extra) == "table" and plain(extra, 0) and mark(extra) or nil
+  local encoded, text = false, nil
+  if data ~= nil then
+    encoded, text = pcall(handoff.encode, handoff.INTERACTION_RESULT, { ok = true, data = data })
+  end
+  if not encoded then
+    p.log("error", "rpf: the interaction " .. name .. " answered data that is not a table of plain data (JSON-encodable, " .. interactions.MAX_DEPTH .. " deep at most); answering failed")
+    return refusal("failed")
+  end
+  ---@cast text string
+  if #text > interactions.MAX_ANSWER then
+    p.log("warn", "rpf: the interaction " .. name .. " answered " .. #text .. " bytes, over " .. interactions.MAX_ANSWER .. "; answering too_large")
+    return refusal("too_large")
+  end
+  return text
+end
+
+---Runs one request from a logged-in player's client, and answers it.
+---@param player rpf.PlayerView The player, as `players.on_client_request` gives them.
+---@param payload any The raw payload.
+---@param respond fun(reply: string) Answers the request.
+local function on_interact(player, payload, respond)
+  local p = assert(platform)
+  local request, why = handoff.decode(handoff.INTERACT, payload)
   if not request then
-    p.log("debug", "rpf: dropped a malformed interaction from " .. tostring(player.player_id))
+    p.log("debug", "rpf: refused a malformed interaction from " .. tostring(player.player_id) .. ": " .. tostring(why))
+    respond(refusal("invalid"))
     return
   end
   if not admit(player.player_id) then
-    p.log("debug", "rpf: dropped an interaction from " .. tostring(player.player_id) .. ": too many")
+    p.log("debug", "rpf: refused an interaction from " .. tostring(player.player_id) .. ": too many")
+    respond(refusal("too_many"))
     return
   end
   local name = request.name
-  -- Only a name an addon could have registered gets an answer, which
-  -- echoes it: anything else is dropped here.
-  if not interactions.is_name(name) then
-    p.log("debug", "rpf: dropped an interaction with a name no addon can register")
+  -- A name no addon could register is refused like one nobody did, so a
+  -- probe learns nothing from the difference.
+  local entry = interactions.is_name(name) and handlers[name] or nil
+  if not entry then
+    respond(refusal("unknown"))
     return
   end
   if request.payload ~= nil and not plain(request.payload, 0) then
-    answer(player.handle, name, false, "invalid")
-    return
-  end
-  local entry = handlers[name]
-  if not entry then
-    answer(player.handle, name, false, "unknown")
+    respond(refusal("invalid"))
     return
   end
   if not rpf.addons.running(entry.namespace) then
-    answer(player.handle, name, false, "inactive")
+    respond(refusal("inactive"))
     return
   end
-  local ran, ok, reason = rpf.addons.run(
+  local ran, ok, extra = rpf.addons.run(
     rpf.addons.context_of(entry.namespace),
     entry.handler,
     player,
@@ -235,10 +328,18 @@ local function on_interact(player, payload)
   )
   if not ran then
     p.log("error", "rpf: the interaction " .. name .. " failed: " .. tostring(ok))
-    answer(player.handle, name, false, "failed")
+    respond(refusal("failed"))
     return
   end
-  answer(player.handle, name, ok == true, ok ~= true and reason or nil)
+  -- The answer is the addon's data, read here after its code has run: a
+  -- throw while reading it is still the addon's, and still answered.
+  local read, text = pcall(encode_answer, name, ok == true, extra)
+  if not read then
+    p.log("error", "rpf: the interaction " .. name .. " answered something that could not be read: " .. tostring(text))
+    respond(refusal("failed"))
+    return
+  end
+  respond(text)
 end
 
 ---Listens for interactions, and forgets a player's count when they leave.
@@ -246,7 +347,7 @@ end
 ---@param p rpf.ServerPlatform The platform.
 function interactions.serve(p)
   platform = p
-  rpf.players.on_client(handoff.INTERACT, on_interact)
+  rpf.players.on_client_request(handoff.INTERACT, on_interact, refusal("not_logged_in"))
   rpf.events.on("players.dropping", function(player)
     if player.player_id then
       counts[player.player_id] = nil
@@ -256,15 +357,17 @@ end
 
 -- The client ----------------------------------------------------------------
 
----Asks the server to run an addon's interaction. The answer arrives as
----`interactions.result`.
+---Sends a request and hands its answer to `done` once: what the server
+---answered, `timeout` when nothing came in `TIMEOUT_MS`, or `failed` for an
+---answer that could not be read.
 ---@param name any The interaction's name.
----@param payload any? A table of plain data, at most `handoff.MAX_PAYLOAD` bytes encoded.
+---@param payload any? A table of plain data.
+---@param done fun(ok: boolean, extra: any) Called once, never inside this call: `true` and the data (a table), or `false` and a reason.
 ---@return boolean? ok True once sent.
----@return string? err `invalid` for a name that is not `<namespace>.<name>` or a payload that is not plain data, `too_large`, or `unavailable` before the client has started.
-function interactions.send(name, payload)
+---@return string? err `invalid`, `too_large`, `too_many` or `unavailable`.
+local function ask(name, payload, done)
   local p = platform --[[@as rpf.ClientPlatform?]]
-  if not p or not p.to_server then
+  if not p or not p.request_server then
     return nil, "unavailable"
   end
   if not interactions.is_name(name) or (payload ~= nil and (type(payload) ~= "table" or not plain(payload, 0))) then
@@ -272,10 +375,8 @@ function interactions.send(name, payload)
   end
   local fields = { name = name }
   if payload ~= nil then
-    local ok, marked = pcall(function()
-      return json.decode(assert(json.encode(json.is_object(payload) and payload or json.object(payload))))
-    end)
-    if not ok or not json.is_object(marked) then
+    local marked = mark(payload)
+    if not json.is_object(marked) then
       return nil, "invalid"
     end
     fields.payload = marked
@@ -287,20 +388,82 @@ function interactions.send(name, payload)
   if #text > handoff.MAX_PAYLOAD then
     return nil, "too_large"
   end
-  p.to_server(handoff.INTERACT, text)
+  if waiting >= interactions.MAX_WAITING then
+    return nil, "too_many"
+  end
+  waiting = waiting + 1
+  local finished = false
+  ---Hands the answer over, once.
+  ---@param answered boolean Whether it went through.
+  ---@param extra any The data or the reason.
+  local function finish(answered, extra)
+    if finished then
+      return
+    end
+    finished = true
+    waiting = waiting - 1
+    done(answered, extra)
+  end
+  p.after(interactions.TIMEOUT_MS, function()
+    finish(false, "timeout")
+  end)
+  p.request_server(handoff.INTERACT, text, function(reply)
+    if finished then
+      return
+    end
+    local result, why = handoff.decode(handoff.INTERACTION_RESULT, reply)
+    if not result then
+      p.log("warn", "rpf: could not read the server's answer to the interaction " .. name .. ": " .. tostring(why))
+      finish(false, "failed")
+      return
+    end
+    if result.ok then
+      finish(true, copy(result.data) or {})
+    else
+      finish(false, result.reason or "failed")
+    end
+  end)
   return true
 end
 
----Listens for answers. Called by `rpf.start_client`.
+---Asks the server to run an addon's interaction. The answer arrives as
+---`interactions.result`.
+---@param name any The interaction's name.
+---@param payload any? A table of plain data, at most `handoff.MAX_PAYLOAD` bytes encoded.
+---@return boolean? ok True once sent.
+---@return string? err `invalid` for a name that is not `<namespace>.<name>` or a payload that is not plain data, `too_large`, `too_many` while `MAX_WAITING` requests wait for an answer, or `unavailable` before the client has started.
+function interactions.send(name, payload)
+  return ask(name, payload, function(ok, extra)
+    rpf.events.emit("interactions.result", { name = name, ok = ok, reason = not ok and extra or nil })
+  end)
+end
+
+---Asks the server to run an addon's interaction, and hands its answer to a
+---callback: `callback(true, data)`, where `data` is the table the handler
+---answered (empty if none), or `callback(false, reason)`. The callback runs
+---under `pcall`, so one that throws is logged rather than lost.
+---@param name any The interaction's name.
+---@param payload any? A table of plain data, at most `handoff.MAX_PAYLOAD` bytes encoded.
+---@param callback any The callback: a function, or a FiveM function reference.
+---@return boolean? ok True once sent.
+---@return string? err As for `send`, and `invalid` for a callback that cannot be called.
+function interactions.request(name, payload, callback)
+  if not rpf.callable(callback) then
+    return nil, "invalid"
+  end
+  return ask(name, payload, function(ok, extra)
+    local ran, err = pcall(callback, ok, extra)
+    if not ran then
+      local p = assert(platform)
+      p.log("error", "rpf: the callback for the interaction " .. tostring(name) .. " failed: " .. tostring(err))
+    end
+  end)
+end
+
+---Keeps the platform the requests go through. Called by `rpf.start_client`.
 ---@param p rpf.ClientPlatform The platform.
 function interactions.start_client(p)
   platform = p
-  p.on_server(handoff.INTERACTION_RESULT, function(payload)
-    local result = handoff.decode(handoff.INTERACTION_RESULT, payload)
-    if result then
-      rpf.events.emit("interactions.result", { name = result.name, ok = result.ok, reason = result.reason })
-    end
-  end)
 end
 
 rpf.interactions = interactions
