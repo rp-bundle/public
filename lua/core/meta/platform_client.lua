@@ -50,6 +50,7 @@ function ToServer.on_server_request(name, handler) end
 ---@field menu (fun(spec: rpf.ui.MenuSpec, done: fun(index: integer?)))|false Shows a menu: `done` with the chosen option's number, or nil when the player closed it.
 ---@field input (fun(spec: rpf.ui.InputSpec, done: fun(values: table?)))|false Shows an input dialog: `done` with the values by field number (text, a number, a boolean, a select's option number, nil for one left empty), or nil when cancelled.
 ---@field progress (fun(spec: rpf.ui.ProgressSpec, done: fun(completed: boolean)))|false Shows a progress bar: `done(true)` when it ran to its end, `done(false)` when the player cancelled or something interrupted it.
+---@field close (fun(kind: "menu"|"input"|"progress"))|false Takes away the window of a kind on show, because the addon that asked for it stopped. The core has already counted it as closed, so whether its `done` is still called does not matter.
 
 ---A notification, checked.
 ---@class rpf.ui.NoticeSpec

@@ -397,6 +397,7 @@ end
 ---@field waiting table<string, table<integer, fun(reply: string?)>> Callbacks for requests the server has not answered, by name and number.
 ---@field server_request_handlers table<string, fun(payload: string, respond: fun(reply: string))> Answerers registered with `on_server_request`, by name.
 ---@field shown { kind: string, spec: table, done: fun(raw: any), answered: boolean }[] Every UI the core asked to show, in order.
+---@field closed string[] Every kind `ui.close` took away, in order.
 ---@field answer_ui fun(n: integer, raw: any) Answers the `n`th UI shown, as the player would: a menu option's number, the values by field number, a progress bar's `true` or `false`, or nil to close it.
 ---@field from_server fun(name: string, payload: string) A message arrived from the game server: a message, or the answer to a request.
 
@@ -416,6 +417,11 @@ function mock.client(host, seed)
       p.shown[#p.shown + 1] = { kind = kind, spec = spec, done = done, answered = false }
     end
   end
+  ---@param kind string
+  ui.close = function(kind)
+    p.closed[#p.closed + 1] = kind
+  end
+  p.closed = {}
   p.ui = ui
 
   function p.answer_ui(n, raw)

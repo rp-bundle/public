@@ -75,7 +75,8 @@ function.
    once, perhaps after the player has picked. `ui` builds what an addon
    shows (J10): `notify`, `menu`, `input` and `progress`, each over the
    engine's own toolkit where it has one, taking a spec `rpf.ui` checked
-   and calling `done` once with what the player did.
+   and calling `done` once with what the player did; and `close(kind)`
+   takes away a window whose addon stopped.
 3. **The engine events**, two lines each: a player handed over calls
    `core.players.connected(handle)`, a player gone calls
    `core.players.dropped(handle, reason)`. Use the handle the engine keeps

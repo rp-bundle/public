@@ -141,7 +141,8 @@ answer handed to `callback`, or nil; the core keeps the timeout),
 `on_server_request(name, handler)` (the server's requests, answered once
 by `respond(reply)`), `ui` (what an addon shows the player, J10: `notify`,
 `menu`, `input`, `progress`, each a function taking a spec `rpf.ui` has
-checked and a `done` callback, or `false`), `log`, and `expose`
+checked and a `done` callback, or `false`, and `close(kind)`, which takes
+away what an addon that stopped had on show), `log`, and `expose`
 (the client's scripts get the public API too, with `auth` in place of
 `players`, `staff` and `config`). It has no websocket, no `random_hex` and no player
 management.
@@ -1273,7 +1274,10 @@ answer is read by; `ui.read` reads an answer against it, on both sides.
   (`invalid` for anything else). One of each kind per player at a time;
   `gone` when the player leaves, `timeout` after `TIMEOUT_MS` (a bar: its
   length and `GRACE_MS`). A callback runs in the context of the code that
-  asked, under `pcall`.
+  asked, under `pcall`. A wait is that addon's, like a timer: when it
+  stops, the wait goes, its callback is never called, and the client is
+  told to close the window by the request's id (`rpf:ui_close`), which it
+  does through `platform.ui.close`.
 
 ### Characters (`rpf.characters`, `rpf.picker`)
 

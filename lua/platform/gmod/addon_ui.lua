@@ -41,6 +41,10 @@ local NOTICE_TYPES = {
 ---@field OnClose fun(self: DFrame) Called when the window closes.
 ---@field Think fun(self: DFrame) Called every frame.
 
+---The window on show for each kind, so `close` can take it away.
+---@type table<string, Panel>
+local open = {}
+
 ---Calls `done` once, whatever calls it first.
 ---@param done function The callback.
 ---@return function once The same callback, which runs once.
@@ -118,6 +122,7 @@ end
 local function show_menu(spec, done)
   local finish = once(done)
   local frame, body = window(spec.title, 64 + #spec.options * 34)
+  open.menu = frame
   for i, option in ipairs(spec.options) do
     local b = button(body, option.label, function()
       finish(i)
@@ -225,6 +230,7 @@ end
 local function show_input(spec, done)
   local finish = once(done)
   local frame, body = window(spec.title, 120 + #spec.fields * 52)
+  open.input = frame
   local readers = {}
   for i, field in ipairs(spec.fields) do
     readers[i] = control(body, field)
@@ -266,6 +272,7 @@ local function show_progress(spec, done)
   frame:ShowCloseButton(false)
   frame:SetDraggable(false)
   frame:SetPos((ScrW() - addon_ui.WIDTH) / 2, ScrH() - 120)
+  open.progress = frame
   local bar = vgui.Create("DProgress", frame) --[[@as DProgress]]
   bar:Dock(FILL)
   bar:SetFraction(0)
@@ -286,6 +293,17 @@ local function show_progress(spec, done)
   end
 end
 
-addon_ui.ui = { notify = show_notice, menu = show_menu, input = show_input, progress = show_progress }
+---Takes away the window of a kind, because the addon that asked for it
+---stopped. The core has counted it as closed already.
+---@param kind string Which.
+local function close(kind)
+  local frame = open[kind]
+  open[kind] = nil
+  if frame and IsValid(frame) then
+    frame:Remove()
+  end
+end
+
+addon_ui.ui = { notify = show_notice, menu = show_menu, input = show_input, progress = show_progress, close = close }
 
 return addon_ui

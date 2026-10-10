@@ -829,6 +829,16 @@ describe("the Gmod adapter's addon UI (J10)", function()
     assert.are.equal(scroll, button(world, "option 32").parent, "the options are in the scrolling panel")
   end)
 
+  it("takes away a window an addon that stopped had on show", function()
+    local world = client()
+    local addon_ui = world.include("rpf/platform/gmod/addon_ui.lua")
+    addon_ui.ui.menu({ title = "Pick", options = { { label = "a" } } }, function() end)
+    assert.are.equal(1, #shown(world, "DFrame"))
+    addon_ui.ui.close("menu")
+    assert.are.same({}, shown(world, "DFrame"))
+    addon_ui.ui.close("menu")
+  end)
+
   it("will not submit a required checkbox left unticked", function()
     local world, api = client()
     local got

@@ -385,6 +385,7 @@ function support.fake_client_platform(opts)
   ---@field asked { name: string, payload: string, callback: fun(reply: string?) }[] Every request sent to the server, in order, unanswered until the test answers it.
   ---@field server_request_handlers table<string, fun(payload: string, respond: fun(reply: string))> Answerers registered with `on_server_request`, by name.
   ---@field shown { kind: string, spec: table, done: fun(raw: any) }[] Every UI the core asked the platform to show, in order; a test answers with `done`.
+  ---@field closed string[] Every kind `ui.close` took away, in order.
   ---@field logs { level: string, message: string }[] Every log line.
   ---@field exposed table? What `expose` was given.
   local c = {
@@ -401,12 +402,19 @@ function support.fake_client_platform(opts)
     shown = {},
     logs = {},
   }
-  c.ui = {}
+  local ui = {}
   for _, kind in ipairs({ "notify", "menu", "input", "progress" }) do
-    c.ui[kind] = function(spec, done)
+    ui[kind] = function(spec, done)
       c.shown[#c.shown + 1] = { kind = kind, spec = spec, done = done }
     end
   end
+  ---Records a close.
+  ---@param kind string Which.
+  ui.close = function(kind)
+    c.closed[#c.closed + 1] = kind
+  end
+  c.closed = {}
+  c.ui = ui
 
   function c.now()
     return c.time

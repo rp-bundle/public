@@ -280,6 +280,22 @@ describe("rpf.ui", function()
       assert.truthy(rpf.handoff.decode("rpf:ui_answer", reply), "the server decodes it")
     end)
 
+    it("closes a window its server asks it to, by id, and is free for the next", function()
+      local spec = rpf.ui.spec("menu", menu())
+      local replies = {}
+      c.server_request_handlers["rpf:ui"](rpf.handoff.encode("rpf:ui", { kind = "menu", id = "4", spec = rpf.json.object(rpf.json.copy(spec)) }), function(reply)
+        replies[#replies + 1] = rpf.json.decode(reply)
+      end)
+      c.from_server("rpf:ui_close", { id = "3" })
+      assert.are.same({}, c.closed, "another request's id closes nothing")
+      c.from_server("rpf:ui_close", { id = "4" })
+      assert.are.same({ "menu" }, c.closed)
+      assert.are.same({ true }, { replies[1].ok, replies[1].index }, "answered as closed")
+      c.shown[1].done(1)
+      assert.are.equal(1, #replies, "the window's own late answer is dropped")
+      assert.is_true(rpf.api.ui.menu(menu(), function() end), "free for the next")
+    end)
+
     it("shows the server's notifications", function()
       c.from_server("rpf:ui_notify", { spec = { text = "Welcome", kind = "success", duration_ms = 3000 } })
       assert.are.same({ text = "Welcome", kind = "success", duration_ms = 3000 }, c.shown[1].spec)
@@ -422,7 +438,9 @@ describe("rpf.ui", function()
         called = true
       end))
       local first = p.client_requests[#p.client_requests]
+      local id = rpf.json.decode(first.payload).id
       cleanups[1]()
+      assert.are.same({ { id = id } }, p.messages_to(7, "rpf:ui_close"), "the player's window is closed by its id")
       assert.is_true(rpf.api.ui.menu(7, menu(), function() end), "not busy once its addon stopped")
       first.callback(rpf.handoff.encode("rpf:ui_answer", { ok = true, index = 1 }))
       p.advance(rpf.ui.TIMEOUT_MS)

@@ -188,8 +188,13 @@ local function menu(spec, done)
     id = ox.MENU_ID,
     title = spec.title,
     options = options,
+    -- ox_lib runs `onExit` in the middle of closing, before it forgets
+    -- the open menu: a callback that opened another menu now would see it
+    -- closed under it. So the close is told after ox_lib has finished.
     onExit = function()
-      finish(nil)
+      Citizen.SetTimeout(0, function()
+        finish(nil)
+      end)
     end,
   })
   lib.showContext(ox.MENU_ID)
@@ -314,7 +319,23 @@ local function progress(spec, done)
   end)
 end
 
-ox.ui = { notify = notify, menu = menu, input = input, progress = progress }
+---Takes away what the core counts as closed because the addon that asked
+---for it stopped: the menu without its `onExit`, the dialog (which answers
+---nil), the bar (which answers false). The core ignores those answers.
+---@param kind "menu"|"input"|"progress" Which.
+local function close(kind)
+  if kind == "menu" then
+    if lib.getOpenContextMenu() == ox.MENU_ID then
+      lib.hideContext(false)
+    end
+  elseif kind == "input" then
+    lib.closeInputDialog()
+  elseif kind == "progress" and lib.progressActive() then
+    lib.cancelProgress()
+  end
+end
+
+ox.ui = { notify = notify, menu = menu, input = input, progress = progress, close = close }
 
 rpf.fivem.ox = ox
 return ox

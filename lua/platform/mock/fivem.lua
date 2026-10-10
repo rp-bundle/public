@@ -712,12 +712,33 @@ function fivem.client(env, host, seed, convars)
       option.onSelect(option.args)
     end
   end
+  -- ox_lib's order: `onExit` runs first, and only then is the open menu
+  -- forgotten, whatever `onExit` opened.
   function driver.close_context()
     local context = driver.contexts[assert(driver.open_context, "no context menu is open")]
-    driver.open_context = nil
     if context.onExit then
       context.onExit()
     end
+    driver.open_context = nil
+  end
+  env.lib.hideContext = function(on_exit)
+    if on_exit then
+      driver.close_context()
+    else
+      driver.open_context = nil
+    end
+  end
+  env.lib.closeInputDialog = function()
+    if driver.dialog then
+      driver.dialog.answer(nil)
+    end
+  end
+  env.lib.progressActive = function()
+    return driver.bar and true or nil
+  end
+  env.lib.cancelProgress = function()
+    assert(driver.bar, "No progress bar is active")
+    driver.bar.finish(false)
   end
   -- One dialog and one bar at a time, as ox_lib's: another while one is on
   -- show answers nil at once.

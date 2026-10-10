@@ -68,10 +68,14 @@ ui.GRACE_MS = 30000
 ---@type rpf.ServerPlatform|rpf.ClientPlatform|nil
 local platform = nil
 
----What this side has open, by kind: one menu, one dialog and one progress
----bar at a time, on the client for the player, on the server per player.
----@type table<string, true>
+---What the client has open, by kind: one menu, one dialog and one progress
+---bar at a time. Each names the server's request it shows, if it does, and
+---how to end it.
+---@type table<string, { id: string?, finish: fun(raw: any) }>
 local open_here = {}
+
+---How many UI requests the server has numbered, for closing one by id.
+local numbered = 0
 
 ---What the server is waiting on, by player id and kind.
 ---@type table<string, table<string, fun(raw: any, reason: string?)>>
@@ -461,9 +465,10 @@ end
 ---@param spec table The checked spec.
 ---@param kept rpf.ui.Kept What reading the answer needs.
 ---@param done fun(raw: any, result: any, err: string?)? Called once with the raw answer and what it reads as; nil for a notification.
+---@param id string? The server's request it shows, so the server can close it.
 ---@return boolean? ok True once shown.
 ---@return string? err `unsupported` where the adapter has none, `busy` while one of the kind is open, `failed` when the adapter threw (logged).
-local function show_here(kind, spec, kept, done)
+local function show_here(kind, spec, kept, done, id)
   local p = platform --[[@as rpf.ClientPlatform?]]
   local adapter = p and p.ui and p.ui[kind]
   if type(adapter) ~= "function" then
@@ -487,7 +492,7 @@ local function show_here(kind, spec, kept, done)
     end
   end
   if kind ~= "notify" then
-    open_here[kind] = true
+    open_here[kind] = { id = id, finish = answered }
   end
   local ok, err = pcall(adapter, spec, answered)
   if not ok then
@@ -565,6 +570,7 @@ local function on_show(payload, respond)
     return
   end
   ---@cast kind string
+  local id = request and type(request.id) == "string" and request.id or nil
   local shown, why = show_here(kind, spec, kept, function(raw)
     local fields = { ok = true }
     if kind == "menu" and type(raw) == "number" then
@@ -585,9 +591,34 @@ local function on_show(payload, respond)
       return
     end
     respond(reply)
-  end)
+  end, id)
   if not shown then
     respond(handoff.encode(handoff.UI_ANSWER, { ok = false, reason = why }))
+  end
+end
+
+---Closes what the server asked to show, when the addon that asked has
+---stopped: the adapter takes the window away (`ui.close`), and the request
+---is answered as closed, so the player may be shown the next.
+---@param payload string The message.
+local function on_close(payload)
+  local message = handoff.decode(handoff.UI_CLOSE, payload)
+  if not message then
+    return
+  end
+  local p = assert(platform) --[[@as rpf.ClientPlatform]]
+  for _, kind in ipairs(ui.KINDS) do
+    local open = open_here[kind]
+    if open and open.id == message.id then
+      local close = p.ui and p.ui.close
+      if type(close) == "function" then
+        local ok, err = pcall(close, kind)
+        if not ok then
+          p.log("error", "rpf: the platform's ui.close failed: " .. tostring(err))
+        end
+      end
+      open.finish(nil)
+    end
   end
 end
 
@@ -610,6 +641,7 @@ function ui.start_client(p)
   platform = p
   p.on_server_request(handoff.UI, on_show)
   p.on_server(handoff.UI_NOTIFY, on_notify)
+  p.on_server(handoff.UI_CLOSE, on_close)
 end
 
 -- The server ----------------------------------------------------------------
@@ -661,8 +693,11 @@ local function show_server(handle, kind, opts, callback)
   if not player or not player.player_id or player.state == "dropping" then
     return nil, "not_found"
   end
+  numbered = numbered + 1
+  local id = tostring(numbered)
   local ok, text_or_err = pcall(handoff.encode, kind == "notify" and handoff.UI_NOTIFY or handoff.UI, {
     kind = kind ~= "notify" and kind or nil,
+    id = kind ~= "notify" and id or nil,
     spec = json.object(json.copy(spec)),
   })
   if not ok then
@@ -725,10 +760,13 @@ local function show_server(handle, kind, opts, callback)
   by_kind[kind] = finish
   -- The wait is the addon's, like a timer: when it stops (disabled,
   -- reloaded, its resource gone) the wait goes, its callback never called,
-  -- and the player may be shown the next one.
+  -- and the window on the player's client is closed, so they may be shown
+  -- the next one.
   if rpf.addons then
     disown = rpf.addons.own(function()
-      forget()
+      if forget() then
+        p.to_client(handle, handoff.UI_CLOSE, handoff.encode(handoff.UI_CLOSE, { id = id }))
+      end
     end)
   end
   local timeout = kind == "progress" and spec.duration_ms + ui.GRACE_MS or ui.TIMEOUT_MS
