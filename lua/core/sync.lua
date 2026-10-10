@@ -349,6 +349,61 @@ local function stale_map(reply)
   return stale
 end
 
+---Settles the addon records' creates and deletions a frame carried (J2),
+---by what the frame carried rather than by what the records are marked as
+---now: a later frame may carry a record's deletion while an earlier one,
+---with a change, is answered.
+---
+--- - `applied`: a create has landed; a deletion has, and the record is
+---   forgotten.
+--- - `resync`: a create has landed all the same; a deletion has not, and
+---   goes again on the revision the portal has (`stale`) or the one it
+---   named.
+--- - `refused`: a create goes again as a create, with every field; a
+---   deletion is undone, and the record reported whole.
+--- - `lost`: neither is known to have landed: a create goes again (a resend
+---   of one that did is a replay), and so does a deletion.
+---@param sent table The frame's bookkeeping, with `creates` and `deletes`.
+---@param outcome "applied"|"resync"|"refused"|"lost" How it was answered.
+---@param stale table<string, number>? For `resync`, the portal's revisions by key.
+local function settle_addons(sent, outcome, stale)
+  local again = false
+  for key in pairs(sent.creates or {}) do
+    local entry = records.entries[key]
+    if entry and entry.created == "sent" then
+      if outcome == "applied" or outcome == "resync" then
+        entry.created = nil
+        -- Changes or a deletion made while it was in flight go now.
+        again = again or entry.changed.fields == true or entry.deleted == true
+      else
+        entry.created = "pending"
+        entry.revision = 0
+        entry.patch = nil
+        entry.changed = {}
+        again = true
+      end
+    end
+  end
+  for key, base in pairs(sent.deletes or {}) do
+    local entry = records.entries[key]
+    if entry and entry.delete_sent then
+      if outcome == "applied" then
+        records.entries[key] = nil
+      elseif outcome == "refused" then
+        entry.deleted, entry.delete_sent = nil, nil
+        entry.revision = base
+      else
+        entry.delete_sent = nil
+        entry.revision = (stale and stale[key]) or base
+        again = true
+      end
+    end
+  end
+  if again then
+    sync.schedule()
+  end
+end
+
 ---Settles a `state_changed` or `resync` from its answer.
 ---@param id string? The frame's id; nil when the outbox refused it before it had one.
 ---@param reply table? The answer.
@@ -370,29 +425,12 @@ local function settle_report(id, reply, err)
   if not reply then
     -- Never reached the portal: report the whole records again.
     log("warn", "a state report was not delivered (" .. tostring(err) .. "); resyncing its records")
+    settle_addons(sent, "lost")
     resync(sent.keys, {})
     return
   end
-  if reply.type == "state_applied" or reply.type == "resync_required" then
-    -- A create lands whatever the frame is answered with; a deletion only
-    -- with the frame.
-    for _, key in ipairs(sent.keys) do
-      local entry = records.entries[key]
-      if entry and entry.created == "sent" then
-        entry.created = nil
-        -- Changes made while it was in flight go now.
-        if entry.changed.fields then
-          sync.schedule()
-        end
-      end
-      if entry and entry.delete_sent and reply.type == "state_applied" then
-        records.entries[key] = nil
-      elseif entry and entry.delete_sent then
-        entry.delete_sent = nil
-      end
-    end
-  end
   if reply.type == "state_applied" then
+    settle_addons(sent, "applied")
     for _, key in ipairs(sent.keys) do
       local entry = records.entries[key]
       if entry then
@@ -414,7 +452,10 @@ local function settle_report(id, reply, err)
     end
   elseif reply.type == "resync_required" then
     records.lose(reply.released, "the portal says this server does not hold them")
-    resync(sent.keys, stale_map(reply))
+    -- Before the resync's flush, so a create that landed goes whole.
+    local stale = stale_map(reply)
+    settle_addons(sent, "resync", stale)
+    resync(sent.keys, stale)
   else
     -- A final refusal: the portal took nothing, and the frame, the only
     -- durable copy of what it carried, has left the outbox. So every record
@@ -435,21 +476,9 @@ local function settle_report(id, reply, err)
         entry.alone = true
         entry.resync = true
         entry.recovering = #sent.keys > 1 or nil
-        -- An addon record's create goes again as a create; a deletion the
-        -- portal refused (another record refers to it) is undone here,
-        -- and the record reported whole.
-        if entry.created == "sent" then
-          -- The create goes again with every field, changes since included.
-          entry.created = "pending"
-          entry.revision = 0
-          entry.patch = nil
-          entry.changed = {}
-        end
-        if entry.delete_sent then
-          entry.deleted, entry.delete_sent = nil, nil
-        end
       end
     end
+    settle_addons(sent, "refused")
     if #sent.keys > 1 then
       sync.flush()
     end
@@ -506,7 +535,21 @@ local function send_batch(tag, entries, build, sent)
     return false
   end
   id = result
-  inflight[id] = { keys = keys, transactions = transactions, whole = tag == "resync" }
+  local creates, deletes = {}, {}
+  for i, item in ipairs(items) do
+    if item.kind == "addon_record_created" then
+      creates[keys[i]] = true
+    elseif item.kind == "addon_record_deleted" then
+      deletes[keys[i]] = item.base_revision
+    end
+  end
+  inflight[id] = {
+    keys = keys,
+    transactions = transactions,
+    whole = tag == "resync",
+    creates = creates,
+    deletes = deletes,
+  }
   for i, entry in ipairs(entries) do
     sent(entry, items[i])
     if tag == "resync" then

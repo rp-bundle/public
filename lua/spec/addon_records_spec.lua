@@ -174,6 +174,9 @@ describe("live addon records", function()
     -- patches from then on.
     answer(p, again, "resync_required")
     p.advance(FLUSH)
+    local whole = last_of(p, "resync")
+    assert.are.equal(5, whole.records[1].fields.water)
+    answer(p, whole)
     assert(rpf.records.set_addon_fields(record.id, { water = 6 }))
     p.advance(FLUSH)
     local kinds = {}
@@ -224,6 +227,56 @@ describe("live addon records", function()
     assert.is_true(rpf.records.is_held("addon_record", FIELD), "until it is answered")
     answer(p, frame)
     assert.is_false(rpf.records.is_held("addon_record", FIELD))
+  end)
+
+  it("forget a deleted record only once the frame carrying the deletion is applied", function()
+    local p = farmed()
+    assert(rpf.records.set_addon_fields(FIELD, { water = 7 }))
+    p.advance(FLUSH)
+    local patch = last_of(p, "state_changed")
+    assert(rpf.records.delete_addon_record(FIELD))
+    p.advance(FLUSH)
+    local deletion = last_of(p, "state_changed")
+    assert.are_not.equal(patch.id, deletion.id)
+    answer(p, patch)
+    assert.is_true(rpf.records.is_held("addon_record", FIELD), "the patch's answer says nothing of the deletion")
+    -- Refused (another record refers to it): the deletion is undone.
+    answer(p, deletion, "rejected")
+    assert.is_true(rpf.records.is_held("addon_record", FIELD))
+    assert.is_nil(rpf.records.entries["addon_record:" .. FIELD].deleted)
+  end)
+
+  it("send a deletion again on the portal's revision when its frame is stale", function()
+    local p = farmed()
+    assert(rpf.records.delete_addon_record(FIELD))
+    p.advance(FLUSH)
+    local deletion = last_of(p, "state_changed")
+    p.deliver(support.portal_frame("resync_required", {
+      re = deletion.id,
+      stale = { { kind = "addon_record", id = FIELD, revision = 4 } },
+      released = {},
+    }))
+    p.advance(FLUSH)
+    local again = last_of(p, "state_changed")
+    assert.are_not.equal(deletion.id, again.id)
+    assert.are.same({ kind = "addon_record_deleted", id = FIELD, base_revision = 4 }, again.changes[1])
+  end)
+
+  it("report a deletion made while the create is in flight once the create lands", function()
+    local p = farmed()
+    local record = assert(rpf.records.create_addon_record(
+      "acme_farm.field",
+      { kind = "player", id = PLAYER },
+      { label = "Gone" }
+    ))
+    p.advance(FLUSH)
+    local create = last_of(p, "state_changed")
+    assert(rpf.records.delete_addon_record(record.id))
+    answer(p, create)
+    p.advance(FLUSH)
+    local change = last_of(p, "state_changed").changes[1]
+    assert.are.equal("addon_record_deleted", change.kind)
+    assert.are.equal(1, change.base_revision)
   end)
 
   it("take a staff edit by command, and let one go to be deleted", function()
