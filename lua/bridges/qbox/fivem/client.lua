@@ -160,18 +160,17 @@ choose = function()
 end
 
 -- Only the server shows the selection: a script on this client cannot
--- (`GetInvokingResource` is nil only for an event from the server).
+-- (`GetInvokingResource` is nil only for an event from the server). It
+-- does so only while the bridge is active, so this is also where the
+-- client takes over spawning, as qbx_core's own selection does: a player
+-- spawns only once a character is loaded. Never before, so a server where
+-- the bridge stays inactive (a native one) keeps its own spawning.
 RegisterNetEvent("rpf-qbox:select", function()
   if GetInvokingResource() then
     return
   end
-  choose()
-end)
-
--- A player spawns only once a character is loaded, as with qbx_core's own
--- selection.
-CreateThread(function()
   pcall(function()
     exports.spawnmanager:setAutoSpawn(false)
   end)
+  choose()
 end)
