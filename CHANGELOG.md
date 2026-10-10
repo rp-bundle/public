@@ -209,6 +209,17 @@ keep the job the portal has.
   announce every change to a held addon record, staff edits included. An
   addon's calls close when it stops, and the records it held for the
   server are released.
+- The addon API, part 3 (J3, #80): the domain-neutral facade, so an addon
+  reaches a player's character, money, items and job the same way whoever
+  owns them. `rpf.api.characters.current`, `money.accounts`, `balance`,
+  `debit` and `credit`, `inventory.count`, `give` and `take`,
+  `jobs.current`, each domain's `supports`, and `rpf.api.ops.new()`. Every
+  command runs at most once per op id, recorded in a journal that outlives
+  a restart, which turns an operation it cut off into `unknown` for staff
+  rather than running it again. A new server setting,
+  **`economy.addon_account`** (`config.accounts.edit`, unset by default),
+  names the paying account addons charge into and pay out of; until staff
+  set it, addons cannot move money.
 
 ### Database
 

@@ -51,7 +51,8 @@ files each side loads after it and in what order:
 rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, config.lua,
                  -- client.lua, players.lua, commands.lua, moderation.lua, staff.lua,
                  -- inventory.lua, manifest.lua, addons.lua, records.lua, sync.lua, accounts.lua,
-                 -- handoff.lua, join.lua, characters.lua, jobs.lua, edits.lua, data.lua, api.lua
+                 -- handoff.lua, join.lua, characters.lua, jobs.lua, edits.lua, data.lua, ops.lua,
+                 -- facade.lua, api.lua
 rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua,
                  -- picker.lua, api.lua
 ```
@@ -72,7 +73,7 @@ API (see The public API).
 
 The client never loads `protocol.lua`, `client.lua`, `players.lua`,
 `commands.lua`, `moderation.lua`, `staff.lua`, `inventory.lua`, `manifest.lua`, `addons.lua`, `records.lua`, `sync.lua`,
-`accounts.lua`, `join.lua`, `characters.lua`, `jobs.lua`, `edits.lua` or `data.lua`, because the player's client
+`accounts.lua`, `join.lua`, `characters.lua`, `jobs.lua`, `edits.lua`, `data.lua`, `ops.lua` or `facade.lua`, because the player's client
 must never hold the server's API key and has no players, staff or records to
 manage.
 
@@ -823,9 +824,8 @@ Events, all reserved: `records.held(views)`, `records.released(refs)`,
 ### `rpf.inventory`
 
 What a held container holds, and the moves a server makes on it (D6). Server
-only, and internal for now: the public inventory calls are K1's
-domain-neutral facade (`docs/architecture/framework-integration.md`), which
-routes to this module when RPF owns inventory.
+only, and internal: addons reach items through the domain-neutral facade
+(`rpf.facade`, below), which routes here when RPF owns inventory.
 
 **One validator, on both sides.** `inventory.validate(contents, flags,
 catalog)` is a port of the portal's `ContainerContents::validate`: the same
@@ -1086,15 +1086,60 @@ an addon's write, a staff edit (`rpf.edits`, `by = "staff"`), or a deletion
 the portal refused, which puts the record back (`records.changed`, `by =
 "portal"`, `reason = "referenced"`).
 
+### The domain-neutral facade (`rpf.facade`, `rpf.ops`, J3)
+
+How an addon reaches a player's character, money, items and job whoever
+owns them (`docs/architecture/framework-integration.md`, decided in #75).
+`rpf.facade` is the native provider: each call goes to RPF's own module.
+K2 (#92) adds a bridge, and the routing to it by the server's domain
+authority (K1), behind the same calls. Server only; `rpf.api.characters`,
+`money`, `inventory`, `jobs` and `ops` front it.
+
+| Call | Native |
+|---|---|
+| `characters.current(player)` | `{ key, name }` of the character the player has in play (`rpf.characters.selected`): `key` its id, opaque to the addon |
+| `money.accounts()` | The names of the starting accounts (`config.starting_accounts`) |
+| `money.balance(player, account)` | The balance of the character's held account of that name (`rpf.accounts.owned_by`) |
+| `money.debit` / `credit(player, account, amount, reason, op_id)` | One ledger entry between that account and the paying account the setting `economy.addon_account` names: `records.transfer` into it, `accounts.pay` out of it. Without the setting, or with one naming no paying account, `unsupported` |
+| `inventory.count(player, item)` | Plain units (stacks with no data, `inventory.count(id, item, { plain = true })`) across the character's held containers |
+| `inventory.give` / `take(player, item, count, op_id)` | `give` puts every unit in the first container, by name then id, that takes them all (`inventory.add`); `take` checks the plain units are there and works out and validates every container's contents after (`inventory.plan_remove`) before it changes any, so a container that no longer passes its rules refuses the whole take (`invalid_contents`) |
+| `jobs.current(player)` | `{ name, employer, grade, on_duty }` from `rpf.jobs` (the job's slug, its employer's, its rank, duty) |
+| `<domain>.supports(call)` | Whether the call works here: every native call does, except `money.debit` and `credit` without the addon account |
+| `ops.new()` | An op id, `<ms>-<16 hex>`: when it was minted, and the platform's randomness |
+
+Every call takes the engine's handle of a logged-in player and acts on the
+character in play. A read is its value, or nil and `not_logged_in`,
+`no_character`, `not_found`. A command is `true`, or nil, a status and a
+reason: `refused` (nothing changed), `unavailable` (nothing changed; for
+instance the server's account is not held yet) or `unknown` (it may have
+happened). Arguments are checked first, and a bad one is `refused`
+(`invalid`, `invalid_op`) without being journaled.
+
+**`rpf.ops` runs each command once per op id.** Before a command runs its
+intent is written `pending`, under `ENTRY_PREFIX .. op_id` in the
+platform's storage with an index of ids at `KEY`, and its result replaces
+it, kept for `WINDOW_MS` (a day). A repeated op id gets the recorded result
+without running. At start an intent still `pending` (the process died
+inside the command) becomes `unknown`, is logged at `warn` for staff, and
+never runs. Results go only by age; at `MAX_ENTRIES` (1024) a new command is
+`refused` (`journal_full`) rather than evicting a young result, and an op id
+older than the window is `refused` (`expired_op`), so an old id can never
+pay twice. A command that throws is `unknown`; an intent that cannot be
+written runs nothing and is `unavailable`. A success is recorded on disk
+only once its change is (`rpf.sync.flush` queued its report in the
+persisted outbox), tried again each second until then: a crash in between
+would otherwise lose the change while the journal answered a retry `true`.
+Until then the entry is `pending` on disk, which a restart reads as
+`unknown`.
+
 ### Characters (`rpf.characters`, `rpf.picker`)
 
 A logged-in player's characters (D5): list, create, select and switch. Server
 only for the decisions; `rpf.picker` is the client half the character select
 screen (the adapter's, like the login form: `lua/platform/gmod/ui.lua` on
 Gmod, `lua/platform/fivem/nui/` on FiveM) calls. Both are
-internal for now: the public character calls are K1's domain-neutral facade
-(`docs/architecture/framework-integration.md`), which routes here when RPF
-owns characters.
+internal: addons reach the character in play through the domain-neutral
+facade (`rpf.facade`, above), which routes here when RPF owns characters.
 
 **Everything is a held record (C7)**, so no protocol message lists or
 selects characters: holding already does both, and a second way to hand
@@ -1188,7 +1233,8 @@ Events on the server, reserved: `characters.created(player, character)`,
 ### Money (`rpf.accounts`)
 
 Balances, transfers and payments on held accounts (D5). Server only, and
-internal for now, like `rpf.characters`.
+internal, like `rpf.characters`: addons move money through the facade
+(`rpf.facade`).
 
 **A balance is a fold over the ledger.** An account's balance here is the
 one the portal folded when it handed the account over, moved by every entry
@@ -1250,11 +1296,11 @@ held to the same answers.
 
 Characters' jobs, duty and salaries (D7): the game side of the employers,
 departments and jobs staff define in the portal (E4) and of the default job
-(E5). Server only, and internal for now, like `rpf.characters`: the public
-jobs calls are K2's domain-neutral facade
-(`docs/architecture/framework-integration.md`, `jobs.current`), which will
-route here when RPF owns jobs. Until then the game server's own code calls
-it directly.
+(E5). Server only, and internal, like `rpf.characters`: addons read a
+player's job through the facade (`rpf.facade`, `jobs.current`), which
+routes here when RPF owns jobs; setting jobs is not in the facade
+(`docs/architecture/framework-integration.md`), so the game server's own
+code calls `set_job` directly.
 
 **A job is part of the character**, a held record, so it changes only
 through `records.set_job` and goes to the portal with the character's next
@@ -1425,6 +1471,7 @@ internal.
 | `time` | both | `now`, `after`, `every`, `cancel`: `rpf.time`'s timers |
 | `addons` | server | `API`, `API_MIN`, `register`, `state`, `provide`, `call` (`rpf.addons` above) |
 | `records` | server | `get`, `list`, `query`, `hold`, `release`, `create`, `update`, `delete`, `batch` (`rpf.data` above) |
+| `characters`, `money`, `inventory`, `jobs`, `ops` | server | The domain-neutral facade (`rpf.facade` above): `characters.current`; `money.accounts`, `balance`, `debit`, `credit`; `inventory.count`, `give`, `take`; `jobs.current`; each domain's `supports`; `ops.new` |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
 | `staff` | server | `can`, `permissions`, `link`, `record` (F9, `rpf.staff` above) |
 | `config` | server | `item`, `item_base`, `item_defaults`, `employer`, `department`, `job`, `starting_accounts`, `default_job`, `setting`, `version`, and `edit` (E6, above) |

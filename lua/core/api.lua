@@ -21,7 +21,8 @@
 ---   past it, and on Gmod it is all the server owner's own code anyway.
 ---
 ---What a side gets follows what it loaded: `players`, `staff`, `config`,
----`addons` and `records` on the server, `auth` on the client, and `events`, `time`,
+---`addons`, `records` and the facade (`characters`, `money`, `inventory`,
+---`jobs`, `ops`) on the server, `auth` on the client, and `events`, `time`,
 ---`engine` and `VERSION` on both.
 local rpf = rpf
 local events = rpf.events
@@ -255,6 +256,62 @@ if data then
       return data.batch(ops)
     end,
   }, "rpf.records")
+end
+
+local facade = rpf.facade
+if facade then
+  surface.characters = freeze({
+    current = function(player)
+      return facade.current_character(player)
+    end,
+    supports = function(call)
+      return facade.supports("characters", call)
+    end,
+  }, "rpf.characters")
+  surface.money = freeze({
+    accounts = function()
+      return facade.accounts()
+    end,
+    balance = function(player, account)
+      return facade.balance(player, account)
+    end,
+    debit = function(player, account, amount, reason, op_id)
+      return facade.debit(player, account, amount, reason, op_id)
+    end,
+    credit = function(player, account, amount, reason, op_id)
+      return facade.credit(player, account, amount, reason, op_id)
+    end,
+    supports = function(call)
+      return facade.supports("money", call)
+    end,
+  }, "rpf.money")
+  surface.inventory = freeze({
+    count = function(player, item)
+      return facade.count(player, item)
+    end,
+    give = function(player, item, count, op_id)
+      return facade.give(player, item, count, op_id)
+    end,
+    take = function(player, item, count, op_id)
+      return facade.take(player, item, count, op_id)
+    end,
+    supports = function(call)
+      return facade.supports("inventory", call)
+    end,
+  }, "rpf.inventory")
+  surface.jobs = freeze({
+    current = function(player)
+      return facade.current_job(player)
+    end,
+    supports = function(call)
+      return facade.supports("jobs", call)
+    end,
+  }, "rpf.jobs")
+  surface.ops = freeze({
+    new = function()
+      return rpf.ops.new()
+    end,
+  }, "rpf.ops")
 end
 
 local players = rpf.players
