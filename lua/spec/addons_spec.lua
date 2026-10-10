@@ -101,6 +101,10 @@ local function declarations(p)
   return out
 end
 
+---Ticks of a timer whose resource is unloaded mid-evaluation.
+---@type integer
+local unloaded_ticks = 0
+
 describe("rpf.addons", function()
   local p
 
@@ -480,12 +484,15 @@ describe("rpf.addons", function()
 
     it("waits for an evaluation to end before it forgets an origin's addons", function()
       local ran = {}
+      unloaded_ticks = 0
       rpf.addons.register(manifest("acme_a"), {
         start = function()
           ran[#ran + 1] = "start acme_a"
           -- A resource stopping while this handler runs (on FiveM, while it
-          -- yields): its addon must survive the rest of this evaluation.
+          -- yields): its addon must survive the rest of this evaluation, but
+          -- nothing of its code may run again, even before that ends.
           rpf.addons.unload_origin("acme_res")
+          p.advance(5000)
         end,
       })
       rpf.addons.from("acme_res", function()
@@ -493,8 +500,15 @@ describe("rpf.addons", function()
       end)
       rpf.addons.register(manifest("acme_c"), recording("acme_c", ran))
       support.connected(p)
+      rpf.addons.from("acme_res", function()
+        rpf.time.every(1000, function()
+          unloaded_ticks = unloaded_ticks + 1
+        end)
+      end)
+      p.advance(1000)
       configure(p, { installed(manifest("acme_a")), installed(manifest("acme_b")), installed(manifest("acme_c")) })
       assert.are.same({ "start acme_a", "start acme_c" }, ran, "the stopped resource's start is never called")
+      assert.are.equal(1, unloaded_ticks, "its timer was taken down at once, before the evaluation ended")
       assert.are.equal("active", (rpf.addons.state("acme_c")))
       assert.is_nil(rpf.addons.state("acme_b"))
     end)

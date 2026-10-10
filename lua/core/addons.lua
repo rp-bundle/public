@@ -802,13 +802,18 @@ function addons.unload_origin(origin)
     return
   end
   if evaluating then
-    -- Its code is gone now, so nothing of it is called again; it is
-    -- forgotten once the evaluation that may still read it has ended.
+    -- Its code is gone now, so nothing of it is called again: what it set
+    -- up is taken down at once, and its exports answer `inactive`. Only
+    -- forgetting its addons waits, for the evaluation that may still read
+    -- them to end.
     for _, addon in pairs(loaded) do
       if addon.origin == origin then
         addon.gone = true
       end
     end
+    take_down(function(entry)
+      return entry.origin == origin
+    end)
     deferred[#deferred + 1] = { origin = origin, unload = true }
     return
   end
@@ -903,7 +908,7 @@ function addons.call(name, ...)
     return false, "not_found"
   end
   local addon = loaded[export.namespace]
-  if not addon or addon.state ~= "active" then
+  if not addon or addon.state ~= "active" or addon.gone then
     return false, "inactive"
   end
   return answer(name, addons.run({ namespace = export.namespace, origin = addon.origin }, export.fn, ...))
