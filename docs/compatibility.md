@@ -26,7 +26,7 @@ Two numbers are involved, and only one decides compatibility.
 | Protocol | First release | Served by portal releases | Status |
 |---|---|---|---|
 | 1 | 0.1.0 | 0.1.0 and later, until its support window closes | Served |
-| 2 | Unreleased | The next release and later | Current, unreleased: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`), an item's `image` hash in the config snapshot (P3), and the profile (K1) in `hello` and `welcome` |
+| 2 | Unreleased | The next release and later | Current, unreleased: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), the `domain_external` reject code (K1), in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`), an item's `image` hash in the config snapshot (P3), and the profile (K1) in `hello` and `welcome` |
 
 A row is added when a release ships a new protocol version, and a version's
 last portal release is filled in when one drops it. `CHANGELOG.md` names the
@@ -271,7 +271,11 @@ fifth, both ways: `declare_addons` and `query_records`, and any record frame
 naming an addon record, are refused on an older connection at the socket;
 the portal hands no addon record to one (a hold of an owner leaves them
 out) and sends it no addon command (the registry treats it as offline for
-one). The next message or nested variant the portal gains follows the
+one). The `domain_external` reject code (K1, protocol 2,
+`protocol::DOMAINS_PROTOCOL`) is the sixth: the socket rewrites it to
+`forbidden`, final in both, where it writes a reply to an older connection
+(`ws::in_protocol`), and an older core's `Hello` is adopted as native, so it
+is never refused this way to begin with. The next message or nested variant the portal gains follows the
 same pattern: a `<NAME>_PROTOCOL` constant beside the type, and the check in
 the one place that sends it, or for a message a game server sends, its
 version in `ServerToPortal::protocol`.

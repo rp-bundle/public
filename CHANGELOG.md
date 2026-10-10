@@ -21,7 +21,7 @@ adds the `restarting` notice (below), a character's job (D7), in-game
 staff (F9: `link_player`, `staff_action`, `player_linked` and
 `staff_permissions`), the `suspended` reject code (H5) and in-game config
 editing (E6: `config_changed`, `config_change_applied` and
-`config_change_discarded`), and an item's `image` hash in the config
+`config_change_discarded`), the `domain_external` reject code (K1), and an item's `image` hash in the config
 snapshot (P3), which a protocol 1 core ignores, and the profile (K1) in
 `hello` (optional: a core that leaves it out runs native) and `welcome`,
 which a protocol 1 core ignores; a game server on
@@ -44,9 +44,11 @@ keep the job the portal has.
   `Hello`, so a saved change applies at its next restart, and the portal
   enforces the profile it is running, showing "pending restart" meanwhile.
   A restart that turns a domain external archives that domain's records on
-  the server for good. Refusing an external domain's writes, the core's own
-  refusals and the portal's pages follow in later parts; until then, do not
-  run a server as a companion.
+  the server for good. Every portal path that writes or holds a record of
+  an external domain refuses it, whether or not the game server is
+  connected, and a game server is told so with the new reject code
+  `domain_external` (part 2). The core's own refusals and the portal's pages
+  follow in later parts; until then, do not run a server as a companion.
 - Release docs (H7, #56). Every release publishes its own docs site on
   GitHub Pages, from its tag: installing, upgrading from the release before
   (`docs/upgrading.md`, which a tag now requires), compatibility, the
