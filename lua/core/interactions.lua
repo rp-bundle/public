@@ -341,6 +341,9 @@ local function on_interact(player, payload, respond)
   local given = copy(request.payload) or {}
   local rules = entry.rules
   local target = nil
+  -- The activation this request runs in, taken once: a check that yields
+  -- may resume after the addon was disabled, re-enabled or reloaded.
+  local context = rpf.addons.context_of(entry.namespace)
   if rules then
     local resolved, refused = rpf.targets.admit(name, rules, player, given)
     if resolved == nil then
@@ -354,7 +357,7 @@ local function on_interact(player, payload, respond)
     -- refuses gives it back.
     local reservation = rpf.targets.reserve(name, rules, player)
     if rules.check then
-      local checked, allowed, why = rpf.addons.run(rpf.addons.context_of(entry.namespace), rules.check, player, rpf.targets.copy(target))
+      local checked, allowed, why = rpf.addons.run(context, rules.check, player, rpf.targets.copy(target))
       if not checked or allowed ~= true then
         rpf.targets.release(reservation)
       end
@@ -368,9 +371,18 @@ local function on_interact(player, payload, respond)
         respond(read and text or refusal("refused"))
         return
       end
+      -- Still this registration, of this activation: one taken down while
+      -- the check ran must not run its handler as if it belonged to the
+      -- activation that replaced it.
+      local now = rpf.addons.context_of(entry.namespace)
+      if handlers[name] ~= entry or not rpf.addons.running(entry.namespace) or not now or not context or now.run ~= context.run then
+        rpf.targets.release(reservation)
+        respond(refusal("inactive"))
+        return
+      end
     end
   end
-  local ran, ok, extra = rpf.addons.run(rpf.addons.context_of(entry.namespace), entry.handler, player, given, rpf.targets.copy(target))
+  local ran, ok, extra = rpf.addons.run(context, entry.handler, player, given, rpf.targets.copy(target))
   if not ran then
     p.log("error", "rpf: the interaction " .. name .. " failed: " .. tostring(ok))
     respond(refusal("failed"))

@@ -175,7 +175,7 @@ end
 function target.started(name)
   for _, known in ipairs(target.RESOURCES) do
     if known == name then
-      offered = nil
+      -- `apply` takes back what a still-running resource was offered first.
       target.apply(rules_given)
       return
     end

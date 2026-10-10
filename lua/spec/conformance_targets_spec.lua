@@ -347,6 +347,27 @@ conformance.run(busted, "Interactions with targets", {
     end,
   },
   {
+    name = "refuses inactive, and runs no handler, when the addon reloaded while its check ran",
+    run = function(world)
+      ready(world)
+      local ran = false
+      assert(world.api.interactions.register("acme_npcs.slowcheck", function()
+        ran = true
+        return true
+      end, {
+        target = "acme_npcs.greeter",
+        check = function()
+          -- As a check that yields might resume: the addon reloaded meanwhile.
+          assert(world.api.addons.register(manifest(), {}))
+          return true
+        end,
+      }))
+      local answer = interact(world, "acme_npcs.slowcheck", { id = NEAR })
+      assert.are.same({ false, "inactive" }, { answer.ok, answer.reason })
+      assert.is_false(ran)
+    end,
+  },
+  {
     name = "gives the cooldown back when the addon's own check refuses",
     run = function(world)
       ready(world)

@@ -1165,6 +1165,16 @@ describe("the FiveM adapter", function()
       driver.resources["qb-target"] = "started"
       driver.resource_start("qb-target")
       assert.are.equal("AddGlobalPed", driver.target_calls[#driver.target_calls - 1].call)
+      -- ox_target starting while qb-target has the options: qb-target's are
+      -- taken back before ox_target is offered them.
+      before = #driver.target_calls
+      driver.resources.ox_target = "started"
+      driver.resource_start("ox_target")
+      assert.are.same(
+        { "qb-target", "RemoveGlobalPed" },
+        { driver.target_calls[before + 1].resource, driver.target_calls[before + 1].call }
+      )
+      assert.are.equal("ox_target", driver.target_calls[#driver.target_calls].resource)
     end)
 
     it("asks the server over lib.callback, and hands back only a string answer", function()
