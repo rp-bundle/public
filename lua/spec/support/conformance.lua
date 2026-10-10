@@ -150,7 +150,11 @@ function World:answer(frame)
         portal.records[change.id] = nil
       elseif record and change.kind == "addon_record" then
         for name, value in pairs(change.patch or change.fields or {}) do
-          record.fields[name] = value ~= json.null and value or nil
+          if value == json.null then
+            record.fields[name] = nil
+          else
+            record.fields[name] = value
+          end
         end
         record.revision = change.revision or record.revision + 1
         record.held = frame.type ~= "release"

@@ -704,18 +704,48 @@ function data.create(type_name, fields, opts)
   return plain(record)
 end
 
+---A value a script wrote, with every empty table it holds marked as the
+---stored value marks the empty table at the same place, where it has one.
+---A plain copy drops JSON marks (and a FiveM export would anyway), and an
+---empty table's shape (array or object) is all a mark says, so a `json`
+---field read and written back unchanged takes its shapes from what is
+---stored. Anything else is left to the rules, which refuse an empty table
+---they cannot tell the shape of.
+---@param value any The value written.
+---@param stored any The value stored at the same place, or nil.
+---@return any value The value, marked where the stored one says how.
+local function reshape(value, stored)
+  if type(value) ~= "table" or type(stored) ~= "table" or json.is_array(value) or json.is_object(value) then
+    return value
+  end
+  if next(value) == nil then
+    if json.is_array(stored) then
+      return json.array()
+    elseif json.is_object(stored) then
+      return json.object()
+    end
+    return value
+  end
+  local out = {}
+  for key, item in pairs(value) do
+    out[key] = reshape(item, stored[key])
+  end
+  return out
+end
+
 ---A patch as `rpf.records` takes one: the fields given, and `json.null` for
 ---each `opts.clear` names.
 ---@param patch any The fields to set.
 ---@param opts any The options.
+---@param current table? The record's fields as stored, for the shapes of empty tables (`reshape`).
 ---@return table? patch The patch, or nil if it is not one.
-local function patch_of(patch, opts)
+local function patch_of(patch, opts, current)
   if patch ~= nil and type(patch) ~= "table" then
     return nil
   end
   local out = {}
   for name, value in pairs(patch or {}) do
-    out[name] = value
+    out[name] = reshape(value, current and current[name])
   end
   local clear = type(opts) == "table" and opts.clear or nil
   if clear ~= nil then
@@ -752,7 +782,7 @@ local function plan_update(def, type_name, id, patch, opts)
   if not at_revision(entry, opts) then
     return nil, "stale"
   end
-  local changes = patch_of(patch, opts)
+  local changes = patch_of(patch, opts, entry.data.fields)
   if not changes then
     return nil, "invalid", { error = "wrong_type", field = "" }
   end

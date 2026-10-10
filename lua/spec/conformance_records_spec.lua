@@ -53,7 +53,11 @@ local function tags(limit)
         schema = 1,
         authority = "live",
         owners = { "player" },
-        fields = { label = { type = "string" }, lit = { type = "boolean", index = true } },
+        fields = {
+          label = { type = "string" },
+          lit = { type = "boolean", index = true },
+          meta = { type = "json", max_bytes = 256 },
+        },
       },
     },
   }
@@ -513,6 +517,25 @@ conformance.run(busted, "addon records", {
       assert.are.same({ "off", "on" }, labels(api.records.list("acme_tags.mark", { order = "lit" })))
       assert.are.same({ "on", "off" }, labels(api.records.list("acme_tags.mark", { order = "lit", descending = true })))
       assert.are.same({ "on" }, labels(api.records.list("acme_tags.mark", { where = { lit = { gt = false } } })))
+    end,
+  },
+  {
+    name = "takes back a json field read unchanged, empty tables and all, and keeps false",
+    run = function(world)
+      local api = installed(world)
+      local json = world.core.json
+      local mark = assert(api.records.create("acme_tags.mark", { label = "x", lit = true }, OWNER))
+      -- Stored with an empty object and an empty array inside, as a staff
+      -- edit or an older write would leave it.
+      world.core.records.set_addon_fields(mark.id, {
+        meta = json.object({ nested = json.object({}), list = json.array({}), n = 1 }),
+      })
+      local read = assert(api.records.get("acme_tags.mark", mark.id))
+      local after, err = api.records.update("acme_tags.mark", mark.id, { meta = read.fields.meta, lit = false })
+      assert.is_nil(err)
+      assert.are.equal(1, after.fields.meta.n)
+      world:settle()
+      assert.is_false(world.portal.records[mark.id].fields.lit, "false reaches the portal as false")
     end,
   },
   {
