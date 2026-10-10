@@ -436,6 +436,42 @@ describe("rpf.addons", function()
       assert.are.equal(before, rpf.addons.owned_count())
     end)
 
+    it("forgets an event handler's ownership once it fires or is removed", function()
+      support.connected(p)
+      local before = rpf.addons.owned_count()
+      local handler = function() end
+      rpf.addons.run({ namespace = "acme_kit" }, function()
+        for _ = 1, 100 do
+          rpf.api.events.once("scripts.ping", function() end)
+        end
+        rpf.api.events.on("scripts.pong", handler)
+      end)
+      rpf.api.events.emit("scripts.ping")
+      assert.is_true(rpf.api.events.off("scripts.pong", handler))
+      assert.are.equal(before, rpf.addons.owned_count())
+    end)
+
+    it("waits for an evaluation to end before it forgets an origin's addons", function()
+      local ran = {}
+      rpf.addons.register(manifest("acme_a"), {
+        start = function()
+          ran[#ran + 1] = "start acme_a"
+          -- A resource stopping while this handler runs (on FiveM, while it
+          -- yields): its addon must survive the rest of this evaluation.
+          rpf.addons.unload_origin("acme_res")
+        end,
+      })
+      rpf.addons.from("acme_res", function()
+        rpf.addons.register(manifest("acme_b"), recording("acme_b", ran))
+      end)
+      rpf.addons.register(manifest("acme_c"), recording("acme_c", ran))
+      support.connected(p)
+      configure(p, { installed(manifest("acme_a")), installed(manifest("acme_b")), installed(manifest("acme_c")) })
+      assert.are.same({ "start acme_a", "start acme_c" }, ran, "the stopped resource's start is never called")
+      assert.are.equal("active", (rpf.addons.state("acme_c")))
+      assert.is_nil(rpf.addons.state("acme_b"))
+    end)
+
     it("calls none of a stopped origin's handlers, even one requiring another of its addons", function()
       local ran = {}
       rpf.addons.from("acme_res", function()

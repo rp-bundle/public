@@ -161,7 +161,10 @@ local pending_retry = nil
 ---Registrations made while an evaluation ran (by a handler), applied once
 ---it ends, in order, so none replaces an addon whose old registration is
 ---still being stopped or started.
----@type { manifest: table, handlers: rpf.addons.Handlers, origin: any }[]
+---Origins unloaded while an evaluation ran (a resource stopped while a
+---handler yielded) wait here too: forgetting an addon under an evaluation
+---that will read it again would break that evaluation.
+---@type { manifest: table?, handlers: rpf.addons.Handlers?, origin: any, unload: boolean? }[]
 local deferred = {}
 
 ---Logs through the platform, or keeps the line until there is one.
@@ -545,7 +548,11 @@ function addons.evaluate(retry)
       -- Applied outside the evaluation, which runs its own.
       local registration = table.remove(deferred, 1)
       evaluating = false
-      ok, err = pcall(apply, registration.manifest, registration.handlers, registration.origin)
+      if registration.unload then
+        ok, err = pcall(addons.unload_origin, registration.origin)
+      else
+        ok, err = pcall(apply, registration.manifest --[[@as table]], registration.handlers --[[@as rpf.addons.Handlers]], registration.origin)
+      end
       evaluating = true
     end
   end
@@ -790,6 +797,17 @@ end
 ---@param origin any The origin, as the adapter names it.
 function addons.unload_origin(origin)
   if origin == nil then
+    return
+  end
+  if evaluating then
+    -- Its code is gone now, so nothing of it is called again; it is
+    -- forgotten once the evaluation that may still read it has ended.
+    for _, addon in pairs(loaded) do
+      if addon.origin == origin then
+        addon.gone = true
+      end
+    end
+    deferred[#deferred + 1] = { origin = origin, unload = true }
     return
   end
   local gone = {}

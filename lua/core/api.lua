@@ -64,12 +64,15 @@ local RESERVED = { "bridge" }
 ---What `events.on` and `once` registered for each handler a script passed,
 ---by name, so `off` with the script's handler finds them: a script's
 ---handler is registered wrapped, so it runs in the context of the code that
----subscribed (`rpf.addons.run`). Weak keys, so a handler nobody holds can go.
----@type table<string, table<any, function[]>>
+---subscribed (`rpf.addons.run`), with how to forget that its subscriber owns
+---it. Weak keys, so a handler nobody holds can go.
+---@type table<string, table<any, { fn: function, disown: fun() }[]>>
 local wrapped = {}
 
 ---Subscribes a script's handler. A handler subscribed while an addon's
----code runs is the addon's, and is removed when it stops (`rpf.addons.own`).
+---code runs is the addon's, and is removed when it stops (`rpf.addons.own`);
+---a `once` that fires, or an `off`, forgets that ownership at once, so an
+---addon that subscribes and unsubscribes as it goes leaves nothing behind.
 ---@param name any The event name.
 ---@param handler any The handler: a function, or a FiveM function reference.
 ---@param once boolean Whether it runs once.
@@ -86,17 +89,23 @@ local function subscribe(name, handler, once)
     by_handler = setmetatable({}, { __mode = "k" })
     wrapped[name] = by_handler
   end
-  local fn
-  ---Forgets this registration in the map `off` reads.
+  ---@type { fn: function, disown: fun() }
+  local registration = { disown = function() end }
+  ---Forgets this registration in the map `off` reads, and its ownership.
   local function forget()
     local list = by_handler[handler]
     for i = #(list or {}), 1, -1 do
-      if list[i] == fn then
+      if list[i] == registration then
         table.remove(list, i)
       end
     end
+    registration.disown()
   end
-  fn = function(...)
+  ---The handler as registered: forgets itself first if it runs once, then
+  ---runs the script's handler in its subscriber's context.
+  ---@param ... any The event's arguments.
+  ---@return any ... The handler's results.
+  registration.fn = function(...)
     if once then
       forget()
     end
@@ -110,16 +119,16 @@ local function subscribe(name, handler, once)
   end
   by_handler[handler] = by_handler[handler] or {}
   local list = by_handler[handler]
-  list[#list + 1] = fn
+  list[#list + 1] = registration
   if once then
-    events.once(name, fn)
+    events.once(name, registration.fn)
   else
-    events.on(name, fn)
+    events.on(name, registration.fn)
   end
   if addons then
-    addons.own(function()
+    registration.disown = addons.own(function()
       forget()
-      events.off(name, fn)
+      events.off(name, registration.fn)
     end)
   end
   return handler
@@ -137,14 +146,15 @@ local surface = {
     end,
     off = function(name, handler)
       local by_handler = type(name) == "string" and wrapped[name] or nil
-      ---@type function[]?
+      ---@type { fn: function, disown: fun() }[]?
       local list = by_handler and handler ~= nil and by_handler[handler] or nil
       if not by_handler or not list or #list == 0 then
         return false
       end
       by_handler[handler] = nil
-      for _, fn in ipairs(list) do
-        events.off(name, fn)
+      for _, registration in ipairs(list) do
+        events.off(name, registration.fn)
+        registration.disown()
       end
       return true
     end,
