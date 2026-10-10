@@ -32,18 +32,40 @@ function client.notify(message)
   EndTextCommandThefeedPostTicker(false, true)
 end
 
+---How long, in milliseconds, between looks for a placed entity whose state
+---bag arrived first.
+client.PLACED_RETRY_MS = 100
+
+---How many looks before giving up on one: five seconds' worth, past which
+---it has streamed out again or never will.
+client.PLACED_TRIES = 50
+
 ---Makes a ped the core placed passive on this client (J4): it neither
 ---dies, flees nor wanders, whichever client OneSync makes its owner. The
 ---server froze it and keeps it; these are the parts of a ped's behaviour
 ---only a client can set. A state bag change for anything else is ignored.
+---
+---The bag can arrive before its entity exists here, so a bag whose entity
+---is not there yet is looked for again every `PLACED_RETRY_MS`, up to
+---`PLACED_TRIES` times.
 ---@param bag string The state bag's name.
 ---@param value any The placement tag, `{ id, type }`.
-function client.placed(bag, value)
+---@param tries integer? How many looks are left; `PLACED_TRIES` on the first.
+function client.placed(bag, value, tries)
   if type(value) ~= "table" then
     return
   end
   local entity = GetEntityFromStateBagName(bag)
-  if not entity or entity == 0 or not IsEntityAPed(entity) then
+  if not entity or entity == 0 then
+    tries = tries or client.PLACED_TRIES
+    if tries > 1 then
+      Citizen.SetTimeout(client.PLACED_RETRY_MS, function()
+        client.placed(bag, value, tries - 1)
+      end)
+    end
+    return
+  end
+  if not IsEntityAPed(entity) then
     return
   end
   SetEntityInvincible(entity, true)

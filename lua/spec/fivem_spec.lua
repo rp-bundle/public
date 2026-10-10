@@ -869,6 +869,23 @@ describe("the FiveM adapter", function()
       assert.are.equal("no_model", why)
     end)
 
+    it("knows what it placed by its own table, not by a tag the owning client can rewrite", function()
+      local driver = started_server()
+      local spec = { id = "rec", type = "acme_npcs.greeter", kind = "object", position = { x = 0, y = 0, z = 0 }, heading = 0, bucket = 0, model = "prop" }
+      local ref = assert(rpf.fivem.server.spawn(spec))
+      local handle = native("NetworkGetEntityFromNetworkId")(ref)
+      driver.entities[handle].state.rpf_placement = nil
+      assert.are.equal("rec", rpf.fivem.server.entity(ref).placement, "a cleared tag changes nothing")
+      local forged = native("CreateObjectNoOffset")(2, 0, 0, 0, true, true, false)
+      native("Entity")(forged).state:set("rpf_placement", { id = "rec", type = "acme_npcs.greeter" }, true)
+      local forged_ref = native("NetworkGetNetworkIdFromEntity")(forged)
+      assert.is_nil(rpf.fivem.server.entity(forged_ref).placement, "a forged tag names nothing")
+      rpf.fivem.server.despawn(forged_ref)
+      assert.is_not_nil(driver.entities[forged], "nor can it be removed as ours")
+      rpf.fivem.server.despawn(ref)
+      assert.is_nil(driver.entities[handle])
+    end)
+
     it("removes only an entity it placed", function()
       local driver = started_server()
       local theirs = native("CreateObjectNoOffset")(2, 0, 0, 0, true, true, false)
@@ -914,6 +931,21 @@ describe("the FiveM adapter", function()
       driver.state_bag("entity:9999", "rpf_placement", { id = "gone", type = "t" })
       assert.are.same({ invincible = true, blocking = true, frozen = true }, driver.peds[7001])
       assert.are.same({}, driver.peds[7002])
+    end)
+
+    it("looks again for a placed ped whose state bag arrived before it did", function()
+      local driver, record = load_side("client")
+      driver.start()
+      driver.state_bag("entity:7003", "rpf_placement", { id = "rec", type = "acme_npcs.greeter" })
+      record.time = record.time + rpf.fivem.client.PLACED_RETRY_MS
+      driver.run_due()
+      driver.peds[7003] = {}
+      driver.bags["entity:7003"] = 7003
+      driver.run_due()
+      assert.are.same({}, driver.peds[7003], "not before the next look is due")
+      record.time = record.time + rpf.fivem.client.PLACED_RETRY_MS
+      driver.run_due()
+      assert.are.same({ invincible = true, blocking = true, frozen = true }, driver.peds[7003])
     end)
 
     it("asks the server over lib.callback, and hands back only a string answer", function()

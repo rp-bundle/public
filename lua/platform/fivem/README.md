@@ -172,15 +172,19 @@ it the OneSync way, from the server:
   bucket (`SetEntityRoutingBucket`), and kept when the client that owns it
   leaves (`SetEntityOrphanMode` 2, `KEEP_ENTITY`), so ownership can move
   between clients without the entity going. Its ref is its network id.
-- **Tagged.** Each carries the replicated state bag `rpf_placement` (`{
-  id, type }`). The core trusts a tag only for an entity it placed as
-  exactly that one (`rpf.world.entity`), so a client that sets the bag on
-  an entity it owns names nothing.
+- **Tagged, but not trusted.** Each carries the replicated state bag
+  `rpf_placement` (`{ id, type }`) for clients to read. The client that owns
+  an entity can rewrite its state, so the adapter knows what it placed by
+  its own table (`placed_here`, by server handle): `server.entity` and
+  `server.despawn` read that, never the tag. A client clearing the tag
+  cannot make the core place a second entity, and one forging it names
+  nothing. Only `server.sweep`, at start, has nothing but tags to go on.
 - **Streaming and range** are OneSync's: a server entity streams to the
   players near it in its bucket, and stays whether or not anyone is near.
 - **Passive peds.** What a ped does is up to its owning client, so
-  `client.lua` hears the tag arrive (`AddStateBagChangeHandler`) and makes
-  a placed ped invincible, deaf to the world (`SetBlockingOfNonTemporaryEvents`)
+  `client.lua` hears the tag arrive (`AddStateBagChangeHandler`), looks
+  again every 100 ms for up to 5 s when it arrived before the entity, and
+  makes a placed ped invincible, deaf to the world (`SetBlockingOfNonTemporaryEvents`)
   and frozen on every client, whichever owns it.
 - **Cleanup.** The core removes what it placed when this resource stops
   (`onResourceStop`, `rpf.world.clear`), and `server.sweep` removes, as the

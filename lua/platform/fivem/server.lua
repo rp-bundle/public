@@ -202,6 +202,14 @@ local function fivem_model(model)
   return nil
 end
 
+---Which record each entity this run placed is, by the server's handle: the
+---one proof of what an entity is. The state bag tag is what clients read,
+---but the client that owns an entity can overwrite its state, so nothing
+---here trusts it for an entity this run knows; only `server.sweep`, which
+---runs before anything is placed, falls back to it for a previous run's.
+---@type table<integer, string>
+local placed_here = {}
+
 ---The entity a network id names on the server, or nil.
 ---@param ref any The network id.
 ---@return integer? entity The server's handle.
@@ -245,21 +253,24 @@ function server.spawn(spec)
   FreezeEntityPosition(entity, true)
   SetEntityOrphanMode(entity, server.KEEP_ENTITY)
   Entity(entity).state:set(server.PLACEMENT, { id = spec.id, type = spec.type }, true)
+  placed_here[entity] = spec.id
   return NetworkGetNetworkIdFromEntity(entity)
 end
 
----Removes an entity `server.spawn` placed. One without the tag is another
----script's, and stays.
+---Removes an entity `server.spawn` placed. Any other is another script's,
+---and stays, whatever its state bag says.
 ---@param ref any Its network id.
 function server.despawn(ref)
   local entity = by_ref(ref)
-  if entity and Entity(entity).state[server.PLACEMENT] ~= nil then
+  if entity and placed_here[entity] then
+    placed_here[entity] = nil
     DeleteEntity(entity)
   end
 end
 
 ---A networked entity, by its network id (`rpf.world`'s `entity`): where it
----is, its model's hash, its bucket, and the record its tag names.
+---is, its model's hash, its bucket, and the record it is if this run placed
+---it, from `placed_here`, never from its client-writable tag.
 ---@param ref any The network id, as a client sent it.
 ---@return { position: { x: number, y: number, z: number }, model: integer, bucket: integer, placement: string? }? entity It, or nil.
 function server.entity(ref)
@@ -268,19 +279,20 @@ function server.entity(ref)
     return nil
   end
   local at = GetEntityCoords(entity)
-  local tag = Entity(entity).state[server.PLACEMENT]
   return {
     position = { x = at.x, y = at.y, z = at.z },
     model = GetEntityModel(entity),
     bucket = GetEntityRoutingBucket(entity),
-    placement = type(tag) == "table" and tag.id or nil,
+    placement = placed_here[entity],
   }
 end
 
 ---Removes every entity a previous run of this resource placed and did not
 ---remove, recognised by its tag: what a crash, or a stop the engine cut
 ---short, left behind. Run as the resource starts, before the core places
----anything, so a restart never doubles what was placed.
+---anything, so a restart never doubles what was placed. The tag is all a
+---new run has to go on; a clean stop removes everything by `placed_here`
+---(`rpf.world.clear`), so only a crash leans on it.
 function server.sweep()
   for _, pool in ipairs({ GetAllPeds(), GetAllObjects() }) do
     for _, entity in ipairs(pool or {}) do

@@ -126,7 +126,9 @@ end
 
 ---The networked string every entity the core places carries (J4): the
 ---record's id, so `server.entity` can say which record an entity is, and
----`server.sweep` recognises one a previous run left.
+---`server.sweep` recognises one a previous run left. Only the server sets
+---an entity's networked variables, so a client cannot forge or clear it,
+---unlike a FiveM state bag, which the entity's owner can write.
 server.PLACEMENT = "rpf_placement"
 
 ---The model a placement names for Gmod: a string is one model's path, a
