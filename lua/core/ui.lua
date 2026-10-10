@@ -19,7 +19,8 @@
 ---sent, by number, and the option's `value` never leaves the server; an
 ---input dialog's values are each of its field's kind and within its bounds.
 ---A player who leaves takes their dialogs with them (`gone`), and one left
----open past `TIMEOUT_MS` is `timeout`. A wait is the addon's that asked,
+---open past `TIMEOUT_MS` is `timeout`, and its window closed. A wait is the
+---addon's that asked,
 ---like a timer: when the addon stops, it goes, and its callback is never
 ---called.
 ---
@@ -733,6 +734,11 @@ local function show_server(handle, kind, opts, callback)
       return
     end
     disown()
+    if reason == "timeout" then
+      -- The player's window is still open: closed, so the next of its kind
+      -- may be shown, and nothing stale submitted.
+      p.to_client(handle, handoff.UI_CLOSE, handoff.encode(handoff.UI_CLOSE, { id = id }))
+    end
     if reason then
       deliver(ctx, callback, nil, reason)
       return

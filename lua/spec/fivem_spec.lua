@@ -940,6 +940,20 @@ describe("the FiveM adapter", function()
       close("progress")
     end)
 
+    it("leaves another resource's progress bar alone: not queued behind, never cancelled", function()
+      local driver = load_side("client")
+      driver.start()
+      local theirs = { data = { label = "theirs" }, finish = function() end }
+      driver.bar = theirs
+      local got
+      rpf.api.ui.progress({ label = "ours", duration_ms = 1000 }, function(done, err)
+        got = { done, err }
+      end)
+      assert.are.same({ nil, "cancelled" }, got, "refused at once, not queued")
+      rpf.fivem.ox.ui.close("progress")
+      assert.are.equal(theirs, driver.bar, "theirs still running")
+    end)
+
     it("stops watching a menu once it is over, however soon the next opens", function()
       local driver, record = load_side("client")
       driver.start()

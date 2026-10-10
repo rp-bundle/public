@@ -307,14 +307,26 @@ local function input(spec, done)
   end)
 end
 
+---Whether the progress bar on show is this adapter's, so `close` never
+---cancels another resource's.
+local progress_ours = false
+
 ---A progress bar, over `lib.progressBar`, which waits on a thread of its
----own: true when it ran to its end, anything else (cancelled, interrupted,
----or not started because another is running) is false.
+---own: true when it ran to its end, anything else (cancelled, interrupted)
+---is false. Another resource's bar on show is false at once: ox_lib would
+---queue this one behind it, past the server's wait, and the player sees
+---one bar at a time anyway.
 ---@param spec rpf.ui.ProgressSpec The bar.
 ---@param done fun(completed: boolean) Called once.
 local function progress(spec, done)
   CreateThread(function()
+    if lib.progressActive() then
+      done(false)
+      return
+    end
+    progress_ours = true
     local completed = lib.progressBar({ duration = spec.duration_ms, label = spec.label, canCancel = spec.cancel, useWhileDead = false })
+    progress_ours = false
     done(completed == true)
   end)
 end
@@ -330,7 +342,7 @@ local function close(kind)
     end
   elseif kind == "input" then
     lib.closeInputDialog()
-  elseif kind == "progress" and lib.progressActive() then
+  elseif kind == "progress" and progress_ours and lib.progressActive() then
     lib.cancelProgress()
   end
 end

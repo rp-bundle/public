@@ -371,8 +371,10 @@ describe("rpf.ui", function()
       end
       rpf.api.ui.menu(7, menu(), keep)
       rpf.api.ui.progress(7, { label = "x", duration_ms = 1000 }, keep)
+      local bar = rpf.json.decode(p.client_requests[#p.client_requests].payload).id
       p.advance(1000 + rpf.ui.GRACE_MS)
       assert.are.same({ { nil, "timeout" } }, got, "a progress bar waits its length and the grace")
+      assert.are.same({ { id = bar } }, p.messages_to(7, "rpf:ui_close"), "and its window is closed")
       rpf.players.dropped(7, "quit")
       assert.are.same({ nil, "gone" }, got[2])
       p.advance(rpf.ui.TIMEOUT_MS)

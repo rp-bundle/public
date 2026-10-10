@@ -740,8 +740,9 @@ function fivem.client(env, host, seed, convars)
     assert(driver.bar, "No progress bar is active")
     driver.bar.finish(false)
   end
-  -- One dialog and one bar at a time, as ox_lib's: another while one is on
-  -- show answers nil at once.
+  -- One dialog and one bar at a time, as ox_lib's: another dialog while one
+  -- is on show answers nil at once, and another bar waits for the one on
+  -- show to end before it starts.
   env.lib.inputDialog = function(heading, rows, options)
     if driver.dialog then
       return nil
@@ -759,8 +760,15 @@ function fivem.client(env, host, seed, convars)
     return env.Citizen.Await(answer)
   end
   env.lib.progressBar = function(data)
-    if driver.bar then
-      return nil
+    while driver.bar do
+      local before = env.promise.new()
+      local running = assert(driver.bar)
+      local finish = running.finish
+      running.finish = function(completed)
+        finish(completed)
+        before:resolve(true)
+      end
+      env.Citizen.Await(before)
     end
     local ended = env.promise.new()
     driver.bar = {
