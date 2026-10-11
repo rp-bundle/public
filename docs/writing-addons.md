@@ -14,7 +14,9 @@ This page is the guide. The decisions behind it are in
 [`lua/core/meta/api.lua`](../lua/core/meta/api.lua), which your editor reads
 for completion (below). The worked example,
 [`lua/examples/acme_tags/`](../lua/examples/acme_tags/), is a small addon
-you can run: players spray tags on walls, which fade after a day.
+you can run: players spray tags on walls, which fade after a day. The
+commerce example, [`lua/examples/acme_shop/`](../lua/examples/acme_shop/),
+is a counter that sells items and buys them back (Selling, below).
 
 ## Getting the API
 
@@ -405,7 +407,9 @@ give can find the player has no room after the money is gone.
   setting of your own rather than a constant.
 - **Retries are safe with the same op id.** A command runs at most once per
   op id; sending it again returns the first answer. An op id is good for a
-  day.
+  day. `rpf.ops.result(op_id)` says how one already went (nil if it never
+  ran), so a repeated order is answered as it was, before you check it
+  again against stock or prices that have since moved.
 - **`unknown` is for staff.** It means the game server cannot tell whether
   the command happened (it stopped mid-way). It is logged with what it was,
   announced as `domains.op_unknown`, listed by `rpf.ops.unknown()`, and
@@ -471,6 +475,67 @@ end)
 - **Keep `apply` to fields of records you hold** (the stock), which nothing
   but your server can refuse, and name those records in `records` so that
   `apply` cannot find them changed.
+
+### The shop example
+
+[`lua/examples/acme_shop/`](../lua/examples/acme_shop/) is the whole of a
+shop, with nothing in RPF that knows it is one. Staff place counters
+(`acme_shop.counter`, a `config` type whose records are shopkeepers placed
+in the world) and price what each sells (`acme_shop.listing`), both on the
+generic data pages. What is limited has stock (`acme_shop.stock`, a `live`
+type the server holds). A player aims the `acme_shop.shop` interaction at
+a counter, picks from a menu and says how many, both opened from the
+server with `rpf.ui`, so the menu's values (which listing, at what price)
+never reach the client. Then:
+
+- **Everything is checked again when the player confirms**, against the
+  config and the stock as they are then: the listing still there, the
+  counter still open and within reach, the price still the one shown (a
+  price staff changed meanwhile is refused, not charged), the item still in
+  the catalog (refused and said in the console otherwise), and enough
+  stock.
+- **One exchange** moves the money, the items and the stock (`apply`), with
+  the listing and the stock named in `records` at the revisions just read.
+- **One op id per order**, minted when the player confirms. While the till
+  cannot be asked (`unavailable`, just after a restart) the order is sent
+  again under the same op id, so it can never be made twice, and an order
+  sent again is answered as it was (`rpf.ops.result`), even once the stock
+  it took has run out.
+- **The listing as the player saw it.** The menu keeps the listing's
+  revision with the option, so an order for a listing staff changed while
+  the dialog was open (another item at the same price) is refused, never
+  filled with what the listing has become.
+- **Staff see every sale** where they already look: the ledger entry on the
+  till's and the player's account pages (`Corner shop: sold 2 water`), the
+  player's containers, and the stock on its data page. What it bought is an
+  ordinary item: the player moves and uses it like any other.
+
+### Licences, dealerships and the like
+
+The same contract covers what else is sold in game, with no change to it:
+
+- **A licence** is a `live` record the addon writes when it is bought (a
+  `licence` type owned by the character, with an expiry field), bought by
+  an exchange (`pay`, and the create as `apply`) or a plain
+  `rpf.money.debit` with the create as its `apply`. Give the type no
+  `unique` field and a `limit` well above what you sell, so the portal has
+  nothing to refuse the create for once it is paid. Checking it later is
+  the addon's own `rpf.records.list` on the player's records, as an
+  interaction's `check` rule or in its handler.
+- **A dealership** sells something that is not an item: a vehicle record
+  the addon owns (`live`, owned by the character, its model and plate as
+  fields), created by the exchange's `apply`, with the stock on the lot as
+  `acme_shop` keeps it. Spawning it is the addon's, through
+  `rpf.world` where the engine supports it.
+- **Trades in kind**, a crafting bench or a recycler, are exchanges with
+  `take` and `give` and no money at all.
+
+What none of them may do is keep a balance or an inventory of their own
+(money and items stay the core's, behind the facade), take a real-money
+payment, or create a record in `apply` that the portal could refuse after
+the money moved (a `unique` field, a reference to something staff may have
+deleted, a type at its `limit`): keep `apply` to fields of records the
+server holds, and records it creates to types with nothing to clash on.
 
 Do not build anything that sells in-game money or items for real money:
 the Cfx.re platform rules forbid it, and RPF connects nothing to a payment.

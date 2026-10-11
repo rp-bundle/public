@@ -315,6 +315,9 @@ if facade then
     unknown = function()
       return rpf.ops.unknown()
     end,
+    result = function(op_id)
+      return rpf.ops.result(op_id)
+    end,
   }, "rpf.ops")
 end
 

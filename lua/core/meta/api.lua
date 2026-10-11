@@ -625,6 +625,16 @@ function Ops.new() end
 ---@return rpf.OpUnknown[] unknown Copies.
 function Ops.unknown() end
 
+---How an op id already went on this server: what sending its command again
+---would answer, without sending it. Ask it first when you answer a repeat
+---of something a player did (an order sent again), so they get the answer
+---they had, not a fresh refusal because the stock has since run out.
+---@param op_id string The op id.
+---@return boolean? done Nil when it never ran here (or changed nothing, or is older than a day): run it. True if it went through; false if not.
+---@return rpf.FacadeStatus? status For false: `refused`, `unknown` (staff resolve it; never run it again), or `unavailable` (the journal could not be read; try later).
+---@return string? reason For `refused`, why.
+function Ops.result(op_id) end
+
 ---A facade command whose result is `unknown`.
 ---@class rpf.OpUnknown
 ---@field op_id string Its op id.

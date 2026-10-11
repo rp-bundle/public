@@ -59,6 +59,7 @@ conformance.PLATFORMS = { "mock", "fivem", "gmod" }
 ---@field to_clients { player: any, name: string, payload: string }[] Every message the server sent a client, by the harness's number for the player.
 ---@field socket_open fun(id: integer) The host's socket opened, as the platform hears it.
 ---@field socket_message fun(id: integer, text: string) A frame arrived on it.
+---@field socket_close fun(id: integer, reason: string) It closed: the portal went away.
 ---@field connects integer[] The sockets the core asked for, in order.
 ---@field sent { id: integer, text: string }[] Every frame the core sent, in order.
 ---@field answered integer How many of `sent` the fake portal has read.
@@ -288,6 +289,14 @@ function World:connect(domains)
   self:pump()
 end
 
+---The portal goes away: the socket closes under the core, which keeps
+---playing and queues its reports in the outbox until it connects again.
+---`connect` answers the socket it asks for next.
+function World:disconnect()
+  local id = assert(self.connects[#self.connects], "the core asked for no socket")
+  self.socket_close(id, "the test closed it")
+end
+
 ---What the platform's storage holds now: what a game server that died at
 ---this moment would find when it starts again. A copy.
 ---@return table<string, string> storage The copy.
@@ -485,7 +494,7 @@ local function boot_mock(opts)
   end
   world.run_due = p.run_due
   world.next_due = p.next_due
-  world.socket_open, world.socket_message = p.socket_open, p.socket_message
+  world.socket_open, world.socket_message, world.socket_close = p.socket_open, p.socket_message, p.socket_close
   world.join = function(n)
     p.add_player(n, "Player " .. n, { "license:" .. n })
     assert(core.players.connected(n))
@@ -553,7 +562,7 @@ local function boot_fivem(opts)
   world.api = driver.resource("acme")
   world.run_due = driver.run_due
   world.next_due = driver.next_due
-  world.socket_open, world.socket_message = driver.socket_open, driver.socket_message
+  world.socket_open, world.socket_message, world.socket_close = driver.socket_open, driver.socket_message, driver.socket_close
   world.join = function(n)
     driver.add_player(n, "Player " .. n, { "license:" .. n })
     driver.connect_player(n)
@@ -625,6 +634,9 @@ local function boot_gmod(opts)
   end
   world.socket_message = function(id, text)
     fake:socket_message(id, text)
+  end
+  world.socket_close = function(id, reason)
+    fake:socket_close(id, reason)
   end
   world.join = function(n)
     return fake:connect_player(n, "Player " .. n, string.format("765611980000%05d", n))
