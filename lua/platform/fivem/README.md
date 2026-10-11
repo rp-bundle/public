@@ -151,6 +151,7 @@ most:
 | `playerJoining` | `players.connected(source)` |
 | `playerDropped` | `players.dropped(source, reason)` |
 | `chatMessage` (the `chat` resource) | Cancelled for a held player (`lock.lua`) |
+| `/rpflink <code>` (`RegisterCommand`, not restricted) | `on_command`'s handler with the player's `source` (F9, #198); the server console (`source` 0) runs nothing. See below |
 | `rpf-ws:open`, `rpf-ws:message`, `rpf-ws:close` | The transport, which calls the core's socket handlers |
 | `onClientResourceStart` (this resource) | Starts the screens and the client core |
 | `onClientResourceStop` (this resource) | Releases the input lock, which would otherwise leave the ped frozen |
@@ -218,6 +219,21 @@ ped's ownership moving between clients, a placed ped made passive as it
 streams in, the ped staying put, how long creation takes, and
 that `GetEntityScript` still names this resource for an entity an earlier
 run of it made (layer 5).
+
+## The link command
+
+`on_command` (F9, #198) is `RegisterCommand(name, handler, false)`: not
+restricted, because FiveM would otherwise want an ace permission for every
+player who runs it, and the handler is what checks who they are. The core
+registers one, `rpflink`, which a staff member types the code from the
+portal into: `/rpflink <code>` in chat, or `rpflink <code>` in the F8
+console. The `chat` resource runs a command a resource registered without
+broadcasting the line, and nothing in the adapter logs or repeats the words
+(`args`; never `rawCommand`). The line is the player's own typing, so a
+server with a chat or command logger of its own (txAdmin's included) may
+record it: that is that logger's, and a code works once and for five
+minutes. Not yet seen on a real FXServer with the stock `chat` resource and
+txAdmin (layer 5).
 
 ## Interactions
 

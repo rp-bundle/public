@@ -51,6 +51,7 @@ platform.SERVER = members({
   "on_client",
   "on_client_request",
   "request_client",
+  "on_command",
   "log",
   "expose",
   "capabilities",

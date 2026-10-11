@@ -126,6 +126,7 @@ step.
 | | `on_client(name, handler)` | `handler(player, payload)`. The platform supplies the sender, and the payload is hostile input |
 | | `on_client_request(name, handler)` | `handler(player, payload, respond)`: a client's request (`request_server`), answered by calling `respond(reply)` once. The platform pairs the two (ox_lib's `lib.callback` on FiveM, numbered `net` messages on Gmod) and supplies the sender; the core always answers (J10) |
 | | `request_client(player, name, payload, callback)` | The other direction: asks one player's client and hands `callback` the answer, or nil, taking it only from that player, and forgetting a request when the player leaves (numbered events on both engines: ox_lib's callbacks never let an unanswered one go). The core keeps the timeout and reads the answer as hostile input (J10) |
+| Commands | `on_command(name, handler)` | `handler(player, args)`: a player ran the command `name`, typed in chat (`/name words`) or in the console, `args` the words after it as strings. Called for a connected player, never for the server console. The words are hostile input and often a credential: the platform never logs or repeats them, and keeps the line out of the chat others read. The core registers one, `rpflink` (F9, #198) |
 | Log | `log(level, message)` | `"debug"`, `"info"`, `"warn"` or `"error"`. The core never logs a secret |
 | Api | `expose(api)` | Publishes the public API table: through the resource's export table on FiveM, where each resource has its own Lua state, and through the `rpf` global on Gmod, where every addon shares one. Only `rpf.api` is published, never the rest of `rpf` |
 
@@ -705,9 +706,14 @@ told nothing), with the portal's reason on a refusal and a generic sentence
 (`LINK_UNAVAILABLE`) when the portal never answered (`expired`, or an
 outbox refusal). Linking grants nothing by itself: the permissions follow
 in the portal's next push. **The code is a credential and is never
-logged**; `rpf.protocol.redact` hides it too. The core has no chat command
-for it yet: a server's own script calls `rpf.api.staff.link(handle, code)`
-from whatever command it offers (the adapters may add one later).
+logged**; `rpf.protocol.redact` hides it too. The core registers
+the command a player types it into, `rpflink` (`staff.COMMAND`), through
+the platform's `on_command`: `staff.typed` joins the words (the portal
+ignores spaces), refuses what cannot be a code (none, too many, too long,
+not text) before it costs the guild a guess, tells the player when they
+have not logged in or have a code still being checked, and calls `link`.
+It never logs or repeats what was typed. A server's own script may still
+call `rpf.api.staff.link(handle, code)` from a command of its own.
 
 **Recording.** A script that kicks, teleports or otherwise acts as staff
 checks `can` first, does the deed, and reports it with `record`. The portal

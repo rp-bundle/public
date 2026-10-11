@@ -506,6 +506,99 @@ describe("the Gmod adapter's placements (J4)", function()
   end)
 end)
 
+describe("the Gmod adapter's commands (F9, #198)", function()
+  local CODE = "7K3Q-X9ZP"
+
+  ---Boots a connected server with a logged-in player.
+  ---@return rpf.mock.GmodWorld world The fake.
+  ---@return table record What the host recorded.
+  ---@return rpf.mock.GmodPlayer ply The player.
+  local function linkable()
+    local world, record = boot("server")
+    welcome(world, record)
+    local ply = world:connect_player(1, "Alice", STEAMID)
+    local core = assert(world.core)
+    assert(core.players.authenticating(ply))
+    assert(core.players.register(ply, { player_id = "00000000-0000-4000-8000-0000000000aa", username = "alice" }))
+    return world, record, ply
+  end
+
+  it("registers the link command in the console, unlogged", function()
+    local world = boot("server")
+    assert.is_function(world.commands.rpflink)
+    assert.are.equal(FCVAR_UNLOGGED, world.command_flags.rpflink)
+  end)
+
+  it("links the player who typed the code in the console", function()
+    local world, record = linkable()
+    world:player_command(1, "rpflink", { "7K3Q", "X9ZP" })
+    assert.are.equal("7K3QX9ZP", last(world, record, "link_player").link_code)
+    -- The server console has no player to link, and nothing is sent for it.
+    local before = #record.sent
+    world:command("rpflink", { CODE })
+    assert.are.equal(before, #record.sent)
+  end)
+
+  it("runs a chat command and drops the line, whoever else is listening", function()
+    local world, record = linkable()
+    assert.are.equal("", world:say(1, "/rpflink " .. CODE))
+    assert.are.equal(CODE, last(world, record, "link_player").link_code)
+    for _, line in ipairs(record.logs) do
+      assert.is_nil(line.message:find(CODE, 1, true), line.message)
+    end
+  end)
+
+  it("takes the command's name in any case, and no other line", function()
+    local world, record, ply = linkable()
+    assert(world.core.players.advance(ply, "character_select"))
+    assert(world.core.players.advance(ply, "active"))
+    local heard = {}
+    world.core.connection.platform.on_command("rpftest", function(player, args)
+      heard[#heard + 1] = { player = player, args = args }
+    end)
+    assert.are.equal("", world:say(1, "/RpfTest  a   b "))
+    assert.are.same({ { player = ply, args = { "a", "b" } } }, heard)
+    for _, line in ipairs({ "hello", "rpftest a", "/rpftesta b", "/ rpftest", "/", "!rpftest a", "/unknown x" }) do
+      assert.is_nil(world:say(1, line), line)
+    end
+    assert.are.equal(1, #heard)
+    assert.is_nil(last(world, record, "link_player"))
+  end)
+
+  it("runs a command for a player the lock would silence, and still silences their chat", function()
+    local world, record, ply = linkable()
+    assert.is_true(ply.locked)
+    assert.are.equal("", world:say(1, "hello"))
+    assert.are.equal("", world:say(1, "/rpflink " .. CODE))
+    assert.truthy(last(world, record, "link_player"))
+  end)
+
+  it("drops the line and logs the name only when a handler raises", function()
+    local world, record = linkable()
+    local platform = world.core.connection.platform
+    platform.on_command("boom", function()
+      error("failed")
+    end)
+    assert.are.equal("", world:say(1, "/boom " .. CODE))
+    world:player_command(1, "boom", { CODE })
+    assert.are.equal(2, logged(record, "error", "the boom command failed"))
+    assert.are.equal(0, logged(record, "error", CODE))
+  end)
+
+  it("replaces a handler registered again, and registers the console command once", function()
+    local world = boot("server")
+    local platform = world.core.connection.platform
+    local first = nil
+    platform.on_command("rpftwice", function() first = "first" end)
+    local added = world.commands.rpftwice
+    platform.on_command("rpftwice", function() first = "second" end)
+    assert.are.equal(added, world.commands.rpftwice)
+    world:connect_player(1, "Alice", STEAMID)
+    world:player_command(1, "rpftwice", {})
+    assert.are.equal("second", first)
+  end)
+end)
+
 describe("the Gmod adapter's platform members", function()
   it("reads the wall clock with millisecond resolution", function()
     local world, record = boot("server")

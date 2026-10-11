@@ -73,6 +73,16 @@ function.
      mock: `<number>\n<body>`). `request_client` is the other direction,
      and takes an answer only from the player it asked: the core's
      callback for one player's menu must never hear another's.
+   - `on_command(name, handler)` registers a command a player runs, in chat
+     or the console as the engine offers, and calls `handler(player, args)`
+     with the engine-supplied player and the words after the name (F9,
+     #198). It runs for a connected player only: the server console and RCON
+     run nothing, since a handler acts for a player. The words are hostile
+     input and often a credential (the link code), so the adapter **never
+     logs or repeats them, and keeps the line out of the chat other players
+     read**. Every player may run it (no ace permission on FiveM): the
+     handler checks who they are. Registering a name again replaces its
+     handler, and a handler that raises must not let the line through.
    - `expose` publishes `rpf.api` the way scripts on this engine share code.
      Where each resource has its own Lua state, that is an export of a plain
      copy: read-only views do not survive serialisation, and neither does a
@@ -200,7 +210,13 @@ for the clients' `HTTP`.
   it starts (a Lua refresh restarts it on the same map), and a map change
   takes the rest. Drawn on fake globals only so far. The minimal
   interaction UI is the console command `rpf_interact`, which a player
-  binds (E is Gmod's `+use`). All four UI kinds are supported
+  binds (E is Gmod's `+use`). `commands.lua` is `on_command`: the name as
+  a console command (`concommand.Add`, `FCVAR_UNLOGGED`), which never
+  touches chat, and as a `/name words` chat line through `PlayerSay`, which
+  the adapter's one chat hook answers `""` so the line is run and dropped
+  (before the input lock, so a player still choosing a character may link).
+  Another addon's `PlayerSay` hook may see the line first, so the console is
+  the way to type a credential on a server with chat loggers. All four UI kinds are supported
   (`addon_ui.lua`): a progress bar is X to cancel, as on ox_lib, and an
   input dialog will not submit a required field left empty or a value out
   of its bounds. Drawn on fake Derma only so far: a real Gmod client is

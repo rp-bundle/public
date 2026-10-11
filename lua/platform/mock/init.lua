@@ -201,6 +201,8 @@ end
 ---@field players table<any, { name: string, identifiers: string[] }> What the engine knows about each connected player.
 ---@field client_handlers table<string, fun(player: any, payload: string)> Handlers registered with `on_client`, by name.
 ---@field request_handlers table<string, fun(player: any, payload: string, respond: fun(reply: string))> Answerers registered with `on_client_request`, by name.
+---@field command_handlers table<string, fun(player: any, args: string[])> Handlers registered with `on_command`, by name.
+---@field run_command fun(player: any, name: string, args: string[]): boolean A player runs a command, as the engine would hand it over: the words after the name. False when nothing registered the name.
 ---@field asking table<string, table<integer, { player: any, callback: fun(reply: string?) }>> Requests sent to clients and not answered yet, by name and number.
 ---@field add_player fun(player: any, name: string, identifiers: string[]) Tells the mock about a player before the harness hands them to the core.
 ---@field remove_player fun(player: any) Forgets a player after the harness has told the core they left.
@@ -223,6 +225,7 @@ function mock.server(host, seed)
   p.players = {}
   p.client_handlers = {}
   p.request_handlers = {}
+  p.command_handlers = {}
   p.asking = {}
 
   ---No coroutines here: the harness runs everything on one thread.
@@ -363,6 +366,19 @@ function mock.server(host, seed)
 
   function p.on_client_request(name, handler)
     p.request_handlers[name] = handler
+  end
+
+  function p.on_command(name, handler)
+    p.command_handlers[name] = handler
+  end
+
+  function p.run_command(player, name, args)
+    local handler = p.command_handlers[name]
+    if not handler then
+      return false
+    end
+    handler(player, args)
+    return true
   end
 
   function p.request_client(player, name, payload, callback)

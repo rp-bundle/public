@@ -38,8 +38,14 @@
 ---@class rpf.staff
 ---@field MAX_CODE_BYTES integer The longest link code `link` sends. The portal's codes are far shorter, so anything longer is a typo or a paste, and refusing it here costs the guild no failed guess.
 ---@field MAX_ACTION_BYTES integer The longest action name `record` sends, as the portal allows.
+---@field MAX_CODE_WORDS integer The most words `typed` joins into a code. The portal ignores spaces, so a code typed in groups still works, but more words than any code has is a paste or a typo.
+---@field COMMAND string The name of the command a player types the code into, registered on the platform (`rpflink`).
 ---@field LINKED string The message a player sees once linked, with `%s` for the staff account's name.
 ---@field LINK_UNAVAILABLE string The message a player sees when the portal could not answer a link at all.
+---@field LINK_USAGE string The message a player sees when they typed the command without a code.
+---@field LINK_LOGIN_FIRST string The message a player sees when they typed a code before logging in.
+---@field LINK_BUSY string The message a player sees when they typed a second code while one was being checked.
+---@field LINK_INVALID string The message a player sees when what they typed cannot be a code, refused here without costing the guild a guess.
 local staff = {}
 
 local rpf = rpf
@@ -49,8 +55,14 @@ local players = rpf.players
 
 staff.MAX_CODE_BYTES = 32
 staff.MAX_ACTION_BYTES = 64
+staff.MAX_CODE_WORDS = 4
+staff.COMMAND = "rpflink"
 staff.LINKED = "Linked to the staff account %s."
 staff.LINK_UNAVAILABLE = "Your staff account could not be linked just now. Try again in a moment."
+staff.LINK_USAGE = "To link your staff account, type rpflink and the code the portal gave you."
+staff.LINK_LOGIN_FIRST = "Log in to your player account first, then enter the code again."
+staff.LINK_BUSY = "Your last code is still being checked. Wait for the answer."
+staff.LINK_INVALID = "That link code is not valid. Check it, or ask the portal for a new one."
 
 ---What each player may do here, by player id: the last push, whole, minus
 ---the players who have left since.
@@ -290,9 +302,9 @@ local function link_answered(player_id, reply, failure)
   events.emit("staff.link_failed", { player_id = player_id, code = code, reason = reason })
 end
 
----Links a player's account to the staff account that issued a code: what a
----server's chat command calls when a player types the code the portal gave
----them. The code goes to the portal exactly as typed (it ignores case,
+---Links a player's account to the staff account that issued a code: what
+---the built-in `rpflink` command (`typed`), or a server's own command,
+---calls when a player types the code the portal gave them. The code goes to the portal exactly as typed (it ignores case,
 ---spaces and hyphens) and is never logged.
 ---
 ---The outcome comes later: the player is told, and `staff.linked` or
@@ -327,6 +339,55 @@ function staff.link(handle, code)
     return false, err --[[@as rpf.StaffRefusal]]
   end
   return true, nil
+end
+
+---What a player is told when `link` refused before sending anything, by
+---reason. An outbox refusal is not here: `link_answered` told the player.
+---@type table<string, string>
+local REFUSED = {
+  not_logged_in = staff.LINK_LOGIN_FIRST,
+  invalid_code = staff.LINK_INVALID,
+  busy = staff.LINK_BUSY,
+}
+
+---The built-in command a player types a link code into (`rpflink <code>`),
+---which the platform calls for each player who runs it. It is what makes a
+---fresh install linkable without a script of the server's own, and it only
+---turns the words into a code for `link`, so a script that offers its own
+---command still gets the same checks.
+---
+---**The words are hostile input and a credential.** They are never logged
+---and never repeated back, in a message or an event: a refusal says what is
+---wrong, not what was typed. Nothing here trusts the platform to have
+---limited them either, so the count and the length are checked.
+---@param handle any The engine's handle of the player who ran the command.
+---@param args any The words after the command, as the platform split them.
+function staff.typed(handle, args)
+  local p = platform
+  if not p then
+    return
+  end
+  local words = type(args) == "table" and #args or 0
+  if words == 0 then
+    p.notify(handle, staff.LINK_USAGE)
+    return
+  end
+  local code = nil
+  if words <= staff.MAX_CODE_WORDS then
+    local parts = {}
+    for i = 1, words do
+      if type(args[i]) ~= "string" then
+        parts = nil
+        break
+      end
+      parts[i] = args[i]
+    end
+    code = parts and table.concat(parts)
+  end
+  local sent, err = staff.link(handle, code)
+  if not sent and REFUSED[err] then
+    p.notify(handle, REFUSED[err])
+  end
 end
 
 ---Reports a staff action a script carried out in game, for the guild's audit
@@ -376,8 +437,9 @@ function staff.record(handle, permission, action, target)
   return true, nil
 end
 
----Starts the module: takes the portal's `staff_permissions` and forgets a
----player's grant when they leave. Called by `rpf.start_server`, after
+---Starts the module: takes the portal's `staff_permissions`, forgets a
+---player's grant when they leave, and registers the command a player types
+---a link code into. Called by `rpf.start_server`, after
 ---`rpf.players`.
 ---@param p rpf.ServerPlatform The platform players are told through.
 ---@param c rpf.Client The connection to the portal.
@@ -386,6 +448,7 @@ function staff.start(p, c)
   grants, linking = {}, {}
   c:listen("staff_permissions", staff.receive)
   events.on("players.dropping", on_dropping)
+  p.on_command(staff.COMMAND, staff.typed)
 end
 
 rpf.staff = staff

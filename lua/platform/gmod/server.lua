@@ -59,6 +59,7 @@ local messages = include("rpf/platform/gmod/messages.lua") --[[@as rpf.gmod.Mess
 local transport = include("rpf/platform/gmod/transport.lua") --[[@as rpf.gmod.Transport]]
 local random = include("rpf/platform/gmod/random.lua") --[[@as rpf.gmod.Random]]
 local lock = include("rpf/platform/gmod/lock.lua") --[[@as rpf.gmod.Lock]]
+local commands = include("rpf/platform/gmod/commands.lua") --[[@as rpf.gmod.Commands]]
 
 -- Made even on a server that refuses to start, so `server.cfg` setting them
 -- does not add "Unknown command" lines beside the one line that matters.
@@ -287,6 +288,7 @@ local platform = {
   on_client = messages.on_client,
   on_client_request = messages.on_client_request,
   request_client = messages.request_client,
+  on_command = commands.on_command,
   log = shared.log,
   expose = shared.expose,
 }
@@ -348,7 +350,12 @@ local function start()
   for _, name in ipairs(lock.HOOKS) do
     hook.Add(name, "rpf.lock", lock.refuse)
   end
-  hook.Add("PlayerSay", "rpf.lock", lock.silence)
+  -- One hook for chat, so the order is ours: a command's line is run and
+  -- dropped even from a player the lock would silence (who is told to log
+  -- in), and any other line is the lock's to refuse.
+  hook.Add("PlayerSay", "rpf", function(player, text)
+    return commands.say(player, text) or lock.silence(player)
+  end)
   -- A map change ends this Lua state and starts another, with a new instance
   -- id. What changed in held records since the last report goes into the
   -- persisted outbox first, for the next state to send; closing then lets

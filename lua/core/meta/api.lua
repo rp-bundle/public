@@ -1222,8 +1222,9 @@ function Staff.can(handle, permission) end
 ---@return string[] permissions Sorted names, a copy. Empty for anyone not logged in or not linked.
 function Staff.permissions(handle) end
 
----Links a player's account to the staff account that issued a code, for the
----command a player types it into. The code is sent exactly as typed, and
+---Links a player's account to the staff account that issued a code. RPF
+---registers the command a player types it into (`rpflink <code>`) and calls
+---this for them, so a script needs it only for a command of its own. The code is sent exactly as typed, and
 ---never logged. The answer comes later: the player is told, and
 ---`staff.linked` or `staff.link_failed` is announced; their permissions
 ---follow in the portal's next push. One link per player at a time, because
