@@ -145,16 +145,10 @@ function acme_garden.water(rpf, target)
   return true
 end
 
----Harvests the player's own grown plant: the plant goes, and the harvest
----item (if the server has one) comes, as one intent through the facade, so
----a plant is never lost without its item.
----
----The op id the item is given under is written to the plant before it is
----given, so a harvest asked for again (a player pressing twice, or after a
----give whose outcome is unknown) is answered from how that op went rather
----than given again under a fresh id: done, the plant is picked; unknown,
----it waits for staff, who resolve it by hand (`rpf.ops.unknown`); refused or
----never run, it is tried again.
+---Harvests the player's own grown plant: it comes out of the ground. A
+---harvest that paid out an item would go through an exchange
+---(`rpf.api.commerce`, J5), which gives the item and makes this deletion as
+---one journaled intent, once per op id; `acme_shop` shows one.
 ---@param rpf rpf.Api The API.
 ---@param player rpf.PlayerView The player who asked.
 ---@param target table The plant the rules resolved.
@@ -168,50 +162,9 @@ function acme_garden.harvest(rpf, player, target)
   if plant.fields.stage ~= "grown" then
     return false, "It is not ready."
   end
-  ---Takes the plant out of the ground: the change the item goes with.
-  ---@return any done Non-nil once deleted.
-  local function pick()
-    return rpf.records.delete(acme_garden.TYPE, plant.id, { revision = plant.revision })
-  end
-  local item = acme_garden.HARVEST_ITEM
-  if item == nil then
-    local done, why = pick()
-    if not done then
-      return false, "It would not come up (" .. tostring(why) .. ")."
-    end
-    return true
-  end
-  local earlier = plant.fields.harvest_op
-  if earlier then
-    local done, status = rpf.ops.result(earlier)
-    if done then
-      -- Given already; only the picking is left.
-      local picked, why = pick()
-      if not picked then
-        return false, "It would not come up (" .. tostring(why) .. ")."
-      end
-      return true
-    elseif status == "unknown" then
-      return false, "This harvest is waiting on staff."
-    elseif status == "unavailable" then
-      return false, "The garden cannot tell yet; try again in a moment."
-    end
-  end
-  local op = rpf.ops.new()
-  if not op then
-    return false, "The garden is not open yet."
-  end
-  local marked, why = rpf.records.update(acme_garden.TYPE, plant.id, { harvest_op = op }, { revision = plant.revision })
-  if not marked then
+  local done, why = rpf.records.delete(acme_garden.TYPE, plant.id, { revision = plant.revision })
+  if not done then
     return false, "It would not come up (" .. tostring(why) .. ")."
-  end
-  plant = marked
-  local ok, status, reason = rpf.inventory.give(player.handle, item, 1, op, pick)
-  if not ok then
-    if status == "unknown" then
-      return false, "This harvest is waiting on staff."
-    end
-    return false, "Nothing to carry it in (" .. tostring(reason or status) .. ")."
   end
   return true
 end

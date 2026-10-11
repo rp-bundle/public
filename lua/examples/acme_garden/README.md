@@ -33,12 +33,11 @@ the contract.
   plant's `ticked_at` with `rpf.time.elapsed`: one stage of growth per whole
   tick while it has water, `seed` → `sprout` → `grown`, or `withered` once
   dry. This is active time: a plant grows only while a server holds it.
-- **Collection and destruction.** `harvest` takes a grown plant out of the
-  ground and, if `acme_garden.HARVEST_ITEM` names an item, gives it through
-  the facade as one intent with the deletion. The op id is written to the
-  plant first, so a harvest asked for again is answered from how that op
-  went (`rpf.ops.result`): never given twice, and one whose outcome is
-  unknown waits for staff. `uproot` pulls one up whatever its stage.
+- **Collection and destruction.** `harvest` takes the gardener's grown
+  plant out of the ground, and `uproot` pulls one up whatever its stage.
+  A harvest that paid out an item would go through an exchange
+  (`rpf.api.commerce`), which gives the item and makes the deletion as one
+  journaled intent, once per op id; `acme_shop` shows one.
 - **Restart recovery.** The core claims every plant back after a restart.
   The first tick then counts at most `MAX_CATCH_UP_MS` (five minutes) of
   growth, however long the server was down.

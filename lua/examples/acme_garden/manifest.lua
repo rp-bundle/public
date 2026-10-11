@@ -18,7 +18,6 @@
 ---@field SPROUT_TICKS integer Ticks of growth before a seed sprouts.
 ---@field GROWN_TICKS integer Ticks of growth before a plant can be harvested.
 ---@field PER_PLAYER integer The most plants one player may have growing.
----@field HARVEST_ITEM string? The item a harvest gives, by catalog slug; nil gives nothing but the satisfaction.
 ---@field MODEL table One model per engine, unread by RPF.
 acme_garden = acme_garden or {}
 
@@ -28,7 +27,6 @@ acme_garden.MAX_CATCH_UP_MS = 5 * 60000
 acme_garden.SPROUT_TICKS = 10
 acme_garden.GROWN_TICKS = 30
 acme_garden.PER_PLAYER = 5
-acme_garden.HARVEST_ITEM = nil
 acme_garden.MODEL = { fivem = "prop_plant_01a", gmod = "models/props/cs_office/plant01.mdl" }
 
 acme_garden.MANIFEST = {
@@ -39,10 +37,9 @@ acme_garden.MANIFEST = {
   permissions = { tend = "Water, harvest and remove any plant" },
   types = {
     plant = {
-      -- Schema 1 had no `water` (nor `harvest_op`). Adding them, with a
-      -- default or nullable, is a compatible change, so 1.1.0 installs over
-      -- 1.0.0 without touching a record: an older plant reads as full until
-      -- the next tick writes it at schema 2.
+      -- Schema 1 had no `water`. Adding it with a default is a compatible
+      -- change, so 1.1.0 installs over 1.0.0 without touching a record: an
+      -- older plant reads as full until the next tick writes it at schema 2.
       schema = 2,
       authority = "live",
       owners = { "player" },
@@ -62,9 +59,6 @@ acme_garden.MANIFEST = {
         -- The moment growth was last counted: time is kept here, not in a
         -- timer, so a restart loses none of it.
         ticked_at = { type = "timestamp", required = true, read_only = true },
-        -- The op id a harvest gives its item under, kept so a harvest asked
-        -- for again is answered from how it went, never given twice.
-        harvest_op = { type = "string", max_len = 128, nullable = true, hidden = true },
       },
       list = { "stage", "water", "planted_at" },
       actions = { create = false, edit = "tend", delete = "tend" },

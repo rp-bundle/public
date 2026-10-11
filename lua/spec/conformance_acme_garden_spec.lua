@@ -53,7 +53,6 @@ local function release_one(garden)
   m.version = "1.0.0"
   m.types.plant.schema = 1
   m.types.plant.fields.water = nil
-  m.types.plant.fields.harvest_op = nil
   m.types.plant.list = { "stage", "planted_at" }
   -- 1.0.0's code knew nothing of water either.
   local grow = garden.grow
@@ -217,69 +216,6 @@ conformance.run(busted, "the acme_garden example", {
       local second = sown(world)
       assert.is_true(at(world, 1, "acme_garden.uproot", second.id).ok, "pulled up as a seed")
       assert.is_nil(plant_now(world, second.id))
-    end,
-  },
-  {
-    name = "keeps a grown plant in the ground when its harvest item cannot be given",
-    run = function(world)
-      gardening(world, function(garden)
-        garden.HARVEST_ITEM = "tomato"
-      end)
-      local garden = rawget(_G, "acme_garden")
-      local plant = sown(world)
-      world:advance(garden.GROWN_TICKS * garden.TICK_MS)
-      assert.are.equal("grown", assert(plant_now(world, plant.id)).fields.stage)
-      -- No character in play, so nothing to carry it in.
-      local answer = at(world, 1, "acme_garden.harvest", plant.id)
-      assert.is_false(answer.ok)
-      assert.truthy(answer.reason:find("Nothing to carry it in", 1, true))
-      assert.is_truthy(plant_now(world, plant.id), "not picked")
-    end,
-  },
-  {
-    name = "answers a harvest asked for again from how its give went, never giving under a fresh op",
-    run = function(world)
-      gardening(world, function(garden)
-        garden.HARVEST_ITEM = "tomato"
-      end)
-      local garden = rawget(_G, "acme_garden")
-      local plant = sown(world)
-      world:advance(garden.GROWN_TICKS * garden.TICK_MS)
-      -- A facade whose give cannot vouch for what it did.
-      local gives, outcomes = {}, {}
-      local rpf = setmetatable({
-        inventory = setmetatable({
-          give = function(_, _, _, op)
-            gives[#gives + 1] = op
-            outcomes[op] = "unknown"
-            return nil, "unknown"
-          end,
-        }, { __index = world.api.inventory }),
-        ops = setmetatable({
-          result = function(op)
-            if outcomes[op] then
-              return false, outcomes[op]
-            end
-            return nil
-          end,
-        }, { __index = world.api.ops }),
-      }, { __index = world.api })
-      local player = { player_id = PLAYER, handle = world.core.players.by_player_id(PLAYER).handle }
-      local target = function()
-        return { type = TYPE, id = plant.id, record = assert(plant_now(world, plant.id)) }
-      end
-      assert.are.same({ false, "This harvest is waiting on staff." }, { garden.harvest(rpf, player, target()) })
-      assert.are.same({ false, "This harvest is waiting on staff." }, { garden.harvest(rpf, player, target()) })
-      assert.are.equal(1, #gives, "given once, never again under a fresh op")
-      assert.is_truthy(plant_now(world, plant.id), "the plant waits for staff")
-      -- Staff found it given: the next harvest picks the plant, giving nothing.
-      outcomes[gives[1]] = nil
-      rpf.ops.result = function()
-        return true
-      end
-      assert.is_true((garden.harvest(rpf, player, target())))
-      assert.is_nil(plant_now(world, plant.id))
-      assert.are.equal(1, #gives)
     end,
   },
   {
