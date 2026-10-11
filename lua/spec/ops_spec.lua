@@ -452,7 +452,7 @@ describe("rpf.ops", function()
       for i = 1, rpf.ops.MAX_PER_REPORT do
         unknown({ player = "not-a-uuid", reason = i == 1 and long or nil, amount = 1.5 })
       end
-      unknown({ account = "bank" })
+      unknown({ account = "ba" .. string.char(0) .. "nk" .. string.char(0) })
       connect()
       local sent = reports()
       assert.are.equal(2, #sent)

@@ -535,8 +535,12 @@ function ops.settle(id, call, durable)
   end)
 end
 
----Text as the portal takes it: valid UTF-8, cut to `MAX_TEXT_BYTES` at a
----character boundary.
+---The NUL byte, which Postgres cannot store in text: the portal refuses a
+---report carrying one, so it is taken out first.
+local NUL = string.char(0)
+
+---Text as the portal takes it: valid UTF-8 with no NUL, cut to
+---`MAX_TEXT_BYTES` at a character boundary.
 ---@param value any The value.
 ---@return string? text The text, or nil if it is not a string.
 local function text_of(value)
@@ -544,6 +548,18 @@ local function text_of(value)
     return nil
   end
   local out = json.repair_utf8(value)
+  if out:find(NUL, 1, true) then
+    local parts, from = {}, 1
+    while true do
+      local at = out:find(NUL, from, true)
+      parts[#parts + 1] = out:sub(from, at and at - 1 or nil)
+      if not at then
+        break
+      end
+      from = at + 1
+    end
+    out = table.concat(parts)
+  end
   if #out <= ops.MAX_TEXT_BYTES then
     return out
   end
