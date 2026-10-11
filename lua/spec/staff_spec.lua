@@ -405,11 +405,13 @@ describe("rpf.staff", function()
       local p, notified = server()
       login(7, PLAYER)
       local secret = "SECRETSECRETSECRETSECRETSECRETSECRETSECRET"
+      -- Past the annotated shape, as a platform that got it wrong would.
+      local raw = assert(p.command_handlers[rpf.staff.COMMAND]) --[[@as fun(player: any, args: any)]]
       type_command(p, 7, secret)
-      type_command(p, 7, "x", 5, secret)
-      type_command(p, 7, { secret })
-      assert(p.command_handlers[rpf.staff.COMMAND])(7, nil)
-      assert(p.command_handlers[rpf.staff.COMMAND])(7, secret)
+      raw(7, { "x", 5, secret })
+      raw(7, { { secret } })
+      raw(7, nil)
+      raw(7, secret)
       for _, entry in ipairs(notified) do
         assert.is_nil(entry.message:find(secret, 1, true))
       end
