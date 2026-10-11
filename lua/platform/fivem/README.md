@@ -123,7 +123,7 @@ arrives as a function reference, which the core calls like a function.
 | `connect`, `disconnect`, `send` | The `rpf-ws` shim, below | `ws.lua` |
 | `http_request` (server) | `PerformHttpRequest`, with a failure's body taken from `errorData` and held to one callback | `server.lua` |
 | `http_request` (client) | The NUI page's `fetch` (client Lua has no HTTP) | `ui.lua`, `nui/app.js` |
-| `item_image` (client) | The NUI page's `fetch` too: the portal's redirect followed with `Authorization` dropped, the bytes checked with `crypto.subtle`, kept in IndexedDB under the hash (at most 512, least recently used dropped), answered as a `data:image/png;base64,` URL, the only answer `ui.lua` takes (below) | `ui.lua`, `nui/images.js` |
+| `item_image` (client) | The NUI page's `fetch` too: the portal's redirect followed with `Authorization` dropped, the bytes checked with `crypto.subtle`, kept in IndexedDB under the hash (at most 512, least recently used dropped), answered as a `data:image/png;base64,` URL ending `#.png`, so ox_lib's `isIconUrl` takes it for an image, the only answer `ui.lua` takes (below) | `ui.lua`, `nui/images.js` |
 | `now` | `os.time` (server) or `GetCloudTimeAsInt` (client), whole seconds, refined to milliseconds with `GetGameTimer` and kept inside the wall clock's current second | `shared.lua` |
 | `after` | `Citizen.SetTimeout` | `shared.lua` |
 | `kv_get`, `kv_set` | Resource KVP, with the synchronous `SetResourceKvp`, never the `NoSync` one | `shared.lua` |

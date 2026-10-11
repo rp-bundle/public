@@ -1593,7 +1593,7 @@ function Items.image(slug, callback) end
 ---@class rpf.ItemImage
 ---@field slug string The item's slug.
 ---@field hash string The image's content hash.
----@field src string What the engine draws: on FiveM a `data:image/png;base64,` URL, for an `<img>` in any resource's page or ox_lib's `image` and `icon`; on Gmod a path for `Material()` (`data/rpf/images/<hash>.png`). PNG, at most 256 pixels a side.
+---@field src string What the engine draws: on FiveM a `data:image/png;base64,…#.png` URL (the fragment is what makes ox_lib take it for an image), for an `<img>` in any resource's page or ox_lib's `image` and `icon`; on Gmod a path for `Material()` (`data/rpf/images/<hash>.png`). PNG, at most 256 pixels a side.
 
 ---The player's own login, on their client (P1). The client talks to the
 ---portal directly, so no server-side code handles the password.

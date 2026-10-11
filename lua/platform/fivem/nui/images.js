@@ -14,6 +14,10 @@
  *   signed URL is the credential there. A browser too old to drop it sends
  *   both, which object storage refuses; the signed URL the redirect reached
  *   is then fetched again with no header at all.
+ * - **The URL ends `#.png`.** ox_lib takes an `icon` as an image only if it
+ *   contains `://`, `.png` or `.webp` (its `isIconUrl`), and draws anything
+ *   else as a Font Awesome name. A fragment is not part of a `data:` URL's
+ *   payload, so an `<img>` decodes it the same, and ox_lib sees an image.
  * - **Kept by hash, checked by hash.** Bytes whose SHA-256 is not the hash
  *   asked for are refused and never kept, so what is kept under a hash is
  *   always that image, and a hash once fetched is never fetched again, even
@@ -28,6 +32,9 @@ export const FETCH_TIMEOUT_MS = 30_000;
 
 /** The most images kept, least recently used dropped first. */
 export const MAX_KEPT = 512;
+
+/** What a `data:` URL ends with so ox_lib's `isIconUrl` takes it for an image (above). */
+export const OX_LIB_ICON = "#.png";
 
 /** The largest image accepted, in bytes: far above what the portal stores (a 256-pixel PNG). */
 export const MAX_BYTES = 1024 * 1024;
@@ -270,7 +277,7 @@ export class ItemImages {
       if (hex(await crypto.subtle.digest("SHA-256", bytes)) !== hash) {
         return { error: "unavailable" };
       }
-      const src = `data:image/png;base64,${base64(new Uint8Array(bytes))}`;
+      const src = `data:image/png;base64,${base64(new Uint8Array(bytes))}${OX_LIB_ICON}`;
       await this.store.put(hash, src).catch(() => undefined);
       return { src };
     } catch {

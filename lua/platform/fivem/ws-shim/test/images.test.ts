@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { describe, it } from "node:test";
 
-import { ItemImages, MAX_KEPT, MemoryStore } from "../../nui/images.js";
+import { ItemImages, MAX_KEPT, MemoryStore, OX_LIB_ICON } from "../../nui/images.js";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 const HASH = createHash("sha256").update(PNG).digest("hex");
@@ -46,8 +46,21 @@ describe("item images", () => {
     const { fn, calls } = fetcher([{ status: 200, body: PNG, redirectedTo: SIGNED }]);
     const images = new ItemImages(new MemoryStore(), fn);
     const answer = await images.get(URL_ON_PORTAL, HEADERS, HASH);
-    assert.deepEqual(answer, { src: `data:image/png;base64,${Buffer.from(PNG).toString("base64")}` });
+    assert.deepEqual(answer, { src: `data:image/png;base64,${Buffer.from(PNG).toString("base64")}#.png` });
     assert.deepEqual(calls, [{ url: URL_ON_PORTAL, headers: HEADERS }]);
+  });
+
+  it("end with a fragment ox_lib's isIconUrl takes for an image, which leaves the bytes as they are", async () => {
+    const { fn } = fetcher([{ status: 200, body: PNG }]);
+    const answer = await new ItemImages(new MemoryStore(), fn).get(URL_ON_PORTAL, HEADERS, HASH);
+    assert.ok("src" in answer);
+    // ox_lib 3.40.0's web/src/utils/isIconUrl.ts, as pinned in dev/fivem-natives.
+    const isIconUrl = (icon: string) => icon.includes("://") || icon.includes(".png") || icon.includes(".webp");
+    assert.ok(isIconUrl(answer.src));
+    assert.ok(answer.src.endsWith(OX_LIB_ICON));
+    // A fetch of the data: URL, as an <img> loads it, drops the fragment.
+    const loaded = new Uint8Array(await (await fetch(answer.src)).arrayBuffer());
+    assert.deepEqual(loaded, PNG);
   });
 
   it("keep it under its hash: asked again, nothing is fetched", async () => {
