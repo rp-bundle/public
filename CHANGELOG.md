@@ -57,6 +57,13 @@ socket.
   once; rows go 180 days after the portal first received them
   (`retention::UNKNOWN_OP_RETENTION`). The migration
   `20261011080758_unknown_ops` adds the table.
+- A removed addon is purged after 14 days (J6, #302): staff removing an
+  addon can restore it by installing the namespace again for
+  `retention::ADDON_REMOVAL_RETENTION`; after that the retention sweep
+  deletes its records, types and installation, and installing it again (or
+  a declaration with `addons.auto_install` on) starts fresh with no records.
+  The migration `20261011085242_addon_removal_purge` adds two partial
+  indexes the sweep reads.
 - The property example (J8, #85): `lua/examples/acme_property/`,
   properties players buy and doors their owners lock, built on the public
   API and the generic types with no Rust, route, page, protocol variant or
