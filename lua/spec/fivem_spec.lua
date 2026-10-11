@@ -1147,7 +1147,23 @@ describe("the FiveM adapter", function()
       assert.are.equal("rpf:targets", record.to_server[#record.to_server].name)
     end)
 
-    it("offers the rules through ox_target, on placed peds of the type and on the models, and sends a pick by network id", function()
+    ---The latest request the client sent under a name, and its number.
+    ---@param record table The client's record.
+    ---@param name string The request's name.
+    ---@return table? request It, decoded.
+    ---@return string? number Its number, to answer it by.
+    local function latest(record, name)
+      for i = #record.to_server, 1, -1 do
+        local sent = record.to_server[i]
+        if sent.name == name then
+          local number, body = sent.payload:match("^(%d+)\n(.*)$")
+          return rpf.json.decode(body), number
+        end
+      end
+      return nil
+    end
+
+    it("offers the rules through ox_target, on placed peds of the type and on the models, once the server offers them there, and sends a pick by network id", function()
       local driver, record = load_side("client")
       driver.resources.ox_target = "started"
       driver.start()
@@ -1162,17 +1178,27 @@ describe("the FiveM adapter", function()
       assert.are.equal(3, option.distance)
       driver.entity_state[7001] = { rpf_placement = { id = "0000000a-0000-4000-8000-00000000000a", type = "acme_npcs.greeter" } }
       driver.entity_state[7002] = { rpf_placement = { id = "x", type = "acme_npcs.other" } }
-      assert.is_true(option.canInteract(7001))
+      driver.entity_state[7004] = { rpf_placement = { id = "y", type = "acme_npcs.greeter" } }
+      driver.net_ids[7001] = 505001
+      assert.is_false(option.canInteract(7001), "not until the server says")
       assert.is_false(option.canInteract(7002))
       assert.is_false(option.canInteract(7003))
+      assert.is_false(option.canInteract(7004), "not networked, so the server cannot be asked about it")
+      driver.run_due()
+      local asked, number = latest(record, "rpf:target_offers")
+      assert.are.same({ ref = 505001, names = { "acme_npcs.talk" } }, asked, "only the networked placed ped is asked about")
+      driver.from_server("rpf:target_offers", number .. "\n" .. rpf.handoff.encode("rpf:target_offers_result", { names = rpf.json.array({ "acme_npcs.talk" }) }))
+      assert.is_true(option.canInteract(7001))
+      local model_option = by_call.addModel.args[2][1]
       assert.are.same({ "prop_atm_01" }, by_call.addModel.args[1])
-      driver.net_ids[7001] = 505001
+      assert.is_false(model_option.canInteract(7001), "the models rule is asked about on its own")
       option.onSelect({ entity = 7001 })
-      local sent = record.to_server[#record.to_server]
-      assert.are.equal("rpf:interact", sent.name)
-      local request = rpf.json.decode(sent.payload:match("^%d+\n(.*)$"))
+      local request, interact_number = latest(record, "rpf:interact")
+      assert(request)
       assert.are.equal("acme_npcs.talk", request.name)
       assert.are.equal(505001, request.payload.target.ref)
+      driver.from_server("rpf:interact", interact_number .. "\n" .. rpf.handoff.encode("rpf:interaction_result", { ok = true }))
+      assert.is_false(option.canInteract(7001), "asked again after it was used")
 
       local before = #driver.target_calls
       push_rules(driver)

@@ -40,6 +40,7 @@
 ---@field MAX_ANSWER integer The longest answer, encoded, in bytes: a handler's data past it is refused `too_large`.
 ---@field TIMEOUT_MS integer How long a client waits for an answer.
 ---@field MAX_WAITING integer The most requests one client may have waiting for an answer at once.
+---@field MAX_OFFERS_PER_WINDOW integer The most `rpf:target_offers` requests one player's client may send in `WINDOW_MS`, counted apart from interactions: a target resource asks as the player looks around, which must not use up what they may do.
 local interactions = {}
 
 local rpf = rpf
@@ -53,6 +54,7 @@ interactions.MAX_REASON_BYTES = 128
 interactions.MAX_ANSWER = 16384
 interactions.TIMEOUT_MS = 10000
 interactions.MAX_WAITING = 64
+interactions.MAX_OFFERS_PER_WINDOW = 60
 
 ---What an interaction's handler is told and how its answer goes.
 ---@class rpf.interactions.Entry
@@ -66,6 +68,9 @@ local handlers = {}
 ---Requests counted per player in the current window, by player id.
 ---@type table<string, { since: number, count: integer }>
 local counts = {}
+---Target resources' `rpf:target_offers` requests, counted the same way.
+---@type table<string, { since: number, count: integer }>
+local offer_counts = {}
 ---How many of this client's requests are waiting for an answer.
 local waiting = 0
 ---@type rpf.ServerPlatform|rpf.ClientPlatform|nil
@@ -235,17 +240,20 @@ end
 
 ---Whether a player may send another request now, counting it.
 ---@param player_id string The player.
+---@param counted table<string, { since: number, count: integer }>? Which count: the interactions' unless given.
+---@param most integer? The most in a window: `MAX_PER_WINDOW` unless given.
 ---@return boolean allowed False past the rate.
-local function admit(player_id)
+local function admit(player_id, counted, most)
   local p = assert(platform)
+  counted = counted or counts
   local now = p.now()
-  local count = counts[player_id]
+  local count = counted[player_id]
   if not count or now - count.since >= interactions.WINDOW_MS then
     count = { since = now, count = 0 }
-    counts[player_id] = count
+    counted[player_id] = count
   end
   count.count = count.count + 1
-  return count.count <= interactions.MAX_PER_WINDOW
+  return count.count <= (most or interactions.MAX_PER_WINDOW)
 end
 
 ---Cuts a string to at most `n` bytes without splitting a UTF-8 character:
@@ -498,6 +506,34 @@ local function on_targets(player, payload, respond)
   respond(handoff.encode(handoff.TARGETS_RESULT, { options = list_of(rpf.targets.options(handlers, player)) }))
 end
 
+---Answers a client's `rpf:target_offers`: which of the rules it names the
+---server offers the player on the entity it names, for a target resource.
+---Hostile input like any request: the names are a short list of strings,
+---and anything else answers nothing offered.
+---@param player rpf.PlayerView The player.
+---@param payload any The raw request.
+---@param respond fun(reply: string) Answers it.
+local function on_offers(player, payload, respond)
+  local request = handoff.decode(handoff.TARGET_OFFERS, payload)
+  local names = request and request.names
+  local valid = json.is_array(names) and #names <= rpf.targets.MAX_OFFER_NAMES
+  if valid then
+    for i = 1, #names do
+      if not interactions.is_name(names[i]) then
+        valid = false
+        break
+      end
+    end
+  end
+  if not valid or not admit(player.player_id, offer_counts, interactions.MAX_OFFERS_PER_WINDOW) then
+    respond(handoff.encode(handoff.TARGET_OFFERS_RESULT, { names = json.array({}) }))
+    return
+  end
+  ---@cast request table
+  local offered = rpf.targets.offers(handlers, player, request.ref, names)
+  respond(handoff.encode(handoff.TARGET_OFFERS_RESULT, { names = json.array(offered) }))
+end
+
 ---Listens for interactions and nearby requests, tells each player the
 ---target rules as they arrive in the world and whenever an addon starts or
 ---stops, and forgets a player's count when they leave. Called by
@@ -512,6 +548,11 @@ function interactions.serve(p)
     on_targets,
     handoff.encode(handoff.TARGETS_RESULT, { options = json.array({}) })
   )
+  rpf.players.on_client_request(
+    handoff.TARGET_OFFERS,
+    on_offers,
+    handoff.encode(handoff.TARGET_OFFERS_RESULT, { names = json.array({}) })
+  )
   rpf.events.on("players.active", function(player)
     p.to_client(player.handle, handoff.TARGET_RULES, rules_payload())
   end)
@@ -521,6 +562,7 @@ function interactions.serve(p)
   rpf.events.on("players.dropping", function(player)
     if player.player_id then
       counts[player.player_id] = nil
+      offer_counts[player.player_id] = nil
     end
   end)
 end

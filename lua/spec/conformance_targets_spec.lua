@@ -162,11 +162,13 @@ local function ask(world, name, body)
   local json = world.core.json
   local before = #world.to_clients
   numbered = numbered + 1
-  world.from_client(1, name, numbered .. "\n" .. assert(json.encode(body)))
+  local number = numbered
+  world.from_client(1, name, number .. "\n" .. assert(json.encode(body)))
+  -- Its own answer: one to a request made while this one ran may come first.
   for i = before + 1, #world.to_clients do
     local sent = world.to_clients[i]
-    if sent.name == name then
-      local _, reply = sent.payload:match("^(%d+)\n(.*)$")
+    local id, reply = sent.payload:match("^(%d+)\n(.*)$")
+    if sent.name == name and tonumber(id) == number then
       return assert(json.decode(reply))
     end
   end
@@ -182,6 +184,17 @@ local function interact(world, name, target)
   local json = world.core.json
   local payload = json.object({ target = target and json.object(target) or nil })
   return ask(world, "rpf:interact", json.object({ name = name, payload = payload }))
+end
+
+---An answer's options, as `<name> <first 8 of the id>`.
+---@param answer table The `rpf:targets` answer.
+---@return string[] options Them, in order.
+local function listed(answer)
+  local seen = {}
+  for _, option in ipairs(answer.options) do
+    seen[#seen + 1] = option.name .. " " .. option.id:sub(1, 8)
+  end
+  return seen
 end
 
 conformance.run(busted, "Interactions with targets", {
@@ -283,15 +296,8 @@ conformance.run(busted, "Interactions with targets", {
     run = function(world)
       ready(world)
       local answer = ask(world, "rpf:targets", world.core.json.object({}))
-      local seen = {}
-      for _, option in ipairs(answer.options) do
-        seen[#seen + 1] = option.name .. " " .. option.id:sub(1, 8)
-      end
-      assert.are.same({
-        "acme_npcs.talk 0000000a",
-        "acme_npcs.wave 0000000a",
-        "acme_npcs.rest 0000000e",
-      }, seen)
+      -- `wave` is left out: its check refuses the near greeter.
+      assert.are.same({ "acme_npcs.talk 0000000a", "acme_npcs.rest 0000000e" }, listed(answer))
       assert.are.equal("Talk", answer.options[1].label)
       -- Reported in metres, whatever the engine measures in: the near
       -- greeter is a metre from the player.
@@ -332,6 +338,165 @@ conformance.run(busted, "Interactions with targets", {
       assert.are.equal("They look away.", interact(world, "acme_npcs.wave", { id = NEAR }).reason, "2.9 m is inside the default")
       world.place(1, point(world, 14.1, 20, 30))
       assert.are.equal("too_far", interact(world, "acme_npcs.wave", { id = NEAR }).reason, "3.1 m is outside it")
+    end,
+  },
+  {
+    name = "lists only what the addon's own check passes, run as a request runs it, and not what is cooling down",
+    run = function(world)
+      ready(world)
+      local seen = {}
+      assert(world.api.interactions.register("acme_npcs.nod", function()
+        return true
+      end, {
+        target = "acme_npcs.greeter",
+        cooldown = 5000,
+        check = function(player, target)
+          seen[#seen + 1] = { player.player_id, target.id, target.record.fields.line, world.core.addons.context().namespace }
+          target.record.fields.line = "changed by the check"
+          return true
+        end,
+      }))
+      local answer = ask(world, "rpf:targets", world.core.json.object({}))
+      assert.are.same({ "acme_npcs.nod 0000000a", "acme_npcs.talk 0000000a", "acme_npcs.rest 0000000e" }, listed(answer))
+      assert.are.same({ { PLAYER, NEAR, "Hello from 0000000a", "acme_npcs" } }, seen, "in the addon's context, with the record")
+      assert.is_true(interact(world, "acme_npcs.nod", { id = NEAR }).ok)
+      assert.are.equal("Hello from 0000000a", seen[2][3], "the listing's copy was its own")
+      answer = ask(world, "rpf:targets", world.core.json.object({}))
+      assert.are.same({ "acme_npcs.talk 0000000a", "acme_npcs.rest 0000000e" }, listed(answer), "cooling down")
+      assert.are.equal(2, #seen, "and its check not run for it")
+    end,
+  },
+  {
+    name = "leaves out an option whose check throws or answers anything but true, and lists the rest",
+    run = function(world)
+      ready(world, {
+        ["acme_npcs.boom"] = { target = "acme_npcs.greeter", check = function()
+          error("broken")
+        end },
+        ["acme_npcs.maybe"] = { target = "acme_npcs.greeter", check = function()
+          return "yes"
+        end },
+      })
+      local answer = ask(world, "rpf:targets", world.core.json.object({}))
+      assert.are.same({ "acme_npcs.talk 0000000a", "acme_npcs.rest 0000000e" }, listed(answer))
+      local logged = false
+      for _, line in ipairs(world.logs) do
+        if line.level == "error" and line.message:find("acme_npcs.boom failed while listing", 1, true) then
+          logged = true
+        end
+      end
+      assert.is_true(logged, "the throw is logged")
+    end,
+  },
+  {
+    name = "runs at most MAX_CHECKS checks in one listing, nearest first, and lists none it did not run",
+    run = function(world)
+      ready(world)
+      local runs = 0
+      assert(world.api.interactions.register("acme_npcs.nod", function()
+        return true
+      end, { target = "acme_npcs.greeter", check = function()
+        runs = runs + 1
+        return true
+      end }))
+      local targets = world.core.targets
+      local cap = targets.MAX_CHECKS
+      targets.MAX_CHECKS = 1
+      local answer = ask(world, "rpf:targets", world.core.json.object({}))
+      targets.MAX_CHECKS = cap
+      -- `nod` sorts before `wave` on the same greeter, so it is the one run.
+      assert.are.same({ "acme_npcs.nod 0000000a", "acme_npcs.talk 0000000a", "acme_npcs.rest 0000000e" }, listed(answer))
+      assert.are.equal(1, runs)
+    end,
+  },
+  {
+    name = "starts no check once a listing has taken CHECK_BUDGET_MS, as after a check that yielded",
+    run = function(world)
+      ready(world)
+      local waved = false
+      assert(world.api.interactions.register("acme_npcs.nod", function()
+        return true
+      end, { target = "acme_npcs.greeter", check = function()
+        -- As a check that yields might resume: the budget has gone by.
+        world:advance(world.core.targets.CHECK_BUDGET_MS)
+        return true
+      end }))
+      assert(world.api.interactions.register("acme_npcs.wave", function()
+        return true
+      end, { target = "acme_npcs.greeter", label = "Wave", check = function()
+        waved = true
+        return true
+      end }))
+      local answer = ask(world, "rpf:targets", world.core.json.object({}))
+      assert.are.same({ "acme_npcs.nod 0000000a", "acme_npcs.talk 0000000a", "acme_npcs.rest 0000000e" }, listed(answer))
+      assert.is_false(waved)
+    end,
+  },
+  {
+    name = "lets a player have at most MAX_LISTING listings running, as checks that yield would leave them",
+    run = function(world)
+      ready(world)
+      local targets = world.core.targets
+      local most = targets.MAX_LISTING
+      targets.MAX_LISTING = 1
+      local inner
+      assert(world.api.interactions.register("acme_npcs.nod", function()
+        return true
+      end, { target = "acme_npcs.greeter", check = function()
+        -- The same player's next listing, while this one's check runs.
+        inner = inner or ask(world, "rpf:targets", world.core.json.object({}))
+        return true
+      end }))
+      local answer = ask(world, "rpf:targets", world.core.json.object({}))
+      targets.MAX_LISTING = most
+      assert.are.equal(0, #inner.options)
+      assert.are.equal(3, #answer.options)
+      answer = ask(world, "rpf:targets", world.core.json.object({}))
+      assert.are.equal(3, #answer.options, "and the count came back down")
+    end,
+  },
+  {
+    name = "answers which rules it offers on an entity for a target resource: every rule, the check included",
+    run = function(world)
+      ready(world)
+      local json = world.core.json
+      local ref = assert(world.api.world.placed("acme_npcs.greeter", NEAR))
+      ---Asks which of the names are offered on an entity.
+      ---@param on any The entity's ref.
+      ---@param names string[] The names.
+      ---@return string[] offered What the server answered.
+      local function offers(on, names)
+        return ask(world, "rpf:target_offers", json.object({ ref = on, names = json.array(names) })).names
+      end
+      local all = { "acme_npcs.talk", "acme_npcs.wave", "acme_npcs.order", "acme_npcs.bow", "acme_npcs.rest", "acme_npcs.nope", "acme_npcs.talk" }
+      -- `wave`'s check refuses the near greeter, `order` needs a permission,
+      -- `rest` is an area's, `nope` nobody registered; `talk` is offered once.
+      assert.are.same({ "acme_npcs.talk", "acme_npcs.bow" }, offers(ref, all))
+      local far = assert(world.api.world.placed("acme_npcs.greeter", FAR))
+      assert.are.same({}, offers(far, all), "out of reach")
+      assert.are.same({}, offers(ref + 4242, all), "no such entity")
+      assert.are.same({}, offers(ref, { "acme_npcs.talk", "not a name" }), "a name no addon could register refuses the lot")
+      assert.is_true(interact(world, "acme_npcs.talk", { ref = ref }).ok)
+      assert.are.same({ "acme_npcs.bow" }, offers(ref, all), "talk is cooling down")
+      local many = {}
+      for i = 1, world.core.targets.MAX_OFFER_NAMES + 1 do
+        many[i] = "acme_npcs.bow"
+      end
+      assert.are.same({}, offers(ref, many), "too many names")
+    end,
+  },
+  {
+    name = "answers a target resource nothing offered past MAX_OFFERS_PER_WINDOW, counted apart from interactions",
+    run = function(world)
+      ready(world)
+      local json = world.core.json
+      local ref = assert(world.api.world.placed("acme_npcs.greeter", NEAR))
+      local body = json.object({ ref = ref, names = json.array({ "acme_npcs.bow" }) })
+      for _ = 1, world.core.interactions.MAX_OFFERS_PER_WINDOW do
+        assert.are.same({ "acme_npcs.bow" }, ask(world, "rpf:target_offers", body).names)
+      end
+      assert.are.same({}, ask(world, "rpf:target_offers", body).names)
+      assert.is_true(interact(world, "acme_npcs.bow", { ref = ref }).ok, "interactions are counted apart")
     end,
   },
   {

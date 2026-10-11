@@ -6,8 +6,10 @@
 ---It is presentation and nothing more. The rules come from the server
 ---(`rpf:target_rules`, announced by the core as `interactions.targets`), an
 ---option is shown only on an entity the core placed for the rule's type
----(its `rpf_placement` state bag), or of the rule's models, and selecting
----one sends the same request as the minimal UI, naming the entity by its
+---(its `rpf_placement` state bag), or of the rule's models, and only once
+---the server has said it offers the rule to this player there (the
+---addon's own check included: `core.targets.offered`, #317). Selecting one
+---sends the same request as the minimal UI, naming the entity by its
 ---network id, for the server to check from its own state. A resource that is
 ---not running costs nothing: the core's menu (`rpf_interact`) works either
 ---way. Points and zones have no entity, so only the menu offers them.
@@ -71,11 +73,17 @@ end
 ---@param entity integer The entity, as the target resource hands it over.
 function target.select(name, entity)
   local ref = NetworkGetNetworkIdFromEntity(entity)
-  core.interactions.request(name, { target = { ref = ref } }, function(ok, reason)
+  local sent, refused = core.interactions.request(name, { target = { ref = ref } }, function(ok, reason)
+    -- What it did may change what is offered there (a cooldown, a sale).
+    core.targets.recheck(ref)
     if not ok then
       core.targets.tell(tostring(reason))
     end
   end)
+  if not sent then
+    -- Never sent (`too_many` waiting), so the callback never runs.
+    core.targets.tell(tostring(refused))
+  end
 end
 
 ---Whether an entity is one the core placed for a type: its tag names it.
@@ -86,6 +94,25 @@ end
 function target.placed(entity, type_name)
   local tag = Entity(entity).state[shared.PLACEMENT]
   return type(tag) == "table" and tag.type == type_name
+end
+
+---Whether to show a rule's option on an entity: one the core placed for
+---the rule's type, if it has one, and that the server offers the player
+---there, as it last answered (`core.targets.offered`, which asks again
+---when its answer is old). A target resource calls this on every frame.
+---@param name string The rule's interaction name.
+---@param type_name string? The rule's type, for a type's rule.
+---@param entity integer The entity.
+---@return boolean show True to show it.
+function target.shows(name, type_name, entity)
+  if type_name and not target.placed(entity, type_name) then
+    return false
+  end
+  if not NetworkGetEntityIsNetworked(entity) then
+    -- The server knows an entity only by its network id.
+    return false
+  end
+  return core.targets.offered(name, NetworkGetNetworkIdFromEntity(entity))
 end
 
 ---Takes back whatever was offered, so a new set of rules starts clean and a
@@ -142,9 +169,9 @@ function target.apply(rules)
         name = name,
         label = rule.label,
         distance = rule.distance,
-        canInteract = type_name and function(entity)
-          return target.placed(entity, type_name)
-        end or nil,
+        canInteract = function(entity)
+          return target.shows(name, type_name, entity)
+        end,
         onSelect = function(data)
           target.select(name, data.entity)
         end,
@@ -152,9 +179,9 @@ function target.apply(rules)
     else
       option = {
         label = key,
-        canInteract = type_name and function(entity)
-          return target.placed(entity, type_name)
-        end or nil,
+        canInteract = function(entity)
+          return target.shows(name, type_name, entity)
+        end,
         action = function(entity)
           target.select(name, entity)
         end,

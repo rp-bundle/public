@@ -122,9 +122,13 @@ function acme_notes.start_server(rpf)
       assert(rpf.interactions.register("acme_notes.read", function(player, _, target)
         return acme_notes.read(rpf, player, target)
       end, { target = acme_notes.TYPE, label = "Read the note", distance = reach }))
+      -- Offered only on the player's own notes: the `check` runs when the
+      -- menu or a target resource lists, and again when they pick.
       assert(rpf.interactions.register("acme_notes.take_down", function(player, _, target)
         return acme_notes.take_down(rpf, player, target.record, false)
-      end, { target = acme_notes.TYPE, label = "Take your note down", distance = reach }))
+      end, { target = acme_notes.TYPE, label = "Take your note down", distance = reach, check = function(player, target)
+        return owns(player, target.record), "That note is not yours."
+      end }))
       -- Staff in game: offered only to a linked staff member holding
       -- `addon.acme_notes.moderate` here, which the server checks before this runs.
       assert(rpf.interactions.register("acme_notes.remove", function(player, _, target)

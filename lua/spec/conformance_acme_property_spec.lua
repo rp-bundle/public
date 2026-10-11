@@ -194,6 +194,27 @@ local function aim(world, name, id)
   return nil
 end
 
+---What the interaction menu offers Jane where she stands: each option's
+---interaction name, as the server answers `rpf:targets`.
+---@param world spec.ConformanceWorld The world.
+---@return table<string, true> offers The names offered.
+local function menu_offers(world)
+  local json = world.core.json
+  local before = #world.to_clients
+  numbered = numbered + 1
+  world.from_client(1, "rpf:targets", numbered .. "\n{}")
+  local out = {}
+  for i = before + 1, #world.to_clients do
+    local sent = world.to_clients[i]
+    if sent.name == "rpf:targets" then
+      for _, option in ipairs(json.decode((sent.payload:match("^%d+\n(.*)$"))).options) do
+        out[option.name] = true
+      end
+    end
+  end
+  return out
+end
+
 ---The last UI request the server sent Jane's client: its number and what
 ---it asked.
 ---@param world spec.ConformanceWorld The world.
@@ -354,6 +375,7 @@ conformance.run(busted, "the acme_property example", {
       local api = world.api
       local jane = assert(api.players.get(handle))
       local before = holdings(world, handle)
+      assert.is_true(menu_offers(world)["acme_property.buy"], "the menu offers the lot while it is for sale")
       local cases = {
         { order({ price = 400 }), "The price is now 500. Try again." },
         { order({ revision = 7 }), "The property changed while you chose. Try again." },
@@ -384,6 +406,7 @@ conformance.run(busted, "the acme_property example", {
       assert.are.same({ false, "Someone else owns it now." }, { example.purchase(api, jane, order(), api.ops.new()) })
       local opened = assert(aim(world, "acme_property.buy", PROPERTY))
       assert.are.same({ false, "Ivy Cottage is not for sale." }, { opened.ok, opened.reason }, "and the offer says so")
+      assert.is_nil(menu_offers(world)["acme_property.buy"], "and the menu no longer offers it")
       before.holder = JOE
       before.for_sale = false
       assert.are.same(before, holdings(world, handle), "no money moved")

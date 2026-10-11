@@ -36,18 +36,33 @@
 ---
 ---**Nearby targets.** The minimal interaction UI asks the server what is
 ---near (`rpf:targets`): every option of a type's rule within reach of the
----player and offered to them (permission and cooldown), nearest first, at
----most `MAX_NEARBY`. The server works it out, so a client never holds the
----records. On the client, `open()` asks, shows the answer as a menu
----(`rpf.ui`), and sends the one picked; an adapter binds it to a key.
+---player and offered to them, nearest first, at most `MAX_NEARBY`. The
+---server works it out, so a client never holds the records. On the client,
+---`open()` asks, shows the answer as a menu (`rpf.ui`), and sends the one
+---picked; an adapter binds it to a key.
+---
+---**Offered** means what a request would pass, as far as the server can
+---tell without running the handler: the permission, the cooldown, the
+---target, and the addon's own `check`, run the same way the request runs
+---it (#317). So a menu never lists what the addon will refuse (a lot that
+---is sold, an owner-only door). Checks are addon code and may yield, so a
+---listing runs at most `MAX_CHECKS` of them and starts none after
+---`CHECK_BUDGET_MS`; an option whose check did not run is left out, never
+---shown unchecked. A listing is presentation: the request is checked again
+---when the player picks.
 ---
 ---**Target resources.** The server tells each player in the world which
 ---rules there are (`rpf:target_rules`: name, label, type, kind, models,
 ---distance) whenever they arrive and whenever the registrations change, and
 ---the client announces them as `interactions.targets`, so an adapter can
 ---offer them through a target resource (ox_target, qb-target on FiveM).
----What the resource shows is presentation: selecting an option sends the
----same request, checked the same way.
+---A resource asks on every frame whether to show an option on an entity,
+---which no server can answer that often, so the client asks the server
+---which of the rules it shows are offered on an entity
+---(`rpf:target_offers`, `offered`), keeps the answer for `OFFER_TTL_MS`,
+---and shows an option only once the server said so. What the resource
+---shows is presentation: selecting an option sends the same request,
+---checked the same way.
 ---@class rpf.targets
 ---@field DEFAULT_DISTANCE number How near a target must be when a rule does not say, in metres.
 ---@field MAX_DISTANCE number The farthest a rule may reach, in metres.
@@ -56,6 +71,13 @@
 ---@field MAX_LABEL integer The longest label, in bytes.
 ---@field MAX_NEARBY integer The most options one nearby answer lists.
 ---@field TIMEOUT_MS integer How long a client waits for the nearby answer.
+---@field MAX_CHECKS integer The most addon checks one listing runs: a menu, or one entity's options for a target resource.
+---@field CHECK_BUDGET_MS integer How long a listing may take before it starts no more checks: one that yields holds the answer up.
+---@field MAX_LISTING integer The most listings one player may have running at once; past it a listing answers nothing offered. Only checks that yield keep one running.
+---@field MAX_OFFER_NAMES integer The most rules one `rpf:target_offers` request may ask about.
+---@field OFFER_TTL_MS integer How long a client keeps the server's answer about an entity before asking again.
+---@field MAX_OFFER_REFS integer The most entities a client keeps answers for; past it, it forgets them all.
+---@field MAX_OFFERS_ASKING integer The most `rpf:target_offers` requests a client has waiting at once.
 local targets = {}
 
 local rpf = rpf
@@ -69,6 +91,13 @@ targets.MAX_MODELS = 32
 targets.MAX_LABEL = 64
 targets.MAX_NEARBY = 16
 targets.TIMEOUT_MS = 10000
+targets.MAX_CHECKS = 32
+targets.CHECK_BUDGET_MS = 2000
+targets.MAX_LISTING = 4
+targets.MAX_OFFER_NAMES = 16
+targets.OFFER_TTL_MS = 1500
+targets.MAX_OFFER_REFS = 64
+targets.MAX_OFFERS_ASKING = 2
 
 ---A registration's rules, checked.
 ---@class rpf.targets.Rules
@@ -460,8 +489,8 @@ function targets.forget(name)
   used[name] = nil
 end
 
----Whether a rule is offered to a player now: they hold its permission, and
----its cooldown has passed. What the menu lists; a request is checked again.
+---Whether a rule is offered to a player now, before its target: they hold
+---its permission, and its cooldown has passed.
 ---@param name string The interaction.
 ---@param rules rpf.targets.Rules Its rules.
 ---@param player rpf.PlayerView The player.
@@ -474,9 +503,78 @@ local function offered(name, rules, player)
   return not (rules.cooldown > 0 and last and assert(platform).now() - last.at < rules.cooldown)
 end
 
+---How many listings each player has running, by player id: only a check
+---that yields keeps one running.
+---@type table<string, integer>
+local listing = {}
+
+---What one listing may still spend on addon checks.
+---@class rpf.targets.Budget
+---@field checks integer Checks run so far.
+---@field since number When the listing started.
+
+---Starts a listing for a player, unless they have `MAX_LISTING` running.
+---@param player rpf.PlayerView The player.
+---@return rpf.targets.Budget? budget What it may spend, or nil when it may not start.
+local function begin_listing(player)
+  local id = player.player_id
+  local running = listing[id] or 0
+  if running >= targets.MAX_LISTING then
+    return nil
+  end
+  listing[id] = running + 1
+  return { checks = 0, since = assert(platform).now() }
+end
+
+---Ends a listing `begin_listing` started.
+---@param player rpf.PlayerView The player.
+local function end_listing(player)
+  local id = player.player_id
+  local running = (listing[id] or 1) - 1
+  listing[id] = running > 0 and running or nil
+end
+
+---Whether the addon's own check lets a player use an interaction on a
+---target, run as a request runs it (in the addon's context, under `pcall`,
+---with a copy of each), for a listing: within its budget, and only while
+---the registration and the player are still the ones listed for, since an
+---earlier check may have yielded. Not run, failed or refused are all false.
+---@param entries table<string, { rules: rpf.targets.Rules?, namespace: string }> The registrations, by name, as they are now.
+---@param name string The interaction.
+---@param entry { rules: rpf.targets.Rules?, namespace: string } Its registration, as listed.
+---@param player rpf.PlayerView The player.
+---@param target rpf.targets.Target The resolved target.
+---@param budget rpf.targets.Budget What the listing may still spend.
+---@return boolean passes True if the check ran and answered `true`, or there is none.
+local function passes(entries, name, entry, player, target, budget)
+  local rules = entry.rules --[[@as rpf.targets.Rules]]
+  if rules.check == nil then
+    return true
+  end
+  local p = assert(platform)
+  if budget.checks >= targets.MAX_CHECKS or p.now() - budget.since >= targets.CHECK_BUDGET_MS then
+    return false
+  end
+  if entries[name] ~= entry or not rpf.addons.running(entry.namespace) then
+    return false
+  end
+  local fresh = rpf.players.get(player.handle)
+  if not fresh or fresh.player_id ~= player.player_id or fresh.state ~= "active" then
+    return false
+  end
+  budget.checks = budget.checks + 1
+  local ran, allowed = rpf.addons.run(rpf.addons.context_of(entry.namespace), rules.check, fresh, targets.copy(target))
+  if not ran then
+    p.log("error", "rpf: the check of the interaction " .. name .. " failed while listing: " .. tostring(allowed))
+    return false
+  end
+  return allowed == true
+end
+
 ---The options near a player: each type's rule's records within its reach,
 ---in the player's bucket and visible, offered to the player (permission,
----cooldown), nearest first, at most `MAX_NEARBY`.
+---cooldown, and the addon's own check), nearest first, at most
+---`MAX_NEARBY`. Checks run nearest first, within the listing's budget.
 ---@param entries table<string, { rules: rpf.targets.Rules?, namespace: string }> The registrations, by name.
 ---@param player rpf.PlayerView The player.
 ---@return { name: string, label: string, type: string, id: string, distance: number }[] options The options.
@@ -495,6 +593,7 @@ function targets.options(entries, player)
     names[#names + 1] = name
   end
   table.sort(names)
+  local found = {}
   for _, name in ipairs(names) do
     local entry = entries[name]
     local rules = entry.rules
@@ -505,29 +604,81 @@ function targets.options(entries, player)
         local spot = placed_at(where, record.fields, bucket)
         local d = spot and distance(at, spot)
         if d and within(where, record.fields, d, rules) then
-          out[#out + 1] = {
+          found[#found + 1] = {
             name = name,
-            label = rules.label or name,
-            type = rules.type,
-            id = record.id,
-            distance = rpf.world.metres(d),
+            entry = entry,
+            target = { type = rules.type, id = record.id, record = record, position = spot, distance = rpf.world.metres(d) },
           }
         end
       end
     end
   end
-  table.sort(out, function(a, b)
-    if a.distance ~= b.distance then
-      return a.distance < b.distance
+  table.sort(found, function(a, b)
+    if a.target.distance ~= b.target.distance then
+      return a.target.distance < b.target.distance
     end
     if a.name ~= b.name then
       return a.name < b.name
     end
-    return a.id < b.id
+    return a.target.id < b.target.id
   end)
-  while #out > targets.MAX_NEARBY do
-    out[#out] = nil
+  local budget = begin_listing(player)
+  if not budget then
+    return out
   end
+  -- Ended whatever a check does: it runs under `pcall`, so nothing below throws.
+  for _, option in ipairs(found) do
+    if #out >= targets.MAX_NEARBY then
+      break
+    end
+    if passes(entries, option.name, option.entry, player, option.target, budget) then
+      local rules = option.entry.rules --[[@as rpf.targets.Rules]]
+      out[#out + 1] = {
+        name = option.name,
+        label = rules.label or option.name,
+        type = option.target.type,
+        id = option.target.id,
+        distance = option.target.distance,
+      }
+    end
+  end
+  end_listing(player)
+  return out
+end
+
+---Which of the named rules are offered to a player on an entity, for a
+---target resource (`rpf:target_offers`): each admitted as a request naming
+---the entity would be (`admit`, without taking the cooldown), then passing
+---the addon's own check, within one listing's budget. Every name is hostile
+---input: one that is not a running registration with a target is simply
+---not offered.
+---@param entries table<string, { rules: rpf.targets.Rules?, namespace: string }> The registrations, by name.
+---@param player rpf.PlayerView The player.
+---@param ref any The entity, as the client named it.
+---@param names string[] The rules asked about, at most `MAX_OFFER_NAMES`, each a string.
+---@return string[] offered The names offered, in the order asked, each once.
+function targets.offers(entries, player, ref, names)
+  local out = {}
+  if player.state ~= "active" then
+    return out
+  end
+  local budget = begin_listing(player)
+  if not budget then
+    return out
+  end
+  local seen = {}
+  for _, name in ipairs(names) do
+    local entry = entries[name]
+    local rules = entry and entry.rules
+    if not seen[name] and rules and (rules.type or rules.models) and rpf.addons.running(entry.namespace) then
+      seen[name] = true
+      local target = targets.admit(name, rules, player, { target = { ref = ref } })
+      if target and passes(entries, name, entry, player, target, budget) then
+        out[#out + 1] = name
+      end
+    end
+  end
+  end_listing(player)
   return out
 end
 
@@ -567,6 +718,7 @@ end
 function targets.serve(p)
   platform = p
   used = {}
+  listing = {}
   rpf.events.on("players.dropping", function(player)
     if player.player_id then
       for _, by_player in pairs(used) do
@@ -675,6 +827,153 @@ function targets.nearby(callback)
   return true
 end
 
+---What the server last answered about each entity, by ref then rule name:
+---whether it offers the rule there, and when it said so.
+---@type table<any, table<string, { offered: boolean, at: number }>>
+local offers = {}
+---How many entities `offers` holds answers for.
+local offer_refs = 0
+---Rules waiting to be asked about, by ref, gathered over one turn of the
+---clock so a resource asking about every option of an entity in one frame
+---is one request.
+---@type table<any, table<string, true>>
+local to_ask = {}
+---Refs with a request waiting for its answer.
+---@type table<any, true>
+local offers_asking = {}
+---How many `rpf:target_offers` requests are waiting.
+local offers_waiting = 0
+---Whether a turn of the clock is due to send what is gathered.
+local offers_due = false
+---Bumped whenever every answer is forgotten, so one that comes after is dropped.
+local offers_epoch = 0
+
+---Forgets every answer about entities: the rules changed, or the client is
+---keeping too many.
+local function forget_offers()
+  offers, offer_refs, offers_epoch = {}, 0, offers_epoch + 1
+end
+
+---Asks the server about one entity's gathered rules, if a request may go now.
+---@param p rpf.ClientPlatform The platform.
+---@param ref any The entity's ref.
+---@param names table<string, true> The rules.
+---@return boolean sent False when it may not go now.
+local function ask_offers(p, ref, names)
+  if offers_asking[ref] or offers_waiting >= targets.MAX_OFFERS_ASKING then
+    return false
+  end
+  local list = {}
+  for name in pairs(names) do
+    list[#list + 1] = name
+  end
+  table.sort(list)
+  while #list > targets.MAX_OFFER_NAMES do
+    list[#list] = nil
+  end
+  local epoch = offers_epoch
+  local finished = false
+  offers_asking[ref], offers_waiting = true, offers_waiting + 1
+  ---Keeps the answer, once: nil (no answer, or a timeout) keeps nothing, so
+  ---the next look asks again.
+  ---@param said table<string, true>? The names offered.
+  local function finish(said)
+    if finished then
+      return
+    end
+    finished = true
+    offers_asking[ref], offers_waiting = nil, offers_waiting - 1
+    if not said or epoch ~= offers_epoch then
+      return
+    end
+    if not offers[ref] then
+      if offer_refs >= targets.MAX_OFFER_REFS then
+        forget_offers()
+      end
+      offers[ref], offer_refs = {}, offer_refs + 1
+    end
+    local now = p.now()
+    for _, name in ipairs(list) do
+      offers[ref][name] = { offered = said[name] == true, at = now }
+    end
+  end
+  p.after(targets.TIMEOUT_MS, function()
+    finish(nil)
+  end)
+  p.request_server(
+    handoff.TARGET_OFFERS,
+    handoff.encode(handoff.TARGET_OFFERS, { ref = ref, names = json.array(list) }),
+    function(reply)
+      local result = handoff.decode(handoff.TARGET_OFFERS_RESULT, reply)
+      if not result or not json.is_array(result.names) then
+        finish(nil)
+        return
+      end
+      local said = {}
+      for _, name in ipairs(result.names) do
+        if type(name) == "string" then
+          said[name] = true
+        end
+      end
+      finish(said)
+    end
+  )
+  return true
+end
+
+---Sends what was gathered, as far as the requests waiting allow; the rest
+---waits for the next look.
+local function flush_offers()
+  offers_due = false
+  local p = platform --[[@as rpf.ClientPlatform?]]
+  if not p or not p.request_server then
+    to_ask = {}
+    return
+  end
+  local gathered = to_ask
+  to_ask = {}
+  for ref, names in pairs(gathered) do
+    -- What cannot go now is dropped: the resource asks again on its next frame.
+    ask_offers(p, ref, names)
+  end
+end
+
+---Whether the server offers a rule on an entity, as it last answered, for
+---a target resource's `canInteract`, which asks on every frame. An answer
+---older than `OFFER_TTL_MS`, or none, asks the server again (gathered over
+---one turn of the clock, one request per entity), and meanwhile the last
+---answer stands: false until the server has said yes. The server checks a
+---request again whatever this said.
+---@param name string The rule's interaction name.
+---@param ref any The entity's ref, as a request names it (a FiveM network id).
+---@return boolean offered True once the server said so.
+function targets.offered(name, ref)
+  local p = platform --[[@as rpf.ClientPlatform?]]
+  if not p or ref == nil then
+    return false
+  end
+  local known = offers[ref] and offers[ref][name]
+  if not known or p.now() - known.at >= targets.OFFER_TTL_MS then
+    to_ask[ref] = to_ask[ref] or {}
+    to_ask[ref][name] = true
+    if not offers_due then
+      offers_due = true
+      p.after(0, flush_offers)
+    end
+  end
+  return known ~= nil and known.offered
+end
+
+---Forgets what the server said about an entity, so the next look asks
+---again: a request was just made there, which may have started a cooldown
+---or changed what is offered.
+---@param ref any The entity's ref.
+function targets.recheck(ref)
+  if offers[ref] then
+    offers[ref], offer_refs = nil, offer_refs - 1
+  end
+end
+
 ---Tells the player something went wrong, through the client's UI if it has
 ---one: what the minimal UI and a target resource's option do with a refusal.
 ---@param text string The notice.
@@ -710,11 +1009,15 @@ function targets.open()
       if not option then
         return
       end
-      rpf.interactions.request(option.name, { target = { id = option.id } }, function(ok, reason)
+      local sent, refused = rpf.interactions.request(option.name, { target = { id = option.id } }, function(ok, reason)
         if not ok then
           targets.tell(tostring(reason))
         end
       end)
+      if not sent then
+        -- Never sent (`too_many` waiting), so the callback never runs.
+        targets.tell(tostring(refused))
+      end
     end)
     if not shown and why ~= "busy" then
       targets.tell("Could not show what is near (" .. tostring(why) .. ").")
@@ -728,6 +1031,8 @@ end
 function targets.start_client(p)
   platform = p
   known = {}
+  forget_offers()
+  to_ask, offers_asking, offers_waiting, offers_due = {}, {}, 0, false
   p.on_server(handoff.TARGET_RULES, function(payload)
     local decoded = handoff.decode(handoff.TARGET_RULES, payload)
     if not decoded or not json.is_array(decoded.rules) then
@@ -735,6 +1040,7 @@ function targets.start_client(p)
       return
     end
     known = decoded.rules
+    forget_offers()
     rpf.events.emit("interactions.targets", targets.rules())
   end)
 end

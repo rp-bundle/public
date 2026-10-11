@@ -248,12 +248,19 @@ qb-target is started, it offers the rules the server sends
 ped (`addGlobalPed`, `AddGlobalPed`) and of kind `object` on every object,
 shown only where the entity's `rpf_placement` state bag names the rule's
 type, and a models rule on those models (`addModel`, `AddTargetModel`),
-each with the rule's label and distance. qb-target keys its options by
+each with the rule's label and distance. Each option's `canInteract`
+(`target.shows`) also asks whether the server offers it to the player on
+that entity, the addon's own check included (`core.targets.offered`, by
+network id, so an entity that is not networked shows nothing): the
+resource calls it every frame, and the core answers from what the server
+last said and asks again in the background, so an option appears one
+round trip after the player first aims at the entity. qb-target keys its options by
 label, so each label it is given carries an invisible marker
 (`target.qb_label`): two rules both labelled "Talk" stay two options, and
 no other script's "Talk" is replaced or taken away. Selecting one sends the
 interaction with the entity's network id, and a refusal is shown with
-ox_lib's notify. New rules replace the old ones, and stopping the
+ox_lib's notify; the entity's answer is then asked again, since the
+interaction may have changed what is offered there. New rules replace the old ones, and stopping the
 resource takes them back. A target resource that starts (or restarts)
 after the rules came is offered them then, and one that stops is never
 asked to take them back: its exports went with it. Proven on fake exports only: a real FXServer

@@ -1408,7 +1408,12 @@ the rules' `check`, in the addon's context, before the handler runs with
 the resolved target as its third argument; the cooldown starts as the
 request is admitted, and a refusing check gives it back. Empty lists go
 to clients as JSON arrays. The server answers `rpf:targets` (what is near, `targets.options`)
-on the same rate, and sends `rpf:target_rules` (`targets.listed`) to each
+on the same rate, and `rpf:target_offers` (which of a short list of rules
+it offers on an entity, `targets.offers`) on a rate of its own,
+`MAX_OFFERS_PER_WINDOW` (60) per `WINDOW_MS`, so a target resource asking
+as the player looks around never uses up what they may do; a list that is
+not at most `targets.MAX_OFFER_NAMES` (16) names answers nothing offered.
+It sends `rpf:target_rules` (`targets.listed`) to each
 player as they become `active` and to everyone in the world when a
 registration or an addon's state changes, once per turn of the clock.
 
@@ -1436,13 +1441,31 @@ on both sides, before `rpf.interactions`.
   `release` gives it back when the check refuses, and `forget` drops an
   interaction's. `options(entries, player)` lists what is
   near, offered to the player, nearest first, at most `MAX_NEARBY` (16);
-  `listed(entries)` is what a target resource needs.
+  `offers(entries, player, ref, names)` says which of the named rules are
+  offered on an entity (`admit` without the cooldown taken, then the
+  check); `listed(entries)` is what a target resource needs. **Offered**
+  includes the addon's own `check` (#317), run as a request runs it (the
+  addon's context, `pcall`, a copy of the player and the target, only
+  `true` passes, a throw logged), so a menu never lists what the addon
+  will refuse. Checks may yield, so one listing runs at most `MAX_CHECKS`
+  (32), nearest first, starts none after `CHECK_BUDGET_MS` (2 s), and
+  skips one whose registration, addon or player changed meanwhile; a
+  player may have at most `MAX_LISTING` (4) running, past which a listing
+  answers nothing. An option whose check did not run is left out.
 - **Client.** `start_client` keeps the server's `rpf:target_rules` and
   emits `interactions.targets`; `rules()` is a copy. `nearby_client(done)`
   asks `rpf:targets` (one at a time, `TIMEOUT_MS`), `nearby(callback)` is
   the public form, and `open()` is the minimal UI: ask, show `rpf.ui`'s
   menu, send the pick as `{ target = { id } }`, and `tell` the player a
-  refusal through `rpf.ui`'s notify.
+  refusal through `rpf.ui`'s notify. `offered(name, ref)` is for a target
+  resource's per-frame `canInteract`: the server's last answer about the
+  entity, false until it has said yes, asking `rpf:target_offers` again
+  when the answer is older than `OFFER_TTL_MS` (1.5 s). Rules looked at in
+  one turn of the clock are one request per entity, at most
+  `MAX_OFFERS_ASKING` (2) wait at once, answers are kept for at most
+  `MAX_OFFER_REFS` (64) entities, and every answer is forgotten when the
+  rules change (one that comes after is dropped); `recheck(ref)` forgets
+  one entity's, once a request was made there.
 
 ### UI (`rpf.ui`, J10)
 
