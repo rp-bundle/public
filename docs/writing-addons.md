@@ -273,7 +273,7 @@ Register the handlers in `start`, so they go when the addon stops:
 
 ```lua
 start = function()
-  local reach = acme_notes.units(rpf, 2) -- two metres, in the engine's units (step 9)
+  local reach = 2 -- metres, on every engine (step 10)
   assert(rpf.interactions.register("acme_notes.pin", function(player, payload)
     return acme_notes.pin(rpf, player, payload)
   end))
@@ -443,10 +443,12 @@ The record is the same on both engines, but some values in it are not:
   `{ fivem = "prop_notepad_01", gmod = "models/props_c17/paper01.mdl" }`,
   and RPF places the one for the engine it runs on. Staff can change both
   in the portal.
-- **Distances.** Positions and distances are in the engine's units:
-  metres on FiveM, about 39 to the metre on Gmod. Only an addon may tell
-  the engines apart (`rpf.engine`), so `acme_notes.units` keeps its own
-  table, and an interaction's `distance` is given in those units.
+- **Distances.** Write them in metres. An interaction's `distance` and a
+  zone's `radius` are metres on both engines, and the target a handler gets
+  reports its `distance` in metres. Positions are the engine's own units
+  (metres on FiveM, about 39 to the metre on Gmod), so for a distance you
+  measure yourself, `rpf.world.units(metres)` gives the engine's units and
+  `rpf.world.metres(units)` takes you back. You never test `rpf.engine`.
 - **What the engine can do.** `rpf.capabilities()` says which world and UI
   calls this engine supports. Ask before offering something that needs
   one: a call to one it lacks says `unsupported`.
@@ -535,7 +537,7 @@ greeter = {
 ```
 
 `kind` is `ped` or `object` (placed for you, so it needs a `model`),
-`point` (nothing placed) or `zone` (needs a `radius` field). `bucket` and
+`point` (nothing placed) or `zone` (needs a `radius` field, in metres). `bucket` and
 `visible` name an integer and a boolean field when you want them. A model
 field marked `engine = true` can hold one model per engine, `{ fivem =
 "a_m_y_business_01", gmod = "models/Humans/Group01/male_02.mdl" }`, so the
@@ -739,7 +741,7 @@ rpf.interactions.register("acme_npcs.talk", function(player, payload, target)
 end, {
   target = "acme_npcs.greeter", -- a world-backed type (or { models = { "prop_atm_01" } })
   label = "Talk",               -- what the menu and ox_target show
-  distance = 2.5,               -- how near; 3 unless you say (Gmod's units are smaller: set it)
+  distance = 2.5,               -- how near, in metres on every engine; 3 unless you say
   cooldown = 2000,              -- ms between one player's uses
   permission = "boss",          -- optional: an addon permission the player holds as linked staff
   check = function(player, target) return true end, -- optional: your own test, `false, reason` refuses
@@ -749,8 +751,8 @@ end, {
 Before the handler runs, the server checks that the player is in the
 world, holds the permission, is past the cooldown, and that the target is
 a visible record of that type in the player's bucket within `distance`
-(inside a zone's radius), or an entity of one of the models in their
-bucket within `distance`. Then it runs your `check`. A missing, hidden,
+metres (inside a zone's radius, also in metres), or an entity of one of the
+models in their bucket within `distance`. Then it runs your `check`. A missing, hidden,
 other-bucket or other-type target is `not_found` whatever the reason, and
 one out of reach is `too_far`. The client never decides any of it.
 

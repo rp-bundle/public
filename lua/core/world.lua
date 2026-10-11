@@ -152,6 +152,42 @@ local function position_of(at)
   return { x = at.x, y = at.y, z = at.z }
 end
 
+---Converts a distance in metres to the engine's units, by the scale the
+---adapter declares (`units_per_metre`): the one place an engine's scale
+---enters the core, so an addon (and a rule's `distance` or a zone's
+---radius) is written once, in metres, for every engine.
+---@param metres any The distance, in metres. A negative one is an offset.
+---@return number? units The same distance in the engine's units.
+---@return string? err `invalid` for anything but a finite number, or a result the engine's units cannot hold; `unsupported` before the core has started.
+function world.units(metres)
+  if not platform then
+    return nil, "unsupported"
+  end
+  if not finite(metres) then
+    return nil, "invalid"
+  end
+  local units = metres * platform.units_per_metre
+  if not finite(units) then
+    return nil, "invalid"
+  end
+  return units
+end
+
+---Converts a distance in the engine's units to metres: the inverse of
+---`units`, for a distance the core measured (a target's `distance`).
+---@param units any The distance, in the engine's units.
+---@return number? metres The same distance in metres.
+---@return string? err `invalid` for anything but a finite number; `unsupported` before the core has started.
+function world.metres(units)
+  if not platform then
+    return nil, "unsupported"
+  end
+  if not finite(units) then
+    return nil, "invalid"
+  end
+  return units / platform.units_per_metre
+end
+
 ---Calls an adapter's capability under `pcall`, logging a throw.
 ---@param name string The capability.
 ---@param fn function It.

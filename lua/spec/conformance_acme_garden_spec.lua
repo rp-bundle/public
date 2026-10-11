@@ -145,10 +145,10 @@ conformance.run(busted, "the acme_garden example", {
       gardening(world)
       local garden = rawget(_G, "acme_garden")
       local plant = sown(world)
-      local step = garden.units(world.api, 1.5)
+      local step = world:units(1.5)
       world.place(1, { x = 10 + step, y = 20, z = 30 })
       assert.is_true(at(world, 1, "acme_garden.water", plant.id).ok, "a metre and a half away")
-      world.place(1, { x = 10 + garden.units(world.api, 3), y = 20, z = 30 })
+      world.place(1, { x = 10 + world:units(3), y = 20, z = 30 })
       local far = at(world, 1, "acme_garden.water", plant.id)
       assert.are.same({ false, "too_far" }, { far.ok, far.reason }, "three metres away")
     end,

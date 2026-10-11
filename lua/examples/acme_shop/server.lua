@@ -14,19 +14,6 @@ acme_shop = acme_shop or {}
 ---to buy.
 acme_shop.OFFER_METRES = 3
 acme_shop.REACH_METRES = 4
----The engine's units in a metre: positions are in them. Source (Gmod)
----measures in inches, near enough; FiveM in metres. This is the addon's own
----table, since only an addon may tell engines apart (the core never does).
----@type table<string, number>
-acme_shop.UNITS_PER_METRE = { gmod = 39.37 }
-
----A distance in the engine's units.
----@param rpf rpf.Api The API.
----@param metres number The distance in metres.
----@return number units The same distance in the engine's units.
-function acme_shop.units(rpf, metres)
-  return metres * (acme_shop.UNITS_PER_METRE[rpf.engine] or 1)
-end
 ---How long to wait before trying a sale again when the till could not be
 ---asked, and how many times to try in all.
 acme_shop.AGAIN_MS = 1000
@@ -89,7 +76,7 @@ local function within_reach(rpf, player, counter)
   if rpf.world.bucket(player.handle) ~= 0 then
     return false
   end
-  local reach = acme_shop.units(rpf, acme_shop.REACH_METRES)
+  local reach = assert(rpf.world.units(acme_shop.REACH_METRES))
   local dx, dy, dz = at.x - spot.x, at.y - spot.y, at.z - spot.z
   return dx * dx + dy * dy + dz * dz <= reach * reach
 end
@@ -371,7 +358,7 @@ function acme_shop.start_server(rpf)
       -- (`rpf_interact`), and ox_target or qb-target on FiveM, offer it.
       assert(rpf.interactions.register("acme_shop.shop", function(player, _, target)
         return acme_shop.open(rpf, player, target)
-      end, { target = acme_shop.COUNTER, label = "Shop", distance = acme_shop.units(rpf, acme_shop.OFFER_METRES) }))
+      end, { target = acme_shop.COUNTER, label = "Shop", distance = acme_shop.OFFER_METRES }))
     end,
   })
 end

@@ -393,6 +393,12 @@ if world then
     placed = function(type_name, id)
       return world.placed(type_name, id)
     end,
+    units = function(metres)
+      return world.units(metres)
+    end,
+    metres = function(units)
+      return world.metres(units)
+    end,
   }, "rpf.world")
 end
 

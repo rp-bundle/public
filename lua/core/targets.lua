@@ -23,6 +23,13 @@
 ---   the player's world but out of reach is `too_far`.
 ---5. The addon's `check(player, target)`, under `pcall`, in its context.
 ---
+---**Distances are metres.** A rule's `distance`, a zone's radius field and
+---the `distance` a resolved target or a nearby option reports are all in
+---metres, on every engine; the core converts to and from the engine's units
+---by the scale the adapter declares (`rpf.world.units`), so an addon never
+---tells engines apart. A target resource is told the rule's distance in the
+---engine's units, since that is what it measures in.
+---
 ---Only then does the handler run, with the resolved target as its third
 ---argument, and the cooldown starts. A client never names an event: the
 ---interaction's name reaches only a registered handler, as before.
@@ -42,8 +49,8 @@
 ---What the resource shows is presentation: selecting an option sends the
 ---same request, checked the same way.
 ---@class rpf.targets
----@field DEFAULT_DISTANCE number How near a target must be when a rule does not say, in the engine's units (metres on FiveM).
----@field MAX_DISTANCE number The farthest a rule may reach.
+---@field DEFAULT_DISTANCE number How near a target must be when a rule does not say, in metres.
+---@field MAX_DISTANCE number The farthest a rule may reach, in metres.
 ---@field MAX_COOLDOWN_MS integer The longest cooldown a rule may set: an hour.
 ---@field MAX_MODELS integer The most models one rule may name.
 ---@field MAX_LABEL integer The longest label, in bytes.
@@ -68,7 +75,7 @@ targets.TIMEOUT_MS = 10000
 ---@field label string? What a menu or target resource shows.
 ---@field type string? The world-backed type a target must be a record of.
 ---@field models string[]? The models an entity target must be one of.
----@field distance number How near.
+---@field distance number How near, in metres.
 ---@field cooldown integer Milliseconds between one player's uses.
 ---@field permission string? The full addon flag the player must hold.
 ---@field check any? The addon's own test: a function, or a FiveM function reference.
@@ -81,7 +88,7 @@ targets.TIMEOUT_MS = 10000
 ---@field ref integer? The entity's ref, for an entity.
 ---@field model any The entity's model, for an entity.
 ---@field position { x: number, y: number, z: number } Where it is.
----@field distance number How far the player is from it.
+---@field distance number How far the player is from it, in metres.
 
 ---@type rpf.ServerPlatform|rpf.ClientPlatform|nil
 local platform = nil
@@ -241,18 +248,20 @@ local function placed_at(where, fields, bucket)
 end
 
 ---Whether a record at `d` is within reach: inside a zone's radius, or
----within the rule's distance of anything else.
+---within the rule's distance of anything else. Both are in metres, so the
+---distance is compared in the engine's units after converting them.
 ---@param where table The type's `world`.
 ---@param fields table The record's fields.
----@param d number How far the player is.
+---@param d number How far the player is, in the engine's units.
 ---@param rules rpf.targets.Rules The rules.
 ---@return boolean reach True if it is.
 local function within(where, fields, d, rules)
+  local metres = rules.distance
   if where.kind == "zone" then
-    local radius = fields[where.radius]
-    return finite(radius) and d <= radius
+    metres = fields[where.radius]
   end
-  return d <= rules.distance
+  local reach = rpf.world.units(metres)
+  return reach ~= nil and d <= reach
 end
 
 ---The `world` of a type, if it is world-backed and installed.
@@ -301,7 +310,7 @@ local function resolve_record(rules, named, at, bucket)
   if not within(where, record.fields, d, rules) then
     return nil, "too_far"
   end
-  return { type = type_name, id = id, record = record, position = spot, distance = d }
+  return { type = type_name, id = id, record = record, position = spot, distance = rpf.world.metres(d) }
 end
 
 ---Resolves the entity a client named for a models rule.
@@ -331,10 +340,11 @@ local function resolve_entity(rules, named, at, bucket)
     return nil, "not_found"
   end
   local d = distance(at, entity.position)
-  if d > rules.distance then
+  local reach = rpf.world.units(rules.distance)
+  if not reach or d > reach then
     return nil, "too_far"
   end
-  local target = { ref = named.ref, model = entity.model, position = entity.position, distance = d }
+  local target = { ref = named.ref, model = entity.model, position = entity.position, distance = rpf.world.metres(d) }
   if entity.placement then
     target.type, target.id = entity.placement.type, entity.placement.id
   end
@@ -495,7 +505,13 @@ function targets.options(entries, player)
         local spot = placed_at(where, record.fields, bucket)
         local d = spot and distance(at, spot)
         if d and within(where, record.fields, d, rules) then
-          out[#out + 1] = { name = name, label = rules.label or name, type = rules.type, id = record.id, distance = d }
+          out[#out + 1] = {
+            name = name,
+            label = rules.label or name,
+            type = rules.type,
+            id = record.id,
+            distance = rpf.world.metres(d),
+          }
         end
       end
     end
@@ -517,7 +533,7 @@ end
 
 ---What a target resource needs to offer the rules with a target: for each,
 ---its name, label, and the type (with its world kind) or models it targets,
----and how near, in name order.
+---and how near in the engine's units, in name order.
 ---@param entries table<string, { rules: rpf.targets.Rules?, namespace: string }> The registrations, by name.
 ---@param all boolean? True to list those of addons not running too: what a registration's size is checked against.
 ---@return table[] rules The rules, plain.
@@ -539,7 +555,7 @@ function targets.listed(entries, all)
       type = rules.type,
       kind = where and where.kind or nil,
       models = rules.models and json.array(rules.models) or nil,
-      distance = rules.distance,
+      distance = rpf.world.units(rules.distance),
     }
   end
   return out

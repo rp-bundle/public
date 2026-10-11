@@ -141,6 +141,7 @@ function support.fake_platform(opts)
   end
 
   p.positions = {}
+  p.units_per_metre = 1
   p.capabilities = {
     position = function(player)
       return p.positions[player]

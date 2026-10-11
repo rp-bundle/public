@@ -144,7 +144,7 @@ conformance.run(busted, "the acme_tags example", {
         end
       end
       assert.is_true(shown, "the text is shown to the player")
-      world.place(1, { x = 50, y = 20, z = 30 })
+      world.place(1, { x = 10 + world:units(40), y = 20, z = 30 })
       local far = assert(interact(world, player, "acme_tags.read", { target = { id = id } }))
       assert.are.same({ false, "too_far" }, { far.ok, far.reason })
     end,

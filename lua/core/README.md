@@ -116,6 +116,7 @@ step.
 | Storage | `kv_get(key) -> string?` | Reads a persisted string |
 | | `kv_set(key, value?)` | Writes one, or deletes it with `nil`. Strings only, so the core owns the encoding |
 | Random | `random_hex(n) -> string` | `n` lowercase hex digits from the best randomness the engine offers |
+| World | `units_per_metre` | A number: how many of the engine's position units are a metre (FiveM 1, Gmod 39.37), positive and finite. `rpf.world.units` and `metres` convert by it; the platform is refused at start without it |
 | World | `capabilities` | A table, not a function: what the engine can do with the game world for addons, each capability a function or `false` for unsupported (`rpf.world`). `position(player) -> { x, y, z }?`, `bucket(player) -> integer?`, `model(name) -> id?`, `entity(ref) -> { position, model, bucket, placement }?`, `spawn(spec) -> ref?, err?` and `despawn(ref)` (J4: `rpf.world`). Beside them, the UI its clients show addons (J10): `notify`, `menu`, `input`, `progress`, each `true` or `false` (`rpf.ui`) |
 | Thread | `thread() -> any` | The running coroutine (`coroutine.running`), or nil where there are none (the mock), so `rpf.addons` keeps whose code is running per coroutine without the core touching `coroutine` |
 | Players | `identifiers(player) -> string[]` | Every identifier the engine knows, verbatim. Reference data, never identity |
@@ -1327,6 +1328,13 @@ unsupported, and every call into one runs under `pcall`, a throw logged.
   z }` (how a record stores one, a `vector3` field), or `unsupported`, or
   `not_found` (not logged in, not spawned, or the adapter's call failed).
 - **`bucket(handle)`**: their routing bucket; 0 on an engine with one world.
+- **`units(metres)`** and **`metres(units)`**: a distance in metres as the
+  engine's units, and back, by the platform's `units_per_metre`. The one
+  place the scale enters the core: `targets` converts a rule's `distance`
+  and a zone's radius with it, and reports a resolved target's and a nearby
+  option's `distance` in metres. Both return `nil, "invalid"` for anything
+  but a finite number (or a result that is not one), and `unsupported`
+  before the core has started.
 - **`model(name)`**: the engine's id for a model name, as `entity` reports
   one.
 - **`entity(ref)`**: a networked entity by its ref (a FiveM network id, a
@@ -1410,8 +1418,9 @@ What an interaction may be aimed at, and the checks the server makes. Loaded
 on both sides, before `rpf.interactions`.
 
 - **Server.** `check_rules(namespace, rules)` reads an addon's rules (`label`,
-  `target` as a type name or `{ type }` or `{ models }`, `distance` (default
-  `DEFAULT_DISTANCE`, 3, at most `MAX_DISTANCE`), `cooldown` (at most an
+  `target` as a type name or `{ type }` or `{ models }`, `distance` (in
+  metres on every engine; default `DEFAULT_DISTANCE`, 3, at most
+  `MAX_DISTANCE`), `cooldown` (at most an
   hour), `permission` (made `addon.<namespace>.<permission>`), `check`),
   refusing an unknown key. `admit(name, rules, player, payload)` checks the
   player is `active` when there is a target, holds the permission

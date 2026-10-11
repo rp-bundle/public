@@ -159,11 +159,11 @@ conformance.run(busted, "the acme_notes example", {
       ready(world)
       local notes = rawget(_G, "acme_notes")
       local note = pinned(world, { text = "meet here" })
-      world.place(1, { x = 10 + notes.units(world.api, 1.5), y = 20, z = 30 })
+      world.place(1, { x = 10 + world:units(1.5), y = 20, z = 30 })
       local read = at(world, 1, "acme_notes.read", note.id)
       assert.is_true(read.ok)
       assert.are.same({ text = "meet here", colour = "white" }, read.data)
-      world.place(1, { x = 10 + notes.units(world.api, 3), y = 20, z = 30 })
+      world.place(1, { x = 10 + world:units(3), y = 20, z = 30 })
       local far = at(world, 1, "acme_notes.read", note.id)
       assert.are.same({ false, "too_far" }, { far.ok, far.reason })
     end,

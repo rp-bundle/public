@@ -30,6 +30,13 @@ local support = require("spec.support")
 
 conformance.PLATFORMS = { "mock", "fivem", "gmod" }
 
+---How many of each platform's position units are one metre, written down
+---here on its own rather than read from the adapter, so an adapter that
+---declares the wrong scale fails the cases that measure with it. FiveM's
+---positions are metres; Gmod's are Hammer units, about 39.37 to the metre.
+---@type table<string, number>
+conformance.UNITS_PER_METRE = { mock = 1, fivem = 1, gmod = 39.37 }
+
 ---The portal's side, as small as the cases need: the addon records it has,
 ---and which this server holds. `connect` and `pump` play it.
 ---@class spec.FakePortal
@@ -90,6 +97,15 @@ local function by_ref(list)
 end
 
 World.__index = World
+
+---A distance in metres as this platform's positions measure it, by the
+---scale the harness knows it to have (`conformance.UNITS_PER_METRE`): how a
+---case puts a player so many metres from something on any engine.
+---@param metres number The distance in metres.
+---@return number units The same distance in the engine's units.
+function World:units(metres)
+  return metres * conformance.UNITS_PER_METRE[self.platform_name]
+end
 
 ---The API as another addon's code sees it: on FiveM, through the export from
 ---another resource; elsewhere the same table, since there is no other.

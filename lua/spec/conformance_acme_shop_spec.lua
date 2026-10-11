@@ -197,7 +197,7 @@ local function at_the_counter(world, room)
   world:select(handle, JANE)
   -- Two metres off, in the engine's units (inches on Gmod), where a player
   -- stands to talk to a shopkeeper.
-  world.place(1, { x = SPOT.x, y = SPOT.y + shop.units(world.api, 2), z = SPOT.z })
+  world.place(1, { x = SPOT.x, y = SPOT.y + world:units(2), z = SPOT.z })
   return shop, handle
 end
 
@@ -595,7 +595,7 @@ conformance.run(busted, "the acme_shop example", {
       )
       handle = world:login(1, PLAYER)
       world:select(handle, JANE)
-      world.place(1, { x = SPOT.x, y = SPOT.y + shop.units(api, 2), z = SPOT.z })
+      world.place(1, { x = SPOT.x, y = SPOT.y + world:units(2), z = SPOT.z })
       jane = assert(api.players.get(handle))
       assert.are.same(
         { false, "Something went wrong at the till. Staff have been told; do not pay again." },

@@ -18,20 +18,6 @@ acme_garden.THIRST = 2
 
 ---How close to a plant a player must stand to tend it, in metres.
 acme_garden.REACH_METRES = 2
----The engine's units in a metre: positions and interaction distances are
----in them. Source (Gmod) measures in inches, near enough; FiveM in metres.
----This is the addon's own table, since only an addon may tell engines apart
----(the core never does).
----@type table<string, number>
-acme_garden.UNITS_PER_METRE = { gmod = 39.37 }
-
----A distance in the engine's units.
----@param rpf rpf.Api The API.
----@param metres number The distance in metres.
----@return number units The same distance in the engine's units.
-function acme_garden.units(rpf, metres)
-  return metres * (acme_garden.UNITS_PER_METRE[rpf.engine] or 1)
-end
 
 ---A plant's fields after some ticks of growth: pure, so it is the same on
 ---every engine and in every test. Each tick it drinks `THIRST` and grows
@@ -216,7 +202,7 @@ function acme_garden.start_server(rpf)
         -- `failed`, with the reason in the console.
         assert(rpf.interactions.register(name, function(player, _, target)
           return interaction.run(player, target)
-        end, { target = acme_garden.TYPE, label = interaction.label, distance = acme_garden.units(rpf, acme_garden.REACH_METRES) }))
+        end, { target = acme_garden.TYPE, label = interaction.label, distance = acme_garden.REACH_METRES }))
       end
       assert(rpf.time.every(acme_garden.TICK_MS, function()
         acme_garden.tick(rpf)

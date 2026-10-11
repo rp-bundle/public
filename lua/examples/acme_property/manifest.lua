@@ -55,7 +55,7 @@ acme_property.MANIFEST = {
           max = 100000,
           required = true,
           title = "Size of the lot",
-          help = "How far from the middle the lot reaches, in the engine's units: metres on FiveM, about 39 to the metre on Gmod",
+          help = "How far from the middle the lot reaches, in metres",
         },
         bucket = { type = "integer", min = 0, max = 65535, default = 0, title = "Routing bucket" },
         price = { type = "integer", min = 1, max = 1000000000, required = true, title = "Price" },

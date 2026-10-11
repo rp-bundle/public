@@ -7,20 +7,6 @@ acme_notes = acme_notes or {}
 ---metres.
 acme_notes.REACH_METRES = 2
 
----The engine's units in a metre: positions and interaction distances are
----in them. Source (Gmod) measures in inches, near enough; FiveM in metres.
----The addon's own table, since only an addon may tell engines apart.
----@type table<string, number>
-acme_notes.UNITS_PER_METRE = { gmod = 39.37 }
-
----A distance in the engine's units.
----@param rpf rpf.Api The API.
----@param metres number The distance in metres.
----@return number units The same distance in the engine's units.
-function acme_notes.units(rpf, metres)
-  return metres * (acme_notes.UNITS_PER_METRE[rpf.engine] or 1)
-end
-
 ---Whether a note is the player's own.
 ---@param player rpf.PlayerView The player.
 ---@param note rpf.Record The note.
@@ -127,7 +113,7 @@ end
 function acme_notes.start_server(rpf)
   return rpf.addons.register(acme_notes.MANIFEST, {
     start = function()
-      local reach = acme_notes.units(rpf, acme_notes.REACH_METRES)
+      local reach = acme_notes.REACH_METRES
       -- A refusal here is a bug in this file; throwing leaves the addon
       -- `failed`, with the reason in the console.
       assert(rpf.interactions.register("acme_notes.pin", function(player, payload)

@@ -61,6 +61,18 @@ local function manifest()
   }
 end
 
+---A point given in metres from the origin, as the engine's positions have it:
+---the engine's units differ (Gmod's are 39.37 to the metre), so a case that
+---means "one metre east" says so with this on every engine.
+---@param world spec.ConformanceWorld The world.
+---@param x number Metres.
+---@param y number Metres.
+---@param z number Metres.
+---@return { x: number, y: number, z: number } point The point, in the engine's units.
+local function point(world, x, y, z)
+  return { x = world:units(x), y = world:units(y), z = world:units(z) }
+end
+
 ---A greeter as the config carries it.
 ---@param id string Its id.
 ---@param at { x: number, y: number, z: number } Where it stands.
@@ -119,11 +131,12 @@ local function ready(world, extra)
   local json = world.core.json
   local entry = conformance.installed(world.core, manifest())
   local records = {
-    greeter(NEAR, { x = 11, y = 20, z = 30 }),
-    greeter(FAR, { x = 100, y = 20, z = 30 }),
-    greeter(HIDDEN, { x = 10, y = 21, z = 30 }, { shown = false }),
-    greeter(ELSEWHERE, { x = 10, y = 19, z = 30 }, { bucket = 5 }),
-    { id = AREA, type = "acme_npcs.area", revision = 1, fields = { centre = { x = 10, y = 20, z = 25 }, radius = 6 } },
+    greeter(NEAR, point(world, 11, 20, 30)),
+    greeter(FAR, point(world, 100, 20, 30)),
+    greeter(HIDDEN, point(world, 10, 21, 30), { shown = false }),
+    greeter(ELSEWHERE, point(world, 10, 19, 30), { bucket = 5 }),
+    -- Six metres across, on every engine.
+    { id = AREA, type = "acme_npcs.area", revision = 1, fields = { centre = point(world, 10, 20, 25), radius = 6 } },
   }
   entry.records = assert(json.decode(assert(json.encode(json.array(records)))))
   world:install({ entry })
@@ -132,7 +145,7 @@ local function ready(world, extra)
   world:advance(500)
   local handle = world:login(1, PLAYER)
   world:activate(handle)
-  world.place(1, { x = 10, y = 20, z = 30 })
+  world.place(1, point(world, 10, 20, 30))
   return handle
 end
 
@@ -248,7 +261,7 @@ conformance.run(busted, "Interactions with targets", {
       ready(world)
       local answer = interact(world, "acme_npcs.rest", { id = AREA })
       assert.is_true(answer.ok, tostring(answer.reason))
-      world.place(1, { x = 10, y = 20, z = 40 })
+      world.place(1, point(world, 10, 20, 40))
       assert.are.equal("too_far", interact(world, "acme_npcs.rest", { id = AREA }).reason)
     end,
   },
@@ -280,6 +293,45 @@ conformance.run(busted, "Interactions with targets", {
         "acme_npcs.rest 0000000e",
       }, seen)
       assert.are.equal("Talk", answer.options[1].label)
+      -- Reported in metres, whatever the engine measures in: the near
+      -- greeter is a metre from the player.
+      assert.is_true(math.abs(answer.options[1].distance - 1) < 1e-9, tostring(answer.options[1].distance))
+    end,
+  },
+  {
+    name = "measures a rule's distance, and reports a target's, in metres on every engine",
+    run = function(world)
+      ready(world)
+      local seen
+      assert(world.api.interactions.register("acme_npcs.measure", function(_, _, target)
+        seen = target.distance
+        return true
+      end, { target = "acme_npcs.greeter", distance = 2.5 }))
+      -- The near greeter is one metre east of the player: well inside.
+      assert.is_true(interact(world, "acme_npcs.measure", { id = NEAR }).ok)
+      assert.is_true(math.abs(seen - 1) < 1e-9, tostring(seen))
+      world.place(1, point(world, 12.4, 20, 30))
+      assert.is_true(interact(world, "acme_npcs.measure", { id = NEAR }).ok, "1.4 m away, inside 2.5 m")
+      assert.is_true(math.abs(seen - 1.4) < 1e-9, tostring(seen))
+      world.place(1, point(world, 13.6, 20, 30))
+      assert.are.equal("too_far", interact(world, "acme_npcs.measure", { id = NEAR }).reason, "2.6 m away, outside 2.5 m")
+    end,
+  },
+  {
+    name = "reads a zone's radius, and the default distance, in metres on every engine",
+    run = function(world)
+      ready(world)
+      -- The area is six metres across; the default distance is three.
+      world.place(1, point(world, 10, 20, 30.9))
+      assert.is_true(interact(world, "acme_npcs.rest", { id = AREA }).ok, "5.9 m from the middle")
+      world.place(1, point(world, 10, 20, 31.1))
+      assert.are.equal("too_far", interact(world, "acme_npcs.rest", { id = AREA }).reason, "6.1 m from the middle")
+      -- `wave` has no distance of its own, and its check refuses the near
+      -- greeter, so what it answers says whether the target was in reach.
+      world.place(1, point(world, 13.9, 20, 30))
+      assert.are.equal("They look away.", interact(world, "acme_npcs.wave", { id = NEAR }).reason, "2.9 m is inside the default")
+      world.place(1, point(world, 14.1, 20, 30))
+      assert.are.equal("too_far", interact(world, "acme_npcs.wave", { id = NEAR }).reason, "3.1 m is outside it")
     end,
   },
   {
@@ -300,7 +352,9 @@ conformance.run(busted, "Interactions with targets", {
       end
       assert.are.equal("ped", by_name["acme_npcs.talk"].kind)
       assert.are.equal("acme_npcs.greeter", by_name["acme_npcs.talk"].type)
-      assert.are.equal(3, by_name["acme_npcs.talk"].distance)
+      -- A target resource measures in the engine's units, so the rule's
+      -- three metres arrive converted.
+      assert.is_true(math.abs(world:units(3) - by_name["acme_npcs.talk"].distance) < 1e-9)
       assert.are.equal(MODELS[world.api.engine], by_name["acme_npcs.bow"].models[1])
       assert.are.equal("zone", by_name["acme_npcs.rest"].kind)
     end,
@@ -312,7 +366,7 @@ conformance.run(busted, "Interactions with targets", {
       world:connect()
       local handle = world:login(1, PLAYER)
       world:activate(handle)
-      world.place(1, { x = 0, y = 0, z = 0 })
+      world.place(1, point(world, 0, 0, 0))
       world:advance(0)
       local rules
       for _, sent in ipairs(world.to_clients) do
@@ -379,7 +433,7 @@ conformance.run(busted, "Interactions with targets", {
         target = "acme_npcs.greeter",
         check = function()
           -- As a check that yields might resume: the player walked away.
-          world.place(1, { x = 500, y = 20, z = 30 })
+          world.place(1, point(world, 500, 20, 30))
           return true
         end,
       }))

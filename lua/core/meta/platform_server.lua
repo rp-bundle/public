@@ -147,8 +147,12 @@ function Commands.on_command(name, handler) end
 ---function, or `false` where this adapter does not support it: the core
 ---never branches on the engine, so an engine difference is one of these.
 ---`rpf.api.capabilities()` tells addons which are there.
+---
+---Beside them the adapter states the scale of the engine's positions, which
+---is a fact about the engine and not something it can decline to support.
 ---@class rpf.platform.World
 ---@field capabilities rpf.Capabilities What it can do.
+---@field units_per_metre number How many of the engine's units are one metre: 1 where positions are metres (FiveM), about 39.37 where they are inches (Gmod's Hammer units). A positive, finite number. The core multiplies every distance an addon gives in metres by it (`rpf.api.world.units`, an interaction's `distance`, a zone's radius) so an addon never tells engines apart.
 
 ---The game-world capabilities an adapter declares (J3), each a function or
 ---`false`, and the UI its clients show (J10), each `true` or `false`. One

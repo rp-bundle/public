@@ -14,11 +14,11 @@ local platform = {}
 ---One member a platform must provide.
 ---@class rpf.platform.Member
 ---@field name string The key on the platform table.
----@field kind "string"|"function"|"table" The Lua type its value must have.
+---@field kind "string"|"function"|"table"|"number" The Lua type its value must have.
 
 ---Members that are not functions, and what they are.
----@type table<string, "string"|"table">
-local KINDS = { engine = "string", capabilities = "table", ui = "table" }
+---@type table<string, "string"|"table"|"number">
+local KINDS = { engine = "string", capabilities = "table", ui = "table", units_per_metre = "number" }
 
 ---Builds a member list from names, all functions but those `KINDS` names.
 ---@param names string[] The member names, in the order the README lists them.
@@ -55,6 +55,7 @@ platform.SERVER = members({
   "log",
   "expose",
   "capabilities",
+  "units_per_metre",
 })
 
 platform.CLIENT = members({
@@ -74,7 +75,9 @@ platform.CLIENT = members({
 })
 
 ---Lists what a platform table lacks for one side. `engine` must also be a
----non-empty string, since it is reported in `Hello`.
+---non-empty string, since it is reported in `Hello`, and `units_per_metre` a
+---positive finite number, since every distance an addon gives is multiplied
+---by it.
 ---@param candidate any The table an adapter or test supplied.
 ---@param side "server"|"client" Which interface to check it against.
 ---@return string[] missing Each missing or mistyped member as `name (kind)`, in interface order. Empty when the platform is complete.
@@ -89,7 +92,11 @@ function platform.missing(candidate, side)
   end
   for _, member in ipairs(list) do
     local value = candidate[member.name]
-    if type(value) ~= member.kind or (member.kind == "string" and value == "") then
+    if
+      type(value) ~= member.kind
+      or (member.kind == "string" and value == "")
+      or (member.kind == "number" and not (value > 0 and value < math.huge))
+    then
       missing[#missing + 1] = member.name .. " (" .. member.kind .. ")"
     end
   end
