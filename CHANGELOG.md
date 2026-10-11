@@ -39,8 +39,10 @@ socket.
   unset). A world type may name a `map` field (an indexed string) in its
   `world`, and the core places and targets only the records on the map it
   runs, or those whose map is null, which are on every map.
-  `rpf.api.world.map()` says which map that is. Each placement's page
-  shows its map.
+  `rpf.api.world.map()` says which map that is. In the portal, each
+  placement's page shows its map, a type's records filter by map (those
+  on it and those on every map), and the map field suggests the maps the
+  server reported and its records use, while taking any name typed.
 - Item images on the player's client (#243). `rpf.api.items.image(slug,
   callback)` hands an addon an item's image ready to draw: a `data:` URL on
   FiveM, for an `<img>` in any resource's page or ox_lib's `image`, and a
