@@ -299,6 +299,15 @@ The bundle targets Node 16, the oldest an FXServer that runs this ships.
   guarantee: the server owner ships this page.
 - The login form, which also registers, and the password change both show
   `auth.PASSWORD_REUSE_WARNING`. A saved login resumes silently.
+- The login form leads to a "Delete my account" form (H6): username,
+  password, and a box ticked to say it cannot be undone, with the text
+  naming what stays (bans, warnings, game records). The password is sealed
+  like the others and goes to the portal, never to Lua, and `ui.lua`
+  refuses a `delete_account` callback the page does not say was confirmed.
+  A refusal shows the portal's message (`account_linked` points at the
+  in-game account page); `auth.account_deleted` shows a screen telling the
+  player to reconnect, with input still held. It is reachable only from the
+  login screen, so a player resumed silently cannot open it (#322).
 - The remember token is the only secret stored on the player's machine, in
   client KVP, and is safe there only because P1 binds it to the player's
   FiveM licence: client storage is shared by every server running a resource
@@ -383,7 +392,8 @@ Run for #186 on FXServer 35245 under OneSync, against a local portal:
   stand, and the adapter lowers no bound.
 - The benchmark is above.
 - A real client's join is still to run: the login screen, the sealed
-  password, silent resume on a second join, the character screen reaching
+  password (the delete form's included), a deletion from the login screen
+  ending on the reconnect screen, silent resume on a second join, the character screen reaching
   `active` on a fresh install, and the identifiers the portal stores (the
   account `license:` and the allowlisted kinds verbatim, with no `ip:`).
   It needs the game, and waits on the repository owner (#186).

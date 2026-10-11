@@ -1586,7 +1586,7 @@ function Auth.api_token() end
 ---| "waiting" # The server has not sent a join nonce yet.
 ---| "required" # The player must log in or register: show the form.
 ---| "resuming" # Trying the saved login silently.
----| "working" # A login, registration or password change is in flight.
+---| "working" # A login, registration, password change or account deletion is in flight.
 ---| "redeeming" # The portal accepted the login; the server is redeeming the ticket.
 ---| "authenticated" # Logged in.
 ---| "deleted" # The account was deleted on this connection; nothing more can be started until the player reconnects.

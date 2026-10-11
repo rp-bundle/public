@@ -1545,6 +1545,76 @@ describe("the FiveM adapter", function()
       assert.are.same({ type = "error", message = "Wrong username or password." }, error)
     end)
 
+    it("deletes the account from a sealed password, and tells the player to reconnect", function()
+      local driver, record = started_client()
+      driver.nui("ready", {})
+      nonce(driver)
+      local sealed = "rpf-sealed-00112233445566778899aabbccddeeff"
+      -- A deletion the page does not say was confirmed, or with a field that
+      -- is not text, never reaches the portal.
+      local sent = #driver.nui_sent
+      assert.is_false(driver.nui("delete_account", { username = "sam", password = sealed }).ok)
+      assert.is_false(driver.nui("delete_account", { username = "sam", password = sealed, confirmed = "yes" }).ok)
+      assert.is_false(driver.nui("delete_account", { username = "sam", password = 5, confirmed = true }).ok)
+      assert.are.equal(sent, #driver.nui_sent, "no request went out")
+      assert.are.equal("login", rpf.json.decode(driver.nui_sent[sent]).screen)
+
+      assert.are.same({ ok = true }, driver.nui("delete_account", { username = "sam", password = sealed, confirmed = true }))
+      local request = nui_messages(driver)[#driver.nui_sent]
+      assert.are.equal("https://portal.example/api/v1/player/delete_account", request.url)
+      local body = rpf.json.decode(request.body)
+      assert.are.equal(sealed, body.password)
+      assert.are.equal("sam", body.username)
+      driver.nui("http", { id = request.id, status = 204, body = "", headers = {} })
+
+      assert.are.equal("deleted", rpf.auth.state())
+      local screen = last_screen(driver)
+      assert.are.equal("deleted", screen.screen)
+      assert.truthy(screen.message:find("sam", 1, true))
+      assert.truthy(screen.message:find("reconnect", 1, true))
+      assert.is_true(driver.focus, "the player has no account to play as, so input stays held")
+      for _, message in ipairs(record.to_server) do
+        assert.is_nil(message.payload:find("rpf-sealed", 1, true), "no password, sealed or not, goes to the server")
+      end
+      assert.is_false(driver.nui("delete_account", { username = "sam", password = sealed, confirmed = true }).ok)
+    end)
+
+    it("shows why a deletion was refused, an account linked to staff included", function()
+      local driver = started_client()
+      driver.nui("ready", {})
+      nonce(driver)
+      local sealed = "rpf-sealed-00112233445566778899aabbccddeeff"
+      assert.is_true(driver.nui("delete_account", { username = "sam", password = sealed, confirmed = true }).ok)
+      local request = nui_messages(driver)[#driver.nui_sent]
+      driver.nui("http", {
+        id = request.id,
+        status = 403,
+        body = rpf.json.encode(rpf.json.object({
+          error = "account_linked",
+          message = "This account is linked to a staff account. Remove the link on the portal's in-game account page first, then delete the account.",
+        })),
+        headers = {},
+      })
+      local error = nui_messages(driver)[#driver.nui_sent]
+      assert.are.equal("error", error.type)
+      assert.truthy(error.message:find("in-game account page", 1, true))
+      assert.are_not.equal("deleted", rpf.auth.state())
+      assert.is_true(driver.nui("delete_account", { username = "sam", password = sealed, confirmed = true }).ok, "the login stands, so the player may try again")
+    end)
+
+    it("does not show a background refresh or logout failure, which would forget a waiting password", function()
+      local driver = started_client()
+      driver.nui("ready", {})
+      nonce(driver)
+      local sent = #driver.nui_sent
+      for _, during in ipairs({ "refresh", "logout" }) do
+        rpf.events.emit("auth.failed", { code = "portal_error", message = "Something went wrong.", during = during })
+      end
+      assert.are.equal(sent, #driver.nui_sent)
+      rpf.events.emit("auth.failed", { code = "invalid_credentials", message = "Nope.", during = "delete_account" })
+      assert.are.same({ type = "error", message = "Nope." }, nui_messages(driver)[#driver.nui_sent])
+    end)
+
     it("shows the characters, locks for them, and closes once one is in play", function()
       local driver, record = started_client()
       driver.nui("ready", {})

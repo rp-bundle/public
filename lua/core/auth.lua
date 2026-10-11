@@ -31,7 +31,7 @@
 ---
 ---This module is the flow. The login form is the adapter's (Milestone 2): it
 ---calls these functions and listens for `auth.required`, `auth.succeeded`,
----`auth.failed` and `auth.password_change_required`.
+---`auth.failed`, `auth.password_change_required` and `auth.account_deleted`.
 ---@class rpf.auth
 ---@field PASSWORD_REUSE_WARNING string P1's warning, which every UI shows at the password field wherever a player chooses one.
 ---@field REMEMBER_PREFIX string The storage key prefix for remember tokens. The server's id follows it.

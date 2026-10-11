@@ -24,7 +24,31 @@
             <button type="submit" name="action" value="login">Log in</button>
             <button type="submit" name="action" value="register">Create account</button>
           </div>
+          <div class="actions"><button id="show-delete" type="button">Delete my account…</button></div>
         </form>
+      </section>
+
+      <section id="delete" class="screen" hidden>
+        <h1>Delete my account</h1>
+        <p>
+          This cannot be undone. Your username, your saved logins and your name are removed for good, and nobody can
+          log in to the account again. Bans, warnings and game records (your characters, money and items) stay on this
+          community's server.
+        </p>
+        <form id="delete-form">
+          <label>Username <input name="username" autocomplete="username" required /></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
+          <label class="check"><input name="confirmed" type="checkbox" required /> I understand this cannot be undone</label>
+          <div class="actions">
+            <button type="submit">Delete my account</button>
+            <button id="cancel-delete" type="button">Back</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="deleted" class="screen" hidden>
+        <h1>Account deleted</h1>
+        <p data-message></p>
       </section>
 
       <section id="password" class="screen" hidden>

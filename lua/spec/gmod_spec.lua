@@ -786,6 +786,65 @@ describe("the Gmod adapter's client", function()
     assert.is_true(button(gmod, world, "Log in").enabled)
   end)
 
+  it("offers to delete the account from the login form, saying what stays, and goes back", function()
+    local gmod, world = at_login()
+    button(gmod, world, "Delete my account"):DoClick()
+    local text = labels(gmod, world)
+    assert.truthy(text:find("cannot be undone", 1, true))
+    assert.truthy(text:find("Bans, warnings and game records", 1, true))
+    assert.are.equal(2, #gmod.shown(world, "DTextEntry"))
+    button(gmod, world, "Back"):DoClick()
+    assert.truthy(labels(gmod, world):find(world.core.auth.PASSWORD_REUSE_WARNING, 1, true))
+    assert.are.equal(2, #gmod.shown(world, "DTextEntry"))
+  end)
+
+  it("deletes the account only once the box is ticked, and tells the player to reconnect", function()
+    local gmod, world, record = at_login()
+    button(gmod, world, "Delete my account"):DoClick()
+    local fields = gmod.shown(world, "DTextEntry")
+    fields[1].value = "alice"
+    fields[2].value = "correct horse battery"
+    local requests = #record.requests
+    button(gmod, world, "Delete my account"):DoClick()
+    assert.are.equal(requests, #record.requests, "nothing was sent")
+    assert.truthy(labels(gmod, world):find("Tick the box", 1, true))
+
+    gmod.shown(world, "DCheckBoxLabel")[1].value = true
+    button(gmod, world, "Delete my account"):DoClick()
+    local request = record.requests[#record.requests]
+    assert.are.equal("https://portal.test/api/v1/player/delete_account", request.url)
+    assert.truthy(request.body:find("correct horse battery", 1, true))
+    for _, message in ipairs(record.to_server) do
+      assert.falsy(message.payload:find("correct horse battery", 1, true), message.name)
+    end
+    world:http_done(request.id, 204, "", {})
+    assert.are.equal("deleted", world.core.auth.state())
+    assert.truthy(labels(gmod, world):find("alice was deleted", 1, true))
+    assert.truthy(labels(gmod, world):find("reconnect", 1, true))
+    button(gmod, world, "Disconnect"):DoClick()
+    assert.are.same({ "disconnect" }, world.console)
+  end)
+
+  it("shows why a deletion was refused, an account linked to staff included", function()
+    local gmod, world, record = at_login()
+    button(gmod, world, "Delete my account"):DoClick()
+    local fields = gmod.shown(world, "DTextEntry")
+    fields[1].value = "alice"
+    fields[2].value = "correct horse battery"
+    gmod.shown(world, "DCheckBoxLabel")[1].value = true
+    button(gmod, world, "Delete my account"):DoClick()
+    local request = record.requests[#record.requests]
+    world:http_done(
+      request.id,
+      403,
+      '{"error":"account_linked","message":"This account is linked to a staff account. Remove the link on the portal\'s in-game account page first, then delete the account."}',
+      {}
+    )
+    assert.truthy(labels(gmod, world):find("in-game account page", 1, true))
+    assert.is_true(button(gmod, world, "Delete my account").enabled)
+    assert.are_not.equal("deleted", world.core.auth.state())
+  end)
+
   it("lists characters after login, and selects one through the server", function()
     local gmod, world, record = at_login()
     world:from_server("rpf:characters", world.core.handoff.encode("rpf:characters", {

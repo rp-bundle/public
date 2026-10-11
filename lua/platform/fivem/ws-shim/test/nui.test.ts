@@ -24,6 +24,13 @@ describe("sealed passwords", () => {
     assert.deepEqual(JSON.parse(sent!), { username: "sam", password, nonce: "rpf_jn_x" });
   });
 
+  it("swap back in an account deletion's body, the same as a login's", () => {
+    const sealed = new Sealed();
+    const handle = sealed.seal("hunter2");
+    const body = JSON.stringify({ nonce: "rpf_jn_x", username: "sam", password: handle });
+    assert.deepEqual(JSON.parse(sealed.unseal(body)!), { nonce: "rpf_jn_x", username: "sam", password: "hunter2" });
+  });
+
   it("swap each of several, and leave anything else alone", () => {
     const sealed = new Sealed();
     const old = sealed.seal("old one");
