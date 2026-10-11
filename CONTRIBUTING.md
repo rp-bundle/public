@@ -4,8 +4,11 @@ Issues and pull requests are welcome here.
 
 This repository is a one-way mirror of the framework's source, which lives
 in a private repository beside the hosted portal, so a pull request is not
-merged with GitHub's button. A maintainer applies it there by hand, keeping
-you as its author, and it reaches this repository with the next mirror run.
+merged with GitHub's button. A maintainer applies its commits there,
+keeping you as their author, and it reaches this repository with the next
+mirror run. A pull request can change what this repository holds, and
+nothing else: one that adds a file at a new path outside `lua/` is
+discussed in an issue first.
 Your pull request is then closed with a link to the commit that carries it.
 
 Your commits are published as you wrote them, so author them with the
