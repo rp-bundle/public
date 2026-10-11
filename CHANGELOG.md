@@ -29,6 +29,14 @@ socket.
 
 ### Added
 
+- The commerce example (J5, #82): `lua/examples/acme_shop/`, counters that
+  sell items and buy them back, built only on `rpf.api`. Staff place
+  counters and price listings as config records and stock what is limited
+  as a live record; a player picks from a menu the server opens, and one
+  exchange moves the money, the items and the stock. It runs on FiveM and
+  Gmod alike, and needs no Rust, route, protocol change or migration. The
+  conformance harness can now drop the portal's connection
+  (`World:disconnect`).
 - Exchanges (J5, #82): `rpf.api.commerce.exchange(player, deal, op_id,
   apply)` moves money and items together, with an addon's change to its own
   records, as one journaled intent, once per op id; `check(player, deal)`
