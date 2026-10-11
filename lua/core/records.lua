@@ -242,6 +242,19 @@ function records.take(held, through)
   return views
 end
 
+---Holds a record for the server alone from now on, no longer for the
+---session it was held for, so the player leaving does not release it: an
+---addon record whose type an upgrade gave `hold = "server"` (J6,
+---`rpf.holding`).
+---@param kind rpf.RecordKind The record's kind.
+---@param id string The record's uuid.
+function records.detach(kind, id)
+  local entry = records.entries[records.key(kind, id)]
+  if entry then
+    entry.through = nil
+  end
+end
+
 ---Forgets records, which is all releasing is on this side. Returns the refs
 ---it forgot, in the order given.
 ---@param refs rpf.RecordRef[] The records.

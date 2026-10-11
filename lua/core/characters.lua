@@ -267,6 +267,18 @@ local function abandon(player_id, id)
   release_owned(id, "a hold for a connection the player has left")
 end
 
+---Settles a hold another module made of a character's records for its
+---player's session (`rpf.holding`, J6, holding a newly enabled addon's
+---records): what it brought of the character's own is given back unless
+---the character is still in play, or being put there, so a hold that landed
+---after the character was put away or switched leaves nothing held that no
+---selection will release.
+---@param player_id string The player.
+---@param id string The character the hold named.
+function characters.settle_hold(player_id, id)
+  abandon(player_id, id)
+end
+
 -- Telling the client ---------------------------------------------------------
 
 ---Room left in a list payload for everything but the characters: the

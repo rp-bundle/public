@@ -238,6 +238,11 @@ local function hold_sessions()
         if err then
           log("warn", "could not hold a player's records of a type now held with its owner (" .. tostring(err) .. ")")
         end
+        if character then
+          -- Put away or switched while this was on its way: what it brought
+          -- of that character goes back.
+          rpf.characters.settle_hold(player_id, character.id)
+        end
       end)
     end
   end
@@ -326,6 +331,14 @@ local function on_config(change)
     end
   end
   with_owner = owner_types
+  -- A type an upgrade moved from its owner's hold to the server's: its
+  -- records held for a session are the server's now, so the session's end
+  -- must not let them go.
+  for _, entry in pairs(records.entries) do
+    if entry.kind == "addon_record" and entry.through ~= nil and holding.policy(entry.data.type) == "server" then
+      records.detach(entry.kind, entry.id)
+    end
+  end
   local gone = {}
   for namespace in pairs(enabled) do
     if not now[namespace] then

@@ -317,6 +317,47 @@ conformance.run(busted, "live record holds", {
       assert.are.equal(PLAYER, world.core.records.entries[world.core.records.key("addon_record", hut)].through)
     end,
   },
+  {
+    name = "gives back what a late session hold brought of a character put away meanwhile",
+    run = function(world)
+      local jane = "0000000f-0000-4000-8000-00000000000f"
+      world.portal.owned[jane] = {
+        kind = "character",
+        revision = 1,
+        data = { id = jane, server_id = SERVER, owner = player, first_name = "Jane", last_name = "Doe", gender = "female" },
+      }
+      local hut = stored(world, 1, "hut", { kind = "character", id = jane })
+      assert(world.api.addons.register(grove("1.0.0", false)))
+      world:connect()
+      world:install({ conformance.installed(world.core, grove("1.0.0", false)) })
+      world:pump()
+      local handle = world:login(1, PLAYER)
+      world:select(handle, jane)
+      -- The upgrade's session hold goes out, and she is put away before it
+      -- is answered.
+      world:install({ conformance.installed(world.core, grove("1.1.0")) })
+      assert(world.core.characters.deselect(handle))
+      world:pump()
+      world:settle()
+      assert.is_false(held(world, hut), "not left held with nothing in play")
+      assert.is_false(world.portal.records[hut].held)
+    end,
+  },
+  {
+    name = "keeps a record held when its type moves from its owner's hold to the server's and the owner leaves",
+    run = function(world)
+      local hut = stored(world, 1, "hut", player)
+      installed(world)
+      local handle = world:login(1, PLAYER)
+      assert.is_true(held(world, hut))
+      world:install({ conformance.installed(world.core, grove("1.1.0", "server")) })
+      world:pump()
+      world.core.players.dropped(handle, "left")
+      world:settle()
+      assert.is_true(held(world, hut), "the server's now")
+      assert.is_true(world.portal.records[hut].held)
+    end,
+  },
 })
 
 describe("rpf.holding", function()
