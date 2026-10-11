@@ -385,6 +385,16 @@ describe("rpf.records", function()
     end)
 
     it("keeps each function's own writes when two yield and resume out of order", function()
+      -- A function yields inside `watch` only where a coroutine can yield
+      -- across `pcall`: LuaJIT (Gmod) and Lua 5.4 (FiveM), the engines'.
+      -- Plain Lua 5.1 cannot, so there the case never arises.
+      local probe = coroutine.create(function()
+        pcall(coroutine.yield)
+      end)
+      coroutine.resume(probe)
+      if coroutine.status(probe) ~= "suspended" then
+        return
+      end
       local results = {}
       ---A watched function that yields, then writes.
       ---@param name string Which.
