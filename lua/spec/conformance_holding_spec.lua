@@ -22,11 +22,15 @@ local SERVER = "00000001-0000-4000-8000-000000000001"
 ---on demand.
 ---@param version string? The release.
 ---@param hut_hold string|false? The huts' `hold`: `owner` unless given, false for none.
+---@param tree_hold string|false? The trees' `hold`: `server` unless given, false for none.
 ---@return table manifest The manifest.
-local function grove(version, hut_hold)
+local function grove(version, hut_hold, tree_hold)
   local label = { label = { type = "string" } }
   if hut_hold == nil then
     hut_hold = "owner"
+  end
+  if tree_hold == nil then
+    tree_hold = "server"
   end
   return {
     namespace = "acme_grove",
@@ -34,7 +38,7 @@ local function grove(version, hut_hold)
     api = 1,
     title = "Grove",
     types = {
-      tree = { schema = 1, authority = "live", owners = { "player", "character", "server" }, hold = "server", fields = label },
+      tree = { schema = 1, authority = "live", owners = { "player", "character", "server" }, hold = tree_hold or nil, fields = label },
       hut = { schema = 1, authority = "live", owners = { "player", "character", "server" }, hold = hut_hold or nil, fields = label },
       rock = { schema = 1, authority = "live", owners = { "server" }, fields = label },
     },
@@ -418,6 +422,35 @@ conformance.run(busted, "live record holds", {
       world:select(handle, jane)
       local home = assert(world.api.records.create("acme_grove.hut", { label = "home" }, character))
       assert.are.equal(PLAYER, world.core.records.entries[world.core.records.key("addon_record", home.id)].through)
+    end,
+  },
+  {
+    name = "lets go of a type's records when an upgrade takes its policy away and no code runs to hold them",
+    run = function(world)
+      local tree = stored(world, 1, "tree", server)
+      -- Installed and enabled, its code not loaded here.
+      world:connect()
+      world:install({ conformance.installed(world.core, grove()) })
+      world:pump()
+      assert.is_true(held(world, tree), "claimed without the code")
+      world:install({ conformance.installed(world.core, grove("1.1.0", "owner", false)) })
+      world:settle()
+      assert.is_false(held(world, tree), "held on demand now, by nobody")
+      assert.is_false(world.portal.records[tree].held)
+    end,
+  },
+  {
+    name = "lets a record go with its owner when an upgrade moves its type from the server's hold to the owner's",
+    run = function(world)
+      local tree = stored(world, 1, "tree", player)
+      installed(world)
+      local handle = world:login(1, PLAYER)
+      assert.is_true(held(world, tree), "claimed for the server")
+      world:install({ conformance.installed(world.core, grove("1.1.0", "owner", "owner")) })
+      world:pump()
+      world.core.players.dropped(handle, "left")
+      world:settle()
+      assert.is_false(held(world, tree), "held with its owner now, so it went with her")
     end,
   },
 })

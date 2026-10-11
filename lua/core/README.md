@@ -1131,6 +1131,10 @@ installation rather than by whether the addon's code is loaded:
   "owner"`**: a claim, and, for an `owner` type new to it, a hold of each
   logged-in player's own and selected character's records for their
   session.
+- **An upgrade changes a type's `hold`**: held records follow (`records.hold_for`):
+  to `server`, session-held ones become the server's; to `owner`, those of
+  owners here join their sessions; to none, an addon whose code is not
+  running is drained.
 - **Putting a character away** (`rpf.characters`) releases what its
   selection brought: its accounts, containers and `owner` records, never a
   `server` record or one held on demand.

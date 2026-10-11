@@ -347,12 +347,21 @@ local function on_config(change)
     end
   end
   with_owner = owner_types
-  -- A type an upgrade moved from its owner's hold to the server's: its
+  -- A type an upgrade moved between the server's hold and its owner's: its
   -- records held for a session are the server's now, so the session's end
-  -- must not let them go.
+  -- must not let them go; and the other way, those held for the server
+  -- whose owner's session is here join it, so their owner leaving does.
   for _, entry in pairs(records.entries) do
-    if entry.kind == "addon_record" and entry.through ~= nil and holding.policy(entry.data.type) == "server" then
-      records.detach(entry.kind, entry.id)
+    if entry.kind == "addon_record" then
+      local policy = holding.policy(entry.data.type)
+      if entry.through ~= nil and policy == "server" then
+        records.hold_for(entry.kind, entry.id, nil)
+      elseif entry.through == nil and policy == "owner" then
+        local session = holding.session_of(entry.data.type, entry.data.owner)
+        if session then
+          records.hold_for(entry.kind, entry.id, session)
+        end
+      end
     end
   end
   local gone = {}
@@ -367,8 +376,19 @@ local function on_config(change)
     withdrawn[namespace] = true
     holding.drain(namespace)
   end
+  local stopped = {}
   for namespace in pairs(now) do
     withdrawn[namespace] = nil
+    if not rpf.addons.running(namespace) then
+      stopped[#stopped + 1] = namespace
+    end
+  end
+  -- An enabled addon whose code is not running has no state change to come,
+  -- so a type this change took a policy from (its records now held on
+  -- demand, by nobody) is drained here.
+  table.sort(stopped)
+  for _, namespace in ipairs(stopped) do
+    holding.drain(namespace)
   end
   if newly_owner then
     -- No session hold brought these types' records: the players already
