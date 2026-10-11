@@ -192,6 +192,20 @@ describe("rpf.bridge", function()
     fw.calls = {}
   end
 
+  ---Makes `rpf.players.advance` refuse every move to `to` and change nothing,
+  ---as the lifecycle refuses a move it does not allow. Each test boots a fresh
+  ---core, so the wrapper goes with the one it wrapped.
+  ---@param to string The state whose moves are refused.
+  local function refuse_moves_to(to)
+    local advance = rpf.players.advance
+    rpf.players.advance = function(handle, target)
+      if target == to then
+        return false, "rpf: a player cannot move to " .. to
+      end
+      return advance(handle, target)
+    end
+  end
+
   before_each(function()
     fw = {
       money = { [7] = { cash = 100, bank = 0 } },
@@ -374,6 +388,35 @@ describe("rpf.bridge", function()
       assert.is_true(rpf.api.bridge.character_loaded(7, { key = "CIT-9", name = "Joe" }))
       assert.are.same({ "character_select", "active" }, moves)
       assert.are.equal("CIT-9", rpf.api.characters.current(7).key)
+    end)
+
+    it("logs a refused move back to character_select on a switch, with the player and why", function()
+      playing()
+      refuse_moves_to("character_select")
+      rpf.api.bridge.character_loaded(7, { key = "CIT-9", name = "Joe" })
+      assert.are.equal("active", rpf.players.get(7).state, "the refused move changed nothing")
+      assert.are.equal(1, #p.logged("warn", "could not move player 7 on to character_select: rpf: a player cannot move"))
+    end)
+
+    it("logs a refused move back to character_select when its character is unloaded", function()
+      playing()
+      refuse_moves_to("character_select")
+      assert.is_true(rpf.api.bridge.character_unloaded(7))
+      assert.are.equal("active", rpf.players.get(7).state, "the refused move changed nothing")
+      assert.are.equal(1, #p.logged("warn", "could not move player 7 on to character_select: rpf: a player cannot move"))
+    end)
+
+    it("logs a refused move back to character_select when the bridge is withdrawn", function()
+      boot()
+      assert.is_true(rpf.addons.from("fakefw_bridge", rpf.api.bridge.register, bridge_of(fw)))
+      welcome(p, support.COMPANION)
+      registered(7)
+      assert.is_true(rpf.addons.from("fakefw_bridge", rpf.api.bridge.character_loaded, 7, { key = KEY, name = "Jane Doe" }))
+      refuse_moves_to("character_select")
+      rpf.unload_origin("fakefw_bridge")
+      assert.is_nil(rpf.bridge.active())
+      assert.are.equal("active", rpf.players.get(7).state, "the refused move changed nothing")
+      assert.are.equal(1, #p.logged("warn", "could not move player 7 on to character_select: rpf: a player cannot move"))
     end)
 
     it("keeps a character the bridge reports while answering the cue of a switch", function()
