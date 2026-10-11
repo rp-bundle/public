@@ -143,6 +143,7 @@ function.
 | `lock.lua` | The input lock |
 | `ui.lua` | The Derma login form and character screen |
 | `addon_ui.lua` | The UI addons show (J10): Gmod's notifications, and a Derma menu, input dialog and progress bar |
+| `images.lua` | Item images (P3, `item_image`): fetched with `HTTP`, checked with `util.SHA256`, kept under `data/rpf/images/<hash>.png` (at most 512, the oldest written dropped), answered as the path `Material()` takes |
 | `dev.lua` | Development-only console commands for the smoke test; not shipped |
 | `meta/gwsockets.lua` | Annotations for GWSockets, which ships none |
 
@@ -232,6 +233,17 @@ for the clients' `HTTP`.
   input dialog will not submit a required field left empty or a value out
   of its bounds. Drawn on fake Derma only so far: a real Gmod client is
   still to show them (layer 5).
+- *Item images* (P3, #243, `images.lua`): `HTTP` with the token in a
+  header, the bytes checked with `util.SHA256`, written under `data/` by
+  hash, and answered as `data/rpf/images/<hash>.png` once `Material()`
+  loads it, so an addon draws one with `surface.SetMaterial(Material(src))`
+  or `DImage:SetMaterial`. A kept file is checked against its hash before
+  it is used. `data/` is readable by every server's client Lua, which is
+  fine for an image anyone with a signed URL may see. On fakes only so
+  far: a real client is still to show that `HTTP` follows the portal's
+  redirect without sending `Authorization` on to the user-content domain
+  (curl's rule for a header the caller set), and that `Material()` draws a
+  PNG from `data/` (layer 5).
 
 The language-server check for this directory runs on its own
 (`lua/platform/gmod/.luarc.json`) with the GLua annotations

@@ -22,7 +22,7 @@
 ---
 ---What a side gets follows what it loaded: `players`, `staff`, `config`,
 ---`addons`, `records`, the facade (`characters`, `money`, `inventory`,
----`jobs`, `ops`), `commerce` and `bridge` on the server, `auth` on the client, and `events`, `time`,
+---`jobs`, `ops`), `commerce` and `bridge` on the server, `auth` and `items` on the client, and `events`, `time`,
 ---`ui`, `capabilities`, `engine` and `VERSION` on both.
 local rpf = rpf
 local events = rpf.events
@@ -505,6 +505,18 @@ if config then
       return config.edit(handle, base_version, changes)
     end,
   }, "rpf.config")
+end
+
+local items = rpf.items
+if items then
+  surface.items = freeze({
+    catalog = function(callback)
+      return items.catalog(callback)
+    end,
+    image = function(slug, callback)
+      return items.image(slug, callback)
+    end,
+  }, "rpf.items")
 end
 
 local auth = rpf.auth

@@ -1615,6 +1615,75 @@ describe("the FiveM adapter", function()
       assert.are.equal("closed", last_screen(driver).screen)
     end)
 
+    it("fetches an item image through the page, the token in a header, and takes back only a PNG data URL", function()
+      local driver = started_client()
+      driver.nui("ready", {})
+      nonce(driver)
+      driver.nui("login", { username = "sam", password = "rpf-sealed-x" })
+      local login = nui_messages(driver)[#driver.nui_sent]
+      driver.nui("http", {
+        id = login.id,
+        status = 200,
+        body = rpf.json.encode(rpf.json.object({
+          player_id = "00000000-0000-4000-8000-000000000001",
+          username = "sam",
+          created = false,
+          ticket = "rpf_jt_ticket",
+          ticket_expires_at = "2026-01-01T00:01:00Z",
+          remember_token = "rpf_rt_remember",
+          remember_token_expires_at = "2026-01-31T00:00:00Z",
+          session_token = "rpf_st_session",
+          session_token_expires_at = "2026-01-01T12:00:00Z",
+          api_token = "rpf_at_token.mac",
+          api_token_expires_at = "2026-01-01T00:15:00Z",
+        })),
+        headers = {},
+      })
+      local hash, other = string.rep("c", 64), string.rep("d", 64)
+      local got = {}
+      for _, slug in ipairs({ "apple", "pear", "plum" }) do
+        assert.is_true(rpf.items.image(slug, function(image, err)
+          got[slug] = { image = image, err = err }
+        end))
+      end
+      local catalog = nui_messages(driver)[#driver.nui_sent]
+      assert.are.equal("http", catalog.type)
+      assert.are.equal("GET", catalog.method)
+      assert.are.equal("https://portal.example/api/v1/player/items", catalog.url)
+      assert.are.equal("Bearer rpf_at_token.mac", catalog.headers.Authorization)
+      local function entry(slug, image_hash)
+        return { weight = 1, size = { x = 1, y = 1 }, stack_limit = 1, image = image_hash, image_url = "/api/v1/player/items/" .. slug .. "/image?v=" .. image_hash }
+      end
+      driver.nui("http", {
+        id = catalog.id,
+        status = 200,
+        body = rpf.json.encode(rpf.json.object({
+          defaults = { weight = 1, size = { x = 1, y = 1 }, stack_limit = 1 },
+          items = { apple = entry("apple", hash), pear = entry("pear", hash), plum = entry("plum", other) },
+        })),
+        headers = { etag = '"one"' },
+      })
+      -- One hash, one fetch, though two slugs share it.
+      local messages = nui_messages(driver)
+      assert.are.equal("image", messages[#driver.nui_sent - 1].type)
+      local image, plum = messages[#driver.nui_sent - 1], messages[#driver.nui_sent]
+      assert.are.equal(other, plum.hash)
+      assert.are.equal("image", image.type)
+      assert.are.equal("https://portal.example/api/v1/player/items/apple/image?v=" .. hash, image.url)
+      assert.are.equal("Bearer rpf_at_token.mac", image.headers.Authorization)
+      assert.is_nil(image.url:find("rpf_at_", 1, true), "never in the URL")
+      assert.are.equal(hash, image.hash)
+      assert.is_false(driver.nui("image", { id = 999, src = "data:image/png;base64,AA" }).ok)
+      assert.are.same({ ok = true }, driver.nui("image", { id = image.id, src = "data:image/png;base64,AAAA" }))
+      assert.are.equal("data:image/png;base64,AAAA", got.apple.image.src)
+      assert.are.equal("data:image/png;base64,AAAA", got.pear.image.src)
+      assert.is_false(driver.nui("image", { id = image.id, src = "data:image/png;base64,BB" }).ok, "answered once")
+
+      -- Anything but a PNG data URL is refused, whatever the page says.
+      driver.nui("image", { id = plum.id, src = "data:text/html;base64,PHNjcmlwdD4=" })
+      assert.are.same({ err = "unavailable" }, got.plum)
+    end)
+
     it("shows a failure, and refuses what the page sends that is not text", function()
       local driver = started_client()
       driver.nui("ready", {})

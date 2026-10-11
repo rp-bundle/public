@@ -91,6 +91,30 @@ function ToServer.on_server_request(name, handler) end
 ---@class rpf.platform.ClientUi
 ---@field ui rpf.ClientUi What the adapter shows.
 
+---Item images (P3, #243): the engine half of `rpf.items.image`. The core
+---finds the image in the catalog and hands over where to fetch it, with the
+---token; the adapter fetches it, keeps it under its hash, and makes of it
+---what the engine's UI draws.
+---@class rpf.platform.ItemImages
+local ItemImages = {}
+
+---Fetches an image unless one is kept under `hash` already, and calls back
+---with what the engine draws: a `data:image/png;base64,` URL on FiveM, for
+---an `<img>` in any resource's page; a path for `Material()` on Gmod.
+---
+---The portal answers `url` with a redirect to the user-content domain,
+---which the adapter follows **without** the `Authorization` header: the
+---signed URL is the credential there, and the token is never sent beyond
+---the portal. Bytes whose SHA-256 is not `hash` are refused and never
+---kept, so what is kept under a hash is always that image. What is kept
+---survives a restart where the engine has somewhere to keep it, bounded by
+---the adapter.
+---@param url string The image's absolute URL on the portal, carrying its hash (`?v=`).
+---@param headers table<string, string> The request's headers: `Authorization` with the player's API token. A credential: never logged, never put in a URL.
+---@param hash string The image's SHA-256, 64 lowercase hex digits.
+---@param done fun(src: string?, err: "not_found"|"unavailable"|nil) Called once, later: the image, or `not_found` when the portal said `404` (the core then revalidates the catalog), `unavailable` for anything else.
+function ItemImages.item_image(url, headers, hash, done) end
+
 ---Everything the player-client half of the core needs from its engine.
 ---`rpf.start_client` refuses a table missing any of it.
----@class rpf.ClientPlatform: rpf.platform.Engine, rpf.platform.Http, rpf.platform.Storage, rpf.platform.Clock, rpf.platform.ToServer, rpf.platform.Log, rpf.platform.Api, rpf.platform.ClientUi
+---@class rpf.ClientPlatform: rpf.platform.Engine, rpf.platform.Http, rpf.platform.Storage, rpf.platform.Clock, rpf.platform.ToServer, rpf.platform.Log, rpf.platform.Api, rpf.platform.ClientUi, rpf.platform.ItemImages

@@ -1318,3 +1318,107 @@ describe("the Gmod adapter's addon UI (J10)", function()
     assert.are.same({ "from Alice", "nil" }, replies, "forgotten after ANSWER_TTL")
   end)
 end)
+
+describe("the Gmod adapter's item images (P3, #243)", function()
+  local PNG = "\137PNG\r\n\26\n" .. "pixels"
+
+  ---Boots a client and builds `item_image` over its HTTP.
+  ---@return rpf.mock.GmodWorld world The fake.
+  ---@return table record What the host recorded.
+  ---@return rpf.gmod.Images images The module.
+  ---@return fun(url: string, headers: table, hash: string, done: fun(src: string?, err: string?)) item_image The member.
+  local function client()
+    local world, record = boot("client")
+    local images = world.include("rpf/platform/gmod/images.lua")
+    local shared = world.include("rpf/platform/gmod/shared.lua")
+    return world, record, images, images.item_image(shared.http_request)
+  end
+
+  ---Asks for an image, recording what came back.
+  ---@param item_image function The member.
+  ---@param hash string The hash.
+  ---@return { src: string?, err: string?, calls: integer } got What arrived.
+  local function ask(item_image, hash)
+    local got = { calls = 0 }
+    item_image("https://portal.test/api/v1/player/items/apple/image?v=" .. hash, { Authorization = "Bearer rpf_at_t" }, hash, function(src, err)
+      got.calls = got.calls + 1
+      got.src, got.err = src, err
+    end)
+    return got
+  end
+
+  it("fetches with the token in a header, keeps the PNG under data/ by hash, and answers with its material path", function()
+    local world, record, _, item_image = client()
+    local hash = util.SHA256(PNG)
+    local got = ask(item_image, hash)
+    local request = record.requests[#record.requests]
+    assert.are.equal("GET", request.method)
+    assert.are.equal("Bearer rpf_at_t", request.headers.Authorization)
+    assert.is_nil(request.url:find("rpf_at_", 1, true))
+    world:http_done(request.id, 200, PNG, {})
+    assert.are.same({ calls = 1, src = "data/rpf/images/" .. hash .. ".png" }, got)
+    assert.are.equal(PNG, world.data["rpf/images/" .. hash .. ".png"].bytes)
+    assert.is_false(Material(got.src):IsError())
+
+    local requests = #record.requests
+    local again = ask(item_image, hash)
+    assert.are.equal(0, again.calls, "never inside the call")
+    world:run_due()
+    assert.are.equal(got.src, again.src)
+    assert.are.equal(requests, #record.requests, "kept: not fetched again")
+  end)
+
+  it("says not_found for a 404, unavailable for anything else, and keeps nothing that is not the hash's image", function()
+    local world, record, _, item_image = client()
+    local hash = util.SHA256(PNG)
+    local cases = {
+      { status = 404, body = "", err = "not_found" },
+      { status = 500, body = "", err = "unavailable" },
+      { status = 200, body = PNG .. "tampered", err = "unavailable" },
+    }
+    for _, case in ipairs(cases) do
+      local got = ask(item_image, hash)
+      world:http_done(record.requests[#record.requests].id, case.status, case.body, {})
+      assert.are.same({ calls = 1, err = case.err }, got, tostring(case.status))
+    end
+    assert.is_nil(next(world.data), "nothing written")
+    local bad = ask(item_image, "../../cfg/server")
+    world:run_due()
+    assert.are.equal("unavailable", bad.err)
+  end)
+
+  it("refuses bytes the engine cannot draw, and fetches again a kept file that no longer matches its hash", function()
+    local world, record, _, item_image = client()
+    local html = "<html></html>"
+    local html_hash = util.SHA256(html)
+    local got = ask(item_image, html_hash)
+    world:http_done(record.requests[#record.requests].id, 200, html, {})
+    assert.are.equal("unavailable", got.err)
+    assert.is_nil(world.data["rpf/images/" .. html_hash .. ".png"], "removed again")
+
+    local hash = util.SHA256(PNG)
+    world.data["rpf/images/" .. hash .. ".png"] = { bytes = "\137PNG cut short", time = 0 }
+    local requests = #record.requests
+    got = ask(item_image, hash)
+    assert.are.equal(requests + 1, #record.requests, "fetched again")
+    world:http_done(record.requests[#record.requests].id, 200, PNG, {})
+    assert.are.equal(PNG, world.data["rpf/images/" .. hash .. ".png"].bytes)
+    assert.are.equal("data/rpf/images/" .. hash .. ".png", got.src)
+  end)
+
+  it("keeps at most MAX_KEPT images, the oldest written dropped first", function()
+    local world, record, images, item_image = client()
+    images.MAX_KEPT = 2
+    local hashes = {}
+    for i = 1, 3 do
+      local bytes = PNG .. tostring(i)
+      hashes[i] = util.SHA256(bytes)
+      ask(item_image, hashes[i])
+      world:http_done(record.requests[#record.requests].id, 200, bytes, {})
+      record.time = record.time + 1000
+    end
+    assert.is_nil(world.data["rpf/images/" .. hashes[1] .. ".png"])
+    assert.is_table(world.data["rpf/images/" .. hashes[2] .. ".png"])
+    assert.is_table(world.data["rpf/images/" .. hashes[3] .. ".png"])
+  end)
+end)

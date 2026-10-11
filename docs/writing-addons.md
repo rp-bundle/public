@@ -883,6 +883,35 @@ addon does: an interaction reaches your handler only for a logged-in
 player, rate-limited, with a checked copy of its payload, and is taken down
 with your addon.
 
+### Item images
+
+An inventory or a shop shows items by their images. Staff upload one per
+item in the portal; on the player's client, ask for it by the item's slug
+and draw what comes back. RPF fetches it with the player's token, checks
+it, and keeps it on disk under its content hash, so an image is fetched
+once and asking again answers at once: ask whenever you draw.
+
+```lua
+-- client
+rpf.items.image("apple", function(image, err)
+  if not image then
+    return -- "no_image", "not_found", "not_logged_in", "busy", "unavailable"
+  end
+  -- FiveM: a data: URL. Put it in your page's <img>, or in ox_lib:
+  lib.registerContext({ id = "shop", title = "Shop",
+    options = { { title = "Apple", image = image.src } } })
+  -- Garry's Mod: a path for Material().
+  -- local material = Material(image.src)
+end)
+```
+
+`rpf.items.catalog(callback)` gives the whole catalog the client sees:
+each item's weight, footprint, stack limit and image hash, by slug. Both
+are client only, and answer `not_logged_in` until the player has logged
+in. Never fetch an image yourself with the token from `rpf.auth.api_token()`:
+the token must not end up in a URL, and RPF already keeps the image under
+the right key (its hash, which changes exactly when the image does).
+
 ## Money and items
 
 Addons move money and items only through one set of calls, which work the

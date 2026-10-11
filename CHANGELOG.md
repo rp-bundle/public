@@ -32,6 +32,15 @@ socket.
 
 ### Added
 
+- Item images on the player's client (#243). `rpf.api.items.image(slug,
+  callback)` hands an addon an item's image ready to draw: a `data:` URL on
+  FiveM, for an `<img>` in any resource's page or ox_lib's `image`, and a
+  path for `Material()` on Gmod. The client reads the server's catalog
+  from the portal with its API token (`rpf.api.items.catalog`), and keeps
+  each image under its content hash, checked, on disk (IndexedDB on FiveM,
+  `data/rpf/images/` on Gmod), so an unchanged image is fetched once. A
+  client platform now has an `item_image` member.
+
 - Distances in metres on every engine (J8 follow-up, #318). An
   interaction's `distance`, a zone's `radius` field and the `distance` a
   resolved target or a nearby option reports are metres on FiveM and Gmod

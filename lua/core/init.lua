@@ -136,6 +136,7 @@ rpf.files = {
     "time.lua",
     "handoff.lua",
     "auth.lua",
+    "items.lua",
     "picker.lua",
     "targets.lua",
     "interactions.lua",
@@ -254,6 +255,7 @@ function rpf.start_client(platform, options)
   rpf.events.bind(platform.log)
   rpf.publish(platform)
   rpf.auth.start(platform, options and options.auth)
+  rpf.items.start(platform)
   rpf.picker.start(platform)
   rpf.interactions.start_client(platform)
   rpf.ui.start_client(platform)

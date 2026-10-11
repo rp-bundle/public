@@ -36,6 +36,12 @@ local gmod = {}
 ---@field binary_modules table<string, boolean>? Which binary modules are installed. GWSockets is, unless this says otherwise.
 ---@field gwsockets_load_error string? What `require("gwsockets")` raises, for a module that is installed but will not load (built for another platform).
 ---@field query_typed boolean? False for a Gmod build without `sql.QueryTyped`.
+---@field data table<string, rpf.mock.GmodDataFile>? The `data/` directory, by path: a table the harness keeps, so a restarted client finds what it wrote. A fresh one otherwise.
+
+---One file under the fake `data/`.
+---@class rpf.mock.GmodDataFile
+---@field bytes string What it holds.
+---@field time integer When it was last written, by `os.time`.
 
 ---One fake player entity.
 ---@class rpf.mock.GmodPlayer
@@ -111,6 +117,7 @@ local gmod = {}
 ---@field include fun(path: string): any The fake `include`.
 ---@field driver rpf.mock.GmodDriver The driving functions as plain functions, as the fake game server calls a platform's.
 ---@field entities table<integer, rpf.mock.GmodEntity> Entities made with `ents.Create`, by index, until removed.
+---@field data table<string, rpf.mock.GmodDataFile> The fake `data/` directory, by path: what `file.Write` wrote.
 ---@field core rpf? The core's internal table, kept when the adapter loads `init.lua`, because publishing the API replaces the global. For tests to look inside.
 local World = {}
 World.__index = World
@@ -157,6 +164,7 @@ local GLOBALS = {
   "Entity",
   "Vector",
   "Angle",
+  "Material",
 }
 
 ---The Gmod adapter's part framing (`lua/platform/gmod/messages.lua`): part
@@ -177,9 +185,11 @@ function gmod.parts(payload)
   return out
 end
 
----A deterministic stand-in for `util.SHA256`: 64 hex digits from a rolling
----hash. Not a cryptographic hash, which no test of the adapter needs; only
----"same input, same output; different input, different output".
+---A deterministic stand-in for `util.SHA256` where the host has no real one
+---(`sha256`, which the fake game server gives a client): 64 hex digits from
+---a rolling hash. Not a cryptographic hash, which no busted test of the
+---adapter needs; only "same input, same output; different input, different
+---output".
 ---@param text string The input.
 ---@return string hex 64 lowercase hex digits.
 local function fake_sha256(text)
@@ -481,6 +491,7 @@ function gmod.install(side, host, options)
     console = {},
     panels = {},
     restore = {},
+    data = options.data or {},
   }, World) --[[@as rpf.mock.GmodWorld]]
   for _, name in ipairs(GLOBALS) do
     world.restore[name] = _G[name]
@@ -515,12 +526,65 @@ function gmod.install(side, host, options)
   _G.CLIENT = side == "client"
   _G.include = world.include
   _G.AddCSLuaFile = function() end
+  -- `"LUA"` (the default) is the addon's own files; `"DATA"` is `data/`,
+  -- kept in `world.data`.
+  local data = world.data
+  ---The files directly in a `data/` directory matching a `*.ext` pattern.
+  ---@param pattern string Like `rpf/images/*.png`.
+  ---@return string[] names Their names, sorted.
+  local function find(pattern)
+    local dir, ext = pattern:match("^(.*)/%*(%.%w+)$")
+    local out = {}
+    for path in pairs(data) do
+      local name = dir and path:sub(1, #dir + 1) == dir .. "/" and path:sub(#dir + 2) or nil
+      if name and not name:find("/", 1, true) and name:sub(-#ext) == ext then
+        out[#out + 1] = name
+      end
+    end
+    table.sort(out)
+    return out
+  end
   _G.file = {
-    Exists = function(path)
+    Exists = function(path, where)
+      if where == "DATA" then
+        return data[path] ~= nil
+      end
       local relative = path:match("^rpf/(.*)$") or path
       return (pcall(options.read, relative))
     end,
+    Read = function(path, where)
+      assert(where == "DATA", "fake gmod: file.Read only reads data/")
+      return data[path] and data[path].bytes or nil
+    end,
+    Write = function(path, bytes)
+      data[path] = { bytes = bytes, time = os.time() }
+    end,
+    Delete = function(path)
+      data[path] = nil
+    end,
+    CreateDir = function() end,
+    Time = function(path, where)
+      assert(where == "DATA", "fake gmod: file.Time only reads data/")
+      return data[path] and data[path].time or 0
+    end,
+    Find = function(pattern, where)
+      assert(where == "DATA", "fake gmod: file.Find only searches data/")
+      return find(pattern), {}
+    end,
   }
+  -- A material from a PNG under `data/`, as `Material("data/…")` loads one:
+  -- an error material unless the file is there and starts as a PNG does.
+  _G.Material = function(name)
+    local path = name:match("^data/(.*)$")
+    local bytes = path and data[path] and data[path].bytes
+    local ok = bytes ~= nil and bytes:sub(1, 8) == "\137PNG\r\n\26\n"
+    return {
+      name = name,
+      IsError = function()
+        return not ok
+      end,
+    }
+  end
   _G.Color = function(r, g, b, a)
     return { r = r, g = g, b = b, a = a or 255 }
   end
@@ -625,7 +689,7 @@ function gmod.install(side, host, options)
       world.pooled[name] = true
       return 1
     end,
-    SHA256 = fake_sha256,
+    SHA256 = (host --[[@as { sha256: fun(text: string): string }]]).sha256 or fake_sha256,
   }
   local last_error = nil
   _G.sql = {

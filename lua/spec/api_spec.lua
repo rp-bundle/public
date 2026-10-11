@@ -125,7 +125,7 @@ describe("rpf.api", function()
         assert.are.same(keys(meta[class]), names, class)
       end
     end
-    assert.are.same({ "addons", "auth", "bridge", "characters", "commerce", "config", "events", "interactions", "inventory", "jobs", "money", "ops", "players", "records", "staff", "time", "ui", "world" }, sorted((function()
+    assert.are.same({ "addons", "auth", "bridge", "characters", "commerce", "config", "events", "interactions", "inventory", "items", "jobs", "money", "ops", "players", "records", "staff", "time", "ui", "world" }, sorted((function()
       local out = {}
       for part in pairs(parts) do
         if part ~= "" then
@@ -167,6 +167,7 @@ describe("rpf.api", function()
       assert.is_table(rpf.api.staff)
       assert.is_table(rpf.api.config)
       assert.is_nil(rpf.api.auth)
+      assert.is_nil(rpf.api.items)
     end)
 
     it("has the bridge's surface, which no script can replace", function()
@@ -290,12 +291,13 @@ describe("rpf.api", function()
   end)
 
   describe("on the client", function()
-    it("has auth, and no players or config", function()
+    it("has auth and items, and no players or config", function()
       support.load_core("client")
       local c = support.fake_client_platform()
       rpf.start_client(c)
       assert.are.equal(rpf.api, c.exposed)
       assert.is_table(rpf.api.auth)
+      assert.is_table(rpf.api.items)
       assert.is_nil(rpf.api.players)
       assert.is_nil(rpf.api.config)
       assert.are.equal(rpf.auth.PASSWORD_REUSE_WARNING, rpf.api.auth.PASSWORD_REUSE_WARNING)

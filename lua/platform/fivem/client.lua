@@ -135,6 +135,11 @@ function client.platform(screens)
     screens:http_request(method, url, headers, body, callback)
   end
 
+  -- Item images, fetched and kept by the page (`nui/images.js`).
+  function p.item_image(url, headers, hash, done)
+    screens:item_image(url, headers, hash, done)
+  end
+
   function p.to_server(name, payload)
     TriggerServerEvent(name, payload)
   end
