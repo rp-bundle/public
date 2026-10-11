@@ -617,6 +617,34 @@ describe("rpf.sync", function()
       assert.are.equal(3, #sent_of(p, "resync"), "the sequence ended")
     end)
 
+    it("queues a transfer made behind an unanswered whole report when the server stops", function()
+      rpf.sync.options.max_transactions_per_report = 1
+      local first = rpf.records.transfer(BANK, WALLET, 1, "Tip 1")
+      local second = rpf.records.transfer(BANK, WALLET, 1, "Tip 2")
+      flush(p)
+      p.deliver(support.portal_frame("resync_required", {
+        re = sent_of(p, "state_changed")[1].id,
+        stale = { { kind = "account", id = BANK, revision = 7 } },
+        released = {},
+      }))
+      assert.are.equal(1, #sent_of(p, "resync"), "one whole report, unanswered")
+      local third = rpf.records.transfer(BANK, WALLET, 1, "Tip 3")
+      assert.is_true(rpf.sync.stop(), "every entry is on disk")
+      local queued = {}
+      for _, tag in ipairs({ "state_changed", "resync" }) do
+        for _, frame in ipairs(sent_of(p, tag)) do
+          for _, item in ipairs(frame.changes or frame.records) do
+            for _, tx in ipairs(item.transactions or {}) do
+              queued[tx.client_id] = true
+            end
+          end
+        end
+      end
+      for _, id in ipairs({ first, second, third }) do
+        assert.is_true(queued[id], id)
+      end
+    end)
+
     it("keeps an account with a backlog until enough of it is acknowledged to release it whole", function()
       rpf.sync.options.max_transactions_per_report = 2
       for i = 1, 5 do

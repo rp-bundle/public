@@ -694,14 +694,19 @@ function sync.flush()
   local ok = send_all(
     "resync",
     select_entries(function(entry)
-      return entry.resync and not entry.awaiting and not addon_pending(entry)
+      -- Stopping, a whole report waits on no answer: none can come.
+      return entry.resync and (not entry.awaiting or stopping) and not addon_pending(entry)
     end),
     full_report,
     whole_sent
   )
   if ok then
     ok = send_changes(function(entry)
-      return (not entry.resync or addon_pending(entry)) and change_of(entry) ~= nil
+      -- Stopping, an account owing a whole report still has its unsent
+      -- ledger entries queued as changes: the portal appends ledger entries
+      -- whatever revision they name, and memory is about to go.
+      local carries = not entry.resync or addon_pending(entry) or (stopping and entry.kind == "account")
+      return carries and change_of(entry) ~= nil
     end, function(entry)
       return change_of(entry) --[[@as table]]
     end, change_sent)
@@ -714,7 +719,9 @@ end
 
 ---Flushes for a stopping process (`rpf.stop_server`): everything marked is
 ---queued in the persisted outbox, a change behind a create still on its way
----included, queued after the create at the revision the create lands at.
+---included, queued after the create at the revision the create lands at;
+---a whole report still waiting on an earlier one's answer, and an
+---account's ledger entries behind a whole report it owes, likewise.
 ---Whatever the next process sends of it is all that survives, so it is
 ---better queued than kept in memory; if the create turns out to be
 ---refused, the change behind it is refused with it, as the record itself
@@ -723,8 +730,14 @@ end
 function sync.stop()
   stopping = true
   local ok = sync.flush()
-  for key in pairs(records.entries) do
-    if not sync.reported(key) then
+  for key, entry in pairs(records.entries) do
+    if entry.kind == "account" then
+      -- An account's state is its ledger: on disk once every entry has gone
+      -- in a report, whatever whole report it still owes.
+      for _, tx in ipairs(entry.transactions) do
+        ok = ok and tx.sent
+      end
+    elseif not sync.reported(key) then
       ok = false
     end
   end
