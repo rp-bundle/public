@@ -863,19 +863,27 @@ end
 
 ---Asks the portal to hand records over. `owners` holds every live record
 ---each owner has on this server (not transitively: a character's own
----accounts are held through the character); `records` holds those named.
+---accounts are held through the character); `records` holds those named;
+---`types` claims a page of the records of those live addon types this
+---server holds by their `hold` policy (J6, `rpf.holding`).
 ---
 ---Sent once every report and release already queued has been answered, so
 ---the records come back with everything this server has reported, and not
 ---while a declaration is owed on the current connection, so the
 ---declaration can never release it. The portal refuses the whole hold if any
 ---named record is not this server's to hold, exactly as if it did not exist.
----@param request { owners: table[]?, records: rpf.RecordRef[]? } What to hold.
+---@param request { owners: table[]?, records: rpf.RecordRef[]?, types: string[]? } What to hold.
 ---@param through string? The player whose session it is for, released when they leave.
 ---@param callback fun(views: table[]?, err: string?)? Called with copies of the records now held, or the refusal's code.
 function sync.hold(request, through, callback)
+  local types = request.types
   deferred[#deferred + 1] = {
-    fields = { owners = request.owners or {}, records = request.records or {} },
+    fields = {
+      owners = request.owners or {},
+      records = request.records or {},
+      -- Left out unless it claims: a hold before J6 had no such field.
+      types = (types and #types > 0) and types or nil,
+    },
     through = through,
     callback = callback,
     mark = sync.connection.next_seq,

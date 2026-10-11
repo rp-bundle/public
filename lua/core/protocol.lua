@@ -900,6 +900,8 @@ protocol.messages = {
     hold = message("reply", true, {
       { "owners", array_of(OWNER_REF) },
       { "records", array_of(RECORD_REF) },
+      -- A claim (J6): left out of a hold that claims nothing.
+      { "types", optional(array_of(STRING)) },
     }),
     release = message("ack", true, {
       { "records", array_of(RECORD_REPORT) },

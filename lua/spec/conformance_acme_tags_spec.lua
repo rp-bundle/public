@@ -185,43 +185,31 @@ conformance.run(busted, "the acme_tags example", {
     end,
   },
   {
-    name = "keeps trying to reclaim the portal's tags when it could not answer at start",
+    name = "has the core claim its tags again a minute later when the portal refused the claim at start",
     run = function(world)
       world.portal.records[OLD_TAG] = {
         id = OLD_TAG,
         type = "acme_tags.tag",
         owner = { kind = "player", id = PLAYER },
         revision = 3,
-        fields = { text = "old", spot = { x = 0, y = 0, z = 0 }, fades_at = 1 },
+        fields = { text = "old", spot = { x = 0, y = 0, z = 0 }, fades_at = 10 * 24 * 60 * 60 * 1000 },
         held = false,
       }
-      world.portal.refuse = { query_records = "forbidden" }
+      world.portal.refuse = { hold = "retry" }
       sprayable(world)
       assert.are.equal(0, #world.api.records.list("acme_tags.tag"))
       world.portal.refuse = nil
-      world:advance(30000)
+      world:advance(world.core.holding.CLAIM_MS)
       world:pump()
-      assert.are.equal(1, #world.api.records.list("acme_tags.tag"), "held on the retry")
-    end,
-  },
-  {
-    name = "asks for a page again when the portal refuses its hold",
-    run = function(world)
-      world.portal.records[OLD_TAG] = {
-        id = OLD_TAG,
-        type = "acme_tags.tag",
-        owner = { kind = "player", id = PLAYER },
-        revision = 3,
-        fields = { text = "old", spot = { x = 0, y = 0, z = 0 }, fades_at = 1 },
-        held = false,
-      }
-      world.portal.refuse = { hold = "not_found" } -- a tag deleted since the query
-      sprayable(world)
-      assert.are.equal(0, #world.api.records.list("acme_tags.tag"))
-      world.portal.refuse = nil
-      world:advance(30000)
-      world:pump()
-      assert.are.equal(1, #world.api.records.list("acme_tags.tag"), "held on the retry")
+      assert.are.equal(1, #world.api.records.list("acme_tags.tag"), "held by the next claim")
+      local claims = 0
+      for _, frame in ipairs(world.portal.frames) do
+        if frame.type == "hold" and frame.types then
+          claims = claims + 1
+          assert.are.same({ "acme_tags.tag" }, frame.types)
+        end
+      end
+      assert.is_true(claims >= 2, "claimed at start and again")
     end,
   },
   {

@@ -761,6 +761,19 @@ function config.addon(namespace)
   return lookup("addons", namespace)
 end
 
+---The namespace of every addon the config installs on this server (J2),
+---enabled or not, in namespace order: what `rpf.holding` walks to find the
+---types it holds by policy, whether or not their code is loaded.
+---@return string[] namespaces The namespaces; empty before any config has arrived.
+function config.addon_namespaces()
+  local out = {}
+  for namespace in pairs(current.index.addons or {}) do
+    out[#out + 1] = namespace
+  end
+  table.sort(out)
+  return out
+end
+
 ---A setting's effective value, by key.
 ---@param key string The setting's key.
 ---@return any value A copy of the value, or nil if unset. A setting sent as null is `json.null`, so "set to null" and "not set" stay different.

@@ -193,7 +193,9 @@ end
 ---Takes over the records the portal handed over in a `held` reply. A record
 ---already held here keeps the state it has, which is newer than any the
 ---portal could send: nothing but this server has changed it since it was
----held.
+---held. One a session hold names that was held for the server alone, an
+---addon record of a type held with its owner (J6, `rpf.holding`), joins
+---the session, so it goes when the player does.
 ---@param held table[] The `held` reply's records, decoded.
 ---@param through string? The player whose session they are for.
 ---@return table[] views Copies of every record now held that this reply named.
@@ -227,6 +229,13 @@ function records.take(held, through)
         resync = false,
       }
       records.entries[key] = entry
+    elseif
+      through
+      and entry.through == nil
+      and entry.kind == "addon_record"
+      and rpf.holding.policy(entry.data.type) == "owner"
+    then
+      entry.through = through
     end
     views[#views + 1] = view(entry)
   end
@@ -727,10 +736,11 @@ end
 ---@param owner { kind: string, id: string } Who it belongs to.
 ---@param fields table Its fields.
 ---@param id string? Its id, minted here if not given: a uuid unique on this server.
+---@param through string? The player whose session it joins, released when they leave (J6: a record of a type held with its owner, whose owner's session is here). Nil to hold it for the server.
 ---@return table? record A copy: `{ id, type, owner, fields }`.
 ---@return string? err `"invalid"`, `"inactive"`, or `"conflict"` for an id this server already holds.
 ---@return table? refusal For `"invalid"`, the rule its fields break.
-function records.create_addon_record(type_name, owner, fields, id)
+function records.create_addon_record(type_name, owner, fields, id, through)
   if type(owner) == "table" and owner.kind == "character" then
     -- A character to own it is the framework's on a companion server.
     local refused = external("characters")
@@ -772,6 +782,7 @@ function records.create_addon_record(type_name, owner, fields, id)
       owner = json.object({ kind = owner.kind, id = owner.id }),
       fields = checked,
     },
+    through = through,
     changed = {},
     transactions = {},
     resync = false,

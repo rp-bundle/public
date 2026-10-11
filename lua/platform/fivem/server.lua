@@ -674,12 +674,17 @@ function server.start(platform)
 end
 
 ---Stops cleanly, because this resource is stopping and the engine and the
----shim outlive it: every socket it opened in `rpf-ws` is closed, or it would
+---shim outlive it: every change to a held record not yet reported is
+---flushed into the persisted outbox first (`rpf.stop_server`), so the next
+---start sends it; every socket it opened in `rpf-ws` is closed, or it would
 ---keep answering the portal's pings and the restarted core would be refused
 ---as a duplicate instance (C1), and every held player goes back to their
 ---own routing bucket, and every entity the core placed is removed.
 ---@param transport rpf.fivem.Transport The socket's transport.
 function server.stop(transport)
+  if server.started then
+    core.stop_server()
+  end
   transport.stop()
   fivem.lock.release_all()
   if server.started then
