@@ -106,7 +106,8 @@ Players open a menu of what they can interact with near them with **E**
 Change the default with `setr rpf_interact_key "G"`: `setr`, because each
 player's client reads it. If the server runs **ox_target** or
 **qb-target**, the framework also offers the same interactions through it
-on the peds and objects it places; nothing to configure.
+on the peds and objects it places; nothing to configure. Either way a
+player is only offered what they may use there.
 
 ### Upgrading
 

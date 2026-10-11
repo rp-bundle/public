@@ -539,6 +539,16 @@ socket.
 
 ### Fixed
 
+- The interaction menu and the target resources offered an interaction
+  the addon's own `check` would refuse, such as a sold lot (J8 follow-up,
+  #317). The server now runs `check` as it lists, the same way the
+  request runs it: at most 32 per listing, nearest first, and none after
+  2 seconds. A check now also runs whenever a player nearby opens the menu
+  or aims at the target, so it must be quick and only read. On FiveM,
+  ox_target and qb-target show an option once the server has said it is
+  offered there (`rpf:target_offers`, asked in the background). The
+  `acme_property` and `acme_notes` examples move their sold and not-yours
+  refusals into `check`.
 - A composite operation's `apply` that yielded could lose sight of what it
   wrote when another one ran meanwhile, so the journal could record it done
   before its change reached the outbox (`rpf.records.watch`).

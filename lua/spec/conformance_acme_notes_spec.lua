@@ -109,6 +109,28 @@ local function pinned(world, payload)
   return notes[#notes]
 end
 
+---What the interaction menu offers a player where they stand, as
+---`<name> <record id>`.
+---@param world spec.ConformanceWorld The world.
+---@param player integer The player.
+---@return table<string, true> offered The options.
+local function offered(world, player)
+  local json = world.core.json
+  local before = #world.to_clients
+  numbered = numbered + 1
+  world.from_client(player, "rpf:targets", numbered .. "\n{}")
+  local out = {}
+  for i = before + 1, #world.to_clients do
+    local sent = world.to_clients[i]
+    if sent.name == "rpf:targets" then
+      for _, option in ipairs(json.decode((sent.payload:match("^%d+\n(.*)$"))).options) do
+        out[option.name .. " " .. option.id] = true
+      end
+    end
+  end
+  return out
+end
+
 ---Aims an interaction at a note.
 ---@param world spec.ConformanceWorld The world.
 ---@param player integer The player.
@@ -175,6 +197,9 @@ conformance.run(busted, "the acme_notes example", {
       world:activate(world:login(2, OTHER))
       world.place(2, { x = 10, y = 21, z = 30 })
       local note = pinned(world)
+      assert.is_true(offered(world, 1)["acme_notes.take_down " .. note.id], "the menu offers its author to take it down")
+      assert.is_nil(offered(world, 2)["acme_notes.take_down " .. note.id], "and nobody else")
+      assert.is_true(offered(world, 2)["acme_notes.read " .. note.id], "who may still read it")
       local theirs = at(world, 2, "acme_notes.take_down", note.id)
       assert.are.same({ false, "That note is not yours." }, { theirs.ok, theirs.reason })
       local unlinked = at(world, 2, "acme_notes.remove", note.id)

@@ -893,7 +893,15 @@ local Interactions = {}
 --- - `permission`: one of the addon's permissions, which the player must
 ---   hold as linked staff (`forbidden`).
 --- - `check(player, target)`: the addon's own test, answering `true`, or
----   `false` and a reason.
+---   `false` and a reason. It also decides what a player is **offered**:
+---   the menu (`open`, `nearby`) and a target resource list only what
+---   passes every rule, `check` included, so put a refusal you can tell in
+---   advance here (sold, closed, not yours), not in the handler. It runs
+---   for every listing as well as for the request, so keep it quick and
+---   free of side effects: read, never write or show anything. One listing
+---   runs at most 32 checks, nearest first, and starts none after 2
+---   seconds; an option whose check did not run, threw or answered
+---   anything but `true` is not offered.
 --- - `label`: what the menu (`open`) and a target resource show.
 ---@param name string `<namespace>.<name>`.
 ---@param handler fun(player: rpf.PlayerView, payload: table, target: rpf.targets.Target?): boolean, (table|string)? Answers `true` and, optionally, a table of plain data for a `request` (at most 16 KiB encoded, 8 deep), or `false` and a reason the player's client is told. `target` is the resolved target: `{ type, id, record, position, distance }` for a record, `{ ref, model, position, distance }` (with `type` and `id` when RPF placed it) for an entity. Its `distance` is how far the player is, in metres.
@@ -937,10 +945,11 @@ function Interactions.open() end
 
 ---Client only. Asks the server what this player may interact with near
 ---them, for a UI of your own: `callback(options)`, each `{ name, label,
----type, id, distance }` (metres), nearest first, at most 16; or `callback(nil,
----err)` (`timeout`, `failed`, `busy` while one is waiting). Send the one
----chosen with `request(name, { target = { id = id } }, …)`.
----@param callback fun(options: { name: string, label: string, type: string, id: string, distance: number }[]?, err: string?) Called once, later.
+---type, id, distance }` (metres), nearest first, at most 16, each passing
+---every rule including the addon's `check`; or `callback(nil, err)`
+---(`timeout`, `failed`, `busy` while one is waiting). Send the one chosen
+---with `request(name, { target = { id = id } }, …)`.
+---@param callback fun(options: { name: string, label: string, type: string, id: string, distance: number }[]?, err: string?) Called once: at once for `busy` (or before the client has started, `unavailable`), else later.
 ---@return boolean? ok True once asked.
 ---@return "invalid"|nil err For a callback that cannot be called.
 function Interactions.nearby(callback) end

@@ -38,6 +38,8 @@
 ---@field TARGETS string Client → server, as a request (`request_server`): what this player may interact with near them (J4, `rpf.targets`).
 ---@field TARGETS_RESULT string Server → client, as the answer to `TARGETS`: the options, nearest first. Never a message of its own.
 ---@field TARGET_RULES string Server → client: every interaction rule with a target, for a target resource to offer (J4).
+---@field TARGET_OFFERS string Client → server, as a request (`request_server`): which of these rules the server offers this player on an entity, by its ref, for a target resource (#317, `rpf.targets.offers`).
+---@field TARGET_OFFERS_RESULT string Server → client, as the answer to `TARGET_OFFERS`: the names offered. Never a message of its own.
 ---@field UI_CLOSE string Server → client: close what a `UI` request showed, by its id, because the addon that asked has stopped.
 ---@field MAX_PAYLOAD integer The longest payload decoded, in bytes, of every message but the list of characters. Real ones are a few hundred.
 ---@field MAX_LIST_PAYLOAD integer The longest list of characters, answer to an interaction, UI request, nearby answer or list of target rules, decoded, in bytes. Only the client decodes these, from its own server; the server registers no handler for them, so a client cannot make the server decode one.
@@ -69,6 +71,8 @@ handoff.UI_CLOSE = "rpf:ui_close"
 handoff.TARGETS = "rpf:targets"
 handoff.TARGETS_RESULT = "rpf:targets_result"
 handoff.TARGET_RULES = "rpf:target_rules"
+handoff.TARGET_OFFERS = "rpf:target_offers"
+handoff.TARGET_OFFERS_RESULT = "rpf:target_offers_result"
 handoff.MAX_PAYLOAD = 4096
 handoff.MAX_LIST_PAYLOAD = 65536
 handoff.MAX_UI_ANSWER = 40960
@@ -88,8 +92,10 @@ local LIMITS = {
 
 ---How one field is checked. A trailing `?` means it may be absent. A
 ---`table` is only checked to be one, so the module that reads it checks the
----rest; of what a client sends, only an interaction's payload is one, and
----`rpf.interactions` checks it is plain data before any handler sees it.
+---rest; of what a client sends, an interaction's payload is one, which
+---`rpf.interactions` checks is plain data before any handler sees it, and
+---the names a target resource asks about, which it checks are a short
+---list of strings.
 ---@alias rpf.handoff.FieldKind "string"|"string?"|"number"|"number?"|"boolean"|"boolean?"|"table"|"table?"
 
 handoff.schemas = {
@@ -166,6 +172,13 @@ handoff.schemas = {
   },
   [handoff.TARGET_RULES] = {
     rules = "table",
+  },
+  [handoff.TARGET_OFFERS] = {
+    ref = "number",
+    names = "table",
+  },
+  [handoff.TARGET_OFFERS_RESULT] = {
+    names = "table",
   },
 }
 

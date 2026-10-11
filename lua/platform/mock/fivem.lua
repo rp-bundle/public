@@ -889,6 +889,9 @@ function fivem.client(env, host, seed, convars)
   env.NetworkGetNetworkIdFromEntity = function(handle)
     return driver.net_ids[handle] or 0
   end
+  env.NetworkGetEntityIsNetworked = function(handle)
+    return driver.net_ids[handle] ~= nil
+  end
   ---A fake target resource's exports: every call recorded, whatever its name.
   ---@param resource string The resource.
   ---@return table exports Its exports, called with `:`.

@@ -194,9 +194,28 @@ function acme_property.settle(rpf, player, order, op, name, tries)
   tell(rpf, player, message, ok and "success" or "error")
 end
 
+---Whether a property is for sale to a player: the buy interaction's `check`
+---rule, so the menu offers the lot only to someone who may buy it (RPF runs
+---it when it lists, and again when they pick). It reads and nothing more.
+---@param player rpf.PlayerView The player.
+---@param target table The property the rules resolved.
+---@return boolean ok True if they may buy it.
+---@return string? reason Why not, for the player.
+function acme_property.for_sale(player, target)
+  local fields = target.record.fields
+  if fields.holder == player.player_id then
+    return false, "You own it already."
+  end
+  if fields.holder or not fields.for_sale then
+    return false, fields.name .. " is not for sale."
+  end
+  return true
+end
+
 ---Offers a property to the player standing on it: the buy interaction, which
 ---a player aims at the lot (J4). The rules found the property, held here,
----with the player in its bucket and inside its radius, before this runs.
+---with the player in its bucket and inside its radius, and `for_sale` said
+---it is for sale to them, before this runs. The purchase checks it all again.
 ---@param rpf rpf.Api The API.
 ---@param player rpf.PlayerView The player.
 ---@param target table The property the rules resolved: `{ type, id, record, position, distance }`.
@@ -205,12 +224,6 @@ end
 function acme_property.offer(rpf, player, target)
   local property = target.record
   local fields = property.fields
-  if fields.holder == player.player_id then
-    return false, "You own it already."
-  end
-  if fields.holder or not fields.for_sale then
-    return false, fields.name .. " is not for sale."
-  end
   local order = { property = property.id, revision = property.revision, price = fields.price }
   local shown, why = rpf.ui.menu(player.handle, {
     title = fields.name,
@@ -301,7 +314,7 @@ function acme_property.start_server(rpf)
       -- `failed`, with the reason in the console.
       assert(rpf.interactions.register("acme_property.buy", function(player, _, target)
         return acme_property.offer(rpf, player, target)
-      end, { target = acme_property.PROPERTY, label = "Buy this property" }))
+      end, { target = acme_property.PROPERTY, label = "Buy this property", check = acme_property.for_sale }))
       assert(rpf.interactions.register("acme_property.door", function(player, _, target)
         return acme_property.use_door(rpf, player, target)
       end, { target = acme_property.DOOR, label = "Use the door", distance = acme_property.DOOR_METRES }))

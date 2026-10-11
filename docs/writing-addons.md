@@ -756,6 +756,37 @@ models in their bucket within `distance`. Then it runs your `check`. A missing, 
 other-bucket or other-type target is `not_found` whatever the reason, and
 one out of reach is `too_far`. The client never decides any of it.
 
+The same rules decide what a player is **offered**. The menu and ox_target
+list an interaction only where every rule passes, your `check` included,
+which the server runs as it lists. So a refusal you can tell in advance
+belongs in `check`, not in the handler: a property that is sold, a door
+only its owner may lock, a note only its author may take down. The
+handler still gets the request only after `check` passed again.
+
+```lua
+-- server: offered only on a lot that is for sale, to someone who does not own it
+rpf.interactions.register("acme_property.buy", function(player, payload, target)
+  return acme_property.offer(rpf, player, target)
+end, {
+  target = "acme_property.property",
+  label = "Buy this property",
+  check = function(player, target)
+    local fields = target.record.fields
+    if fields.holder == player.player_id then return false, "You own it already." end
+    if fields.holder or not fields.for_sale then return false, fields.name .. " is not for sale." end
+    return true
+  end,
+})
+```
+
+Because `check` runs whenever a nearby player opens the menu or aims at
+the target, as well as for the request, keep it quick and make it only
+read: never write a record, take money or show a UI from it. The server
+runs at most 32 checks for one listing, nearest first, and starts none
+after 2 seconds, so a check that waits on something slow (a database, an
+HTTP call) delays the menu and may leave options out. A check that throws
+is logged and its option is not offered.
+
 On the client you usually write nothing: players press **E** on FiveM
 (`rpf_interact` on Gmod) for a menu of everything near them they may use,
 and on a FiveM server with ox_target or qb-target your rule also appears on
@@ -1093,6 +1124,9 @@ move and what each side does when they disagree.
 - [ ] Every interaction checks its payload, and resolves its ids in the
       caller's scope: another player's record is refused exactly as a
       missing one is.
+- [ ] An aimed interaction's refusals that can be told in advance are in
+      its `check`, which only reads, so the menu offers it only to those
+      who may use it.
 - [ ] Money and items move only through `rpf.money`, `rpf.inventory` and
       `rpf.commerce`, each command with an op id minted once and kept with
       what it pays for; money and items that move together are one
