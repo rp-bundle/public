@@ -341,7 +341,7 @@ end
 local function to_select(handle)
   local moved, err = rpf.players.advance(handle, "character_select")
   if not moved then
-    log("warn", "could not move a player on to character_select: " .. tostring(err))
+    log("warn", "could not move player " .. tostring(handle) .. " on to character_select: " .. tostring(err))
   end
 end
 
@@ -358,7 +358,7 @@ local function withdraw(why, call_stop)
   closing = true
   for _, player in ipairs(rpf.players.list()) do
     if player.state == "active" and active then
-      rpf.players.advance(player.handle, "character_select")
+      to_select(player.handle)
     end
   end
   local were = loaded
@@ -544,7 +544,7 @@ function bridge.character_loaded(handle, character)
   end
   if player.state == "active" then
     loaded[handle] = nil
-    rpf.players.advance(handle, "character_select")
+    to_select(handle)
   elseif player.state == "registered" then
     to_select(handle)
   end
@@ -592,7 +592,7 @@ function bridge.character_unloaded(handle)
   end
   loaded[handle] = nil
   if player.state == "active" then
-    rpf.players.advance(handle, "character_select")
+    to_select(handle)
   end
   return true
 end
