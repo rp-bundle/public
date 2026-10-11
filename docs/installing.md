@@ -2,10 +2,11 @@
 
 How a server owner goes from a stock game server to one connected to the
 portal, on FiveM and on Garry's Mod, and what to do when it says no. You
-install a **release**: a GitHub Release of this repository, one per version,
-whose downloads are built and checked by `release-addon.yml`
-([Deployment](deployment.md#the-game-server-release)). Nothing is built on
-your machine.
+install a **release**: a GitHub Release of the framework's public
+repository, [Sampleeeee/rpf](https://github.com/Sampleeeee/rpf/releases),
+one per version, whose downloads are built and checked before they are
+published. Nothing is built on your machine. The framework is open source
+under the MIT License, and that repository holds its source and history.
 
 ## Before you start
 
@@ -46,7 +47,7 @@ include it: the txAdmin recipe installs it, and by hand you download
 
 1. In txAdmin's setup, choose **Remote URL Template** and give it the
    release's recipe:
-   `https://github.com/Sampleeeee/rp-framework/releases/latest/download/rpf-txadmin-recipe.yaml`.
+   `https://github.com/Sampleeeee/rpf/releases/latest/download/rpf-txadmin-recipe.yaml`.
    For a specific release, use `releases/download/v<version>/rpf-txadmin-recipe.yaml`
    instead.
 2. Run the deployer. It installs txAdmin's basic server, the default

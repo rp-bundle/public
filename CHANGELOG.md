@@ -38,6 +38,13 @@ socket.
   run and dropped); an adapter outside this repository must add it. The
   words typed are never logged or repeated. The portal's in-game account page
   names the command.
+- The Lua framework is published from its own public repository,
+  [Sampleeeee/rpf](https://github.com/Sampleeeee/rpf) (H4 follow-up, #189):
+  its source with its history, its releases, and each release's docs site,
+  now at <https://sampleeeee.github.io/rpf/>. Download releases from there:
+  the txAdmin recipe's address and the portal's **Update available** link
+  point at it. Report a vulnerability, in the framework or the portal,
+  through that repository's *Security* tab.
 - The Lua framework is licensed MIT (H4 follow-up, #190). `lua/LICENSE`
   covers everything a game server runs: the core, both adapters, the `rpf-ws`
   shim, the NUI pages, the bridges and the examples, and every FiveM
@@ -679,5 +686,5 @@ applies them all to an empty database. Five rewrite or drop data
 release for them to matter to. The review is in
 [Compatibility](docs/compatibility.md#the-database).
 
-[Unreleased]: https://github.com/Sampleeeee/rp-framework/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/Sampleeeee/rp-framework/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Sampleeeee/rpf/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Sampleeeee/rpf/releases/tag/v0.1.0

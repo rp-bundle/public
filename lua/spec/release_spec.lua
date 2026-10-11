@@ -508,7 +508,7 @@ end)
 describe("the txAdmin recipe", function()
   it("installs this release's FiveM zip, with OneSync on and both resources ensured", function()
     local recipe = read_file(DIR .. "/rpf-txadmin-recipe.yaml")
-    local zip = "https://github.com/Sampleeeee/rp-framework/releases/download/v"
+    local zip = "https://github.com/Sampleeeee/rpf/releases/download/v"
       .. VERSION
       .. "/rpf-fivem-"
       .. VERSION
