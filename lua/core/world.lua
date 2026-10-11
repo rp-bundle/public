@@ -16,17 +16,23 @@
 ---keeps for an entity it placed, so `entity(ref)` both inspects what a
 ---client named and tells whether a placement is still there.
 ---
----**Placements (J4).** The core places the records of world-backed `config`
+---**Placements (J4, J6).** The core places the records of world-backed
 ---types whose kind is `ped` or `object` (`docs/architecture/addons.md`,
 ---"World definitions"), one entity per record, through the adapter's
 ---`spawn` and `despawn`, and keeps them placed:
 ---
----- **What is wanted** is worked out from the config alone: every visible
----  record of every such type of every addon running here, in namespace,
----  type and id order, at most `MAX_PLACED`. A record staff hid, moved or
----  deleted, an addon that stopped, and a config the portal replaced change
----  it, and so does the stored config the core restores at start, so a game
----  server that cannot reach the portal still places what it last had.
+---- **What is wanted** is every visible record of every such type of every
+---  addon running here, in namespace, type and id order, at most
+---  `MAX_PLACED`: a `config` type's from the config alone, and a `live`
+---  type's while this server holds it (J6), since only then is it this
+---  server's to show. A record staff hid, moved or deleted, an addon that
+---  stopped, and a config the portal replaced change it, and so does the
+---  stored config the core restores at start, so a game server that cannot
+---  reach the portal still places what it last had. A held live record
+---  that arrives, changes, goes or is let go changes it too
+---  (`records.held`, `records.created`, `records.changed`,
+---  `records.deleted`, `records.released`, `records.lost`), reconciled once
+---  for a burst of them (`soon`).
 ---- **Reconciling** despawns what is no longer wanted or has changed, then
 ---  spawns what is wanted and not placed. A spawn answers through a
 ---  callback, at once or later (FiveM makes an entity asynchronously); a
@@ -34,7 +40,8 @@
 ---  meanwhile has its entity removed as it arrives. A record is placed once: the
 ---  core keys what it placed by record id and spawns only a record with no
 ---  entity, so a reconnect, a config pushed twice or a reload never doubles
----  one. It runs on every `config.changed` and `addons.state`.
+---  one. It runs on every `config.changed` and `addons.state`, and soon
+---  after a held live record changes.
 ---- **Checking.** Every `CHECK_MS` the core asks the adapter whether each
 ---  entity is still there and still the one it placed (`entity(ref)`, whose
 ---  `placement` names the record), and places again one that is not: an
@@ -45,9 +52,8 @@
 ---  entity a previous run placed and could not remove (a crash), from a
 ---  record of its own that no client can write, never from a tag.
 ---
----Live records are not placed here: when a live record is in the world as
----an entity is J6's (#83), alongside when it is held. Their positions are
----still what interactions target.
+---A live record is placed only while held here: one let go is despawned,
+---and placed again by whichever server holds it next.
 ---@class rpf.world
 ---@field CAPABILITIES string[] Every capability an adapter declares, in order.
 ---@field KINDS table<string, true> The world kinds the core places an entity for.
@@ -346,11 +352,11 @@ local function key_of(spec)
   )
 end
 
----A config record's placement, or nil if it is not placed: hidden, or with
----no position or model.
+---A record's placement, or nil if it is not placed: hidden, or with no
+---position or model.
 ---@param type_name string Its type.
 ---@param where table The type's `world`.
----@param record table The record, as the config carries it.
+---@param record table The record, as the config carries it or `rpf.data.list` copies it.
 ---@return rpf.world.Spawn? spec The placement.
 local function spec_of(type_name, where, record)
   local fields = type(record.fields) == "table" and record.fields or {}
@@ -395,9 +401,13 @@ local function wanted()
   for _, namespace in ipairs(rpf.addons.active()) do
     for _, type_name in ipairs(rpf.addons.type_names(namespace)) do
       local def = rpf.addons.definition(type_name)
-      local where = type(def) == "table" and def.authority == "config" and def.world or nil
+      local where = type(def) == "table" and def.world or nil
+      local live = type(def) == "table" and def.authority == "live"
       if type(where) == "table" and world.KINDS[where.kind] then
-        for _, record in ipairs(rpf.addons.config_records(type_name)) do
+        -- A config type's records from the config; a live type's, the ones
+        -- held here (J6), as copies with every default filled in.
+        local found = live and (rpf.data.list(type_name, {}) or {}) or rpf.addons.config_records(type_name)
+        for _, record in ipairs(found) do
           local spec = type(record.id) == "string" and out[record.id] == nil and spec_of(type_name, where, record) or nil
           if spec then
             out[spec.id] = spec
@@ -467,6 +477,23 @@ local function made(id, entry, ref, why)
     failed[id] = entry.key
     log("warn", "rpf: could not place " .. entry.type .. " " .. id .. ": " .. tostring(why or "failed"))
   end
+end
+
+---Whether a reconcile is waiting to run, so a burst of record events
+---reconciles once.
+local due = false
+
+---Reconciles as soon as the platform runs a timer, once however often it
+---is asked meanwhile: what a change to a held live record calls.
+function world.soon()
+  if due or stopped or not platform then
+    return
+  end
+  due = true
+  platform.after(0, function()
+    due = false
+    world.reconcile()
+  end)
 end
 
 ---Brings what is placed in line with what is wanted: despawns what is no
@@ -574,7 +601,7 @@ end
 function world.start(p)
   platform = p
   declared = p.capabilities
-  placed, failed, refused, stopped = {}, {}, {}, false
+  placed, failed, refused, stopped, due = {}, {}, {}, false, false
   warned = { limit = false, unsupported = false }
   for _, name in ipairs(world.CAPABILITIES) do
     local value = declared[name]
@@ -588,6 +615,20 @@ function world.start(p)
   rpf.events.on("addons.state", function()
     world.reconcile()
   end)
+  -- A held live record that arrived, changed, went or was let go changes
+  -- what is placed (J6). Many can change at once (a claim's page, a batch,
+  -- a timer moving every plant), so they are reconciled together, once, as
+  -- soon as the platform runs a timer.
+  for _, name in ipairs({
+    "records.held",
+    "records.created",
+    "records.changed",
+    "records.deleted",
+    "records.released",
+    "records.lost",
+  }) do
+    rpf.events.on(name, world.soon)
+  end
   ---Checks the placements, then waits `CHECK_MS` to check again, until
   ---the core stops placing.
   local function tick()

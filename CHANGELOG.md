@@ -38,7 +38,9 @@ socket.
   is released; disabling its installation releases everything. Adapters
   call `rpf.stop_server()` as they stop, which puts unreported changes in
   the persisted outbox. The `acme_tags` example uses `hold = "server"`
-  instead of holding its tags itself.
+  instead of holding its tags itself. A world-backed live type's `ped` and
+  `object` records are placed while the server holds them, as config ones
+  are.
 - The commerce example (J5, #82): `lua/examples/acme_shop/`, counters that
   sell items and buy them back, built only on `rpf.api`. Staff place
   counters and price listings as config records and stock what is limited

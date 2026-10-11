@@ -1286,7 +1286,7 @@ runs inside `rpf.ops.run`, with the player checked first, and `apply`
 after a `true`. The journal drops an `unavailable` result on both paths,
 since nothing changed, so the same op id may be sent again.
 
-### The game world (`rpf.world`, J3, J4)
+### The game world (`rpf.world`, J3, J4, J6)
 
 The world as far as the core reaches it: through the capabilities the
 adapter declares (`platform.capabilities`), never an engine branch.
@@ -1320,8 +1320,12 @@ Every `CHECK_MS` (10 s) it asks `entity` whether each is still there and
 still tagged with its record, and places again one that is not; a spawn
 that failed (`no_model`, `no_bucket`, the engine's refusal) is tried again
 then, logged once until it succeeds or the record changes. `clear()`
-despawns everything and stops placing, for an adapter's stop. Live
-records are not placed (J6, #83).
+despawns everything and stops placing, for an adapter's stop. A world
+`live` type's records are placed the same way while held here (J6), read
+with `rpf.data.list`; a held record's event (`records.held`,
+`records.created`, `records.changed`, `records.deleted`,
+`records.released`, `records.lost`) calls `soon`, which reconciles once at
+the next timer however many arrive meanwhile.
 
 ### Interactions (`rpf.interactions`, J3, J10)
 
