@@ -197,6 +197,23 @@ function Time.every(period_ms, fn) end
 ---@return boolean cancelled True if it was still to run.
 function Time.cancel(id) end
 
+---How much time has passed since a moment your record stored, at most
+---`max_ms`: how a timed record keeps time across restarts, which end every
+---timer. Store the moment you last counted in a `timestamp` field, and on
+---each tick count what passed since it and store `now`. The bound is the
+---most one tick catches up after an outage or a restart (a plant grows at
+---most that much at once); a clock that stepped back counts as nothing.
+---
+---```lua
+---local spent, now = rpf.time.elapsed(plant.fields.ticked_at, 5 * 60000)
+---rpf.records.update("acme_garden.plant", plant.id, { grown_ms = plant.fields.grown_ms + spent, ticked_at = now })
+---```
+---@param since integer The moment last counted, milliseconds since the Unix epoch.
+---@param max_ms integer? The most to count; no bound if nil.
+---@return integer? elapsed Milliseconds passed, from 0 to `max_ms`.
+---@return integer|"invalid"|"unavailable" now The clock it was measured on, or why not.
+function Time.elapsed(since, max_ms) end
+
 ---Why `time.after` or `time.every` refused.
 ---@alias rpf.TimerRefusal
 ---| "invalid" # The delay or period is not a whole number in range, or `fn` is not a function.

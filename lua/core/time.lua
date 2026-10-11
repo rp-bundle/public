@@ -8,7 +8,8 @@
 ---`every` in its `start` handler gets exactly one, however often it is
 ---restarted. Its callback runs in the addon's context, under `pcall`: one
 ---that throws is logged, and an `every` keeps going. Ids are strings, so
----they cross a FiveM export unchanged.
+---they cross a FiveM export unchanged. `elapsed` (J6) is how a record keeps
+---time across a restart, which ends every timer.
 ---
 ---The portal writes every time as RFC 3339, and both halves of the core need
 ---to read them: the server to turn a join nonce's `expires_at` into a
@@ -58,6 +59,38 @@ end
 ---@return number? now Nil before a platform is bound.
 function time.now()
   return clock and clock.now()
+end
+
+---How much time has passed since a moment a record stored, for keeping
+---time across restarts (J6). Timers end with the process; a timestamp in a
+---record's fields does not, so a timed record keeps the moment it last
+---counted and works out what passed from it.
+---
+---`max_ms` bounds the catch-up: after an outage, a restart or a long time
+---unheld, at most that much is counted, so a plant does not grow a week in
+---one tick, and what a server does with it stays bounded. A clock that
+---stepped back counts as no time passing, never as negative time. Store
+---`now` (or `now` less what was not used) as the new moment.
+---@param since any The moment last counted, milliseconds since the Unix epoch.
+---@param max_ms any? The most to count, a whole number of milliseconds; no bound if nil.
+---@return number? elapsed Milliseconds passed, from 0 to `max_ms`.
+---@return number|string now The clock it was measured on, or why not: `invalid` for a moment or bound that is not a whole number of milliseconds (a negative bound included), `unavailable` before a platform is bound.
+function time.elapsed(since, max_ms)
+  local now = time.now()
+  if not now then
+    return nil, "unavailable"
+  end
+  if type(since) ~= "number" or since ~= math.floor(since) then
+    return nil, "invalid"
+  end
+  if max_ms ~= nil and (type(max_ms) ~= "number" or max_ms ~= math.floor(max_ms) or max_ms < 0) then
+    return nil, "invalid"
+  end
+  local elapsed = math.max(0, now - since)
+  if max_ms and elapsed > max_ms then
+    elapsed = max_ms
+  end
+  return elapsed, now
 end
 
 ---Whether a delay or period is one a timer takes.

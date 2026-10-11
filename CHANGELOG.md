@@ -40,7 +40,11 @@ socket.
   the persisted outbox. The `acme_tags` example uses `hold = "server"`
   instead of holding its tags itself. A world-backed live type's `ped` and
   `object` records are placed while the server holds them, as config ones
-  are.
+  are. `rpf.api.time.elapsed(since, max_ms)` counts the time since a
+  stored moment with a bounded catch-up, and a new example,
+  `lua/examples/acme_garden/`, is a timed live type built on it. The
+  portal shows each live type's hold policy on the addon page and the
+  record page.
 - The commerce example (J5, #82): `lua/examples/acme_shop/`, counters that
   sell items and buy them back, built only on `rpf.api`. Staff place
   counters and price listings as config records and stock what is limited
