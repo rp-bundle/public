@@ -347,6 +347,15 @@ socket.
   `deploy/restore-drill` restores the newest backup to a scratch instance,
   migrates it and starts Rauthy on it, weekly in `restore-drill.yml`; the
   runbook, rehearsed, is in [Operations](docs/operations.md#restoring-the-database).
+- `rpf-portal restore reapply` (H2, #256): after a restore to an earlier
+  moment, it compares the restored database with the copy kept from before
+  it, erases again the player accounts erased since, cancels again the
+  deletions their owners cancelled since, lists the deletions requested
+  since for the operator to tell their owners, and brings back item images
+  the portal deleted since from the images bucket's versions, auditing what
+  it changes in each guild's log. It is the restore runbook's step 7, and
+  needs, for the images, a key that may list the bucket's versions and
+  delete a version ([Deployment](docs/deployment.md#backups)).
 - The addon API, part 2 (J3, #80). `rpf.api.records` reads, finds, holds
   and writes addons' records: `get` and `list` locally, `query` through the
   portal, `hold` and `release` on demand, `create`, `update` (a patch, with
