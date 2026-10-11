@@ -70,6 +70,11 @@ describe("rpf.time", function()
     assert.are.equal(support.EPOCH_MS, rpf.time.parse("2025-12-31T19:30:00-04:30"))
   end)
 
+  it("accepts the largest valid zone offset in either direction", function()
+    assert.are.equal(support.EPOCH_MS, rpf.time.parse("2026-01-01T23:59:00+23:59"))
+    assert.are.equal(support.EPOCH_MS, rpf.time.parse("2025-12-31T00:01:00-23:59"))
+  end)
+
   it("agrees with the protocol's own formatting", function()
     support.load_core("server")
     for _, ms in ipairs({ 0, support.EPOCH_MS, support.EPOCH_MS + 1, 4102444799999 }) do
@@ -85,6 +90,12 @@ describe("rpf.time", function()
     "2026-04-31T00:00:00Z",
     "2026-01-01T24:00:00Z",
     "2026-01-01T00:00:00+1:00",
+    "2026-01-01T00:00:00+24:00",
+    "2026-01-01T00:00:00-24:00",
+    "2026-01-01T00:00:00+00:60",
+    "2026-01-01T00:00:00-00:60",
+    "2026-01-01T00:00:00+99:99",
+    "2026-01-01T00:00:00-99:99",
     "yesterday",
   }) do
     it("refuses " .. text, function()

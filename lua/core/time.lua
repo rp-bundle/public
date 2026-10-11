@@ -226,6 +226,8 @@ end
 ---Reads an RFC 3339 timestamp with a zone into milliseconds since the epoch.
 ---A fraction is kept to the millisecond and the rest dropped. Anything else
 ---is refused rather than guessed at, because the value comes over the wire.
+---A numeric zone's hours must be 00–23 and its minutes 00–59; an out-of-range
+---offset is refused rather than normalized into a different expiry.
 ---@param text any The timestamp, like `2026-01-01T00:02:00.5Z` or `…+01:00`.
 ---@return number? ms Milliseconds since the Unix epoch, or nil if it is not a timestamp.
 function time.parse(text)
@@ -270,7 +272,13 @@ function time.parse(text)
     if not sign then
       return nil
     end
-    offset = (tonumber(oh) * 60 + tonumber(om)) * 60 * 1000
+    local offset_hour, offset_minute = tonumber(oh), tonumber(om)
+    ---@cast offset_hour integer
+    ---@cast offset_minute integer
+    if offset_hour > 23 or offset_minute > 59 then
+      return nil
+    end
+    offset = (offset_hour * 60 + offset_minute) * 60 * 1000
     if sign == "-" then
       offset = -offset
     end
