@@ -358,6 +358,27 @@ conformance.run(busted, "live record holds", {
       assert.is_true(world.portal.records[hut].held)
     end,
   },
+  {
+    name = "holds for the server a record a session hold brings after its type became the server's",
+    run = function(world)
+      installed(world)
+      world:install({ conformance.installed(world.core, grove("1.1.0", "server")) })
+      world:pump()
+      -- A session hold the portal answered while huts were still held with
+      -- their owner, arriving now.
+      local hut = id(1)
+      local json = world.core.json
+      world.core.records.take({
+        {
+          kind = "addon_record",
+          revision = 2,
+          record = { id = hut, type = "acme_grove.hut", owner = player, fields = json.object({ label = "late" }) },
+        },
+      }, PLAYER)
+      assert.is_true(held(world, hut))
+      assert.is_nil(world.core.records.entries[world.core.records.key("addon_record", hut)].through, "the server's")
+    end,
+  },
 })
 
 describe("rpf.holding", function()

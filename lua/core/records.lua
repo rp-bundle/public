@@ -193,9 +193,10 @@ end
 ---Takes over the records the portal handed over in a `held` reply. A record
 ---already held here keeps the state it has, which is newer than any the
 ---portal could send: nothing but this server has changed it since it was
----held. One a session hold names that was held for the server alone, an
----addon record of a type held with its owner (J6, `rpf.holding`), joins
----the session, so it goes when the player does.
+---held. An addon record joins the session only if its type is held with
+---its owner (J6, `rpf.holding`), by the config as it is now, and then so
+---does one already held for the server alone, so it goes when the player
+---does.
 ---@param held table[] The `held` reply's records, decoded.
 ---@param through string? The player whose session they are for.
 ---@return table[] views Copies of every record now held that this reply named.
@@ -216,6 +217,14 @@ function records.take(held, through)
     id = data.id
     local key = records.key(record.kind, id)
     local entry = records.entries[key]
+    -- An addon record joins a session only while its type is held with its
+    -- owner, as this server's config says now (J6): the portal may have
+    -- answered under an older one, an upgrade having since made the type
+    -- the server's.
+    local joins = through
+    if record.kind == "addon_record" and rpf.holding.policy(data.type) ~= "owner" then
+      joins = nil
+    end
     if not entry then
       entry = {
         kind = record.kind,
@@ -223,19 +232,14 @@ function records.take(held, through)
         revision = record.revision,
         version = record.kind == "addon_record" and record.revision or nil,
         data = json.copy(data),
-        through = through,
+        through = joins,
         changed = {},
         transactions = {},
         resync = false,
       }
       records.entries[key] = entry
-    elseif
-      through
-      and entry.through == nil
-      and entry.kind == "addon_record"
-      and rpf.holding.policy(entry.data.type) == "owner"
-    then
-      entry.through = through
+    elseif joins and entry.through == nil and entry.kind == "addon_record" then
+      entry.through = joins
     end
     views[#views + 1] = view(entry)
   end
