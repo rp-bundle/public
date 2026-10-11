@@ -29,6 +29,19 @@ socket.
 
 ### Added
 
+- Exchanges (J5, #82): `rpf.api.commerce.exchange(player, deal, op_id,
+  apply)` moves money and items together, with an addon's change to its own
+  records, as one journaled intent, once per op id; `check(player, deal)`
+  makes the same checks without moving anything. A deal is `{ account,
+  pay | paid, take, give, reason, records }`, the last naming the records it
+  was priced against at the revisions read (`stale` otherwise). On a native
+  server it is all or nothing: everything is checked first, including the
+  items as one plan across the character's containers, then made in one
+  step. Through a bridge the framework's calls run in order, and a failure
+  after one went through is `unknown` for staff, refunding nothing. The
+  journal's detail for staff now carries what a deal moved (`paid`, `take`,
+  `give`). No wire change.
+
 - World definitions on addon types (J4, #81): a type may declare `world =
   { kind, position, heading, bucket, model, visible, radius }`, naming its
   own fields by the part each plays, with `kind` one of `ped`, `object`,
@@ -394,6 +407,12 @@ socket.
   guild, the `forbidden` stand-in for `domain_external`, and the refusals
   of staff, config and addon frames on an older connection
   ([Compatibility](docs/compatibility.md#changing-the-wire)).
+
+### Fixed
+
+- A composite operation's `apply` that yielded could lose sight of what it
+  wrote when another one ran meanwhile, so the journal could record it done
+  before its change reached the outbox (`rpf.records.watch`).
 
 ### Database
 

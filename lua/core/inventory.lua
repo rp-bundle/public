@@ -704,6 +704,47 @@ local function stack_at(contents, index)
   return json.is_array(contents.stacks) and contents.stacks[index] or nil
 end
 
+---How many units of an item well-formed contents hold in stacks whose
+---data has a key.
+---@param contents table The contents.
+---@param item string The item.
+---@param key string? The data's key (`data_key`): `"{}"` for plain units.
+---@return number count The units.
+local function units_of(contents, item, key)
+  local total = 0
+  for _, stack in ipairs(stacks_in(contents)) do
+    if stack.item == item and data_key(stack.data) == key then
+      total = total + stack.count
+    end
+  end
+  return total
+end
+
+---Takes units of an item out of well-formed contents, in place, from the
+---last matching stacks first, so the oldest stay where they are. The
+---caller has counted that there are enough.
+---@param contents table The contents, a copy.
+---@param item string The item.
+---@param count number How many.
+---@param key string? The data's key of the stacks to take from.
+local function take_units(contents, item, count, key)
+  local stacks = stacks_in(contents)
+  for i = #stacks, 1, -1 do
+    local stack = stacks[i]
+    if count == 0 then
+      break
+    end
+    if stack.item == item and data_key(stack.data) == key then
+      local take = math.min(stack.count, count)
+      stack.count = stack.count - take
+      count = count - take
+      if stack.count == 0 then
+        drop(contents, i)
+      end
+    end
+  end
+end
+
 ---Whether a value is a grid position.
 ---@param position any The value.
 ---@return boolean ok True for nil or an object with `i32` `x` and `y`.
@@ -826,35 +867,105 @@ function inventory.plan_remove(id, item, count, opts)
     return nil, "invalid", json.object({ error = "malformed" })
   end
   local key = data_key(opts.data)
-  local stacks = stacks_in(contents)
-  local available = 0
-  for _, stack in ipairs(stacks) do
-    if stack.item == item and data_key(stack.data) == key then
-      available = available + stack.count
-    end
-  end
-  if available < count then
+  if units_of(contents, item, key) < count then
     return nil, "insufficient"
   end
-  for i = #stacks, 1, -1 do
-    local stack = stacks[i]
-    if count == 0 then
-      break
-    end
-    if stack.item == item and data_key(stack.data) == key then
-      local take = math.min(stack.count, count)
-      stack.count = stack.count - take
-      count = count - take
-      if stack.count == 0 then
-        drop(contents, i)
-      end
-    end
-  end
+  take_units(contents, item, count, key)
   local ok, refusal = inventory.check(container, contents)
   if not ok then
     return nil, "invalid", refusal
   end
   return contents
+end
+
+---One line of `plan_moves`: an item and how many of its plain units.
+---@class rpf.inventory.Line
+---@field item string The item's slug.
+---@field count number How many, a positive integer.
+
+---What a set of held containers would hold once plain units were taken
+---from them and given to them, validated as each mutation validates, without
+---changing anything: the items half of an exchange (`rpf.commerce`), which
+---must find every refusal before it moves anything.
+---
+---The containers are read in the order given. Each take comes out of them in
+---turn, as the facade's `take` does; then each give goes, whole, into the
+---first that takes it, as the facade's `give` does, so a take can make the
+---room a give needs. Every container that changes is validated whole at the
+---end.
+---@param ids string[] The containers, in the order units come out and go in.
+---@param takes rpf.inventory.Line[] What leaves them.
+---@param gives rpf.inventory.Line[] What goes into them.
+---@return { id: string, contents: table }[]? changes The new contents of each container that changes, in the order given.
+---@return string? err `domain_external`, `not_held`, `no_container` (units to move and no container), `insufficient` (too few plain units for a take), `no_space` (no container takes a give whole), or `invalid_contents` (a container whose contents would no longer pass its rules, as when the catalog changed under it).
+---@return string? item For `insufficient` and `no_space`, the item.
+function inventory.plan_moves(ids, takes, gives)
+  local refused = external("inventory")
+  if refused then
+    return nil, refused
+  end
+  if #takes + #gives > 0 and #ids == 0 then
+    return nil, "no_container"
+  end
+  local catalog = inventory.catalog()
+  ---@type { container: table, contents: table, changed: boolean }[]
+  local work = {}
+  for i, id in ipairs(ids) do
+    local container = held(id)
+    if not container then
+      return nil, "not_held"
+    end
+    work[i] = { container = container, contents = container.contents, changed = false }
+  end
+  for _, line in ipairs(takes) do
+    local total = 0
+    for _, w in ipairs(work) do
+      if well_formed(w.contents) then
+        total = total + units_of(w.contents, line.item, "{}")
+      end
+    end
+    if total < line.count then
+      return nil, "insufficient", line.item
+    end
+    local left = line.count
+    for _, w in ipairs(work) do
+      if left == 0 then
+        break
+      end
+      local n = well_formed(w.contents) and math.min(left, units_of(w.contents, line.item, "{}")) or 0
+      if n > 0 then
+        take_units(w.contents, line.item, n, "{}")
+        w.changed = true
+        left = left - n
+      end
+    end
+  end
+  for _, line in ipairs(gives) do
+    local placed = false
+    for _, w in ipairs(work) do
+      local trial = json.copy(w.contents)
+      if
+        put(trial, w.container.flags, catalog, line.item, line.count, nil, {})
+        and inventory.validate(trial, w.container.flags, catalog)
+      then
+        w.contents, w.changed, placed = trial, true, true
+        break
+      end
+    end
+    if not placed then
+      return nil, "no_space", line.item
+    end
+  end
+  local out = {}
+  for _, w in ipairs(work) do
+    if w.changed then
+      if not inventory.validate(w.contents, w.container.flags, catalog) then
+        return nil, "invalid_contents"
+      end
+      out[#out + 1] = { id = w.container.id, contents = w.contents }
+    end
+  end
+  return out
 end
 
 ---Moves a stack, or some of it, from one held container to another, or

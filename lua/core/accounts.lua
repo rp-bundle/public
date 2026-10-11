@@ -174,6 +174,31 @@ function accounts.transfer(from, to, amount, description)
   return records.transfer(from, to, amount, description)
 end
 
+---Whether `accounts.pay` would make an entry, without making it: the same
+---checks, so a caller paying with other changes (`rpf.commerce`) finds
+---every refusal before it changes anything.
+---@param from string The paying account's uuid.
+---@param to string The receiving account's uuid.
+---@param amount number A whole number from 1 to `protocol.MAX_AMOUNT`.
+---@param description string Why, for the statement and staff.
+---@return boolean? ok True if the payment would be made now.
+---@return string? err As `accounts.pay` answers.
+function accounts.check_pay(from, to, amount, description)
+  local refused = external("money")
+  if refused then
+    return nil, refused
+  end
+  local source = records.get("account", from)
+  if not source then
+    return nil, "not_held"
+  end
+  local owner = type(source.owner) == "table" and source.owner.kind
+  if not unlimited(source) or not SOURCE_OWNERS[owner] then
+    return nil, "not_a_source"
+  end
+  return records.check_transfer(from, to, amount, description)
+end
+
 ---Pays money out of the server's own funds: a wage, a reward, a sale to
 ---the server. It is a transfer whose paying account has
 ---`unlimited_balance` (a treasury or payroll account the server holds), so
@@ -195,17 +220,9 @@ end
 ---@return string? client_id The ledger entry's id, or nil if refused.
 ---@return string? err `"not_held"`, `"not_a_source"` for a paying account without `unlimited_balance` or not owned by the server or an employer, `"invalid"` or `"out_of_range"`. Nothing changes on an error.
 function accounts.pay(from, to, amount, description)
-  local refused = external("money")
-  if refused then
-    return nil, refused
-  end
-  local source = records.get("account", from)
-  if not source then
-    return nil, "not_held"
-  end
-  local owner = type(source.owner) == "table" and source.owner.kind
-  if not unlimited(source) or not SOURCE_OWNERS[owner] then
-    return nil, "not_a_source"
+  local ok, err = accounts.check_pay(from, to, amount, description)
+  if not ok then
+    return nil, err
   end
   return records.transfer(from, to, amount, description)
 end

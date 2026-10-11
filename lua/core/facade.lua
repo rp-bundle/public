@@ -60,6 +60,17 @@
 ---@class rpf.facade
 ---@field CALLS table<string, table<string, true>> The calls of each domain, for `supports`.
 ---@field ADDON_ACCOUNT string The setting naming the paying account addons' money moves through: `economy::ADDON_ACCOUNT`.
+---@field MAX_UNITS integer The most units one give or take moves: a stack's count is a `u32`.
+---@field character_of fun(handle: any): table?, string? The character a logged-in player has in play, or nil and `not_logged_in` or `no_character`. Shared with `rpf.commerce`, as are the fields below.
+---@field account_of fun(character: table, name: any): table? A character's held account of a name.
+---@field addon_account fun(): table? The paying account addons' money moves through, if staff set one.
+---@field containers_of fun(character: table): table[] A character's held containers, by name then id.
+---@field valid_entry fun(amount: any, reason: any): boolean Whether an amount and reason are ones a ledger entry takes.
+---@field detail_of fun(handle: any, fields: table): rpf.ops.Detail What the journal keeps of a command, for staff.
+---@field entry_on_disk fun(payer: string, client_id: string): fun(): boolean Whether a ledger entry this server made is on disk.
+---@field contents_on_disk fun(ids: string[]): fun(): boolean Whether the contents changes made to containers are on disk.
+---@field then_apply fun(apply: any, written: string[]): boolean?, string?, string? Runs an addon's `apply` once its command went through, noting what it wrote.
+---@field applied_on_disk fun(written: string[]): boolean Whether the records an `apply` wrote are on disk.
 local facade = {}
 
 local rpf = rpf
@@ -74,6 +85,7 @@ facade.CALLS = {
 
 ---The most units one give or take moves: a stack's count is a `u32`.
 local MAX_UNITS = 4294967295
+facade.MAX_UNITS = MAX_UNITS
 
 ---Whether a ledger entry this server made is on disk: carried by a report
 ---queued in the persisted outbox, or acknowledged and gone. A flush is
@@ -673,6 +685,17 @@ function facade.current_job(handle)
     on_duty = rpf.jobs.is_on_duty(character.id),
   }
 end
+
+facade.character_of = character_of
+facade.account_of = account_of
+facade.addon_account = addon_account
+facade.containers_of = containers_of
+facade.valid_entry = valid_entry
+facade.detail_of = detail_of
+facade.entry_on_disk = entry_on_disk
+facade.contents_on_disk = contents_on_disk
+facade.then_apply = then_apply
+facade.applied_on_disk = applied_on_disk
 
 rpf.facade = facade
 return facade

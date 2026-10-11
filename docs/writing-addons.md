@@ -384,16 +384,17 @@ anything that needs it: under DarkRP, for one, no `inventory` call works,
 and the only account is `wallet`.
 
 ```lua
-local op = rpf.ops.new() -- mint once per purchase, and keep it with the purchase
-local ok, status, why = rpf.money.debit(player, "bank", price, "Spray can", op)
-if ok then
-  rpf.inventory.give(player, "spray_can", 1, rpf.ops.new())
-elseif status == "refused" then
+local op = rpf.ops.new() -- mint once per payment, and keep it with the payment
+local ok, status, why = rpf.money.debit(player, "bank", 250, "Parking fine", op)
+if status == "refused" then
   -- nothing changed; `why` says why: "insufficient_funds", "no_account", ...
 elseif status == "unknown" then
-  -- it may have happened: never grant, never send again under a new op id
+  -- it may have happened: never send it again under a new op id
 end
 ```
+
+To sell an item, use an exchange (below), not a debit and then a give: the
+give can find the player has no room after the money is gone.
 
 - **Ask first.** `rpf.money.supports("debit")` and its siblings say whether
   a call works on this server. On an RPF server, debits and credits need
@@ -419,10 +420,57 @@ answers nil, the debit is `unknown` and staff grant or refund it by hand.
 
 ```lua
 local op = rpf.ops.new()
-local ok, status, why = rpf.money.debit(player, "bank", 500, "Gold tag", op, function()
-  return rpf.records.update("acme_tags.tag", tag.id, { colour = "gold" }, { revision = tag.revision })
+local ok, status, why = rpf.money.debit(player, "bank", 500, "Gold badge", op, function()
+  return rpf.records.update("acme_badges.badge", badge.id, { label = "Gold" }, { revision = badge.revision })
 end)
 ```
+
+### Selling, buying back, trading: exchanges
+
+`rpf.commerce.exchange` moves money and items together, and your change to
+your own records with them, as one intent. A deal says what moves, from the
+player's side: what they `pay` (or are `paid`), the items they hand over
+(`take`) and receive (`give`), and the records you priced it against
+(`records`), each at the revision you read.
+
+```lua
+local listing = rpf.records.get("acme_shop.listing", listing_id) -- a config record staff priced
+local stock = rpf.records.get("acme_shop.stock", stock_id)       -- a live record this server holds
+local op = rpf.ops.new() -- once per purchase, kept with it
+local ok, status, why = rpf.commerce.exchange(player, {
+  account = "wallet",
+  pay = listing.fields.price * 2,
+  give = { { item = listing.fields.item, count = 2 } },
+  reason = "Corner shop: 2 water",
+  records = {
+    { type = "acme_shop.listing", id = listing.id, revision = listing.revision },
+    { type = "acme_shop.stock", id = stock.id, revision = stock.revision },
+  },
+}, op, function()
+  return rpf.records.update("acme_shop.stock", stock.id, { left = stock.fields.left - 2 }, { revision = stock.revision })
+end)
+```
+
+- **On an RPF server it is all or nothing.** Everything is checked before
+  anything moves: the player's account and balance, each item given in the
+  catalog (`unknown_item`), each record in `records` still at the revision
+  you read (`stale`: staff changed the price, or another sale took the
+  stock), and the items across the player's containers as one plan, so
+  what they hand over makes room for what they get (`no_space`,
+  `insufficient`). A refusal changes nothing.
+- **Through a bridge** (Qbox, DarkRP), the framework's calls run one after
+  another: the money, then each take, then each give. A refusal before any
+  went through changes nothing; a failure after one did (the framework
+  refuses the give for want of room) is `unknown`, for staff, and nothing
+  is refunded. Under DarkRP no item call works, so a deal with items is
+  `refused` (`unsupported`) without reaching it.
+- **Check first.** `rpf.commerce.check(player, deal)` makes the same checks
+  without moving anything: offer only what the player can afford and carry.
+- **Retries** with the same op id are safe: the deal runs once, and sending
+  it again returns the first answer.
+- **Keep `apply` to fields of records you hold** (the stock), which nothing
+  but your server can refuse, and name those records in `records` so that
+  `apply` cannot find them changed.
 
 Do not build anything that sells in-game money or items for real money:
 the Cfx.re platform rules forbid it, and RPF connects nothing to a payment.
@@ -471,7 +519,9 @@ move and what each side does when they disagree.
 - [ ] Every interaction checks its payload, and resolves its ids in the
       caller's scope: another player's record is refused exactly as a
       missing one is.
-- [ ] Money and items move only through `rpf.money` and `rpf.inventory`,
-      each command with an op id minted once and kept with what it pays for.
+- [ ] Money and items move only through `rpf.money`, `rpf.inventory` and
+      `rpf.commerce`, each command with an op id minted once and kept with
+      what it pays for; money and items that move together are one
+      exchange.
 - [ ] The addon runs on both engines (its UI through `rpf.ui`), or says
       which it needs.

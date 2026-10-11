@@ -52,9 +52,10 @@ rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, 
                  -- config.lua, client.lua, players.lua, commands.lua, moderation.lua, staff.lua,
                  -- inventory.lua, manifest.lua, addons.lua, records.lua, sync.lua, accounts.lua,
                  -- handoff.lua, join.lua, characters.lua, jobs.lua, edits.lua, data.lua, ops.lua,
-                 -- facade.lua, world.lua, targets.lua, interactions.lua, api.lua
+                 -- bridge.lua, facade.lua, commerce.lua, world.lua, targets.lua, interactions.lua,
+                 -- ui.lua, api.lua
 rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua,
-                 -- picker.lua, targets.lua, interactions.lua, api.lua
+                 -- picker.lua, targets.lua, interactions.lua, ui.lua, api.lua
 ```
 
 Every later file registers itself on `rpf` (`rpf.json = json`) *and* returns
@@ -73,7 +74,7 @@ API (see The public API).
 
 The client never loads `protocol.lua`, `domains.lua`, `client.lua`, `players.lua`,
 `commands.lua`, `moderation.lua`, `staff.lua`, `inventory.lua`, `manifest.lua`, `addons.lua`, `records.lua`, `sync.lua`,
-`accounts.lua`, `join.lua`, `characters.lua`, `jobs.lua`, `edits.lua`, `data.lua`, `ops.lua`, `facade.lua` or `world.lua`, because the player's client
+`accounts.lua`, `join.lua`, `characters.lua`, `jobs.lua`, `edits.lua`, `data.lua`, `ops.lua`, `bridge.lua`, `facade.lua`, `commerce.lua` or `world.lua`, because the player's client
 must never hold the server's API key and has no players, staff or records to
 manage.
 
@@ -1164,12 +1165,56 @@ is `unknown`. One found joins the index again.
 `apply` after its op id: the addon's own change the command pays for (or
 goes with). It runs inside the same journaled intent, only once the
 command went through, under `rpf.records.watch`, which lists the held
-records it wrote; the intent completes on disk only once each of them is
+records written while it runs (an `apply` that yields keeps watching until
+it returns, so two that resume out of order each still see their own); the intent completes on disk only once each of them is
 reported (`rpf.sync.reported`: carried by a report queued in the
 persisted outbox) as well as the command's own change. An `apply` that
 throws or answers nil or false makes the command `unknown`, with the money
 or items already moved: nothing compensates. A non-callable `apply` is
 `refused` (`invalid`) before anything is journaled.
+
+### Exchanges (`rpf.commerce`, J5)
+
+What a shop, a buy-back counter or a crafting bench builds on: money and
+items moved together, with the addon's own change, as one journaled intent
+(`commerce.exchange(player, deal, op_id, apply)`), and the same checks as a
+dry run (`commerce.check(player, deal)`). Server only;
+`rpf.api.commerce` fronts it.
+
+A deal is `{ account, pay | paid, take, give, reason, records }` from the
+player's side: what they pay from one of their accounts (or are paid into
+it), the plain units they hand over and receive (at most `MAX_LINES` lines
+each), why, and the records the addon priced it against, each with the
+revision it read. Anything else in it is `refused` (`invalid`), so a typo
+cannot sell for nothing.
+
+**Native: all or nothing.** Inside `rpf.ops.run`, everything is checked
+before anything changes: the character, each record still at its revision
+(`stale` otherwise; `not_found`, `not_held`, `inactive` as `rpf.data.get`
+answers), each item given in the current catalog (`unknown_item`), the
+items as one plan across the character's containers
+(`inventory.plan_moves`: each take out of them in turn, then each give whole
+into the first that takes it, so a take makes room for a give), the
+account and the paying account, and the payment
+(`records.check_transfer`, or `accounts.check_pay` for `paid`). Then, in
+the same synchronous step, the ledger entry, each container's contents,
+and `apply` under `rpf.records.watch`. The intent completes on disk only
+once the entry, the contents and what `apply` wrote are each in the
+persisted outbox, as for a facade command.
+
+**Companion: conflict rule 4, for several calls.** The money and items are
+the framework's, so the deal's calls go to the bridge in a fixed order (the
+money, each take, each give), each reached before the journal (an
+unsupported one is `refused`, an outage `unavailable`) and each with an op
+id of its own for the bridge. The records are checked first and `apply`
+runs last. While no call has gone through, a refusal or an outage changes
+nothing; once one has, any later failure is `unknown`, with a cause naming
+what went and what did not, and nothing is refunded. `check` asks the
+framework what it can first (the balance, the counts).
+
+The journal's `detail` for an exchange carries `amount` (paid by the
+player) or `paid`, and the items as `take` and `give` (`water:2,bread:1`),
+so staff resolving an `unknown` one know what moved.
 
 ### Bridges (`rpf.bridge`, K2)
 
@@ -1689,7 +1734,8 @@ internal.
 | `capabilities`, `world` | both, server | `capabilities()` on both sides (the world's on the server, the UI's on both), and `world.position` on the server (`rpf.world` above) |
 | `ui` | both | `notify`, `menu`, `input`, `progress`; on the server each takes the player first (`rpf.ui` above) |
 | `interactions` | both | `register` on the server, `send` and `request` on the client (`rpf.interactions` above) |
-| `characters`, `money`, `inventory`, `jobs`, `ops` | server | The domain-neutral facade (`rpf.facade` above): `characters.current`; `money.accounts`, `balance`, `debit`, `credit`; `inventory.count`, `give`, `take`; `jobs.current`; each domain's `supports`; `ops.new` |
+| `characters`, `money`, `inventory`, `jobs`, `ops` | server | The domain-neutral facade (`rpf.facade` above): `characters.current`; `money.accounts`, `balance`, `debit`, `credit`; `inventory.count`, `give`, `take`; `jobs.current`; each domain's `supports`; `ops.new`, `ops.unknown` |
+| `commerce` | server | `exchange`, `check` (J5, `rpf.commerce` above) |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
 | `staff` | server | `can`, `permissions`, `link`, `record` (F9, `rpf.staff` above) |
 | `config` | server | `item`, `item_base`, `item_defaults`, `employer`, `department`, `job`, `starting_accounts`, `default_job`, `setting`, `version`, and `edit` (E6, above) |
