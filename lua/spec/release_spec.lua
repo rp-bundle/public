@@ -203,19 +203,29 @@ describe("the FiveM zip", function()
     expected["[rpf]/rpf/fxmanifest.lua"] = true
     expected["[rpf]/rpf-ws/fxmanifest.lua"] = true
     expected["[rpf]/rpf-qbox/fxmanifest.lua"] = true
-    expected["[rpf]/rpf-ws/LICENSE.ws"] = true
-    local files = shipped("fivem")
-    -- The project's own licence is in every resource once it has one (#190).
+    expected["[rpf]/rpf-ws/THIRD-PARTY-NOTICES"] = true
+    -- The project's own licence is in every resource (#190).
     for _, licence in ipairs({ "[rpf]/rpf/LICENSE", "[rpf]/rpf-ws/LICENSE", "[rpf]/rpf-qbox/LICENSE" }) do
-      if files[licence] then
-        expected[licence] = true
-      end
+      expected[licence] = true
     end
+    local files = shipped("fivem")
     assert.are.same(sorted(expected), sorted(files))
     assert.is_nil(files["[rpf]/rpf/dev.lua"], "a release never carries the smoke test's commands")
     for name in pairs(files) do
       assert.is_nil(name:find("ox_lib", 1, true), "ox_lib is a prerequisite, never bundled: " .. name)
     end
+  end)
+
+  it("carries the MIT licence in every resource, and the notice of what the shim bundles", function()
+    for _, resource in ipairs({ "rpf", "rpf-ws", "rpf-qbox" }) do
+      local licence = read_file(RESOURCES .. resource .. "/LICENSE")
+      assert.is_truthy(licence:find("^MIT License"), resource .. " is licensed MIT")
+      assert.is_truthy(licence:find("Permission is hereby granted, free of charge", 1, true), resource)
+    end
+    -- ws is bundled into rpf-ws.js and MIT requires its notice to travel with the copy.
+    local notices = read_file(RESOURCES .. "rpf-ws/THIRD-PARTY-NOTICES")
+    assert.is_truthy(notices:find("\nws 8%.[%d%.]+ %(MIT%)\n"), "names ws, its version and licence")
+    assert.is_truthy(notices:find("Permission is hereby granted, free of charge", 1, true), "carries ws's licence text")
   end)
 
   it("starts the server from the packaged files and says Hello as this release", function()
@@ -441,9 +451,7 @@ describe("the Gmod zip", function()
     boot("client", loaded)
     local files = shipped("gmod")
     for _, licence in ipairs({ "rpf/LICENSE", "rpf_darkrp/LICENSE" }) do
-      if files[licence] then
-        loaded[licence] = true
-      end
+      loaded[licence] = true
     end
     assert.are.same(sorted(loaded), sorted(files))
     assert.is_nil(files["rpf/lua/rpf/platform/gmod/dev.lua"], "its presence alone turns the smoke test's commands on")
@@ -479,9 +487,7 @@ describe("the addon kit", function()
     end
     local files = shipped("kit")
     for _, folder in ipairs(licensed) do
-      if files[folder .. "LICENSE"] then
-        expected[folder .. "LICENSE"] = true
-      end
+      expected[folder .. "LICENSE"] = true
     end
     assert.are.same(sorted(expected), sorted(files))
   end)

@@ -1,6 +1,7 @@
 {
   "name": "rpf-ws",
   "private": true,
+  "license": "MIT",
   "description": "The FiveM websocket shim (D2): owns the portal socket in FiveM's JS runtime and moves frames to the Lua adapter as strings.",
   "type": "module",
   "engines": {
