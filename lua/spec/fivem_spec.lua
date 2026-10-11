@@ -596,6 +596,44 @@ describe("the FiveM adapter", function()
       assert.are.same({ "nil", "nil" }, replies)
     end)
 
+    it("registers the link command for every player, and runs it with FiveM's source (F9, #198)", function()
+      local driver, record = started_server()
+      assert.is_false(driver.restricted.rpflink, "not behind an ace permission")
+      local welcome = support.portal_frame("welcome", {
+        re = frames(record, "hello")[1].id,
+        protocol = rpf.protocol.VERSION,
+        server_id = "00000000-0000-4000-8000-0000000000bb",
+      })
+      driver.socket_message(record.connects[1].id, assert(rpf.protocol.encode(rpf.protocol.PORTAL_TO_SERVER, welcome)))
+      driver.add_player(7, "Sam", { "license:0123" })
+      driver.connect_player(7)
+      rpf.players.authenticating(7)
+      rpf.players.register(7, { player_id = "00000000-0000-4000-8000-000000000007", username = "sam" })
+
+      assert.is_true(driver.run_command(7, "rpflink", { "7K3Q-X9ZP" }))
+      assert.are.equal("7K3Q-X9ZP", frames(record, "link_player")[1].link_code)
+      assert.is_false(driver.run_command(7, "nosuchcommand", {}))
+      for _, line in ipairs(record.logs) do
+        assert.is_nil(line.message:find("7K3Q", 1, true), line.message)
+      end
+    end)
+
+    it("hands a command's words to the core as strings, and ignores the server console", function()
+      local driver, record = started_server()
+      local platform = rpf.connection.platform
+      local heard = {}
+      platform.on_command("rpftest", function(player, args)
+        heard[#heard + 1] = { player = player, args = args }
+      end)
+      platform.on_command("rpftest", function(player, args)
+        heard[#heard + 1] = { player = player, args = args, second = true }
+      end)
+      assert.is_true(driver.run_command(7, "rpftest", { "a", "b" }))
+      assert.is_true(driver.run_command(0, "rpftest", { "a" }), "FiveM runs it; the adapter drops it")
+      assert.are.same({ { player = 7, args = { "a", "b" }, second = true } }, heard)
+      assert.are.same({}, record.notes)
+    end)
+
     it("kicks, notifies and messages a player through the engine", function()
       local _, record = started_server()
       local platform = rpf.connection.platform

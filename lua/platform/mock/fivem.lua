@@ -326,6 +326,8 @@ function fivem.server(env, host, seed, convars)
   ---@field connect_player fun(player: integer) `playerJoining`, for a player `add_player` told it about.
   ---@field drop_player fun(player: integer, reason: string) `playerDropped`.
   ---@field chat fun(player: integer, message: string): boolean The `chat` resource's `chatMessage`, and whether a handler cancelled it.
+  ---@field run_command fun(player: integer, name: string, args: string[]): boolean A player runs a registered command (`/name args` in chat, or the F8 console), as FiveM hands it to the handler; false when nothing registered it. Player 0 is the server console.
+  ---@field restricted table<string, boolean> The `restricted` flag each `RegisterCommand` was given: true makes a command need an ace permission, so a player could not run it.
   ---@field bucket fun(player: integer): integer The routing bucket a player is in.
   ---@field lockdown table<integer, string> Each routing bucket's entity lockdown mode, as set.
   ---@field start fun() `onResourceStart` for this resource, which is when the adapter starts the core.
@@ -347,6 +349,7 @@ function fivem.server(env, host, seed, convars)
   local driver = {
     exported = own_exports,
     lockdown = {},
+    restricted = {},
     resources = { rpf = "started", ["rpf-ws"] = "started", ox_lib = "started" },
     metadata = { ox_lib = { version = "3.40.0" } },
   }
@@ -367,6 +370,26 @@ function fivem.server(env, host, seed, convars)
     if handler then
       env.AddEventHandler(name, handler)
     end
+  end
+
+  local registered = {}
+  env.RegisterCommand = function(name, handler, restricted)
+    registered[name] = handler
+    driver.restricted[name] = restricted
+  end
+
+  function driver.run_command(player, name, args)
+    local handler = registered[name]
+    if not handler then
+      return false
+    end
+    -- FiveM's `restricted` commands run only for a player the ace system
+    -- allows, which none of the fake players is.
+    if driver.restricted[name] and player ~= 0 then
+      return false
+    end
+    handler(player, args, name .. " " .. table.concat(args, " "))
+    return true
   end
 
   env.TriggerClientEvent = function(name, player, payload)

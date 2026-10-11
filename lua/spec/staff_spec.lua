@@ -309,6 +309,118 @@ describe("rpf.staff", function()
     end)
   end)
 
+  describe("the link command", function()
+    ---Types the command as the platform hands it over.
+    ---@param p spec.FakePlatform The platform.
+    ---@param handle any The player.
+    ---@param ... string The words after the command's name.
+    local function type_command(p, handle, ...)
+      assert(p.command_handlers[rpf.staff.COMMAND], "the core registered the command")(handle, { ... })
+    end
+
+    it("registers the one command the portal's page names", function()
+      local p = server()
+      assert.are.equal("rpflink", rpf.staff.COMMAND)
+      assert.are.same({ rpflink = true }, (function()
+        local names = {}
+        for name in pairs(p.command_handlers) do
+          names[name] = true
+        end
+        return names
+      end)())
+    end)
+
+    it("links the player who typed it, with the code as typed", function()
+      local p, notified = server()
+      login(7, PLAYER)
+      type_command(p, 7, CODE)
+      local sent = p.last()
+      assert.are.equal("link_player", sent.type)
+      assert.are.equal(PLAYER, sent.player_id)
+      assert.are.equal(CODE, sent.link_code)
+      assert.are.same({}, notified, "the answer, not the command, tells the player")
+
+      p.deliver(support.portal_frame("player_linked", { re = sent.id, staff_name = "Sam (staff)" }))
+      assert.are.same({ { player = 7, message = "Linked to the staff account Sam (staff)." } }, notified)
+      code_never_logged(p)
+    end)
+
+    it("joins a code typed in groups, which the portal reads the same", function()
+      local p = server()
+      login(7, PLAYER)
+      type_command(p, 7, "7K3Q", "X9ZP")
+      assert.are.equal("7K3QX9ZP", p.last().link_code)
+    end)
+
+    it("tells the player what to do, without sending anything, when it cannot be a code", function()
+      local p, notified = server()
+      login(7, PLAYER)
+      type_command(p, 7)
+      assert.are.same({ { player = 7, message = rpf.staff.LINK_USAGE } }, notified)
+
+      local many = {}
+      for i = 1, rpf.staff.MAX_CODE_WORDS + 1 do
+        many[i] = "AAAA"
+      end
+      assert(p.command_handlers[rpf.staff.COMMAND])(7, many)
+      type_command(p, 7, string.rep("A", rpf.staff.MAX_CODE_BYTES + 1))
+      type_command(p, 7, "\255\254")
+      for i = 2, 4 do
+        assert.are.same({ player = 7, message = rpf.staff.LINK_INVALID }, notified[i], tostring(i))
+      end
+      assert.are.equal(0, #sent_of(p, "link_player"))
+      code_never_logged(p)
+    end)
+
+    it("tells a player who has not logged in to, and does not send", function()
+      local p, notified = server()
+      rpf.players.connected(7)
+      type_command(p, 7, CODE)
+      type_command(p, 99, CODE)
+      assert.are.same({
+        { player = 7, message = rpf.staff.LINK_LOGIN_FIRST },
+        { player = 99, message = rpf.staff.LINK_LOGIN_FIRST },
+      }, notified)
+      assert.are.equal(0, #sent_of(p, "link_player"))
+    end)
+
+    it("holds a second code until the first is answered, and tells the player", function()
+      local p, notified = server()
+      login(7, PLAYER)
+      type_command(p, 7, CODE)
+      type_command(p, 7, CODE)
+      assert.are.same({ { player = 7, message = rpf.staff.LINK_BUSY } }, notified)
+      assert.are.equal(1, #sent_of(p, "link_player"))
+    end)
+
+    it("does not tell the player twice when the outbox refused it", function()
+      local p, notified = server()
+      login(7, PLAYER)
+      rpf.connection.recovery_failed = true
+      type_command(p, 7, CODE)
+      assert.are.same({ { player = 7, message = rpf.staff.LINK_UNAVAILABLE } }, notified)
+    end)
+
+    it("never repeats what was typed, in a message or a log, whatever the platform handed over", function()
+      local p, notified = server()
+      login(7, PLAYER)
+      local secret = "SECRETSECRETSECRETSECRETSECRETSECRETSECRET"
+      -- Past the annotated shape, as a platform that got it wrong would.
+      local raw = assert(p.command_handlers[rpf.staff.COMMAND]) --[[@as fun(player: any, args: any)]]
+      type_command(p, 7, secret)
+      raw(7, { "x", 5, secret })
+      raw(7, { { secret } })
+      raw(7, nil)
+      raw(7, secret)
+      for _, entry in ipairs(notified) do
+        assert.is_nil(entry.message:find(secret, 1, true))
+      end
+      for _, entry in ipairs(p.logs) do
+        assert.is_nil(entry.message:find(secret, 1, true))
+      end
+    end)
+  end)
+
   describe("recording staff actions", function()
     it("refuses without the permission, a bad action or a target not logged in, and sends nothing", function()
       local p = server()

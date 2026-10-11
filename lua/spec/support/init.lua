@@ -95,6 +95,7 @@ function support.fake_platform(opts)
   ---@field to_clients { player: any, name: string, payload: string }[] Every message sent to a client, in order.
   ---@field client_handlers table<string, fun(player: any, payload: string)> Handlers registered with `on_client`, by name.
   ---@field request_handlers table<string, fun(player: any, payload: string, respond: fun(reply: string))> Answerers registered with `on_client_request`, by name.
+  ---@field command_handlers table<string, fun(player: any, args: string[])> Handlers registered with `on_command`, by name.
   ---@field client_requests { player: any, name: string, payload: string, callback: fun(reply: string?) }[] Every request sent to a client, in order, unanswered until the test answers it.
   ---@field bookkeeping table<string, true> Sent texts `support.wire` leaves out: the declaration after a `Welcome` and the ack of its answer.
   local p = {
@@ -113,6 +114,7 @@ function support.fake_platform(opts)
     to_clients = {},
     client_handlers = {},
     request_handlers = {},
+    command_handlers = {},
     client_requests = {},
     bookkeeping = {},
   }
@@ -219,6 +221,10 @@ function support.fake_platform(opts)
 
   function p.on_client_request(name, handler)
     p.request_handlers[name] = handler
+  end
+
+  function p.on_command(name, handler)
+    p.command_handlers[name] = handler
   end
 
   function p.request_client(player, name, payload, callback)

@@ -330,9 +330,12 @@ end, { target = acme_notes.TYPE, label = "Remove the note (staff)", distance = r
 ```
 
 `rpf.staff.can(player.handle, "addon.acme_notes.moderate")` asks the same
-in your own code. RPF has no built-in command yet for entering the link
-code a staff member gets on their in-game account page (#198). Until it
-does, your server offers one that calls `rpf.staff.link(handle, code)`.
+in your own code. A staff member gets their link code on the portal's
+in-game account page and enters it with the command RPF registers itself,
+`/rpflink <code>` in chat or `rpflink <code>` in the console, so your addon
+needs nothing for it. If you want your own command, call
+`rpf.staff.link(handle, code)` from it: the code is a credential, so never
+log it or echo it back to the player.
 
 ### 7. Inspect and edit in the portal
 

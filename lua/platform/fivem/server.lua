@@ -166,6 +166,32 @@ function server.platform(shim, transport)
     end)
   end
 
+  -- A command a player runs (`/rpflink code` in chat, or the F8 console).
+  -- `restricted` is false: FiveM otherwise wants an ace permission for the
+  -- command, and these are for every player (the handler checks who they
+  -- are). The `chat` resource runs a registered command without broadcasting
+  -- the line, and nothing here logs the words. `source` 0 is the server
+  -- console or RCON, which has no player to act for.
+  local commands = {}
+  function p.on_command(name, handler)
+    local known = commands[name] ~= nil
+    commands[name] = handler
+    if known then
+      return
+    end
+    RegisterCommand(name, function(source, args)
+      local player = tonumber(source)
+      if not player or player <= 0 then
+        return
+      end
+      local words = {}
+      for i, word in ipairs(args or {}) do
+        words[i] = tostring(word)
+      end
+      commands[name](player, words)
+    end, false)
+  end
+
   -- A client's requests ride ox_lib's `lib.callback` (`ox.lua`); the
   -- server's to a client are its own numbered events (`server.ask`).
   p.on_client_request = fivem.ox.on_client_request

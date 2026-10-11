@@ -90,6 +90,11 @@ host, and `set rpf_debug "true"` for the core's debug lines. Other
 resources reach the framework as `exports.rpf:api()`
 ([the FiveM adapter](../lua/platform/fivem/README.md)).
 
+Staff link their player account to their portal account with the code
+from the portal's in-game account page, typed as `/rpflink <code>` in chat
+or `rpflink <code>` in the F8 console. It is registered for every player
+(it needs no ace permission), and nothing logs the code.
+
 Players open a menu of what they can interact with near them with **E**
 (`rpf_interact`, which each player can rebind in FiveM's key settings).
 Change the default with `setr rpf_interact_key "G"`: `setr`, because each
@@ -178,6 +183,11 @@ gap is qbx_core's to do.
 Players open a menu of what they can interact with near them with the
 console command `rpf_interact`, which they bind to a key themselves
 (`bind f rpf_interact`): Garry's Mod's E is already `+use`.
+
+Staff link their player account to their portal account with the code
+from the portal's in-game account page, typed as `rpflink <code>` in the
+console or `/rpflink <code>` in chat. The console is the safer way where
+other addons log chat: their hooks may see a chat line before RPF drops it.
 
 Players need nothing installed: the server sends their client the
 framework's Lua when they join. Optional: `rpf_portal_url

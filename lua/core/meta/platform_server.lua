@@ -126,6 +126,23 @@ function ToClients.on_client_request(name, handler) end
 ---@param callback fun(reply: string?) Called at most once, with the client's answer, or nil if the platform knows none will come. Never inside the call.
 function ToClients.request_client(player, name, payload, callback) end
 
+---Commands a player runs on this server.
+---@class rpf.platform.Commands
+local Commands = {}
+
+---Registers a command players run, by typing its name in chat (`/rpflink
+---code`) or in the console, as the engine offers (F9, #198). The platform
+---calls `handler` once per run, for a connected player and never for the
+---server console or RCON, since the handlers act for a player. `args` are
+---the words after the name, as the engine split them, and are hostile
+---input, often a credential: **the platform never logs them, never
+---repeats them to anyone, and keeps the line out of the chat other players
+---see.** Registering a name again replaces its handler. The handler
+---answers through `notify`.
+---@param name string The command's name without a prefix, lowercase: `[a-z][a-z0-9_]*`.
+---@param handler fun(player: rpf.PlayerHandle, args: string[]) Called for each run.
+function Commands.on_command(name, handler) end
+
 ---What the engine can do with the game world for addons (J3), each a
 ---function, or `false` where this adapter does not support it: the core
 ---never branches on the engine, so an engine difference is one of these.
@@ -151,4 +168,4 @@ function ToClients.request_client(player, name, payload, callback) end
 
 ---Everything the game-server half of the core needs from its engine.
 ---`rpf.start_server` refuses a table missing any of it.
----@class rpf.ServerPlatform: rpf.platform.Engine, rpf.platform.Transport, rpf.platform.Http, rpf.platform.Clock, rpf.platform.Storage, rpf.platform.Random, rpf.platform.Thread, rpf.platform.World, rpf.platform.Players, rpf.platform.ToClients, rpf.platform.Log, rpf.platform.Api
+---@class rpf.ServerPlatform: rpf.platform.Engine, rpf.platform.Transport, rpf.platform.Http, rpf.platform.Clock, rpf.platform.Storage, rpf.platform.Random, rpf.platform.Thread, rpf.platform.World, rpf.platform.Players, rpf.platform.ToClients, rpf.platform.Commands, rpf.platform.Log, rpf.platform.Api

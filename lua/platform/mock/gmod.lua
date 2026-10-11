@@ -80,6 +80,8 @@ local gmod = {}
 ---@field connect_player fun(id: any, nick: string, steamid64: string?) `World:connect_player`.
 ---@field disconnect_player fun(id: any) `World:disconnect_player`.
 ---@field from_client fun(id: any, name: string, payload: string) `World:from_client`.
+---@field run_command fun(id: any, name: string, args: string[]?) `World:player_command`.
+---@field say fun(id: any, text: string): string? `World:say`.
 ---@field from_server fun(name: string, payload: string) `World:from_server`.
 
 ---The installed fake, and how a harness drives it.
@@ -96,6 +98,7 @@ local gmod = {}
 ---@field partial table<string, string[]> Parts of a payload being joined, by player and name.
 ---@field convars table<string, table> Convars, by name.
 ---@field commands table<string, function> Console commands, by name.
+---@field command_flags table<string, (integer|integer[])?> The `FCVAR_` flags each console command was added with.
 ---@field console string[] Every `RunConsoleCommand`, as `name value…`.
 ---@field panels rpf.mock.GmodPanel[] Every Derma panel made, in order.
 ---@field notices { text: string, kind: integer, seconds: number }[] Every `notification.AddLegacy`, in order.
@@ -398,6 +401,32 @@ function World:command(name, args)
   end
 end
 
+---Has a player run a console command, as the client's console would: the
+---engine splits what was typed into words, and the command sees the player.
+---@param id any The harness's number for the player.
+---@param name string The command.
+---@param args string[]? The words after its name.
+function World:player_command(id, name, args)
+  local fn = self.commands[name]
+  local ply = self.players[id]
+  if fn and ply then
+    fn(ply, name, args or {}, table.concat(args or {}, " "))
+  end
+end
+
+---Has a player say a line in chat, as the engine does: `PlayerSay` decides
+---what is said.
+---@param id any The harness's number for the player.
+---@param text string The line.
+---@return string? said What `PlayerSay` answered: the text to say instead (`""` drops it), or nil to say it as typed.
+function World:say(id, text)
+  local ply = self.players[id]
+  if not ply then
+    return nil
+  end
+  return (self:run_hook("PlayerSay", ply, text, false))
+end
+
 ---Puts back every global the fake replaced, and the real `os.time`.
 function World:uninstall()
   for _, name in ipairs(GLOBALS) do
@@ -448,6 +477,7 @@ function gmod.install(side, host, options)
     partial = {},
     convars = {},
     commands = {},
+    command_flags = {},
     console = {},
     panels = {},
     restore = {},
@@ -579,8 +609,9 @@ function gmod.install(side, host, options)
     world.console[#world.console + 1] = table.concat({ name, ... }, " ")
   end
   _G.concommand = {
-    Add = function(name, fn)
+    Add = function(name, fn, _, _, flags)
       world.commands[name] = fn
+      world.command_flags[name] = flags
     end,
   }
 
@@ -723,6 +754,9 @@ function gmod.install(side, host, options)
   end
   function Player:Nick()
     return self.nick
+  end
+  function Player:IsPlayer()
+    return true
   end
   function Player:IsBot()
     return false
@@ -1010,6 +1044,12 @@ function gmod.install(side, host, options)
     end,
     from_client = function(id, name, payload)
       world:from_client(id, name, payload)
+    end,
+    run_command = function(id, name, args)
+      world:player_command(id, name, args)
+    end,
+    say = function(id, text)
+      return world:say(id, text)
     end,
     from_server = function(name, payload)
       world:from_server(name, payload)

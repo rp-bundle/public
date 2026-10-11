@@ -30,6 +30,14 @@ socket.
 
 ### Added
 
+- A built-in command to enter a staff link code in game (F9 follow-up,
+  #198): `/rpflink <code>` in chat or `rpflink <code>` in the console, on
+  FiveM and Garry's Mod. The platform gains a required member,
+  `on_command(name, handler)`, which both adapters implement (FiveM's
+  `RegisterCommand`; Gmod's `concommand.Add` and a `PlayerSay` line that is
+  run and dropped); an adapter outside this repository must add it. The
+  words typed are never logged or repeated. The portal's in-game account page
+  names the command.
 - The Lua framework is licensed MIT (H4 follow-up, #190). `lua/LICENSE`
   covers everything a game server runs: the core, both adapters, the `rpf-ws`
   shim, the NUI pages, the bridges and the examples, and every FiveM
