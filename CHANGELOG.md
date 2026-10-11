@@ -21,7 +21,9 @@ adds the `restarting` notice (below), a character's job (D7), in-game
 staff (F9: `link_player`, `staff_action`, `player_linked` and
 `staff_permissions`), the `suspended` reject code (H5) and in-game config
 editing (E6: `config_changed`, `config_change_applied` and
-`config_change_discarded`), the `domain_external` reject code (K1), an
+`config_change_discarded`), the `domain_external` reject code (K1), the
+`referenced` reject code (a held addon record's deletion that another
+record refers to), an
 item's `image` hash in the config snapshot (P3), and the profile (K1) in
 `hello` (optional: a core that leaves it out runs native) and `welcome`,
 and the `report_unknown_ops` notice (#274). A

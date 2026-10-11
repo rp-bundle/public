@@ -8,5 +8,6 @@
   "expired",
   "rate_limited",
   "suspended",
-  "domain_external"
+  "domain_external",
+  "referenced"
 ]

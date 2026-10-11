@@ -1116,7 +1116,13 @@ Events, reserved, each an `rpf.data.Change` (`{ type, id, record, by,
 reason }`): `records.created`, `records.changed` and `records.deleted` after
 an addon's write, a staff edit (`rpf.edits`, `by = "staff"`), or a deletion
 the portal refused, which puts the record back (`records.changed`, `by =
-"portal"`, `reason = "referenced"`).
+"portal"`). Its `reason` is the portal's refusal code as sent: `referenced`
+when another record refers to it, but a frame is applied all or nothing, so
+also whatever refused the frame it was in (`malformed` for another record's
+change failing its checks, `forbidden`, `not_found`, …). A frame that
+deleted several records and was refused `referenced` cannot say which was
+referenced, so each comes back as `refused`. `detail` is the portal's own
+words, for the log; an addon branches on `reason`.
 
 ### Hold policies (`rpf.holding`, J6)
 

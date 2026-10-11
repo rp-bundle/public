@@ -862,6 +862,7 @@ local REJECT_CODES = {
   "rate_limited",
   "suspended",
   "domain_external",
+  "referenced",
 }
 
 -- Messages ----------------------------------------------------------------

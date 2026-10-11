@@ -638,8 +638,13 @@ The portal has your changes within about a second, and keeps them if the
 game server goes down afterwards; if the portal is unreachable they wait,
 on disk, until it is back. Every change to a held record is announced:
 `records.created`, `records.changed` and `records.deleted`, with `by` saying
-who (`addon`, `staff`, or `portal` when it refused a deletion because
-another record refers to the one you deleted, which puts it back).
+who (`addon`, `staff`, or `portal` when it refused a deletion, which puts
+the record back). A refusal's `reason` is the portal's own code, to branch
+on: `referenced` when another record refers to the one you deleted, or what
+refused the report it was in (`malformed` when another record's change in
+it was not valid, for one), and `refused` when you deleted several records
+at once and the portal says one of them is referenced without saying which.
+`detail` is the portal's sentence, for your log; don't show it to players.
 
 ### Records that keep time
 

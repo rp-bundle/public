@@ -108,9 +108,10 @@ end
 ---@param p spec.FakePlatform The platform.
 ---@param frame rpf.Frame The report.
 ---@param tag string? The answer, `state_applied` by default.
-local function answer(p, frame, tag)
+---@param code string? For `rejected`, its code, `malformed` by default.
+local function answer(p, frame, tag, code)
   if tag == "rejected" then
-    p.deliver(support.portal_frame("rejected", { re = frame.id, code = "malformed", reason = "no" }))
+    p.deliver(support.portal_frame("rejected", { re = frame.id, code = code or "malformed", reason = "no" }))
   elseif tag == "resync_required" then
     p.deliver(support.portal_frame("resync_required", { re = frame.id, stale = {}, released = {} }))
   else
@@ -306,11 +307,63 @@ describe("live addon records", function()
     rpf.events.on("records.changed", function(change)
       back = change
     end)
-    answer(p, deletion, "rejected")
+    answer(p, deletion, "rejected", "referenced")
     assert.is_true(rpf.records.is_held("addon_record", FIELD))
     assert.is_nil(rpf.records.entries["addon_record:" .. FIELD].deleted)
     back = assert(back)
-    assert.are.same({ "portal", "referenced", 7 }, { back.by, back.reason, assert(back.record).fields.water })
+    assert.are.same({ "portal", "referenced", "no", 7 }, { back.by, back.reason, back.detail, assert(back.record).fields.water })
+  end)
+
+  it("announce a deletion refused for another record's sake with the portal's code, not as referenced", function()
+    local p = farmed()
+    assert(rpf.records.delete_addon_record(FIELD))
+    p.advance(FLUSH)
+    local deletion = last_of(p, "state_changed")
+    ---@type rpf.data.Change[]
+    local back = {}
+    rpf.events.on("records.changed", function(change)
+      back[#back + 1] = change
+    end)
+    -- The portal applies a frame all or nothing: it refused this one as
+    -- `malformed`, which is what a change to another record failing its
+    -- checks is, and says nothing of the deletion.
+    answer(p, deletion, "rejected", "malformed")
+    assert.are.equal(1, #back)
+    assert.are.same({ "portal", "malformed", "no" }, { back[1].by, back[1].reason, back[1].detail })
+    assert.is_true(rpf.records.is_held("addon_record", FIELD), "the record is back all the same")
+  end)
+
+  it("announce each of several deletions a frame was refused `referenced` for as only refused", function()
+    local p = farmed()
+    local OTHER = "0000000e-0000-4000-8000-00000000000e"
+    rpf.sync.hold({ records = { { kind = "addon_record", id = OTHER } } })
+    p.deliver(support.portal_frame("held", {
+      re = last_of(p, "hold").id,
+      records = {
+        {
+          kind = "addon_record",
+          revision = 1,
+          record = {
+            id = OTHER,
+            type = "acme_farm.field",
+            owner = { kind = "player", id = PLAYER },
+            fields = rpf.json.object({ label = "South", water = 20 }),
+          },
+        },
+      },
+    }))
+    assert(rpf.records.delete_addon_record(FIELD))
+    assert(rpf.records.delete_addon_record(OTHER))
+    p.advance(FLUSH)
+    local deletion = last_of(p, "state_changed")
+    assert.are.equal(2, #deletion.changes)
+    local reasons = {}
+    rpf.events.on("records.changed", function(change)
+      reasons[change.id] = change.reason
+    end)
+    -- One of the two is referenced, and the portal does not say which.
+    answer(p, deletion, "rejected", "referenced")
+    assert.are.same({ [FIELD] = "refused", [OTHER] = "refused" }, reasons)
   end)
 
   it("send a deletion again on the portal's revision when its frame is stale", function()

@@ -38,7 +38,7 @@
 ---`records.deleted`, each with an `rpf.data.Change`, after any write to a
 ---live addon record here: an addon's, a staff edit's (`by = "staff"`), and a
 ---deletion the portal refused, which puts the record back (`records.changed`
----with `by = "portal"`).
+---with `by = "portal"`, and the portal's `reason`).
 ---@class rpf.data
 ---@field OPS table<string, true> The comparisons a query's `where` may use.
 local data = {}
@@ -56,7 +56,8 @@ data.OPS = { eq = true, lt = true, lte = true, gt = true, gte = true, prefix = t
 ---@field id string The record's id.
 ---@field record table? The record now, as `get` gives it; nil for a deletion.
 ---@field by "addon"|"staff"|"portal" Who changed it.
----@field reason string? For a deletion the portal refused, why.
+---@field reason string? For a deletion the portal refused, the portal's refusal code: `referenced` when another record refers to it, or what refused the frame it was in (`malformed`, `forbidden`, `not_found`, …), as the portal sent it. `refused` when the frame deleted several records and one was referenced, so which is not known.
+---@field detail string? For a deletion the portal refused, the portal's own words, for the log; branch on `reason`.
 
 ---A copy a script can hold: no JSON marks, no `json.null` (a field with no
 ---value is absent), nothing shared with the core.
