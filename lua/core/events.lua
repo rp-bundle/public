@@ -27,7 +27,8 @@ local rpf = rpf
 ---@param t any[] The values.
 ---@param n integer How many there are, counting nils.
 ---@param i integer? Where to start, 1 by default.
----@return any ... The values.
+---@return any first The value at `i`, if there is one.
+---@return any ... The rest.
 local function spread(t, n, i)
   i = i or 1
   if i > n then
