@@ -8,15 +8,56 @@ restarts, the portal's pages for staff, permissions, the audit log, money
 and items, and the rules that keep a game server's data consistent with the
 portal's.
 
-This page is the guide. The decisions behind it are in
-[Addons](architecture/addons.md); the complete, typed reference is the
+This page is the guide. It starts with what RPF provides and what it
+leaves to you, then walks through building an addon end to end, then
+covers each part in turn. The decisions behind it are in
+[Addons](architecture/addons.md). The complete, typed reference is the
 [Lua API reference](luadoc/docs/index.md), generated from
 [`lua/core/meta/api.lua`](../lua/core/meta/api.lua), which your editor reads
-for completion (below). The worked example,
-[`lua/examples/acme_tags/`](../lua/examples/acme_tags/), is a small addon
-you can run: players spray tags on walls, which fade after a day. The
-commerce example, [`lua/examples/acme_shop/`](../lua/examples/acme_shop/),
-is a counter that sells items and buys them back (Selling, below).
+for completion (below). The example addons are in every release's addon
+kit, ready to install, and none is installed for you (below).
+
+## What RPF provides, and what it leaves to you
+
+RPF is a framework for building an RP server, not a server that comes
+ready to play. A fresh install has player accounts, characters, money,
+items and the staff portal. It has no shop, NPC, property, persistent prop,
+vehicle or job of its own. Nothing on that second list has to be installed
+on any server: you build what yours needs as addons, or take an example.
+
+**Built in, on a server in the native profile** (RPF owns every domain):
+
+| Service | What it does | How an addon reaches it |
+|---|---|---|
+| Player accounts and login | A player's account in your community, its password, the login screen, bans, kicks and warnings | Through `rpf.players` and the `players.*` events; never the password |
+| Characters | The character screen, a player's characters (as many as staff allow), the one in play | `rpf.characters.current(player)` |
+| Money | Accounts per character (`wallet` and `bank` unless staff set other starting accounts), every move a ledger entry staff can read | `rpf.money`, with op ids; `rpf.commerce.exchange` with items |
+| Items | The item catalog staff keep in the portal, and each character's containers | `rpf.inventory`, `rpf.commerce.exchange` |
+| Jobs | Employers, departments, jobs and ranks staff configure. A new character starts in the server's default job if staff set one, and in none otherwise | `rpf.jobs.current(player)` |
+| Staff | The portal, its roles and permissions, the audit log, and in-game staff for players linked to a staff account | `rpf.staff.can(handle, permission)`; the `permission` rule on an interaction |
+| Addon storage | Your types' records, kept across restarts, held and replicated, shown and edited on generic portal pages, audited | `rpf.records` |
+| The world | Positions and routing buckets, and placing your types' peds and objects | `rpf.world`, a type's `world` |
+| Interactions and UI | The interaction menu (**E** on FiveM, `rpf_interact` on Gmod), ox_target and qb-target where present, notifications, menus, input dialogs and progress bars | `rpf.interactions`, `rpf.ui` |
+
+On a server in the **companion** profile, beside Qbox or DarkRP, that
+framework keeps characters, money, items and jobs. The same `rpf.characters`,
+`rpf.money`, `rpf.inventory` and `rpf.jobs` calls reach it through its
+bridge, and `supports(call)` says what it offers ([Installing](installing.md#beside-qbox)).
+
+**What the examples supply.** They ship in each release's addon kit
+(`rpf-addon-kit-<version>.zip`), and none is installed or ensured for you.
+You copy one in, ensure it, and staff install the manifest it proposes,
+exactly as for an addon of your own. None creates records when it starts
+or ships coordinates: staff place what needs placing in the portal, and
+players make the rest in play.
+
+| Example | The gameplay it adds | What it does not |
+|---|---|---|
+| [`acme_notes`](../lua/examples/acme_notes/) | Notes players pin where they stand, which anyone nearby reads and which their author or staff take down. The walkthrough below builds it | Anything else: it is the smallest addon that uses every step |
+| [`acme_tags`](../lua/examples/acme_tags/) | Tags players spray, which fade after a day; players list and scrub their own | No placed entity: a tag is a position and text |
+| [`acme_garden`](../lua/examples/acme_garden/) | Plants placed in the world, which grow while the server runs, need watering, and are harvested or wither | A harvest pays nothing: an addon that paid out an item would use an exchange |
+| [`acme_shop`](../lua/examples/acme_shop/) | Shopkeepers staff place, listings staff price, limited stock, sales and buy-backs as exchanges | No stock of its own until staff create it; no counter until staff place one |
+
 
 ## Getting the API
 
@@ -25,9 +66,9 @@ is a counter that sells items and buys them back (Selling, below).
 | FiveM | `local rpf = exports.rpf:api()`, in a resource that lists `dependency "rpf"` |
 | Garry's Mod | The global `rpf`, once the RPF addon has loaded: read it in a hook such as `Initialize`, since Gmod loads addons' autorun files in name order |
 
-For completion and type checking, add RPF's `lua/core/meta/` to your
-language server's `workspace.library`, and annotate the table:
-`---@type rpf.Api`.
+For completion and type checking, add the addon kit's `meta/` (RPF's
+`lua/core/meta/`) to your language server's `workspace.library`, and
+annotate the table: `---@type rpf.Api`.
 
 Nothing in `rpf.api` throws. A call that cannot do what you asked returns
 `nil` (or `false`) and a reason, a short string such as `"invalid"`, which
@@ -40,6 +81,381 @@ if not tag then
   print("no tag: " .. err) -- for `invalid`, `rule` says which rule, e.g. { error = "too_long", field = "text" }
 end
 ```
+
+## Walkthrough: a new type, end to end
+
+This takes you from an empty folder to an addon players use and staff
+moderate in the portal, without changing RPF: `acme_notes`, notes players
+pin where they stand. Each step adds part of its files, and
+[`lua/examples/acme_notes/`](../lua/examples/acme_notes/) (in the addon kit
+as `fivem/[rpf-examples]/acme_notes` and `gmod/acme_notes`) holds the
+finished ones, so you can compare as you go. The sections after the
+walkthrough are the reference for each call it uses.
+
+### 0. Before you start
+
+- A development server connected to the portal ([Installing](installing.md)),
+  and your own community on the portal, where you hold every permission.
+- On the server's **Settings** page, turn on `addons.auto_install`, so the
+  server installs your manifest each time you change it. Leave it off on a
+  server players use: there, staff review each proposal. It never installs
+  a breaking change, which always needs a person.
+- From the release, `rpf-addon-kit-<version>.zip`. Its `meta/` goes in your
+  language server's `workspace.library`, for completion and type checks.
+
+### 1. A folder per engine
+
+The addon's own code is three engine-neutral files: `manifest.lua`,
+`server.lua` and `client.lua`. Each adds to one global table named after
+the addon. Around them, each engine needs a small entry point that gets
+`rpf` and starts the server half.
+
+On FiveM, a resource. `fxmanifest.lua`:
+
+```lua
+fx_version("cerulean")
+game("gta5")
+lua54("yes")
+dependency("rpf")
+shared_script("manifest.lua")
+server_scripts({ "server.lua", "fivem/server.lua" })
+client_scripts({ "client.lua", "fivem/client.lua" })
+```
+
+and `fivem/server.lua`:
+
+```lua
+local rpf = exports.rpf:api() ---@type rpf.Api
+assert(acme_notes.start_server(rpf))
+```
+
+On Garry's Mod, an addon: the three files under `lua/acme_notes/`, and an
+autorun file, `lua/autorun/acme_notes.lua`, that includes them on each
+side and starts the server half at `Initialize`, when `rpf` is there
+([`gmod/autorun.lua`](../lua/examples/acme_notes/gmod/autorun.lua)).
+
+### 2. Declare the type
+
+`manifest.lua` declares what the addon stores. Start at release 1.0.0,
+schema 1:
+
+```lua
+acme_notes = acme_notes or {}
+acme_notes.TYPE = "acme_notes.note"
+acme_notes.MANIFEST = {
+  namespace = "acme_notes",
+  version = "1.0.0",
+  api = 1,
+  title = "Notes",
+  permissions = { moderate = "Edit and take down any note" },
+  types = {
+    note = {
+      schema = 1,
+      authority = "live",
+      owners = { "player" },
+      hold = "server",
+      title = "Note",
+      fields = {
+        text = { type = "string", max_len = 120, required = true },
+        spot = { type = "vector3", required = true, read_only = true },
+        bucket = { type = "integer", min = 0, max = 65535, default = 0, read_only = true },
+        model = { type = "json", max_bytes = 256, engine = true, hidden = true,
+                  default = { fivem = "prop_notepad_01", gmod = "models/props_c17/paper01.mdl" } },
+        pinned_at = { type = "timestamp", required = true, read_only = true, index = true },
+      },
+      list = { "text", "pinned_at" },
+      actions = { create = false, edit = "moderate", delete = "moderate" },
+      limit = 1000,
+      world = { kind = "object", position = "spot", bucket = "bucket", model = "model" },
+    },
+  },
+}
+```
+
+Each choice, and why:
+
+- **`authority = "live"`**: notes are game state the server writes. A type
+  staff write (prices, NPCs they place) is `"config"`.
+- **`owners = { "player" }`**: each note belongs to the player who pinned
+  it, whichever character they were playing.
+- **`hold = "server"`**: the server holds every note while it runs, so every
+  note is placed and readable whether or not its author is on.
+- **`read_only`** fields have no input on the portal's form: where a note is
+  and when it was pinned are the game's to say. `hidden` keeps the model off
+  the portal's pages altogether.
+- **`engine = true`** lets one field hold a value per engine: the same note
+  record is a notepad on FiveM and a sheet of paper on Gmod (step 9).
+- **`world`** has RPF place each note as an object, in its routing bucket,
+  while the server holds it, and remove it when it goes.
+- **`permissions`** declares `moderate`, which becomes
+  `addon.acme_notes.moderate`; **`actions`** gives staff with it the edit
+  and delete forms. With `create = false` nobody makes notes in the portal.
+  Every installed addon also has `addon.acme_notes.view`, which `view`
+  takes unless you name another.
+- **`limit`** caps the records a server keeps of the type, so no player can
+  fill the database.
+
+### 3. Register, and install the proposal
+
+`server.lua` registers the manifest, and sets everything else up in
+`start`:
+
+```lua
+function acme_notes.start_server(rpf)
+  return rpf.addons.register(acme_notes.MANIFEST, {
+    start = function()
+      -- step 5 registers the interactions here
+    end,
+  })
+end
+```
+
+Start the server (`ensure acme_notes` on FiveM, after `ensure rpf`). The
+game server proposes the manifest to the portal. On the server's
+**Addons** page the proposal shows what installing it does: one type, its
+fields, and one new permission. A manifest the portal refuses shows the
+rule it breaks, and the console has the same line. With `auto_install` on
+it is installed already; otherwise press **Install**. `start` runs once the
+portal has exactly this manifest installed, and `rpf.addons.state("acme_notes")`
+says `active`. If it says something else, its second value says why
+([Registering](#registering-installing-running)).
+
+### 4. Make records, and query them
+
+A player's client asks for a note, and the server makes it. `pin` checks
+the payload, which is whatever the client sent, then counts the player's
+notes and makes one where the server says the player stands:
+
+```lua
+function acme_notes.pin(rpf, player, payload)
+  if type(payload.text) ~= "string" or payload.text == "" then
+    return false, "Write something on the note."
+  end
+  local mine, err = rpf.records.list(acme_notes.TYPE, { owner = { kind = "player", id = player.player_id } })
+  if not mine then
+    return false, "The board is closed now (" .. tostring(err) .. ")."
+  end
+  if #mine >= 3 then
+    return false, "Take one of your notes down first."
+  end
+  local spot, where = rpf.world.position(player.handle)
+  if not spot then
+    return false, "You cannot pin a note here (" .. tostring(where) .. ")."
+  end
+  local note, why, rule = rpf.records.create(acme_notes.TYPE, {
+    text = payload.text,
+    spot = spot,
+    bucket = rpf.world.bucket(player.handle) or 0,
+    pinned_at = rpf.time.now(),
+  }, { owner = { kind = "player", id = player.player_id } })
+  if not note then
+    if why == "invalid" and rule then
+      return false, "Not that note (" .. tostring(rule.field) .. ": " .. tostring(rule.error) .. ")."
+    end
+    return false, "It would not stick (" .. tostring(why) .. ")."
+  end
+  return true
+end
+```
+
+Nothing here validates the text's length: the type's definition does, and
+the create answers `invalid` with the rule (`{ field = "text", error =
+"too_long" }`). The portal has the note within about a second, and it shows
+on the server's data page for **Note**. `rpf.records.list` reads what this
+server holds, filtered by owner or any field (`where = { pinned_at = { gt
+= since } }`). For records it does not hold, `rpf.records.query` asks the
+portal, on indexed fields, a page at a time ([Records](#records)).
+
+### 5. Attach interactions
+
+Register the handlers in `start`, so they go when the addon stops:
+
+```lua
+start = function()
+  local reach = acme_notes.units(rpf, 2) -- two metres, in the engine's units (step 9)
+  assert(rpf.interactions.register("acme_notes.pin", function(player, payload)
+    return acme_notes.pin(rpf, player, payload)
+  end))
+  assert(rpf.interactions.register("acme_notes.read", function(player, _, target)
+    local fields = target.record.fields
+    rpf.ui.notify(player.handle, { title = "A note", text = fields.text })
+    return true, { text = fields.text }
+  end, { target = acme_notes.TYPE, label = "Read the note", distance = reach }))
+  assert(rpf.interactions.register("acme_notes.take_down", function(player, _, target)
+    return acme_notes.take_down(rpf, player, target.record, false)
+  end, { target = acme_notes.TYPE, label = "Take your note down", distance = reach }))
+end,
+```
+
+`pin` has no target: the note goes where the player stands. `read` and
+`take_down` are **aimed** at a note. Before either handler runs, the server
+checks that the note the client named is in the player's bucket and
+within `reach`, and hands the handler the record. Players get both on the
+interaction menu (**E**, `rpf_interact`) when they stand at a note, and on
+ox_target or qb-target where the server runs one. That needs no client
+code at all. `take_down` checks that the note is the player's own. Another
+player's note is refused, and so is a note that is not there: an id from a
+client is never trusted.
+
+The client asks to pin, from a command and an `rpf.ui.input` dialog
+([`client.lua`](../lua/examples/acme_notes/client.lua)):
+
+```lua
+rpf.interactions.request("acme_notes.pin", { text = text }, function(ok, reason)
+  tell(ok and "Pinned." or tostring(reason))
+end)
+```
+
+`fivem/client.lua` binds it to `/note`, and the Gmod autorun file to the
+`note` console command. In game: `/note meet here`, then **E** at the note.
+
+### 6. Grant the permission
+
+On the community's **Roles** page, give a role `addon.acme_notes.moderate`
+on this server (or guild-wide), and give the role to a staff member.
+Addon flags are granted, inherited and checked exactly as RPF's own.
+Staff who hold it see the edit and delete forms on a note's page, and
+staff who hold only `addon.acme_notes.view` see the notes and nothing
+more.
+
+The same flag works in game, for a player whose account is linked to a
+staff account (Staff links, in the portal). An interaction's `permission`
+rule offers it only to them:
+
+```lua
+assert(rpf.interactions.register("acme_notes.remove", function(player, _, target)
+  return acme_notes.take_down(rpf, player, target.record, true)
+end, { target = acme_notes.TYPE, label = "Remove the note (staff)", distance = reach, permission = "moderate" }))
+```
+
+`rpf.staff.can(player.handle, "addon.acme_notes.moderate")` asks the same
+in your own code. RPF has no built-in command yet for entering the link
+code a staff member gets on their in-game account page (#198). Until it
+does, your server offers one that calls `rpf.staff.link(handle, code)`.
+
+### 7. Inspect and edit in the portal
+
+The **Note** data page lists every note with the `list` columns, filters
+on the indexed `pinned_at` and the owner, and links each note's page:
+every field not `hidden`, its owner, revision, and which server holds it.
+A staff member with `moderate` edits the text there. While the server
+holds the note, the edit goes to it as a command. The server applies it
+and reports back, and your code hears `records.changed` with `by =
+"staff"`. While the server is down holding it, the edit is refused rather
+than queued. Every staff write is in the audit log under their name.
+
+### 8. Change the schema
+
+Release 1.1.0 lets players choose a colour. Add the field with a default,
+and move the type's `schema` and the addon's `version`:
+
+```lua
+version = "1.1.0",
+-- …
+note = {
+  schema = 2,
+  fields = {
+    -- …
+    colour = { type = "enum", values = { "white", "yellow", "pink" }, default = "white" },
+  },
+  list = { "text", "colour", "pinned_at" },
+},
+```
+
+`pin` passes `colour = payload.colour` to the create, so the definition
+refuses a colour it lacks. Move `version` in `fxmanifest.lua` too, then
+restart the resource (a Lua refresh on Gmod). The server proposes 1.1.0,
+the Addons page shows it as an upgrade adding one field, and installing it
+keeps every note. Nothing is rewritten: a note pinned under 1.0.0 reads
+`colour = "white"` until something writes it, which stores it at schema 2.
+
+That works because the change is **compatible**: a field that is optional,
+nullable or defaulted, a wider bound, a new enum value. A **breaking**
+change to a type with records (removing or retyping a field, a new
+required field with no default, a narrower bound) is refused at install,
+with the first breaking change named. Make it a new type instead
+(`acme_notes.note2`), and move the records over in your own code with
+`list`, `create` and `delete`, a batch at a time. Installing an older
+release never lowers a schema, so rolling back loses nothing
+([Addons, "Versions and schema evolution"](architecture/addons.md#versions-and-schema-evolution)).
+
+### 9. Retries
+
+Every request crosses a network, and an answer can be lost. Write each
+handler so that a second attempt does no harm:
+
+- **An interaction the client sends again** after `timeout` reaches your
+  handler again. Make repeating it harmless: `take_down` answers a note
+  that is already gone as done, so pressing again is not an error.
+- **A write over a change you did not see.** `delete` (and `update`) with
+  `{ revision = note.revision }` is refused `stale` if the note changed
+  since you read it: staff edited it in the portal, say. `take_down` then
+  reads the note again, checks again that the player may take it down, and
+  tries once more:
+
+  ```lua
+  function acme_notes.take_down(rpf, player, note, anyone)
+    for _ = 1, 2 do
+      if not anyone and not owns(player, note) then
+        return false, "That note is not yours."
+      end
+      local done, why = rpf.records.delete(acme_notes.TYPE, note.id, { revision = note.revision })
+      if done then
+        return true
+      end
+      if why ~= "stale" then
+        return false, "It would not come off (" .. tostring(why) .. ")."
+      end
+      local now = rpf.records.get(acme_notes.TYPE, note.id)
+      if not now then
+        return true -- gone already
+      end
+      note = now
+    end
+    return false, "Someone is changing it; try again."
+  end
+  ```
+
+- **A create** happens on the game server and answers at once: it made the
+  record or it did not, and the portal gets it with the next report, which
+  RPF resends until the portal has it. If you mint the record's `id`
+  yourself (`opts.id`, to name it somewhere first), a second create with
+  that id answers `conflict` when the first one made it. Read it with
+  `get` then, rather than making another.
+- **Money and items** move with an op id minted once per purchase and kept
+  with it. Sending again with the same id never moves anything twice
+  ([Money and items](#money-and-items)).
+
+### 10. Engine-specific metadata
+
+The record is the same on both engines, but some values in it are not:
+
+- **Models.** A field with `engine = true` holds one value per engine,
+  `{ fivem = "prop_notepad_01", gmod = "models/props_c17/paper01.mdl" }`,
+  and RPF places the one for the engine it runs on. Staff can change both
+  in the portal.
+- **Distances.** Positions and distances are in the engine's units:
+  metres on FiveM, about 39 to the metre on Gmod. Only an addon may tell
+  the engines apart (`rpf.engine`), so `acme_notes.units` keeps its own
+  table, and an interaction's `distance` is given in those units.
+- **What the engine can do.** `rpf.capabilities()` says which world and UI
+  calls this engine supports. Ask before offering something that needs
+  one: a call to one it lacks says `unsupported`.
+- **Routing buckets.** A note stores the bucket it was pinned in, and RPF
+  places it, and lets players reach it, only in that bucket.
+
+### 11. Ship it
+
+An addon is its files: a zip of the resource folder, or of the Gmod
+addon. Nothing in it should name a portal, an API key, a community or a
+place on a particular map. The server's owner sets the key in their
+`server.cfg`, and staff place whatever needs a place in the portal.
+Whoever installs your addon copies the folder in, ensures it, and their
+staff review the manifest it proposes, as on your server.
+
+What a test without a game client cannot show, and what to try in game:
+the interaction menu at a note, ox_target on the placed object, the
+notification with its text, and the dialog `/note` opens.
 
 ## The manifest
 
@@ -202,7 +618,7 @@ a plain copy: a field with no value is absent.
 | `list(type, { where, owner, order, descending, limit })` | Records here: every config record, or every held live one, filtered (`where = { fades_at = { lt = now } }`, `eq`, `lt`, `lte`, `gt`, `gte`, `prefix`) on any field |
 | `query(type, query, callback)` | A page of a live type's records from the portal (indexed fields only; `limit` up to 100, `after` the `next` the last page came with), each with `held` |
 | `hold(type, ids, callback)`, `release(type, ids)` | Take and give back up to 64 records |
-| `create(type, fields, { owner, id })` | A new live record, held from the start. Mint the `id` yourself if you may retry |
+| `create(type, fields, { owner, id })` | A new live record, held from the start. With an `id` you minted, a second create answers `conflict` once the first made it (Retries, in the walkthrough) |
 | `update(type, id, patch, { revision, clear })` | Change the fields the patch names; `clear` lists nullable fields to clear; `revision` refuses a write over a change you did not see (`stale`) |
 | `delete(type, id, { revision })` | Gone here at once, and at the portal with the next report |
 | `batch(ops)` | Several writes, checked together and made all or nothing |
@@ -232,7 +648,7 @@ local spent, now = rpf.time.elapsed(plant.fields.ticked_at, 5 * 60000) -- at mos
 local ticks = math.floor(spent / TICK)
 if ticks > 0 then
   rpf.records.update("acme_garden.plant", plant.id, {
-    grown = plant.fields.grown + ticks,
+    grown_ticks = plant.fields.grown_ticks + ticks,
     ticked_at = now - (spent - ticks * TICK), -- keep the part of a tick not yet counted
   }, { revision = plant.revision })
 end
@@ -241,6 +657,7 @@ end
 `lua/examples/acme_garden/` is a whole addon built this way: placed in the
 world, watered and harvested through interactions, growing on its own
 clock, and upgraded with a new field without losing a plant.
+
 ## Interactions
 
 A request from a player's client reaches only a handler your addon
@@ -278,7 +695,10 @@ rpf.interactions.register("acme_tags.scrub", function(player, payload)
   if not tag or tag.owner.id ~= player.player_id then
     return false, "No such tag of yours."
   end
-  rpf.records.delete("acme_tags.tag", tag.id)
+  local deleted, why = rpf.records.delete("acme_tags.tag", tag.id)
+  if not deleted then
+    return false, "It would not come off (" .. tostring(why) .. ")."
+  end
   return true, { scrubbed = tag.fields.text }
 end)
 
@@ -590,11 +1010,11 @@ the Cfx.re platform rules forbid it, and RPF connects nothing to a payment.
 - `rpf.addons.provide("acme_tags.count", fn)` lets other addons call
   `rpf.addons.call("acme_tags.count", ...)`, which answers
   `true, ...results`, or `false` and why, only while your addon runs.
-- `rpf.capabilities()` says what the engine's adapter supports: the game
-  world's `position` today (`rpf.world.position(player)`, server only),
-  with models, zones and entities to come, and the UI above. Ask before
-  offering something that needs one; a call to one the engine lacks says
-  `unsupported`.
+- `rpf.capabilities()` says what the engine's adapter supports: in the
+  game world (server only) `position` and `bucket` (`rpf.world.position`,
+  `rpf.world.bucket`), `model`, `entity`, `spawn` and `despawn`, and the UI
+  above. Ask before offering something that needs one; a call to one the
+  engine lacks says `unsupported`.
 
 ## Engines
 

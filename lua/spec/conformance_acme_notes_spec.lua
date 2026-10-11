@@ -1,0 +1,277 @@
+-- luassert's bundled annotations allow one argument to each assertion, but
+-- every assertion takes a message as its last. The message is what makes a
+-- failure in a loop say which case failed, so it stays.
+---@diagnostic disable: redundant-parameter
+
+-- Conformance (J7): the walkthrough's addon, `lua/examples/acme_notes/`, run
+-- as it ships on the mock platform and on the real FiveM and Gmod adapters,
+-- against a fake portal (`spec/support/conformance.lua`). Every step
+-- `docs/writing-addons.md`'s walkthrough promises is a case here: a note
+-- pinned where the player stands and placed in the world, refused when the
+-- payload is not a note, read from within reach in the engine's own units,
+-- taken down by its author only, removed by linked staff holding the
+-- addon's permission, a stale delete read again and retried, and every note
+-- kept across the upgrade that added `colour`.
+
+local conformance = require("spec.support.conformance")
+local support = require("spec.support")
+
+---What `conformance.run` needs from busted.
+local busted = { describe = describe, it = it, before_each = before_each, after_each = after_each }
+
+local PLAYER = "00000002-0000-4000-8000-000000000002"
+local OTHER = "00000003-0000-4000-8000-000000000003"
+local TYPE = "acme_notes.note"
+
+---How long a placement may take to arrive: FiveM makes an entity
+---asynchronously.
+local SETTLE_MS = 500
+
+---Loads the example's server half as an engine entry point does, with its
+---manifest as `edit` leaves it, and starts it on the world's API.
+---@param world spec.ConformanceWorld The world.
+---@param edit fun(notes: acme_notes)? Changes before it starts, such as an older release's manifest.
+---@return acme_notes notes The example's table.
+local function load_example(world, edit)
+  rawset(_G, "acme_notes", nil)
+  dofile(support.path("lua/examples/acme_notes/manifest.lua"))
+  dofile(support.path("lua/examples/acme_notes/server.lua"))
+  local notes = rawget(_G, "acme_notes")
+  -- The mock engine's model, beside FiveM's and Gmod's, so a note is placed
+  -- on every platform the cases run on.
+  notes.MANIFEST.types.note.fields.model.default.mock = "mock_note"
+  if edit then
+    edit(notes)
+  end
+  assert(notes.start_server(world.api))
+  return notes
+end
+
+---Release 1.0.0, the walkthrough's first: schema 1, before notes had a colour.
+---@param notes acme_notes The example's table.
+local function release_one(notes)
+  local m = notes.MANIFEST
+  m.version = "1.0.0"
+  m.types.note.schema = 1
+  m.types.note.fields.colour = nil
+  m.types.note.list = { "text", "pinned_at" }
+end
+
+---Connects, starts the example, has staff install it, and logs a player in,
+---in the world.
+---@param world spec.ConformanceWorld The world.
+---@param edit fun(notes: acme_notes)? As for `load_example`.
+local function ready(world, edit)
+  local notes = load_example(world, edit)
+  world:connect()
+  world:install({ conformance.installed(world.core, notes.MANIFEST) })
+  world:pump()
+  assert.are.equal("active", (world.api.addons.state("acme_notes")))
+  world:activate(world:login(1, PLAYER))
+  world.place(1, { x = 10, y = 20, z = 30 })
+end
+
+---How many requests the harness's clients have numbered.
+local numbered = 0
+
+---Sends an interaction from a player's client and gives the server's
+---answer (as `conformance_acme_tags_spec.lua` does).
+---@param world spec.ConformanceWorld The world.
+---@param player integer The player.
+---@param name string The interaction.
+---@param payload table? Its payload.
+---@return table answer The decoded answer.
+local function interact(world, player, name, payload)
+  local json = world.core.json
+  local before = #world.to_clients
+  local body = assert(json.encode(json.object({ name = name, payload = payload and json.object(payload) or nil })))
+  numbered = numbered + 1
+  world.from_client(player, "rpf:interact", numbered .. "\n" .. body)
+  for i = before + 1, #world.to_clients do
+    local sent = world.to_clients[i]
+    if sent.name == "rpf:interact" then
+      local _, reply = sent.payload:match("^(%d+)\n(.*)$")
+      return assert(json.decode(reply))
+    end
+  end
+  error("no answer to " .. name)
+end
+
+---Pins a note for player 1 and gives it.
+---@param world spec.ConformanceWorld The world.
+---@param payload table? The payload; a note saying "meet here" otherwise.
+---@return rpf.Record note The note.
+local function pinned(world, payload)
+  local answer = interact(world, 1, "acme_notes.pin", payload or { text = "meet here" })
+  assert.is_true(answer.ok, tostring(answer.reason))
+  local notes = assert(world.api.records.list(TYPE, { order = "pinned_at" }))
+  world:settle()
+  return notes[#notes]
+end
+
+---Aims an interaction at a note.
+---@param world spec.ConformanceWorld The world.
+---@param player integer The player.
+---@param name string The interaction.
+---@param id string The note.
+---@return table answer The answer.
+local function at(world, player, name, id)
+  return interact(world, player, name, { target = { id = id } })
+end
+
+conformance.run(busted, "the acme_notes example", {
+  {
+    name = "pins a note where the player stands and places it in the world; the portal keeps it",
+    run = function(world)
+      ready(world)
+      local note = pinned(world, { text = "meet here", colour = "yellow" })
+      assert.are.same({ x = 10, y = 20, z = 30 }, note.fields.spot)
+      assert.are.equal("yellow", note.fields.colour)
+      assert.are.same({ kind = "player", id = PLAYER }, note.owner)
+      world:advance(SETTLE_MS)
+      assert.is_truthy(world.api.world.placed(TYPE, note.id), "placed as an object while held")
+      world:settle()
+      assert.are.equal("meet here", world.portal.records[note.id].fields.text)
+    end,
+  },
+  {
+    name = "refuses what is not a note, with a reason the player can read, and makes nothing",
+    run = function(world)
+      ready(world)
+      local empty = interact(world, 1, "acme_notes.pin", { text = "" })
+      assert.are.same({ false, "Write something on the note." }, { empty.ok, empty.reason })
+      local long = interact(world, 1, "acme_notes.pin", { text = string.rep("x", 121) })
+      assert.are.same({ false, "Not that note (text: too_long)." }, { long.ok, long.reason })
+      local colour = interact(world, 1, "acme_notes.pin", { text = "hi", colour = "plaid" })
+      assert.is_false(colour.ok)
+      assert.truthy(colour.reason:find("colour", 1, true), colour.reason)
+      assert.are.equal(0, #world.api.records.list(TYPE))
+      for i = 1, 3 do
+        pinned(world, { text = "note " .. i })
+      end
+      local fourth = interact(world, 1, "acme_notes.pin", { text = "one too many" })
+      assert.are.same({ false, "Take one of your notes down first." }, { fourth.ok, fourth.reason })
+    end,
+  },
+  {
+    name = "reads a note from a step away on every engine, in the engine's own units",
+    run = function(world)
+      ready(world)
+      local notes = rawget(_G, "acme_notes")
+      local note = pinned(world, { text = "meet here" })
+      world.place(1, { x = 10 + notes.units(world.api, 1.5), y = 20, z = 30 })
+      local read = at(world, 1, "acme_notes.read", note.id)
+      assert.is_true(read.ok)
+      assert.are.same({ text = "meet here", colour = "white" }, read.data)
+      world.place(1, { x = 10 + notes.units(world.api, 3), y = 20, z = 30 })
+      local far = at(world, 1, "acme_notes.read", note.id)
+      assert.are.same({ false, "too_far" }, { far.ok, far.reason })
+    end,
+  },
+  {
+    name = "lets only its author take a note down, and linked staff with the permission remove anyone's",
+    run = function(world)
+      ready(world)
+      world:activate(world:login(2, OTHER))
+      world.place(2, { x = 10, y = 21, z = 30 })
+      local note = pinned(world)
+      local theirs = at(world, 2, "acme_notes.take_down", note.id)
+      assert.are.same({ false, "That note is not yours." }, { theirs.ok, theirs.reason })
+      local unlinked = at(world, 2, "acme_notes.remove", note.id)
+      assert.are.same({ false, "forbidden" }, { unlinked.ok, unlinked.reason })
+      local json = world.core.json
+      assert(world.core.staff.apply(json.array({
+        json.object({ player_id = OTHER, permissions = json.array({ "addon.acme_notes.moderate" }) }),
+      })))
+      assert.is_true(at(world, 2, "acme_notes.remove", note.id).ok, "a linked staff member holding the flag")
+      assert.is_nil(world.api.records.get(TYPE, note.id))
+      world:settle()
+      assert.is_nil(world.portal.records[note.id], "the portal deleted it too")
+
+      local own = pinned(world)
+      assert.is_true(at(world, 1, "acme_notes.take_down", own.id).ok, "its author")
+      assert.is_nil(world.api.records.get(TYPE, own.id))
+    end,
+  },
+  {
+    name = "keeps its notes through the upgrade that added colour, which an older note reads as white",
+    run = function(world)
+      ready(world, release_one)
+      local note = pinned(world, { text = "from 1.0.0" })
+      assert.is_nil(note.fields.colour, "release 1.0.0 has no colour")
+      -- Release 1.1.0 replaces the code, and staff install it.
+      local notes = load_example(world)
+      world:install({ conformance.installed(world.core, notes.MANIFEST) })
+      world:pump()
+      assert.are.equal("active", (world.api.addons.state("acme_notes")))
+      local upgraded = assert(world.api.records.get(TYPE, note.id), "still held across the reload")
+      assert.are.equal("white", upgraded.fields.colour, "the new field's default")
+      assert.are.equal("from 1.0.0", upgraded.fields.text)
+    end,
+  },
+})
+
+describe("acme_notes.take_down", function()
+  before_each(function()
+    rawset(_G, "acme_notes", nil)
+    dofile(support.path("lua/examples/acme_notes/manifest.lua"))
+    dofile(support.path("lua/examples/acme_notes/server.lua"))
+  end)
+
+  local player = { player_id = PLAYER }
+
+  ---A note at a revision.
+  ---@param revision integer The revision.
+  ---@param owner string? Its author.
+  ---@return table note The note.
+  local function note(revision, owner)
+    return { id = "n1", revision = revision, owner = { kind = "player", id = owner or PLAYER }, fields = {} }
+  end
+
+  ---A fake API whose deletes answer from a list, and whose reads give `now`.
+  ---@param answers table[] Each delete's answer, in turn.
+  ---@param now table? What a read finds.
+  ---@return table rpf The fake.
+  ---@return table deletes The revisions each delete named.
+  local function fake(answers, now)
+    local deletes = {}
+    return {
+      records = {
+        delete = function(_, _, opts)
+          deletes[#deletes + 1] = opts.revision
+          local answer = table.remove(answers, 1)
+          return answer[1], answer[2]
+        end,
+        get = function()
+          return now
+        end,
+      },
+    },
+      deletes
+  end
+
+  it("reads a note changed since again, checks it again, and deletes it at its new revision", function()
+    local rpf, deletes = fake({ { nil, "stale" }, { true } }, note(5))
+    assert.are.same({ true }, { rawget(_G, "acme_notes").take_down(rpf, player, note(4), false) })
+    assert.are.same({ 4, 5 }, deletes)
+  end)
+
+  it("answers done for a note already gone, so pressing again is harmless", function()
+    local rpf = fake({ { nil, "stale" } }, nil)
+    assert.are.same({ true }, { rawget(_G, "acme_notes").take_down(rpf, player, note(4), false) })
+  end)
+
+  it("checks again after reading: a note that changed hands is refused", function()
+    local rpf, deletes = fake({ { nil, "stale" } }, note(5, OTHER))
+    assert.are.same({ false, "That note is not yours." }, { rawget(_G, "acme_notes").take_down(rpf, player, note(4), false) })
+    assert.are.same({ 4 }, deletes)
+  end)
+
+  it("gives up after a second stale read, and says so", function()
+    local rpf = fake({ { nil, "stale" }, { nil, "stale" } }, note(5))
+    assert.are.same(
+      { false, "Someone is changing it; try again." },
+      { rawget(_G, "acme_notes").take_down(rpf, player, note(4), false) }
+    )
+  end)
+end)

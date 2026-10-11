@@ -301,6 +301,12 @@ load: update the artifact.
 (its own line): ox_lib is not installed. Install it as
 [By hand](#by-hand) says, step 3, and `ensure ox_lib` before `ensure rpf`.
 
+**FXServer saying it could not start the dependency `rpf` for an addon's
+resource** (its own line, such as `Could not start dependency rpf for
+resource acme_notes`): `rpf` itself did not start, and the reason is the
+line just above, one of these. Fix that and restart the server; the addon
+starts with `rpf`.
+
 **`rpf: ox_lib is stopped, and RPF's FiveM adapter is built on it; …`** (or
 another state): ox_lib is there but not running, or failed to start; its
 own error is earlier in the console. A folder from GitHub's "Source code"
