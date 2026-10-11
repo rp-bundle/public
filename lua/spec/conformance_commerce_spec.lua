@@ -271,6 +271,8 @@ conformance.run(busted, "exchanges", {
         { "invalid", { give = { { item = "bread", count = 1, data = {} } }, reason = "x" } },
         { "invalid", { give = { { item = "bread" } }, reason = "x" } },
         { "invalid", { account = "wallet", pay = 1.5, reason = "x" } },
+        { "invalid", { account = "wallet", pay = false, give = bread, reason = "x" } },
+        { "invalid", { account = "wallet", paid = false, take = { { item = "water", count = 1 } }, reason = "x" } },
         { "invalid", { account = "wallet", pay = 1 } },
         { "invalid", { pay = 1, reason = "x" } },
         { "invalid", "a deal" },

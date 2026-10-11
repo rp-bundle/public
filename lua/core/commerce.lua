@@ -167,7 +167,12 @@ local function read_deal(deal)
   if deal.pay ~= nil and deal.paid ~= nil then
     return nil
   end
-  local amount = deal.pay or deal.paid
+  -- By presence, not truth: `pay = false` is a malformed price, never no
+  -- price at all.
+  local amount = deal.paid
+  if deal.pay ~= nil then
+    amount = deal.pay
+  end
   if amount ~= nil and (not facade.valid_entry(amount, reason) or type(deal.account) ~= "string") then
     return nil
   end
