@@ -77,6 +77,43 @@ local function interact(world, player, name, payload, raw)
   return nil
 end
 
+---Runs a function with `records.list` failing or `ui.notify` refusing, and
+---`print` captured. The real API is frozen, so a table stands in front of it.
+---@param world spec.ConformanceWorld The world.
+---@param refuse { list: boolean?, notify: boolean? } What fails.
+---@param fn fun(api: table, printed: string[]) The body: the API to hand the example, and what it printed.
+local function failing(world, refuse, fn)
+  local printed = {}
+  local real = world.api
+  local api = setmetatable({
+    records = setmetatable({
+      list = function(...)
+        if refuse.list then
+          return nil, "stopped"
+        end
+        return real.records.list(...)
+      end,
+    }, { __index = real.records }),
+    ui = setmetatable({
+      notify = function(handle, spec)
+        if refuse.notify then
+          return nil, "unavailable"
+        end
+        return real.ui.notify(handle, spec)
+      end,
+    }, { __index = real.ui }),
+  }, { __index = real })
+  local print_was = rawget(_G, "print")
+  rawset(_G, "print", function(...)
+    printed[#printed + 1] = table.concat({ ... }, " ")
+  end)
+  local ok, err = pcall(fn, api, printed)
+  rawset(_G, "print", print_was)
+  if not ok then
+    error(err, 0)
+  end
+end
+
 conformance.run(busted, "the acme_tags example", {
   {
     name = "sprays a tag where the player stands, through the interaction, and the portal keeps it",
@@ -147,6 +184,42 @@ conformance.run(busted, "the acme_tags example", {
       world.place(1, { x = 10 + world:units(40), y = 20, z = 30 })
       local far = assert(interact(world, player, "acme_tags.read", { target = { id = id } }))
       assert.are.same({ false, "too_far" }, { far.ok, far.reason })
+    end,
+  },
+  {
+    name = "reads a tag two metres off, since its reach is metres on every engine (J3)",
+    run = function(world)
+      local player = sprayable(world)
+      world:activate(world.core.players.by_player_id(PLAYER).handle)
+      assert.is_true(assert(interact(world, player, "acme_tags.spray", { text = "near" })).ok)
+      local id = assert(interact(world, player, "acme_tags.mine")).data.tags[1].id
+      world.place(1, { x = 10 + world:units(2), y = 20, z = 30 })
+      local read = assert(interact(world, player, "acme_tags.read", { target = { id = id } }))
+      assert.is_true(read.ok, tostring(read.reason))
+    end,
+  },
+  {
+    name = "tells a player whose tags cannot be listed why, and logs the error (J3)",
+    run = function(world)
+      sprayable(world)
+      failing(world, { list = true }, function(api, printed)
+        ---@diagnostic disable-next-line: missing-fields
+        local ok, reason = rawget(_G, "acme_tags").mine(api, { player_id = PLAYER })
+        assert.are.same({ false, "Your tags cannot be listed now (stopped)." }, { ok, reason })
+        assert.is_truthy(printed[#printed] and printed[#printed]:find("could not list", 1, true), "the lost list is logged")
+      end)
+    end,
+  },
+  {
+    name = "logs a read whose notice the engine refused, and still answers the text (J3)",
+    run = function(world)
+      sprayable(world)
+      failing(world, { notify = true }, function(api, printed)
+        ---@diagnostic disable-next-line: missing-fields
+        local ok, data = rawget(_G, "acme_tags").read(api, { player_id = PLAYER, handle = 1 }, { record = { fields = { text = "hello" } } })
+        assert.are.same({ true, { text = "hello" } }, { ok, data })
+        assert.is_truthy(printed[#printed] and printed[#printed]:find("could not show", 1, true), "the lost notice is logged")
+      end)
     end,
   },
   {
