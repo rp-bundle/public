@@ -538,7 +538,14 @@ greeter = {
 
 `kind` is `ped` or `object` (placed for you, so it needs a `model`),
 `point` (nothing placed) or `zone` (needs a `radius` field, in metres). `bucket` and
-`visible` name an integer and a boolean field when you want them. A model
+`visible` name an integer and a boolean field when you want them, and
+`map` an indexed string field (`map = { type = "string", index = true,
+nullable = true }`) saying which map a record is on: Gmod servers switch
+maps, and a record placed on `rp_downtown` should not stand in a wall on
+`rp_evocity`. A record whose map is null is on every map, as is every
+record of a type without one, so give a type a `map` whenever its records
+belong to one place. For a record your addon creates in game,
+`rpf.world.map()` is the map it is made on. A model
 field marked `engine = true` can hold one model per engine, `{ fivem =
 "a_m_y_business_01", gmod = "models/Humans/Group01/male_02.mdl" }`, so the
 same record works on both. Staff then place them in the portal, and RPF

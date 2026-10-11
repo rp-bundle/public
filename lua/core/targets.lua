@@ -252,14 +252,17 @@ local function distance(a, b)
 end
 
 ---Where a world-backed record is, as the player may reach it: nil when the
----type has no world, or the record is hidden, in another bucket or has no
----position.
+---type has no world, or the record is hidden, on another map (#369), in
+---another bucket or has no position.
 ---@param where table The type's `world`.
 ---@param fields table The record's fields.
 ---@param bucket integer The player's bucket.
 ---@return { x: number, y: number, z: number }? position Where it is.
 local function placed_at(where, fields, bucket)
   if where.visible and fields[where.visible] == false then
+    return nil
+  end
+  if not rpf.world.on_map(where, fields) then
     return nil
   end
   local record_bucket = where.bucket and fields[where.bucket]

@@ -107,6 +107,7 @@ step.
 | Part | Member | What it does |
 |---|---|---|
 | Engine | `engine` | `"fivem"`, `"gmod"` or `"mock"`. Reported in `Hello`, never branched on |
+| | `map` | The map this process runs (#369): `game.GetMap()` on Gmod, the owner's `rpf_map` convar on FiveM (`default` unset). A non-empty string, reported in `Hello` and fixed until the core stops; one that is no map's name is logged and reported as `default` (`rpf.world.map`) |
 | Transport | `connect(url, handlers)` | Opens the websocket. `handlers` has `open()`, `message(text)` and `close(reason)`. One connection at a time |
 | | `disconnect()` | Closes the open connection or abandons the attempt. Its `close` is still called, and the core ignores it |
 | | `send(text) -> boolean` | Sends one text frame. `false` when there is no open connection or the engine's call failed (the platform logs why). A `Hello` that returns `false` is a failed attempt, retried after a backoff |
@@ -956,8 +957,10 @@ record. The order is documented once, in `crates/rpf-domain/src/addons/`.
 write names only what it changes, and a null clears a nullable field), and
 `manifest.with_defaults(def, fields)` is what a record reads as.
 A type's `world` (J4) is checked last, against the type's checked fields:
-each role names a field of a kind it may be (`world_field` otherwise), and
-the kind decides whether `model` and `radius` are needed or refused.
+each role names a field of a kind it may be (`world_field` otherwise; a
+`map` must be an indexed string), and the kind decides whether `model` and
+`radius` are needed or refused. `check_fields` then holds the field a
+type's `map` role names to a map's name (`manifest.is_map_name`, #369).
 `manifest.is_version` and `manifest.is_range` check the shape of a release
 and of a `requires` range; matching one against the other is the portal's,
 at install.
@@ -1354,10 +1357,18 @@ unsupported, and every call into one runs under `pcall`, a throw logged.
   type, id }`) is set only when the adapter's tag names a record the core
   placed as exactly that entity, so a forged tag names nothing.
 - **`placed(type, id)`**: the ref of a record's entity.
+- **`map()`**: the map this server runs (#369), the platform's `map` as
+  `start` checked it: one that is no map's name (`manifest.is_map_name`)
+  is logged and is `DEFAULT_MAP`, so the server still connects rather
+  than have its `Hello` refused. `unsupported` before the core starts.
+- **`on_map(where, fields)`**: whether a record is on that map: its
+  type's `world` names no `map` field, its map is null (every map), or it
+  is this one. Placements and `targets` both ask it, so a record on
+  another map is neither placed nor targetable.
 
-**Placements.** The core places, one entity each, the visible records of
-the world-backed `config` types of kind `ped` or `object` of every addon
-running here (`addons.active`, `addons.config_records`), worked out from
+**Placements.** The core places, one entity each, the visible records on
+its map (`on_map`) of the world-backed `config` types of kind `ped` or
+`object` of every addon running here (`addons.active`, `addons.config_records`), worked out from
 the config alone, so the stored config restored at start places them
 before the portal is reached. `reconcile` runs on every `config.changed`
 and `addons.state`: it despawns what is no longer wanted or whose

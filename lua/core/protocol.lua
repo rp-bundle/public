@@ -883,6 +883,7 @@ protocol.messages = {
       { "api_key", SECRET },
       { "instance_id", UUID },
       { "engine", STRING },
+      { "map", STRING },
       { "core_version", STRING },
       { "config_version", nullable(U64) },
       { "config_hash", nullable(STRING) },

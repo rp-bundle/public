@@ -233,6 +233,7 @@ describe("the Gmod adapter's server", function()
     world:socket_open(record.connects[1].id)
     local hello = assert(last(world, record, "hello"))
     assert.are.equal("gmod", hello.engine)
+    assert.are.equal("gm_construct", hello.map, "game.GetMap(), the map it loaded")
     assert.are.equal("rpf_sk_test", hello.api_key)
     -- Published as the global, and only the public API.
     assert.are.equal("gmod", rpf.engine)

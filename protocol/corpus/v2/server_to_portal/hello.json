@@ -6,6 +6,7 @@
   "api_key": "rpf_sample_0000000000000000",
   "instance_id": "00000007-0000-4000-8000-000000000007",
   "engine": "mock",
+  "map": "rp_downtown",
   "core_version": "0.1.0",
   "config_version": 7,
   "config_hash": "sha256:sample",

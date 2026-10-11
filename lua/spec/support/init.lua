@@ -71,7 +71,7 @@ support.COMPANION = { characters = "external", money = "external", inventory = "
 support.EPOCH_MS = 1767225600000
 
 ---Builds a fake server platform.
----@param opts { store: table<string, string>?, seed: integer?, time: number? }? A shared store (for restarts), a random seed, a start time.
+---@param opts { store: table<string, string>?, seed: integer?, time: number?, map: string? }? A shared store (for restarts), a random seed, a start time, the map the process runs (`default` unless given).
 ---@return spec.FakePlatform platform The platform.
 function support.fake_platform(opts)
   opts = opts or {}
@@ -100,6 +100,7 @@ function support.fake_platform(opts)
   ---@field bookkeeping table<string, true> Sent texts `support.wire` leaves out: the declaration after a `Welcome` and the ack of its answer.
   local p = {
     engine = "mock",
+    map = opts.map or "default",
     time = opts.time or support.EPOCH_MS,
     timers = {},
     seq = 0,

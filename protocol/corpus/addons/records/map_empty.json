@@ -1,0 +1,18 @@
+{
+  "description": "An empty map is no map's name: every map is null.",
+  "type": "sign",
+  "fields": {
+    "spot": {
+      "x": 1,
+      "y": 2,
+      "z": 3
+    },
+    "map": ""
+  },
+  "expect": {
+    "error": {
+      "error": "too_short",
+      "field": "map"
+    }
+  }
+}

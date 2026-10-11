@@ -1,0 +1,22 @@
+{
+  "description": "A null map is every map.",
+  "type": "sign",
+  "fields": {
+    "spot": {
+      "x": 1,
+      "y": 2,
+      "z": 3
+    },
+    "map": null
+  },
+  "expect": {
+    "fields": {
+      "spot": {
+        "x": 1,
+        "y": 2,
+        "z": 3
+      },
+      "map": null
+    }
+  }
+}

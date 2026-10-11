@@ -152,6 +152,7 @@ function Commands.on_command(name, handler) end
 ---is a fact about the engine and not something it can decline to support.
 ---@class rpf.platform.World
 ---@field capabilities rpf.Capabilities What it can do.
+---@field map string The map this process runs (#369), reported in `Hello`: `game.GetMap()` on Gmod, the owner's `rpf_map` convar on FiveM (`default` unset). Fixed until the core stops, so read once as the adapter starts; a map change is a new process. One that is no map's name (1 to 64 bytes of printable ASCII with no space) is logged and reported as `default`.
 ---@field units_per_metre number How many of the engine's units are one metre: 1 where positions are metres (FiveM), about 39.37 where they are inches (Gmod's Hammer units). A positive, finite number. The core multiplies every distance an addon gives in metres by it (`rpf.api.world.units`, an interaction's `distance`, a zone's radius) so an addon never tells engines apart.
 
 ---The game-world capabilities an adapter declares (J3), each a function or

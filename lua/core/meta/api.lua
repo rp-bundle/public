@@ -831,6 +831,27 @@ function World.entity(ref) end
 ---@return integer? ref The entity's ref.
 function World.placed(type_name, id) end
 
+---The map this server runs, as it reported it to the portal: on Gmod the
+---loaded map (`rp_downtown`), on FiveM the name the owner gave this setup in
+---the `rpf_map` convar, `default` unless set. It stays the same until the
+---server stops: changing map restarts the Lua state on Gmod, and FiveM
+---reads the convar as the resource starts.
+---
+---A world type whose `world` names a `map` field has its records placed and
+---targetable only on that map, or on every map where the field is null, so
+---records staff placed are already sorted by map. Ask it to give a record
+---you create the map it was made on:
+---
+---```lua
+---rpf.data.create("acme_tags.tag", owner, {
+---  spot = rpf.world.position(player.handle),
+---  map = rpf.world.map(),
+---})
+---```
+---@return string? map The map's name.
+---@return "unsupported"|nil err Before RPF has started.
+function World.map() end
+
 ---Interactions: a player's client asks an addon to do something, and the
 ---addon decides on the server. A request reaches only a handler an addon
 ---registered, under its own namespace; never an event the client named.

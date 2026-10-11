@@ -399,6 +399,9 @@ if world then
     metres = function(units)
       return world.metres(units)
     end,
+    map = function()
+      return world.map()
+    end,
   }, "rpf.world")
 end
 

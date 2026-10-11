@@ -103,6 +103,7 @@ describe("rpf.platform", function()
       "kv_get",
       "kv_set",
       "log",
+      "map",
       "name",
       "notify",
       "now",
@@ -127,7 +128,7 @@ describe("rpf.platform", function()
     end
   end)
 
-  for _, member in ipairs({ "connect", "log", "engine", "expose", "units_per_metre" }) do
+  for _, member in ipairs({ "connect", "log", "engine", "map", "expose", "units_per_metre" }) do
     it("refuses to start the server without " .. member .. ", and names it", function()
       local p = support.fake_platform()
       p[member] = nil
