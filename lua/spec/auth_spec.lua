@@ -476,23 +476,37 @@ describe("rpf.auth", function()
       assert.are.same({ "auth.required", "auth.succeeded" }, names(seen))
     end)
 
+    it("drops a retry once the player has logged out", function()
+      local c = start()
+      log_in_until_refresh(c)
+      c.respond(200, "not json")
+      rpf.auth.logout()
+      nonce(c, "rpf_jn_logout")
+      assert.are.equal(PORTAL .. "/api/v1/player/logout", c.pending().url)
+      c.respond(204, "")
+      c.advance(60 * 60 * 1000)
+      assert.is_nil(c.pending())
+      assert.is_nil(rpf.auth.api_token())
+    end)
+
     it("keeps refreshing, with a warning, when a success cannot be read", function()
       -- A proxy's page, or a portal answering something unexpected, says
       -- nothing about the session: the token in hand is kept, and the
       -- refresh is tried again rather than given up on.
+      -- Raw JSON, because each case starts a fresh core with its own null.
       local answers = {
         { "not json", "not a JSON object" },
         { "[1, 2]", "not a JSON object" },
-        { { api_token_expires_at = "2026-01-01T00:10:00Z" }, "had no API token" },
-        { { api_token = 5, api_token_expires_at = "2026-01-01T00:10:00Z" }, "had no API token" },
+        { '{"api_token_expires_at":"2026-01-01T00:10:00Z"}', "had no API token" },
+        { '{"api_token":5,"api_token_expires_at":"2026-01-01T00:10:00Z"}', "had no API token" },
+        { '{"api_token":"","api_token_expires_at":"2026-01-01T00:10:00Z"}', "had no API token" },
         { '{"api_token":null}', "had no API token" },
-        { { api_token = "", api_token_expires_at = "2026-01-01T00:10:00Z" }, "had no API token" },
       }
       for _, case in ipairs(answers) do
         local c, seen = start()
         log_in_until_refresh(c)
         c.respond(200, case[1])
-        local label = type(case[1]) == "string" and case[1] or tostring(case[1].api_token)
+        local label = case[1]
         assert.is_true(warned(c, case[2]), label)
         assert.are.equal("rpf_at_one", rpf.auth.api_token(), label)
         assert.are.same({ "auth.required", "auth.succeeded" }, names(seen), label)
@@ -506,7 +520,6 @@ describe("rpf.auth", function()
     end)
 
     it("takes a refreshed token whose expiry cannot be read, and refreshes it again soon", function()
-      -- Raw JSON, because each case starts a fresh core with its own null.
       for _, expiry in ipairs({ "null", '"soon"', "5" }) do
         local c = start()
         log_in_until_refresh(c)
