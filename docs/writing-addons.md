@@ -57,6 +57,7 @@ players make the rest in play.
 | [`acme_tags`](../lua/examples/acme_tags/) | Tags players spray, which fade after a day; players list and scrub their own | No placed entity: a tag is a position and text |
 | [`acme_garden`](../lua/examples/acme_garden/) | Plants placed in the world, which grow while the server runs, need watering, and are harvested or wither | A harvest pays nothing: an addon that paid out an item would use an exchange |
 | [`acme_shop`](../lua/examples/acme_shop/) | Shopkeepers staff place, listings staff price, limited stock, sales and buy-backs as exchanges | No stock of its own until staff create it; no counter until staff place one |
+| [`acme_property`](../lua/examples/acme_property/) | Properties staff create and players buy in one exchange, and doors their owners lock | No door of its own to move: a server's door script asks whether one is locked. Ownership is per player account, not per character |
 
 
 ## Getting the API
@@ -977,6 +978,33 @@ never reach the client. Then:
   till's and the player's account pages (`Corner shop: sold 2 water`), the
   player's containers, and the stock on its data page. What it bought is an
   ordinary item: the player moves and uses it like any other.
+
+### The property example
+
+[`lua/examples/acme_property/`](../lua/examples/acme_property/) sells
+something that changes hands, which neither the money nor the items know
+about. Two choices make it work, and both apply to anything like it:
+
+- **Ownership that changes is a field, not the record's owner.** A record's
+  `owner` is fixed when it is made, and its records go with it when the
+  owner is deleted. A property outlives whoever bought it, so it is owned by
+  the server, and who has it in play is `holder`, a reference to a player
+  that the purchase writes and staff can change on its page.
+- **A purchase changes a record that already exists.** Staff create each
+  property (a `live` type, `hold = "server"`), so the exchange's `apply` is
+  an update of a record the server holds, named in `records` at the
+  revision the player was shown. Making a record in `apply` instead (a
+  "deed" referring to the property) could be refused by the portal after
+  the money moved, if staff deleted the property meanwhile. Nor can an
+  exchange's `records` show that no deed exists yet: just after a restart,
+  before the core has claimed every deed back, a second one could be sold.
+  Only a `unique` field would refuse it, and the portal would refuse it
+  after the money moved.
+
+Its doors are a `config` type that refers to the property, placed by
+staff. A door's state is the property's `locked` field, which the owner
+changes through an interaction aimed at the door, and which a server's own
+door script reads with `rpf.addons.call("acme_property.locked", door_id)`.
 
 ### Licences, dealerships and the like
 
