@@ -29,6 +29,17 @@ socket.
 
 ### Added
 
+- The property example (J8, #85): `lua/examples/acme_property/`,
+  properties players buy and doors their owners lock, built on the public
+  API and the generic types with no Rust, route, page, protocol variant or
+  migration of its own. Staff create each property on the data page (a
+  live zone the server holds) and place its doors (config points that
+  refer to it). A player on a lot for sale buys it in one exchange, whose
+  `apply` writes them onto the property as its `holder`. The owner locks
+  and unlocks its doors, and a server's own door script asks
+  `acme_property.locked` whether a door is locked. Staff reassign a
+  property by editing `holder` in the portal. It ships in the addon kit
+  with the other examples.
 - The addon walkthrough (J7, #84): `docs/writing-addons.md` now begins with
   what RPF provides and what only the examples supply, then builds a new
   example, `acme_notes`, step by step. The steps are the type, registering
