@@ -25,7 +25,7 @@ local ui = {}
 
 local rpf = rpf
 
-ui.CALLBACKS = { "ready", "http", "login", "register", "change_password", "delete_account", "create", "select", "refresh" }
+ui.CALLBACKS = { "ready", "http", "login", "register", "change_password", "delete_account", "close_delete", "create", "select", "refresh" }
 
 ---What the screens need from the client: the core and three engine actions.
 ---@class rpf.fivem.ScreenDeps
@@ -43,6 +43,7 @@ ui.CALLBACKS = { "ready", "http", "login", "register", "change_password", "delet
 ---@field locked boolean Whether input is locked.
 ---@field pending table<integer, fun(status: integer, body: string, headers: table<string, string>)> HTTP callbacks by request id, until the page answers.
 ---@field next_id integer The last HTTP request id handed out.
+---@field returning { screen: string, locked: boolean }? What was up when the delete form was opened from the game (`open_delete`), to put back when the player backs out. Any other screen replaces the form and forgets it.
 local Screens = {}
 Screens.__index = Screens
 
@@ -84,14 +85,55 @@ function Screens:lock(on)
 end
 
 ---Shows a screen.
----@param name "connecting"|"login"|"password"|"deleted"|"characters"|"closed" Which.
+---@param name "connecting"|"login"|"delete"|"password"|"deleted"|"characters"|"closed" Which.
 ---@param fields table? What it shows.
 function Screens:show(name, fields)
+  self.returning = nil
   local message = { type = "screen", screen = name }
   for key, value in pairs(fields or {}) do
     message[key] = value
   end
   self:post(message)
+end
+
+---Opens the delete-account form for a player who is already logged in: the
+---way to it when they were resumed silently and never saw the login screen
+---(H6). It is the login screen's form, with the same text, confirmation and
+---sealed password, and the core refuses a deletion the same way. Input is
+---locked while it is up.
+---
+---Back (`close_delete`) puts back the screen and lock that were up, so a
+---player who was choosing a character is choosing again and one in play is
+---released, rather than guessing which here.
+---@return boolean opened False unless the player is logged in.
+function Screens:open_delete()
+  if self.deps.core.auth.state() ~= "authenticated" then
+    return false
+  end
+  if self.returning then
+    return true
+  end
+  local back = { screen = self.screen, locked = self.locked }
+  self:lock(true)
+  self:show("delete", { from = "game" })
+  self.returning = back
+  return true
+end
+
+---Closes the delete form opened by `open_delete`, putting back what was up.
+---@return boolean closed False if the form is not up.
+function Screens:close_delete()
+  local back = self.returning
+  if not back then
+    return false
+  end
+  self.returning = nil
+  self.screen = back.screen
+  if back.screen then
+    self.deps.send(back.screen)
+  end
+  self:lock(back.locked)
+  return true
 end
 
 ---Shows an error on the screen that is up. `message` is written for the
@@ -311,6 +353,8 @@ function Screens:nui(name, data)
       return reply(false, "confirm that you want to delete the account")
     end
     return reply(core.auth.delete_account(username, password))
+  elseif name == "close_delete" then
+    return reply(self:close_delete())
   elseif name == "create" then
     local first_name, last_name, gender = text(data, "first_name"), text(data, "last_name"), text(data, "gender")
     if not first_name or not last_name or not gender then

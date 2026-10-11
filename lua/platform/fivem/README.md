@@ -322,8 +322,14 @@ The bundle targets Node 16, the oldest an FXServer that runs this ships.
   refuses a `delete_account` callback the page does not say was confirmed.
   A refusal shows the portal's message (`account_linked` points at the
   in-game account page); `auth.account_deleted` shows a screen telling the
-  player to reconnect, with input still held. It is reachable only from the
-  login screen, so a player resumed silently cannot open it (#322).
+  player to reconnect, with input still held. A player who is logged in, and
+  so never sees the login screen, opens the same form with the client
+  command `rpf_delete_account` (`RegisterCommand`, not restricted; F8 or
+  `/rpf_delete_account` in chat) (#322): `ui.lua`'s `open_delete` does
+  nothing unless the core is `authenticated`, locks input while the form is
+  up, and the page's Back sends `close_delete`, which puts back the screen
+  and lock that were up (the character screen for a player still choosing,
+  the game for one in play).
 - The remember token is the only secret stored on the player's machine, in
   client KVP, and is safe there only because P1 binds it to the player's
   FiveM licence: client storage is shared by every server running a resource

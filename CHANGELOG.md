@@ -72,6 +72,11 @@ socket.
   it cannot be undone and that bans, warnings and game records stay, and
   ends on a screen telling the player to reconnect. On FiveM the password
   is sealed and goes to the portal without reaching Lua.
+- Account deletion for a player who is logged in (H6, #322): the same form
+  opens with the console command `rpf_delete_account` on Gmod and the client
+  command of that name on FiveM (F8 or chat), with the same text,
+  confirmation and sealed password. Back returns to the game, or to the
+  character screen.
 - Unknown facade operations in the portal (K2 follow-up, #274): the core
   reports every operation its journal could not vouch for
   (`report_unknown_ops`), as it arises and after each `Welcome` until the

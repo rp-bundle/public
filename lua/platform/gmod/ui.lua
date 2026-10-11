@@ -25,7 +25,10 @@
 ---account page.
 ---
 ---`rpf_characters` in the console opens the character screen again, to switch
----or put away the character in play.
+---or put away the character in play. `rpf_delete_account` opens the delete
+---form for a player who is logged in, who was resumed silently and so never
+---saw the login form; its Back returns to the game, or to the character
+---screen for a player still choosing.
 ---@class rpf.gmod.Ui
 ---@field WIDTH number Every screen's width, in pixels.
 ---@field GENDERS string[] The genders the create form offers. The core also accepts a server's own, which a server owner's screen can offer.
@@ -190,6 +193,21 @@ local function attempt(working, started, err)
 end
 
 local delete_account
+local characters
+
+---Puts the player back where the delete form opened from the game found
+---them: in the game when a character is in play, on the character screen
+---when they were still choosing.
+local function back_to_game()
+  browsing = false
+  local selected = core.picker.selected()
+  if type(selected) == "string" then
+    close()
+  else
+    browsing = true
+    characters(core.picker.list(), nil, false)
+  end
+end
 
 ---The login form: log in, or register a new account.
 ---@param warning string The password reuse warning, shown at the password.
@@ -218,7 +236,9 @@ local function login(warning)
     )
   end, true)
   button(f, "Delete my account…", function()
-    delete_account()
+    delete_account(function()
+      login(login_warning)
+    end)
   end)
   status_line(f)
 end
@@ -226,7 +246,8 @@ end
 ---The form that deletes an account for good (H6). It asks for the account's
 ---own username and password, and for a ticked box that the player understands
 ---it cannot be undone, because nothing here can bring an account back.
-function delete_account()
+---@param back fun() Where Back goes: the login form, or the game.
+function delete_account(back)
   local f = window("Delete my account", 420)
   label(f, ui.DELETE_WARNING)
   local username = field(f, "Username")
@@ -243,9 +264,7 @@ function delete_account()
     end
     attempt("Deleting your account…", core.auth.delete_account(username:GetValue(), password:GetValue()))
   end, true)
-  button(f, "Back", function()
-    login(login_warning)
-  end)
+  button(f, "Back", back)
   status_line(f)
 end
 
@@ -287,7 +306,7 @@ end
 ---@param list rpf.picker.Character[] The player's characters.
 ---@param selected string? The id of the character in play.
 ---@param truncated boolean Whether some characters are not shown.
-local function characters(list, selected, truncated)
+function characters(list, selected, truncated)
   local f = window("Characters", 520)
   local scroll = vgui.Create("DScrollPanel", f) --[[@as DScrollPanel]]
   scroll:Dock(FILL)
@@ -356,6 +375,14 @@ local function open_characters()
   characters(core.picker.list(), type(selected) == "string" and selected or nil, false)
 end
 
+---Opens the delete form from the console, once the player is logged in.
+local function open_delete()
+  if core.auth.state() ~= "authenticated" then
+    return
+  end
+  delete_account(back_to_game)
+end
+
 ---Listens to the core's login and character events. Called before the core
 ---starts, so the first event is heard.
 ---@param internal rpf The core's internal table.
@@ -406,6 +433,7 @@ function ui.install(internal)
     end
   end)
   concommand.Add("rpf_characters", open_characters, nil, "Choose, switch or put away your character.")
+  concommand.Add("rpf_delete_account", open_delete, nil, "Delete your account for good.")
 end
 
 return ui

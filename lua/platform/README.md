@@ -223,7 +223,11 @@ for the clients' `HTTP`.
   the adapter's one chat hook answers `""` so the line is run and dropped
   (before the input lock, so a player still choosing a character may link).
   Another addon's `PlayerSay` hook may see the line first, so the console is
-  the way to type a credential on a server with chat loggers. All four UI kinds are supported
+  the way to type a credential on a server with chat loggers. The client's
+  `ui.lua` adds two console commands for a logged-in player: `rpf_characters`
+  (the character screen) and `rpf_delete_account` (H6, #322: the login
+  screen's delete form, whose Back returns to the game or the character
+  screen). All four UI kinds are supported
   (`addon_ui.lua`): a progress bar is X to cancel, as on ox_lib, and an
   input dialog will not submit a required field left empty or a value out
   of its bounds. Drawn on fake Derma only so far: a real Gmod client is

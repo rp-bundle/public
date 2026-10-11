@@ -938,6 +938,118 @@ describe("the Gmod adapter's client", function()
     assert.are_not.equal("deleted", world.core.auth.state())
   end)
 
+  ---Logs in through the form and the server's answer, so the player is in
+  ---the game, as a resumed or returning one is.
+  ---@return rpf.mock.gmod gmod The fake module.
+  ---@return rpf.mock.GmodWorld world The fake.
+  ---@return table record What the host recorded.
+  local function in_game()
+    local gmod, world, record = at_login()
+    local fields = gmod.shown(world, "DTextEntry")
+    fields[1].value = "alice"
+    fields[2].value = "correct horse battery"
+    button(gmod, world, "Log in"):DoClick()
+    local request = record.requests[#record.requests]
+    world:http_done(
+      request.id,
+      200,
+      world.core.json.encode(world.core.json.object({
+        player_id = "00000000-0000-4000-8000-000000000001",
+        username = "alice",
+        created = false,
+        ticket = "rpf_jt_ticket",
+        ticket_expires_at = "2026-01-01T00:01:00Z",
+        remember_token = "rpf_rt_remember",
+        remember_token_expires_at = "2026-01-31T00:00:00Z",
+        session_token = "rpf_st_session",
+        session_token_expires_at = "2026-01-01T12:00:00Z",
+        api_token = world.core.json.null,
+        api_token_expires_at = world.core.json.null,
+      })),
+      {}
+    )
+    world:from_server("rpf:join_result", world.core.handoff.encode("rpf:join_result", {
+      ok = true,
+      player_id = "00000000-0000-4000-8000-000000000001",
+      username = "alice",
+      created = false,
+    }))
+    assert.are.equal("authenticated", world.core.auth.state())
+    world:from_server("rpf:characters", world.core.handoff.encode("rpf:characters", {
+      characters = world.core.json.array({
+        { id = "00000000-0000-4000-8000-0000000000c1", first_name = "Ada", last_name = "Byron", gender = "female" },
+      }),
+      selected = "00000000-0000-4000-8000-0000000000c1",
+    }))
+    -- The server hands out a fresh nonce for the next thing the player does.
+    world:from_server("rpf:join_nonce", world.core.handoff.encode("rpf:join_nonce", {
+      nonce = "nonce-2",
+      expires_in_ms = 60000,
+      portal_url = "https://portal.test",
+      server_id = SERVER_ID,
+    }))
+    return gmod, world, record
+  end
+
+  it("opens the delete form from the console for a logged-in player, and Back returns to the game", function()
+    local gmod, world, record = in_game()
+    assert.are.same({}, gmod.shown(world, "DFrame"))
+    world:command("rpf_delete_account")
+    assert.truthy(labels(gmod, world):find("cannot be undone", 1, true))
+    button(gmod, world, "Back"):DoClick()
+    assert.are.same({}, gmod.shown(world, "DFrame"))
+
+    world:command("rpf_delete_account")
+    local fields = gmod.shown(world, "DTextEntry")
+    fields[1].value = "alice"
+    fields[2].value = "correct horse battery"
+    gmod.shown(world, "DCheckBoxLabel")[1].value = true
+    button(gmod, world, "Delete my account"):DoClick()
+    local request = record.requests[#record.requests]
+    assert.are.equal("https://portal.test/api/v1/player/delete_account", request.url)
+    world:http_done(request.id, 204, "", {})
+    assert.are.equal("deleted", world.core.auth.state())
+    assert.truthy(labels(gmod, world):find("alice was deleted", 1, true))
+  end)
+
+  it("asks for the box and shows a refusal on the form opened from the console", function()
+    local gmod, world, record = in_game()
+    world:command("rpf_delete_account")
+    local fields = gmod.shown(world, "DTextEntry")
+    fields[1].value = "alice"
+    fields[2].value = "correct horse battery"
+    local requests = #record.requests
+    button(gmod, world, "Delete my account"):DoClick()
+    assert.are.equal(requests, #record.requests)
+    assert.truthy(labels(gmod, world):find("Tick the box", 1, true))
+    gmod.shown(world, "DCheckBoxLabel")[1].value = true
+    button(gmod, world, "Delete my account"):DoClick()
+    world:http_done(
+      record.requests[#record.requests].id,
+      403,
+      '{"error":"account_linked","message":"This account is linked to a staff account. Remove the link on the portal\'s in-game account page first, then delete the account."}',
+      {}
+    )
+    assert.truthy(labels(gmod, world):find("in-game account page", 1, true))
+    assert.are.equal("authenticated", world.core.auth.state())
+  end)
+
+  it("sends a player who backs out while choosing a character to the character screen, and ignores the command before login", function()
+    local gmod, world = at_login()
+    world:command("rpf_delete_account")
+    assert.are.same({ "Log in" }, { button(gmod, world, "Log in").text }, "the login form is still up")
+    assert.is_nil(labels(gmod, world):find("cannot be undone", 1, true))
+    gmod, world = in_game()
+    world:from_server("rpf:characters", world.core.handoff.encode("rpf:characters", {
+      characters = world.core.json.array({
+        { id = "00000000-0000-4000-8000-0000000000c1", first_name = "Ada", last_name = "Byron", gender = "female" },
+      }),
+    }))
+    world:command("rpf_delete_account")
+    button(gmod, world, "Back"):DoClick()
+    assert.truthy(button(gmod, world, "Play Ada Byron"))
+  end)
+
   it("lists characters after login, and selects one through the server", function()
     local gmod, world, record = at_login()
     world:from_server("rpf:characters", world.core.handoff.encode("rpf:characters", {
