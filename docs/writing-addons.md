@@ -881,8 +881,10 @@ give can find the player has no room after the money is gone.
   again against stock or prices that have since moved.
 - **`unknown` is for staff.** It means the game server cannot tell whether
   the command happened (it stopped mid-way). It is logged with what it was,
-  announced as `domains.op_unknown`, listed by `rpf.ops.unknown()`, and
-  never run again. Do not compensate on your own.
+  announced as `domains.op_unknown`, listed by `rpf.ops.unknown()`, shown
+  to staff on the server's **Unknown operations** page in the portal, and
+  never run again. Do not compensate on your own: staff look it up and
+  settle it by hand.
 
 To charge for a change to your own records (a badge, an upgrade), pass the
 change as `apply` after the op id. Hold the record and check everything

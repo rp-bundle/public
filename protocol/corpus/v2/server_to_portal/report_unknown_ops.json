@@ -1,0 +1,35 @@
+{
+  "id": "00000005-0000-4000-8000-000000000005",
+  "sent_at": "2026-01-01T00:00:00Z",
+  "type": "report_unknown_ops",
+  "ops": [
+    {
+      "op_id": "1767225500000-0123456789abcdef",
+      "call": "money.debit",
+      "cause": "cut off by a restart",
+      "player_id": "00000002-0000-4000-8000-000000000002",
+      "account": "bank",
+      "amount": 250,
+      "paid": null,
+      "item": null,
+      "count": null,
+      "take": null,
+      "give": null,
+      "reason": "Garden plot"
+    },
+    {
+      "op_id": "1767225550000-fedcba9876543210",
+      "call": "commerce.exchange",
+      "cause": "inventory.give failed after money.debit went through",
+      "player_id": "00000002-0000-4000-8000-000000000002",
+      "account": "cash",
+      "amount": 40,
+      "paid": 0,
+      "item": null,
+      "count": null,
+      "take": null,
+      "give": "water_bottle:2",
+      "reason": "Shop"
+    }
+  ]
+}
