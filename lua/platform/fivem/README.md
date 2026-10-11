@@ -329,7 +329,8 @@ The bundle targets Node 16, the oldest an FXServer that runs this ships.
   nothing unless the core is `authenticated`, locks input while the form is
   up, and the page's Back sends `close_delete`, which puts back the screen
   and lock that were up (the character screen for a player still choosing,
-  the game for one in play).
+  the game for one in play). Back is refused while a deletion is under way,
+  since putting a screen back makes the page forget its sealed passwords.
 - The remember token is the only secret stored on the player's machine, in
   client KVP, and is safe there only because P1 binds it to the player's
   FiveM licence: client storage is shared by every server running a resource

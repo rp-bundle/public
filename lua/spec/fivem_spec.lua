@@ -1699,6 +1699,25 @@ describe("the FiveM adapter", function()
       assert.is_true(driver.focus, "still choosing, so still locked")
     end)
 
+    it("refuses Back while a deletion waits, which would forget its sealed password", function()
+      local driver = started_client()
+      driver.nui("ready", {})
+      log_in(driver)
+      driver.commands.rpf_delete_account()
+      local sealed = "rpf-sealed-00112233445566778899aabbccddeeff"
+      -- No nonce yet: the deletion waits for one.
+      assert.is_true(driver.nui("delete_account", { username = "sam", password = sealed, confirmed = true }).ok)
+      local sent = #driver.nui_sent
+      local answer = driver.nui("close_delete", {})
+      assert.is_false(answer.ok)
+      assert.truthy(answer.error:find("wait", 1, true))
+      assert.are.equal(sent, #driver.nui_sent, "the page was not told anything, so it keeps the password")
+      assert.are.equal("delete", last_screen(driver).screen)
+      nonce(driver)
+      local request = nui_messages(driver)[#driver.nui_sent]
+      assert.are.equal(sealed, rpf.json.decode(request.body).password)
+    end)
+
     it("deletes the account from the form opened in game, a sealed password and all", function()
       local driver, record = started_client()
       driver.nui("ready", {})

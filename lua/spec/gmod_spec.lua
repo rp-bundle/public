@@ -943,7 +943,8 @@ describe("the Gmod adapter's client", function()
   ---@return rpf.mock.gmod gmod The fake module.
   ---@return rpf.mock.GmodWorld world The fake.
   ---@return table record What the host recorded.
-  local function in_game()
+  ---@param no_characters boolean? Whether the server sends no list, as one whose characters are another framework's.
+  local function in_game(no_characters)
     local gmod, world, record = at_login()
     local fields = gmod.shown(world, "DTextEntry")
     fields[1].value = "alice"
@@ -975,12 +976,14 @@ describe("the Gmod adapter's client", function()
       created = false,
     }))
     assert.are.equal("authenticated", world.core.auth.state())
-    world:from_server("rpf:characters", world.core.handoff.encode("rpf:characters", {
-      characters = world.core.json.array({
-        { id = "00000000-0000-4000-8000-0000000000c1", first_name = "Ada", last_name = "Byron", gender = "female" },
-      }),
-      selected = "00000000-0000-4000-8000-0000000000c1",
-    }))
+    if not no_characters then
+      world:from_server("rpf:characters", world.core.handoff.encode("rpf:characters", {
+        characters = world.core.json.array({
+          { id = "00000000-0000-4000-8000-0000000000c1", first_name = "Ada", last_name = "Byron", gender = "female" },
+        }),
+        selected = "00000000-0000-4000-8000-0000000000c1",
+      }))
+    end
     -- The server hands out a fresh nonce for the next thing the player does.
     world:from_server("rpf:join_nonce", world.core.handoff.encode("rpf:join_nonce", {
       nonce = "nonce-2",
@@ -1032,6 +1035,14 @@ describe("the Gmod adapter's client", function()
     )
     assert.truthy(labels(gmod, world):find("in-game account page", 1, true))
     assert.are.equal("authenticated", world.core.auth.state())
+  end)
+
+  it("returns to the game, not to an empty character screen, when characters are another framework's", function()
+    local gmod, world = in_game(true)
+    assert.are.same({}, gmod.shown(world, "DFrame"), "no character screen was ever up")
+    world:command("rpf_delete_account")
+    button(gmod, world, "Back"):DoClick()
+    assert.are.same({}, gmod.shown(world, "DFrame"))
   end)
 
   it("sends a player who backs out while choosing a character to the character screen, and ignores the command before login", function()

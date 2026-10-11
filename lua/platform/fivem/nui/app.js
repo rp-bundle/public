@@ -311,7 +311,11 @@ function switchTo(name) {
 byId("show-delete").addEventListener("click", () => switchTo("delete"));
 byId("cancel-delete").addEventListener("click", () => {
   if (deleteFromGame) {
-    void call("close_delete", {});
+    void call("close_delete", {}).then((answer) => {
+      if (answer.ok !== true && answer.error) {
+        showError(answer.error);
+      }
+    });
   } else {
     switchTo("login");
   }

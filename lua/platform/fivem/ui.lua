@@ -121,11 +121,18 @@ function Screens:open_delete()
 end
 
 ---Closes the delete form opened by `open_delete`, putting back what was up.
----@return boolean closed False if the form is not up.
+---Refused while a deletion is waiting for its nonce or the portal: putting
+---the screen back makes the page forget its sealed passwords, and the
+---deletion would then send a handle as the password.
+---@return boolean closed False if the form is not up, or a deletion is under way.
+---@return string? err Why not.
 function Screens:close_delete()
   local back = self.returning
   if not back then
-    return false
+    return false, "the form is not open"
+  end
+  if self.deps.core.auth.state() ~= "authenticated" then
+    return false, "wait for the deletion to finish"
   end
   self.returning = nil
   self.screen = back.screen
@@ -133,7 +140,7 @@ function Screens:close_delete()
     self.deps.send(back.screen)
   end
   self:lock(back.locked)
-  return true
+  return true, nil
 end
 
 ---Shows an error on the screen that is up. `message` is written for the

@@ -74,13 +74,18 @@ local pending_message = nil
 ---@type string
 local login_warning = ""
 
+---How to put the screen on show back, if it is one that can be: the
+---character screens set it, and `window` clears it for any other.
+---@type fun()?
+local restore = nil
+
 ---Closes the screen on show.
 local function close()
   local open = frame
   if open and IsValid(open) then
     open:Remove()
   end
-  frame, status, actions = nil, nil, {}
+  frame, status, actions, restore = nil, nil, {}, nil
 end
 
 ---Opens a new screen, replacing any on show.
@@ -97,6 +102,7 @@ local function window(title, height)
   f:SetDraggable(false)
   f:MakePopup()
   frame = f
+  restore = nil
   return f
 end
 
@@ -194,20 +200,6 @@ end
 
 local delete_account
 local characters
-
----Puts the player back where the delete form opened from the game found
----them: in the game when a character is in play, on the character screen
----when they were still choosing.
-local function back_to_game()
-  browsing = false
-  local selected = core.picker.selected()
-  if type(selected) == "string" then
-    close()
-  else
-    browsing = true
-    characters(core.picker.list(), nil, false)
-  end
-end
 
 ---The login form: log in, or register a new account.
 ---@param warning string The password reuse warning, shown at the password.
@@ -308,6 +300,9 @@ end
 ---@param truncated boolean Whether some characters are not shown.
 function characters(list, selected, truncated)
   local f = window("Characters", 520)
+  restore = function()
+    characters(list, selected, truncated)
+  end
   local scroll = vgui.Create("DScrollPanel", f) --[[@as DScrollPanel]]
   scroll:Dock(FILL)
   if #list == 0 then
@@ -358,6 +353,9 @@ end
 ---@param reason string? Why, as the server said.
 local function load_failed(reason)
   local f = window("Characters", 160)
+  restore = function()
+    load_failed(reason)
+  end
   label(f, "Your characters could not be loaded (" .. tostring(reason or "unknown") .. ").")
   button(f, "Try again", function()
     attempt("Loading your characters…", core.picker.refresh())
@@ -380,7 +378,20 @@ local function open_delete()
   if core.auth.state() ~= "authenticated" then
     return
   end
-  delete_account(back_to_game)
+  -- Back puts back what was up. It is not inferred from the picker: on a
+  -- server whose characters are another framework's the picker is empty
+  -- while the player is in the game, and an empty character screen would
+  -- be one they could not leave.
+  local back = restore
+  delete_account(function()
+    if back then
+      browsing = core.picker.selected() ~= nil
+      back()
+    else
+      browsing = false
+      close()
+    end
+  end)
 end
 
 ---Listens to the core's login and character events. Called before the core
