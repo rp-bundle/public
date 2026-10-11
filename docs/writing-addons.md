@@ -1005,6 +1005,12 @@ about. Two choices make it work, and both apply to anything like it:
   before the core has claimed every deed back, a second one could be sold.
   Only a `unique` field would refuse it, and the portal would refuse it
   after the money moved.
+- **A reference to the buyer** is one the portal refuses in one case: the
+  buyer's account was deleted. RPF kicks a deleted account from every
+  server it is in game on as the deletion commits, so nothing an addon does
+  for that player afterwards can name them; only a purchase made in the
+  moment between the deletion and the kick is refused after the money
+  moved, and its record is logged as refused rather than written.
 
 Its doors are a `config` type that refers to the property, placed by
 staff. A door's state is the property's `locked` field, which the owner

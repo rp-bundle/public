@@ -524,6 +524,16 @@ socket.
 - A composite operation's `apply` that yielded could lose sight of what it
   wrote when another one ran meanwhile, so the journal could record it done
   before its change reached the outbox (`rpf.records.watch`).
+- A deleted player account is kicked from the game (J8 follow-up, #319).
+  Deleting an account, by staff or by the player from another server's
+  login screen, kicks it from every server of the guild it is logged in on
+  with "This account has been deleted.", through the `kick` command every
+  core already runs; a server that was not connected kicks it at its next
+  `OnlinePlayers` resync. Before, the player stayed in play on an account
+  the portal refused every change for, so an addon's record owned by them,
+  or a property bought for them, was refused after the money moved. The
+  player page shows how each kick went. An erased account is no longer put
+  back on a server's online list by a resync. No protocol or Lua change.
 
 ### Database
 
