@@ -52,9 +52,11 @@ local platform = nil
 ---@type rpf.items.Kept?
 local kept = nil
 
----Callbacks waiting for the catalog request in flight, if one is.
----@type fun(catalog: rpf.items.Catalog?, err: string?)[]?
-local catalog_waiting = nil
+---The catalog request in flight, if one is: the portal and server it asks,
+---and the callbacks waiting for it. A caller for another portal or server
+---never joins it.
+---@type { context: string, waiting: fun(catalog: rpf.items.Catalog?, err: string?)[] }?
+local inflight = nil
 
 ---Bumped by `start`, so an answer to a request made before it is ignored.
 local generation = 0
@@ -192,7 +194,7 @@ local function read_catalog(text)
   end
   defaults.image = nil
   ---@type rpf.items.Catalog
-  local catalog = { defaults = defaults, items = {}, urls = {} }
+  local catalog = { defaults = defaults, items = {}, urls = {}, portal_url = "" }
   for slug, raw in pairs(body.items) do
     local item, url = read_item(raw)
     if type(slug) == "string" and item then
@@ -215,15 +217,15 @@ local function copy_item(item)
   }
 end
 
----Runs every callback waiting for the catalog.
----@param catalog rpf.items.Catalog? The catalog.
----@param err string? Why there is none.
-local function catalog_done(catalog, err)
-  local waiting = catalog_waiting or {}
-  catalog_waiting = nil
-  for _, callback in ipairs(waiting) do
-    callback(catalog, err)
+---The portal and server this client logs in to now, as one key.
+---@return string? context The key, nil before the first nonce.
+---@return string? portal_url The portal's address.
+local function current_context()
+  local portal_url, server_id = rpf.auth.portal()
+  if not portal_url or not server_id then
+    return nil, nil
   end
+  return portal_url .. "\n" .. server_id, portal_url
 end
 
 ---Calls back with the catalog: the one kept while it is fresh, else one
@@ -237,13 +239,12 @@ local function with_catalog(force, callback)
     callback(nil, "unavailable")
     return
   end
-  local portal_url, server_id = rpf.auth.portal()
+  local context, portal_url = current_context()
   local token = rpf.auth.api_token()
-  if not portal_url or not server_id or not token then
+  if not context or not portal_url or not token then
     callback(nil, "not_logged_in")
     return
   end
-  local context = portal_url .. "\n" .. server_id
   if kept and kept.context ~= context then
     kept = nil
   end
@@ -251,11 +252,14 @@ local function with_catalog(force, callback)
     callback(kept.catalog, nil)
     return
   end
-  if catalog_waiting then
-    catalog_waiting[#catalog_waiting + 1] = callback
+  if inflight and inflight.context == context then
+    inflight.waiting[#inflight.waiting + 1] = callback
     return
   end
-  catalog_waiting = { callback }
+  -- One for another portal or server is left to answer its own callers,
+  -- and can no longer keep what it gets (below).
+  local request = { context = context, waiting = { callback } }
+  inflight = request
   local headers = { Authorization = "Bearer " .. token }
   local previous = kept
   if previous and previous.etag then
@@ -268,12 +272,23 @@ local function with_catalog(force, callback)
   local settled = false
   local finish = once_or_timeout("unavailable", function(catalog, err)
     settled = true
+    if inflight == request then
+      inflight = nil
+    end
     if mine == generation then
-      catalog_done(catalog, err)
+      for _, waiter in ipairs(request.waiting) do
+        waiter(catalog, err)
+      end
     end
   end)
   p.http_request("GET", portal_url .. items.CATALOG_PATH, headers, nil, function(status, body, response_headers)
     if mine ~= generation or settled then
+      return
+    end
+    if current_context() ~= context then
+      -- The client moved to another portal or server meanwhile: this
+      -- catalog is not the one its callers now need.
+      finish(nil, "unavailable")
       return
     end
     if status == 304 and previous and kept == previous then
@@ -284,6 +299,7 @@ local function with_catalog(force, callback)
     if status == 200 then
       local catalog = read_catalog(body)
       if catalog then
+        catalog.portal_url = portal_url
         kept = { context = context, etag = header(response_headers, "etag"), fetched_at = p.now(), catalog = catalog }
         finish(catalog, nil)
         return
@@ -423,12 +439,9 @@ function items.image(slug, callback)
         deliver(callback, nil, "not_found")
         return
       end
-      local portal_url = rpf.auth.portal()
-      if not portal_url then
-        deliver(callback, nil, "not_logged_in")
-        return
-      end
-      fetch(hash, portal_url .. path, function(src, fetch_err)
+      -- The catalog's own portal, never the one logged in to now: the path
+      -- is that portal's.
+      fetch(hash, catalog.portal_url .. path, function(src, fetch_err)
         if src then
           deliver(callback, { slug = slug, hash = hash, src = src }, nil)
         elseif fetch_err == "not_found" and not tried then
@@ -449,7 +462,7 @@ end
 function items.start(p)
   platform = p
   generation = generation + 1
-  kept, catalog_waiting = nil, nil
+  kept, inflight = nil, nil
   images, image_order, loading = {}, {}, {}
 end
 
@@ -457,6 +470,7 @@ end
 ---each image's path on the portal beside it.
 ---@class rpf.items.Catalog: rpf.PlayerItemCatalog
 ---@field urls table<string, string> Each image's path on the portal, by slug, with its hash: never handed to a script.
+---@field portal_url string The portal it came from, whose address its paths are under.
 
 rpf.items = items
 return items

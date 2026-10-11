@@ -338,6 +338,34 @@ describe("rpf.items", function()
     assert.are.equal(1, second.items.apple.weight, "a copy each time")
   end)
 
+  it("never answers or keeps a catalog asked of a portal the client has since left", function()
+    local c = logged_in()
+    local first = ask("apple")
+    local old = c.requests[#c.requests]
+    c.from_server("rpf:join_nonce", {
+      nonce = "rpf_jn_two",
+      expires_in_ms = 120000,
+      portal_url = "https://other.example",
+      server_id = SERVER,
+    })
+    local second = ask("apple")
+    local new = c.requests[#c.requests]
+    assert.are_not.equal(old, new, "a caller for the new portal does not join the old request")
+    assert.are.equal("https://other.example/api/v1/player/items", new.url)
+
+    old.answered = true
+    old.callback(200, assert(rpf.json.encode(rpf.json.object(catalog({ apple = item(APPLE) })))), {})
+    assert.are.equal("unavailable", first.err)
+    assert.are.equal(0, #c.images)
+
+    new.answered = true
+    new.callback(200, assert(rpf.json.encode(rpf.json.object(catalog({ apple = item(PEAR) })))), {})
+    assert.are.equal(1, #c.images)
+    assert.are.equal("https://other.example" .. image_path("apple", PEAR), c.images[1].url)
+    c.images[1].done("src")
+    assert.are.equal(PEAR, second.image.hash)
+  end)
+
   it("drops a catalog from another portal or server", function()
     local c = logged_in()
     ask("apple")
