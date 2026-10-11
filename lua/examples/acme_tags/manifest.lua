@@ -2,8 +2,9 @@
 ---
 ---The worked example from `docs/architecture/addons.md`, runnable: an addon
 ---RPF has never heard of, built only on `rpf.api`. It declares one live
----type, registers an interaction a player's client calls to spray, keeps
----the tags across restarts, and fades them on a timer. The same three files
+---type, registers an interaction a player's client calls to spray, has the
+---core hold the tags across restarts (`hold = "server"`), and fades them on
+---a timer. The same three files
 ---run on FiveM and Gmod; only the thin entry points in `fivem/` and `gmod/`
 ---differ, because each engine loads a script its own way.
 ---
@@ -31,6 +32,10 @@ acme_tags.MANIFEST = {
       schema = 1,
       authority = "live",
       owners = { "player" },
+      -- Held by the server while it runs (J6), whether or not the player who
+      -- sprayed it is here, so a tag fades on time; the core takes them back
+      -- after a restart.
+      hold = "server",
       title = "Tag",
       fields = {
         text = { type = "string", max_len = 24, charset = "printable", required = true },

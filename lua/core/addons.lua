@@ -1054,6 +1054,32 @@ function addons.definition(type_name)
   return nil
 end
 
+---Every type an installation has, in name order: the manifest's own, and
+---those the config keeps apart from it (a type kept for its records, or one
+---ahead after a rollback). Read from the config, so it answers whether or
+---not the addon's code is loaded.
+---@param namespace string The addon's namespace.
+---@return string[] types Full type names; empty if the config does not install it.
+function addons.type_names(namespace)
+  local installed = rpf.config.addon(namespace)
+  local seen, out = {}, {}
+  if type(installed) ~= "table" then
+    return out
+  end
+  local declared_types = type(installed.manifest) == "table" and installed.manifest.types
+  for name in pairs(type(declared_types) == "table" and declared_types or {}) do
+    seen[namespace .. "." .. name] = true
+  end
+  for name in pairs(type(installed.types) == "table" and installed.types or {}) do
+    seen[name] = true
+  end
+  for name in pairs(seen) do
+    out[#out + 1] = name
+  end
+  table.sort(out)
+  return out
+end
+
 ---Every addon running here now, in namespace order: active, or in its
 ---`start` handler. What the world's placements are worked out from.
 ---@return string[] namespaces The namespaces.

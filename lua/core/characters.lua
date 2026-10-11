@@ -211,8 +211,12 @@ local function own_character(player_id, id)
   return nil
 end
 
----The records a character owns that this server holds: its accounts and
----containers. Never the character itself, which is a session record.
+---The records a character owns that this server holds by its selection:
+---its accounts and containers, and its records of addon types held with
+---their owner (J6). Never the character itself, which is a session record,
+---and never a record of an addon type held by the server or on demand,
+---which its selection did not bring and putting it away must not end
+---(`rpf.holding`).
 ---@param id string The character.
 ---@return rpf.RecordRef[] refs The records.
 local function owned_records(id)
@@ -220,7 +224,8 @@ local function owned_records(id)
   for _, ref in ipairs(records.held()) do
     if ref.kind ~= "character" then
       local data = records.get(ref.kind, ref.id)
-      if data and owned(data, "character", id) then
+      local selected = ref.kind ~= "addon_record" or (data and rpf.holding.policy(data.type) == "owner")
+      if data and selected and owned(data, "character", id) then
         out[#out + 1] = ref
       end
     end
@@ -260,6 +265,18 @@ local function abandon(player_id, id)
     return
   end
   release_owned(id, "a hold for a connection the player has left")
+end
+
+---Settles a hold another module made of a character's records for its
+---player's session (`rpf.holding`, J6, holding a newly enabled addon's
+---records): what it brought of the character's own is given back unless
+---the character is still in play, or being put there, so a hold that landed
+---after the character was put away or switched leaves nothing held that no
+---selection will release.
+---@param player_id string The player.
+---@param id string The character the hold named.
+function characters.settle_hold(player_id, id)
+  abandon(player_id, id)
 end
 
 -- Telling the client ---------------------------------------------------------

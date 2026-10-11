@@ -136,6 +136,17 @@ function World:answer(frame)
     return "rejected", { re = frame.id, code = refused, reason = "refused by the test" }
   end
   if frame.type == "declare_holds" then
+    -- The portal ends every hold the declaration leaves out: how a restart
+    -- gives back what it held.
+    local declared = {}
+    for _, ref in ipairs(frame.records) do
+      declared[ref.id] = true
+    end
+    for record_id, record in pairs(portal.records) do
+      if not declared[record_id] then
+        record.held = false
+      end
+    end
     return "state_applied", { re = frame.id, revisions = frame.records }
   elseif frame.type == "online_players" or frame.type == "declare_addons" then
     return "ack", { re = frame.id }
@@ -160,6 +171,45 @@ function World:answer(frame)
         local owned = portal.owned[id]
         if owned.data.owner.kind == owner.kind and owned.data.owner.id == owner.id then
           hand_over(owned)
+        end
+      end
+    end
+    -- Addon records: an owner's of types held with their owner, and a
+    -- claim's page of those held by policy (J6), by the policy the core
+    -- reads from the config the test installed.
+    local holding = self.core.holding
+    local unheld = {}
+    for id, record in pairs(portal.records) do
+      if not record.held then
+        unheld[#unheld + 1] = id
+      end
+    end
+    table.sort(unheld)
+    local taken = {}
+    for _, owner in ipairs(frame.owners) do
+      for _, id in ipairs(unheld) do
+        local record = portal.records[id]
+        if holding.policy(record.type) == "owner" and record.owner.kind == owner.kind and record.owner.id == owner.id then
+          out[#out + 1], taken[id] = record, true
+        end
+      end
+    end
+    local claimed = 0
+    for _, type_name in ipairs(frame.types or {}) do
+      local policy = holding.policy(type_name)
+      if not policy then
+        return "rejected", { re = frame.id, code = "not_found", reason = "not a type held by policy" }
+      end
+      for _, id in ipairs(unheld) do
+        local record = portal.records[id]
+        local kind = record.owner.kind
+        if
+          not taken[id]
+          and claimed < holding.MAX_CLAIMED
+          and record.type == type_name
+          and (policy == "server" or kind == "server" or kind == "employer")
+        then
+          out[#out + 1], taken[id], claimed = record, true, claimed + 1
         end
       end
     end

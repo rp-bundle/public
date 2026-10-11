@@ -3,63 +3,6 @@
 ---through `rpf`, the public API, which the entry point hands in.
 acme_tags = acme_tags or {}
 
----How long to wait before asking again when the portal could not answer.
-acme_tags.RETRY_MS = 30000
-
----Holds every tag the server does not hold yet, a page at a time, so tags
----survive a restart and fade on time. (J6, #83, will hold a `hold = "server"`
----type's records for the addon; until then an addon holds what it needs.)
----If the portal cannot be asked, or does not answer, it tries again later:
----the timer is the addon's, so it stops with it.
----@param rpf rpf.Api The API.
----@param after table? Where the last page ended.
-local function hold_all(rpf, after)
-  ---Asks again, later, from the same page.
-  ---@param why string? What went wrong, for the console.
-  local function retry(why)
-    print("[acme_tags] could not reclaim tags (" .. tostring(why) .. "); trying again")
-    rpf.time.after(acme_tags.RETRY_MS, function()
-      hold_all(rpf, after)
-    end)
-  end
-  local asked, refused = rpf.records.query(acme_tags.TYPE, { limit = 64, after = after }, function(found, next_page, err)
-    if not found then
-      retry(err)
-      return
-    end
-    local ids = {}
-    for _, tag in ipairs(found or {}) do
-      if not tag.held then
-        ids[#ids + 1] = tag.id
-      end
-    end
-    -- The next page only once this one's are held: a hold the portal
-    -- refuses (a tag deleted since the query) asks for this page again.
-    local function next_one()
-      if next_page then
-        hold_all(rpf, next_page)
-      end
-    end
-    if #ids == 0 then
-      next_one()
-      return
-    end
-    local holding, refused_now = rpf.records.hold(acme_tags.TYPE, ids, function(_, hold_err)
-      if hold_err then
-        retry(hold_err)
-      else
-        next_one()
-      end
-    end)
-    if not holding then
-      retry(refused_now)
-    end
-  end)
-  if not asked then
-    retry(refused)
-  end
-end
-
 ---Deletes every held tag whose time is up. A tag it cannot delete now is
 ---said in the console and tried again on the next tick.
 ---@param rpf rpf.Api The API.
@@ -101,11 +44,14 @@ end
 ---list: an interaction that answers with data (`rpf.interactions.request`).
 ---@param rpf rpf.Api The API.
 ---@param player rpf.PlayerView The player who asked.
----@return boolean ok Always true.
----@return { tags: { id: string, text: string }[] } data Their tags.
+---@return boolean ok Whether they could be listed.
+---@return { tags: { id: string, text: string }[] }|string data Their tags, or why not.
 function acme_tags.mine(rpf, player)
   local tags = {}
-  local held = rpf.records.list(acme_tags.TYPE, { owner = { kind = "player", id = player.player_id } }) or {}
+  local held, err = rpf.records.list(acme_tags.TYPE, { owner = { kind = "player", id = player.player_id } })
+  if not held then
+    return false, "Your tags cannot be listed now (" .. tostring(err) .. ")."
+  end
   for _, tag in ipairs(held) do
     tags[#tags + 1] = { id = tag.id, text = tag.fields.text }
   end
@@ -203,7 +149,6 @@ function acme_tags.start_server(rpf)
       assert(rpf.interactions.register("acme_tags.read", function(player, _, target)
         return acme_tags.read(rpf, player, target)
       end, { target = acme_tags.TYPE, label = "Read the tag", distance = 3 }))
-      hold_all(rpf, nil)
     end,
   })
 end

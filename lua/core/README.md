@@ -51,9 +51,9 @@ files each side loads after it and in what order:
 rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, domains.lua,
                  -- config.lua, client.lua, players.lua, commands.lua, moderation.lua, staff.lua,
                  -- inventory.lua, manifest.lua, addons.lua, records.lua, sync.lua, accounts.lua,
-                 -- handoff.lua, join.lua, characters.lua, jobs.lua, edits.lua, data.lua, ops.lua,
-                 -- bridge.lua, facade.lua, commerce.lua, world.lua, targets.lua, interactions.lua,
-                 -- ui.lua, api.lua
+                 -- handoff.lua, join.lua, characters.lua, jobs.lua, edits.lua, data.lua,
+                 -- holding.lua, ops.lua, bridge.lua, facade.lua, commerce.lua, world.lua,
+                 -- targets.lua, interactions.lua, ui.lua, api.lua
 rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua,
                  -- picker.lua, targets.lua, interactions.lua, ui.lua, api.lua
 ```
@@ -74,7 +74,7 @@ API (see The public API).
 
 The client never loads `protocol.lua`, `domains.lua`, `client.lua`, `players.lua`,
 `commands.lua`, `moderation.lua`, `staff.lua`, `inventory.lua`, `manifest.lua`, `addons.lua`, `records.lua`, `sync.lua`,
-`accounts.lua`, `join.lua`, `characters.lua`, `jobs.lua`, `edits.lua`, `data.lua`, `ops.lua`, `bridge.lua`, `facade.lua`, `commerce.lua` or `world.lua`, because the player's client
+`accounts.lua`, `join.lua`, `characters.lua`, `jobs.lua`, `edits.lua`, `data.lua`, `holding.lua`, `ops.lua`, `bridge.lua`, `facade.lua`, `commerce.lua` or `world.lua`, because the player's client
 must never hold the server's API key and has no players, staff or records to
 manage.
 
@@ -90,6 +90,11 @@ On the server it wires two engine events, two lines each:
 `core.players.connected(handle)` when the engine hands a player over, and
 `core.players.dropped(handle, reason)` when one leaves. Everything else the
 core does for a player follows from those and from the client's messages.
+As its resource stops (or, on Gmod, the map changes) it calls
+`core.stop_server()` before it closes the transport, which flushes every
+change to a held record not yet reported into the persisted outbox
+(`rpf.sync.stop`), a change behind a create still on its way included,
+queued after it, so a clean stop loses none of it (J6).
 
 ## The server platform interface
 
@@ -727,10 +732,13 @@ anything not held, so a module keeps ids and reads through it every time.
   on this server) are held for their session (`sync.hold_session`, announced
   with `records.session(player_id, err, serial)`), and released when they leave.
   The server's paying accounts are held by `rpf.accounts` after every
-  `Welcome` (#169, below).
-  Anything else is held with `rpf.sync.hold({ owners = …, records = … })`:
+  `Welcome` (#169, below), and live addon records by their type's policy
+  (`rpf.holding`, J6, below).
+  Anything else is held with `rpf.sync.hold({ owners = …, records = …, types = … })`:
   `owners` holds every live record an owner has here (not transitively: a
-  character's own accounts are held through the character). The portal
+  character's own accounts are held through the character), and `types`
+  claims a page of the records of those addon types this server holds by
+  policy. The portal
   refuses the whole hold if any named record is not this server's. A hold
   is sent once every report and release queued before it has been answered
   (and any resync recovering a stale or refused one, queued or still to be),
@@ -1048,7 +1056,7 @@ against the type's installed definition (`rpf.addons.definition`) with
 
 | Call | Does |
 |---|---|
-| `create_addon_record(type, owner, fields, id?)` | A record of an active addon's live type, held from the start; reported as `addon_record_created` with every field, never whole, until the portal has it (a create lands even in a frame answered `resync_required`; one in a refused frame goes again as a create) |
+| `create_addon_record(type, owner, fields, id?, through?)` | A record of an active addon's live type, held from the start (for `through`'s session when given); reported as `addon_record_created` with every field, never whole, until the portal has it (a create lands even in a frame answered `resync_required`; one in a refused frame goes again as a create) |
 | `set_addon_fields(id, patch)` | Fields of a held record, `json.null` clearing one; reported as the patch, the changes since the last report merged |
 | `delete_addon_record(id)` | Reported as `addon_record_deleted`, forgotten once applied; a create that has not left yet is just dropped; a deletion the portal refuses (another record refers to it) is undone and the record reported whole |
 | `query_addon_records(type, query, callback)` | `query_records`: a page of a type's live records, each with its revision and whether this server holds it, to hold before changing |
@@ -1070,7 +1078,7 @@ The record calls addons make, which `rpf.api.records` fronts, over
 | `list(type, query)` | Every config record, or every held live record, of the type that meets `query` (`where`, `owner`, `order`, `descending`, `limit`), read locally: any field may be filtered or ordered; no value for the order field sorts last; ties by id |
 | `query(type, query, callback)` | `query_records` for unheld live records: `where` (`eq`, `lt`, `lte`, `gt`, `gte`, `prefix`) becomes `RecordQuery.filters`, on indexed fields as the portal requires; `callback(records, next, err)` in the caller's context |
 | `hold(type, ids, callback)`, `release(type, ids)` | `rpf.sync.hold` and `release` for up to 64 records of the type, held for the server (no player's session) |
-| `create(type, fields, opts)` | `records.create_addon_record` with `opts.owner` and an optional `opts.id`, after checking the owner kind, the id, the type's `limit` of held records and the fields |
+| `create(type, fields, opts)` | `records.create_addon_record` with `opts.owner` and an optional `opts.id`, after checking the owner kind, the id, the type's `limit` of held records and the fields; a record of a type held with its owner joins the owner's session when it is here (`rpf.holding.session_of`) |
 | `update(type, id, patch, opts)` | `records.set_addon_fields`, `opts.clear` naming the nullable fields to clear (`json.null`, which an export cannot carry), `opts.revision` refusing a stale write. An empty table in what is written takes its shape (array or object) from the stored value at the same place, so a `json` field read and written back unchanged is accepted though the plain copy lost its marks |
 | `delete(type, id, opts)` | `records.delete_addon_record`, `opts.revision` likewise |
 | `batch(ops)` | Every write checked against the records as they are, none made unless all would be; what was queued before is flushed first, then the writes are made and flushed, so they go in one report when they fit one frame (64 records, `max_records_per_frame`). A record whose create or whole report is still unanswered goes in a report of its own, so a batch naming one is `busy` until it is |
@@ -1086,19 +1094,50 @@ was held (1 when created here), moved on by every change made here, so a
 compare-and-set between scripts sees each change even when several reach
 the portal in one report.
 
-An addon's calls close when it stops being active, and the records it held
-for the server (none a player's session holds) are released with their
-final state, after its `stop` ran; a release that cannot finish yet (a
-create still on its way, a full outbox) is tried again each second while
-the addon stays inactive, and a hold answered after the addon stopped is
-given back. Its held records still drain to the portal as J2 made them
-(staff edits, reports, releases).
+An addon's calls close when it stops being active; which of its records
+are then released is `rpf.holding`'s (below). A hold answered after the
+addon stopped is given back. Its held records still drain to the portal as
+J2 made them (staff edits, reports, releases).
 
 Events, reserved, each an `rpf.data.Change` (`{ type, id, record, by,
 reason }`): `records.created`, `records.changed` and `records.deleted` after
 an addon's write, a staff edit (`rpf.edits`, `by = "staff"`), or a deletion
 the portal refused, which puts the record back (`records.changed`, `by =
 "portal"`, `reason = "referenced"`).
+
+### Hold policies (`rpf.holding`, J6)
+
+When a live addon record is held, by its type's `hold`, carried out by the
+core so no addon writes hold code, and decided by the config's
+installation rather than by whether the addon's code is loaded:
+
+| Policy | Held | Let go |
+|---|---|---|
+| `owner` | A player's records with their session hold, a character's with its selection; a record an addon creates for an owner whose session is here joins that session, and so does one held for the server that a session hold names. Records owned by the server or an employer are held as `server` ones | When the player leaves or puts the character away |
+| `server` | Claimed: `hold` with `types`, a page (`MAX_CLAIMED`, the portal's `limits::MAX_CLAIMED_PER_HOLD`) of the records nobody holds, again while a page comes back full; after every `Welcome` (waiting for the declaration, as every hold does), whenever the config's `addons` section changes, and every `CLAIM_MS` (a minute), which picks up records staff created meanwhile. A refusal (a full server, a disable racing the claim) is logged once until it changes | Only by a disable (below) |
+| none | On demand, `rpf.data.hold` | `rpf.data.release`, or when the addon's code stops |
+
+- **Code stops, installation enabled** (`addons.state` leaves `active`: a
+  resource stop, a reload, `mismatch`, a `start` that threw): what was held
+  for the server on demand is released with its final state; policy
+  records stay held.
+- **The config disables or removes the installation**: every record of its
+  types is released, sessions' included (`holding.drain`), tried again
+  every `RETRY_MS` while some cannot go yet (a create on its way, a full
+  outbox), worked out afresh on each try. A hold the portal answered
+  before the disable that lands after it (`records.held`) is drained as it
+  arrives.
+- **The config enables an installation, or gives an enabled type `hold =
+  "owner"`**: a claim, and, for an `owner` type new to it, a hold of each
+  logged-in player's own and selected character's records for their
+  session.
+- **An upgrade changes a type's `hold`**: held records follow (`records.hold_for`):
+  to `server`, session-held ones become the server's; to `owner`, those of
+  owners here join their sessions; to none, an addon whose code is not
+  running is drained.
+- **Putting a character away** (`rpf.characters`) releases what its
+  selection brought: its accounts, containers and `owner` records, never a
+  `server` record or one held on demand.
 
 ### The domain-neutral facade (`rpf.facade`, `rpf.ops`, J3)
 

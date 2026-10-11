@@ -61,6 +61,7 @@ local MANIFEST = {
       schema = 1,             -- move it on every change to `fields`
       authority = "live",     -- game state; "config" for staff-written data
       owners = { "player" },
+      hold = "server",        -- RPF holds every tag while the server runs
       fields = {
         text = { type = "string", max_len = 24, required = true },
         spot = { type = "vector3", required = true },
@@ -176,9 +177,24 @@ a plain copy: a field with no value is absent.
   `rpf.records.get(type, id)` and `rpf.records.list(type, query)`.
 - **`live` types** are game state, which a game server writes only while
   it **holds** the record. Records your addon creates are held from the
-  start; find others with `rpf.records.query` (it asks the portal) and take
-  them with `rpf.records.hold`. Let them go with `rpf.records.release`; when
-  your addon stops, RPF releases the ones it held for it.
+  start. Which others are held, and when, is the type's `hold`, and RPF
+  does the holding:
+  - `hold = "server"`: every record, whoever owns it, for as long as the
+    server runs. RPF takes them back after a restart, and picks up one
+    staff created in the portal within a minute. Use it for anything that
+    changes on its own: plants growing, printers printing, tags fading.
+  - `hold = "owner"`: a player's records while they are on the server, a
+    character's while it is in play. Use it for things only their owner
+    uses: a player's own settings or a character's stash of notes.
+  - Neither: you hold what you need. Find records with `rpf.records.query`
+    (it asks the portal), take them with `rpf.records.hold`, and let them
+    go with `rpf.records.release`. When your addon stops, RPF releases
+    what you held this way.
+
+  If staff disable your addon, RPF releases all of its records with their
+  final state. A record nobody holds is still stored, and staff can still
+  edit it in the portal. The details are in [Addons, "Live records: the
+  lifecycle"](architecture/addons.md#live-records-the-lifecycle-j6).
 
 | Call | Does |
 |---|---|

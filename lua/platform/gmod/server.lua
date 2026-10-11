@@ -350,8 +350,11 @@ local function start()
   end
   hook.Add("PlayerSay", "rpf.lock", lock.silence)
   -- A map change ends this Lua state and starts another, with a new instance
-  -- id. Closing now lets the portal see this one go before the next connects.
+  -- id. What changed in held records since the last report goes into the
+  -- persisted outbox first, for the next state to send; closing then lets
+  -- the portal see this one go before the next connects.
   hook.Add("ShutDown", "rpf", function()
+    core.stop_server()
     transport.disconnect()
   end)
   -- Anyone who joined before the convars were set (an admin setting them

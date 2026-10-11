@@ -39,6 +39,7 @@
 ---@field jobs rpf.jobs Characters' jobs, duty and salaries (D7).
 ---@field edits rpf.edits Staff edits of held records: the commands that change a character, an account or a container this server holds (F5).
 ---@field data rpf.data The record calls addons make (J3), which `rpf.api.records` fronts.
+---@field holding rpf.holding When live addon records are held and let go, by each type's `hold` policy (J6).
 ---@field ops rpf.ops Operation ids, and the journal that runs each facade command once (J3).
 ---@field facade rpf.facade The domain-neutral facade: characters, money, items and jobs for addons, from RPF's own modules or the bridge (J3, K2).
 ---@field commerce rpf.commerce Exchanges: money and items moved together in one journaled intent, for shops and other trades (J5).
@@ -55,6 +56,7 @@
 ---@field instance_id string? This process's instance id, once `start_server` has run.
 ---@field start_server fun(platform: rpf.ServerPlatform, options: rpf.ServerOptions): rpf.Client Starts the game-server half. Defined below.
 ---@field unload_origin fun(origin: any) Forgets what code from an origin set up through the public API, once that code is gone. Defined below.
+---@field stop_server fun(): boolean Flushes what changed in held records into the persisted outbox as the server stops. Defined below.
 ---@field start_client fun(platform: rpf.ClientPlatform, options: rpf.ClientStartOptions?): rpf.ClientPlatform Starts the player-client half. Defined below.
 ---@field publish fun(platform: rpf.ServerPlatform|rpf.ClientPlatform) Publishes the public API through the platform. Defined by `api.lua`, which loads last.
 ---@field api_subscribed_names fun(): integer How many event names hold a script's subscription, for tests. Defined by `api.lua`.
@@ -116,6 +118,7 @@ rpf.files = {
     "jobs.lua",
     "edits.lua",
     "data.lua",
+    "holding.lua",
     "ops.lua",
     "bridge.lua",
     "facade.lua",
@@ -191,7 +194,7 @@ function rpf.start_server(platform, options)
   rpf.characters.start(platform, rpf.connection)
   rpf.jobs.start(platform)
   rpf.edits.start()
-  rpf.data.start()
+  rpf.holding.start(platform, rpf.connection)
   rpf.ops.start(platform)
   rpf.bridge.start(platform)
   rpf.world.start(platform)
@@ -202,6 +205,26 @@ function rpf.start_server(platform, options)
   rpf.publish(platform)
   rpf.connection:start()
   return rpf.connection
+end
+
+---Stops the server half cleanly, as its resource stops or the map changes:
+---every change to a held record that is marked and not yet reported is
+---flushed into the outbox, which is persisted, so a clean stop loses none
+---of it and the next start sends it first (J6, `rpf.sync.stop`). Without it a stop loses
+---what changed since the last flush, at most `flush_interval_ms`, as a
+---crash does. The holds themselves are given back by the next start's
+---declaration. The adapter calls this, one line, before it closes the
+---transport.
+---@return boolean ok False if the outbox could not take every report, which is logged.
+function rpf.stop_server()
+  if not rpf.sync.connection then
+    return true
+  end
+  local ok = rpf.sync.stop()
+  if not ok then
+    rpf.sync.platform.log("error", "rpf: the outbox could not take every change as the server stopped; the rest is lost")
+  end
+  return ok
 end
 
 ---Forgets what code from an origin set up through the public API, because

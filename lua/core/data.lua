@@ -30,10 +30,9 @@
 ---   addon calls writes one: `inactive`. A `start` handler is running, and
 ---   may read and write; code of an activation that has ended (a callback
 ---   that waited across a disable or a reload) gets `inactive`.
---- - **When an addon stops, the records it held for the server go.** Every
----   held record of its types that no player's session holds is released
----   with its final state, as the contract's "Disable" says. Those a session
----   holds go when the player leaves.
+--- - **When an addon stops, what it held on demand goes.** Which live
+---   records are held when, and which a stop or a disable releases, is each
+---   type's `hold` policy, carried out by `rpf.holding` (J6).
 ---
 ---Events, reserved: `records.created`, `records.changed` and
 ---`records.deleted`, each with an `rpf.data.Change`, after any write to a
@@ -524,11 +523,6 @@ end
 
 -- Holding ------------------------------------------------------------------
 
----Releases the records an addon held for the server while it is not
----active; defined with the lifecycle, below.
----@type fun(namespace: string)
-local drain
-
 ---How long a release that could not be queued waits before it tries again.
 local RETRY_MS = 1000
 
@@ -612,8 +606,16 @@ function data.hold(type_name, ids, callback)
     local out = nil
     if not why and not rpf.addons.running(namespace) then
       -- The addon stopped while the hold was on its way, and its drain
-      -- found nothing to release: what arrived goes back now.
-      give_back(fresh)
+      -- found nothing to release: what arrived goes back now, but for what
+      -- its type's policy keeps held without the code (J6).
+      local unkept = {}
+      for _, ref in ipairs(fresh) do
+        local entry = records.entries[records.key(ref.kind, ref.id)]
+        if not (entry and rpf.holding.keeps(entry)) then
+          unkept[#unkept + 1] = ref
+        end
+      end
+      give_back(unkept)
       why = "inactive"
     elseif not why then
       -- The portal holds by id alone: a record of another type it handed
@@ -644,7 +646,10 @@ function data.hold(type_name, ids, callback)
   return true
 end
 
----Lets held records go, each reported with its final state.
+---Lets held records go, each reported with its final state. One whose type
+---the server holds by policy (`hold = "server"`) is claimed again by the
+---core within a claim's period (J6, `rpf.holding`): releasing it hands it
+---to staff for a moment, not for good.
 ---@param type_name any The type.
 ---@param ids any The records' ids.
 ---@return boolean? ok True once every one named is released.
@@ -753,7 +758,13 @@ function data.create(type_name, fields, opts)
   if not plan then
     return nil, why, refusal
   end
-  local made, failed, rule = records.create_addon_record(type_name, plan.owner, plan.fields, plan.id)
+  local made, failed, rule = records.create_addon_record(
+    type_name,
+    plan.owner,
+    plan.fields,
+    plan.id,
+    rpf.holding.session_of(type_name, plan.owner)
+  )
   if not made then
     return nil, failed, rule
   end
@@ -1022,7 +1033,13 @@ function data.batch(ops)
   for i, plan in ipairs(plans) do
     local id, name, by_now
     if plan.op == "create" then
-      local made = records.create_addon_record(plan.type, plan.owner, plan.fields, plan.id)
+      local made = records.create_addon_record(
+        plan.type,
+        plan.owner,
+        plan.fields,
+        plan.id,
+        rpf.holding.session_of(plan.type, plan.owner)
+      )
       id, name = made and made.id, "records.created"
     elseif plan.op == "update" then
       by_now = records.set_addon_fields(plan.entry.id, plan.patch)
@@ -1048,73 +1065,6 @@ function data.batch(ops)
     data.announce(change.name, change.change)
   end
   return results
-end
-
--- Lifecycle ----------------------------------------------------------------
-
-
----Releases the records an addon held for the server, while it is not
----active: the contract's drain. One that cannot finish yet (a create still
----on its way to the portal, a full outbox) tries again a second later, for
----as long as the addon stays inactive and anything is left.
----@param namespace string The addon.
-drain = function(namespace)
-  local state = rpf.addons.state(namespace)
-  if state == "active" or not rpf.sync.connection then
-    return
-  end
-  local prefix = namespace .. "."
-  local refs, deleting = {}, false
-  for _, entry in pairs(records.entries) do
-    if entry.kind == "addon_record" and entry.through == nil and entry.data.type:sub(1, #prefix) == prefix then
-      if entry.deleted then
-        -- Gone once the portal has the deletion; back, to be released, if
-        -- it refuses it (another record refers to it).
-        deleting = true
-      else
-        refs[#refs + 1] = { kind = "addon_record", id = entry.id }
-      end
-    end
-  end
-  table.sort(refs, function(a, b)
-    return a.id < b.id
-  end)
-  ---@type boolean?, string?
-  local ok, err = true, nil
-  if #refs > 0 then
-    ok, err = rpf.sync.release(refs)
-  end
-  if ok and deleting then
-    ok, err = nil, "deleting"
-  end
-  if ok then
-    return
-  end
-  if err == "too_large" then
-    rpf.sync.platform.log("error", "rpf: a record of " .. namespace .. " is too large to release, and stays held")
-  elseif not ok then
-    rpf.sync.platform.log(
-      "debug",
-      "rpf: some of " .. namespace .. "'s records stay held for now (" .. tostring(err) .. "); trying again"
-    )
-    rpf.sync.platform.after(RETRY_MS, function()
-      drain(namespace)
-    end)
-  end
-end
-
----Starts the drain when an addon stops being active, after its `stop` ran.
----A record a player's session holds stays until the player leaves.
----@param change rpf.addons.StateChange The addon's new state.
-local function on_state(change)
-  if change.state ~= "active" then
-    drain(change.namespace)
-  end
-end
-
----Wires the module up. Called by `rpf.start_server`.
-function data.start()
-  events.on("addons.state", on_state)
 end
 
 rpf.data = data

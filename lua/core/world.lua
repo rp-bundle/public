@@ -387,37 +387,13 @@ local function spec_of(type_name, where, record)
   }
 end
 
----Every full type name an installed addon has: its manifest's and the ones
----kept for their records, sorted.
----@param namespace string The addon.
----@return string[] names The type names.
-local function type_names(namespace)
-  local installed = rpf.config.addon(namespace)
-  local seen, out = {}, {}
-  if type(installed) ~= "table" then
-    return out
-  end
-  local declared_types = type(installed.manifest) == "table" and installed.manifest.types
-  for name in pairs(type(declared_types) == "table" and declared_types or {}) do
-    seen[namespace .. "." .. name] = true
-  end
-  for name in pairs(type(installed.types) == "table" and installed.types or {}) do
-    seen[name] = true
-  end
-  for name in pairs(seen) do
-    out[#out + 1] = name
-  end
-  table.sort(out)
-  return out
-end
-
 ---What should be placed now: by id, and the ids in order.
 ---@return table<string, rpf.world.Spawn> wanted The placements.
 ---@return string[] order Their ids, in namespace, type and id order.
 local function wanted()
   local out, order = {}, {}
   for _, namespace in ipairs(rpf.addons.active()) do
-    for _, type_name in ipairs(type_names(namespace)) do
+    for _, type_name in ipairs(rpf.addons.type_names(namespace)) do
       local def = rpf.addons.definition(type_name)
       local where = type(def) == "table" and def.authority == "config" and def.world or nil
       if type(where) == "table" and world.KINDS[where.kind] then

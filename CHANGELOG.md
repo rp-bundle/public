@@ -29,6 +29,16 @@ socket.
 
 ### Added
 
+- Hold policies for live addon records (J6, #83): a live type's `hold =
+  "server"` records are held by the server while it runs, claimed from the
+  portal with a new optional `types` field on `hold` (a page at a time,
+  after every reconnect and every minute), and its `hold = "owner"`
+  records come and go with their owner's session, including the ones an
+  addon creates. When an addon's code stops, only what it held on demand
+  is released; disabling its installation releases everything. Adapters
+  call `rpf.stop_server()` as they stop, which puts unreported changes in
+  the persisted outbox. The `acme_tags` example uses `hold = "server"`
+  instead of holding its tags itself.
 - The commerce example (J5, #82): `lua/examples/acme_shop/`, counters that
   sell items and buy them back, built only on `rpf.api`. Staff place
   counters and price listings as config records and stock what is limited

@@ -193,7 +193,10 @@ end
 ---Takes over the records the portal handed over in a `held` reply. A record
 ---already held here keeps the state it has, which is newer than any the
 ---portal could send: nothing but this server has changed it since it was
----held.
+---held. An addon record joins the session only if its type is held with
+---its owner (J6, `rpf.holding`), by the config as it is now, and then so
+---does one already held for the server alone, so it goes when the player
+---does.
 ---@param held table[] The `held` reply's records, decoded.
 ---@param through string? The player whose session they are for.
 ---@return table[] views Copies of every record now held that this reply named.
@@ -214,6 +217,14 @@ function records.take(held, through)
     id = data.id
     local key = records.key(record.kind, id)
     local entry = records.entries[key]
+    -- An addon record joins a session only while its type is held with its
+    -- owner, as this server's config says now (J6): the portal may have
+    -- answered under an older one, an upgrade having since made the type
+    -- the server's.
+    local joins = through
+    if record.kind == "addon_record" and rpf.holding.policy(data.type) ~= "owner" then
+      joins = nil
+    end
     if not entry then
       entry = {
         kind = record.kind,
@@ -221,16 +232,32 @@ function records.take(held, through)
         revision = record.revision,
         version = record.kind == "addon_record" and record.revision or nil,
         data = json.copy(data),
-        through = through,
+        through = joins,
         changed = {},
         transactions = {},
         resync = false,
       }
       records.entries[key] = entry
+    elseif joins and entry.through == nil and entry.kind == "addon_record" then
+      entry.through = joins
     end
     views[#views + 1] = view(entry)
   end
   return views
+end
+
+---Holds a record for a player's session from now on, released when they
+---leave, or for the server alone with nil: an addon record whose type an
+---upgrade moved between `hold = "owner"` and `hold = "server"` (J6,
+---`rpf.holding`).
+---@param kind rpf.RecordKind The record's kind.
+---@param id string The record's uuid.
+---@param through string? The player whose session it is held for, or nil for none.
+function records.hold_for(kind, id, through)
+  local entry = records.entries[records.key(kind, id)]
+  if entry then
+    entry.through = through
+  end
 end
 
 ---Forgets records, which is all releasing is on this side. Returns the refs
@@ -727,10 +754,11 @@ end
 ---@param owner { kind: string, id: string } Who it belongs to.
 ---@param fields table Its fields.
 ---@param id string? Its id, minted here if not given: a uuid unique on this server.
+---@param through string? The player whose session it joins, released when they leave (J6: a record of a type held with its owner, whose owner's session is here). Nil to hold it for the server.
 ---@return table? record A copy: `{ id, type, owner, fields }`.
 ---@return string? err `"invalid"`, `"inactive"`, or `"conflict"` for an id this server already holds.
 ---@return table? refusal For `"invalid"`, the rule its fields break.
-function records.create_addon_record(type_name, owner, fields, id)
+function records.create_addon_record(type_name, owner, fields, id, through)
   if type(owner) == "table" and owner.kind == "character" then
     -- A character to own it is the framework's on a companion server.
     local refused = external("characters")
@@ -772,6 +800,7 @@ function records.create_addon_record(type_name, owner, fields, id)
       owner = json.object({ kind = owner.kind, id = owner.id }),
       fields = checked,
     },
+    through = through,
     changed = {},
     transactions = {},
     resync = false,
