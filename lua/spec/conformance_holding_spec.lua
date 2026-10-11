@@ -400,6 +400,26 @@ conformance.run(busted, "live record holds", {
       assert.is_false(held(world, rock), "held on demand, so it goes back")
     end,
   },
+  {
+    name = "a record an addon creates for a character not in play is held for the server, not the session",
+    run = function(world)
+      local jane = "0000000f-0000-4000-8000-00000000000f"
+      world.portal.owned[jane] = {
+        kind = "character",
+        revision = 1,
+        data = { id = jane, server_id = SERVER, owner = player, first_name = "Jane", last_name = "Doe", gender = "female" },
+      }
+      installed(world)
+      local handle = world:login(1, PLAYER)
+      local character = { owner = { kind = "character", id = jane } }
+      local away = assert(world.api.records.create("acme_grove.hut", { label = "shed" }, character))
+      local key = world.core.records.key("addon_record", away.id)
+      assert.is_nil(world.core.records.entries[key].through, "she is not in play")
+      world:select(handle, jane)
+      local home = assert(world.api.records.create("acme_grove.hut", { label = "home" }, character))
+      assert.are.equal(PLAYER, world.core.records.entries[world.core.records.key("addon_record", home.id)].through)
+    end,
+  },
 })
 
 describe("rpf.holding", function()

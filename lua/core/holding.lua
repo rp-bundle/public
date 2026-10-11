@@ -137,8 +137,8 @@ local function kept_for_server(entry)
 end
 
 ---The player whose session a new record of an `owner` type joins: the
----player who owns it, or whose session holds the character that owns it,
----if they are here. Nil for any other type or owner, and for an owner who
+---player who owns it, or whose character in play owns it, if they are
+---here. Nil for any other type or owner, and for an owner who
 ---is not here: the record is then held for the server until the addon
 ---releases it or stops.
 ---@param type_name string The type.
@@ -152,8 +152,12 @@ function holding.session_of(type_name, owner)
     return rpf.players.by_player_id(owner.id) and owner.id or nil
   end
   if owner.kind == "character" then
+    -- Only the character in play: a player's other characters are held for
+    -- their session too, but their own records come with a selection.
     local character = records.entries[records.key("character", owner.id)]
-    return character and character.through or nil
+    local player_id = character and character.through
+    local selected = player_id and rpf.characters.selected(player_id)
+    return (selected and selected.id == owner.id) and player_id or nil
   end
   return nil
 end
