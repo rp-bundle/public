@@ -953,7 +953,7 @@ describe("the Gmod adapter's client", function()
     world:http_done(
       request.id,
       200,
-      world.core.json.encode(world.core.json.object({
+      assert(world.core.json.encode(world.core.json.object({
         player_id = "00000000-0000-4000-8000-000000000001",
         username = "alice",
         created = false,
@@ -965,7 +965,7 @@ describe("the Gmod adapter's client", function()
         session_token_expires_at = "2026-01-01T12:00:00Z",
         api_token = world.core.json.null,
         api_token_expires_at = world.core.json.null,
-      })),
+      }))),
       {}
     )
     world:from_server("rpf:join_result", world.core.handoff.encode("rpf:join_result", {
