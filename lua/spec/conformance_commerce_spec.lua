@@ -204,8 +204,15 @@ conformance.run(busted, "exchanges", {
       local api = world.api
       local op = api.ops.new()
       local deal = { account = "wallet", pay = 10, give = { { item = "bread", count = 2 } }, reason = "Corner shop: 2 bread" }
+      assert.is_nil(api.ops.result(op), "it has not run")
       assert.is_true(api.commerce.exchange(handle, deal, op))
       assert.is_true(api.commerce.exchange(handle, deal, op), "the same op again answers as before")
+      assert.is_true(api.ops.result(op), "and so does asking how it went")
+      local broke = api.ops.new()
+      deal.pay = 500
+      assert.are.same({ nil, "refused", "insufficient_funds" }, { api.commerce.exchange(handle, deal, broke) })
+      assert.are.same({ false, "refused", "insufficient_funds" }, { api.ops.result(broke) })
+      deal.pay = 10
       assert.are.same({ wallet = 90, till = 10, water = 3, bread = 2 }, holdings(world, handle), "and is made once")
       world:settle()
       local stacks = world.portal.owned[BAG].data.contents.stacks

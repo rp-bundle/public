@@ -112,6 +112,7 @@ end
 ---@field price integer? The water's price; 5 unless given.
 ---@field shown boolean? Whether the counter is open; true unless given.
 ---@field revision integer? The records' revision; 1 unless given.
+---@field water_item string? What the water listing sells; `water` unless given.
 
 ---The installed addon with staff's records, and the snapshot's sections.
 ---@param world spec.ConformanceWorld The world.
@@ -139,7 +140,13 @@ local function config(world, shop, setup)
       model = json.object({ fivem = "mp_m_shopkeep_01", gmod = "models/humans/group01/male_02.mdl", mock = "mock_shopkeeper" }),
       shown = setup.shown ~= false,
     }),
-    record(WATER, "listing", { counter = COUNTER, item = "water", price = setup.price or 5, buyback = 2, stocked = true }),
+    record(WATER, "listing", {
+      counter = COUNTER,
+      item = setup.water_item or "water",
+      price = setup.price or 5,
+      buyback = 2,
+      stocked = true,
+    }),
     record(BREAD, "listing", { counter = COUNTER, item = "bread", price = 3 }),
     record(DEAR, "listing", { counter = COUNTER, item = "bread", price = 500 }),
     record(GONE, "listing", { counter = COUNTER, item = "unobtainium", price = 1 }),
@@ -363,12 +370,12 @@ conformance.run(busted, "the acme_shop example", {
       local jane = assert(world.api.players.get(handle))
       local before = holdings(world, handle)
       local cases = {
-        { { listing = DEAR, price = 500, quantity = 1 }, "You cannot afford that." },
-        { { listing = BREAD, price = 3, quantity = 3 }, "You have no room for that." },
-        { { listing = WATER, price = 5, quantity = 6 }, "Only 5 left." },
-        { { listing = BREAD, price = 3, quantity = 1.5 }, "You can trade 1 to 10 at a time." },
-        { { listing = BREAD, price = 3, quantity = 11 }, "You can trade 1 to 10 at a time." },
-        { { listing = "00000099-0000-4000-8000-000000000099", price = 3, quantity = 1 }, "That is no longer sold here." },
+        { { listing = DEAR, revision = 1, price = 500, quantity = 1 }, "You cannot afford that." },
+        { { listing = BREAD, revision = 1, price = 3, quantity = 3 }, "You have no room for that." },
+        { { listing = WATER, revision = 1, price = 5, quantity = 6 }, "Only 5 left." },
+        { { listing = BREAD, revision = 1, price = 3, quantity = 1.5 }, "You can trade 1 to 10 at a time." },
+        { { listing = BREAD, revision = 1, price = 3, quantity = 11 }, "You can trade 1 to 10 at a time." },
+        { { listing = "00000099-0000-4000-8000-000000000099", revision = 1, price = 3, quantity = 1 }, "That is no longer sold here." },
       }
       for i, case in ipairs(cases) do
         local order = case[1]
@@ -380,7 +387,7 @@ conformance.run(busted, "the acme_shop example", {
       local stranger = { handle = jane.handle, player_id = "00000003-0000-4000-8000-000000000003" }
       assert.are.same(
         { false, "You are not in the game." },
-        { shop.trade(world.api, stranger, { listing = BREAD, price = 3, quantity = 1, selling = false }, world.api.ops.new()) }
+        { shop.trade(world.api, stranger, { listing = BREAD, revision = 1, price = 3, quantity = 1, selling = false }, world.api.ops.new()) }
       )
       assert.are.same(before, holdings(world, handle), "nothing moved")
       assert.are.same({}, world.api.ops.unknown())
@@ -401,6 +408,17 @@ conformance.run(busted, "the acme_shop example", {
     end,
   },
   {
+    name = "refuses an order for a listing staff changed while the dialog was open, though its price did not",
+    run = function(world)
+      local shop, handle = at_the_counter(world)
+      pick(world, "Buy Water")
+      install(world, shop, { water_item = "bread", revision = 2 })
+      how_many(world, 1)
+      assert.are.equal("The shelf changed while you chose. Try again.", told(world))
+      assert.are.same({ wallet = 100, till = 0, water = 3, bread = 0, left = 5 }, holdings(world, handle), "no bread for water")
+    end,
+  },
+  {
     name = "buys back: pays the player and puts the units back on the shelf",
     run = function(world)
       local _, handle = at_the_counter(world)
@@ -417,7 +435,7 @@ conformance.run(busted, "the acme_shop example", {
       local jane = assert(world.api.players.get(handle))
       local results
       local lines = console(function()
-        results = { shop.trade(world.api, jane, { listing = GONE, price = 1, quantity = 1, selling = false }, world.api.ops.new()) }
+        results = { shop.trade(world.api, jane, { listing = GONE, revision = 1, price = 1, quantity = 1, selling = false }, world.api.ops.new()) }
       end)
       assert.are.same({ false, "That is no longer sold here." }, results)
       assert.are.equal(1, #lines)
@@ -427,36 +445,48 @@ conformance.run(busted, "the acme_shop example", {
       assert.are.equal(0, #world.entities(), "and is gone once it closes")
       assert.are.same(
         { false, "This counter is closed." },
-        { shop.trade(world.api, jane, { listing = BREAD, price = 3, quantity = 1, selling = false }, world.api.ops.new()) }
+        { shop.trade(world.api, jane, { listing = BREAD, revision = 1, price = 3, quantity = 1, selling = false }, world.api.ops.new()) }
       )
       assert.are.same({ wallet = 100, till = 0, water = 3, bread = 0, left = 5 }, holdings(world, handle))
     end,
   },
   {
-    name = "is made once however often the same order is sent, and waits for a till it cannot reach yet",
+    name = "is made once however often the same order is sent, and answers it as it was whatever changed since",
     run = function(world)
       local shop, handle = at_the_counter(world)
       local api = world.api
       local jane = assert(api.players.get(handle))
-      local order = { listing = WATER, price = 5, quantity = 2, selling = false }
+      local order = { listing = WATER, revision = 1, price = 5, quantity = 2, selling = false }
       local op = api.ops.new()
       assert.are.same({ true, "Bought 2 for 10." }, { shop.trade(api, jane, order, op) })
       assert.are.same({ true, "Bought 2 for 10." }, { shop.trade(api, jane, order, op) }, "the same op id answers as before")
       assert.are.same({ wallet = 90, till = 10, water = 5, bread = 0, left = 3 }, holdings(world, handle), "and moves once")
-      -- The till is not held (as after a restart, before its hold lands):
-      -- the sale waits and goes again under the same op id.
-      -- The portal's balance is its ledger's fold, which the fake portal
-      -- does not keep: set it to what the sale left.
-      world:settle()
-      world.portal.owned[TILL].balance = world.core.accounts.balance(TILL)
+      -- The last three sell, and staff close the counter: the first order,
+      -- sent again, is still the sale it was, not "sold out" or "closed".
+      assert.are.same(
+        { true, "Bought 3 for 15." },
+        { shop.trade(api, jane, { listing = WATER, revision = 1, price = 5, quantity = 3, selling = false }, api.ops.new()) }
+      )
+      install(world, shop, { shown = false, revision = 2 })
+      assert.are.same({ true, "Bought 2 for 10." }, { shop.trade(api, jane, order, op) }, "neither sold out nor closed")
+      assert.are.same({ wallet = 75, till = 25, water = 8, bread = 0, left = 0 }, holdings(world, handle), "and nothing moved")
+    end,
+  },
+  {
+    name = "waits for a till it cannot reach yet, and sends the order again under the same op id",
+    run = function(world)
+      local shop, handle = at_the_counter(world)
+      local api = world.api
+      local jane = assert(api.players.get(handle))
+      -- The till is not held (as after a restart, before its hold lands).
       world.core.records.forget({ { kind = "account", id = TILL } })
-      shop.settle(api, jane, order, api.ops.new())
-      assert.are.equal(90, api.money.balance(handle, "wallet"), "nothing yet")
+      shop.settle(api, jane, { listing = WATER, revision = 1, price = 5, quantity = 2, selling = false }, api.ops.new())
+      assert.are.equal(100, api.money.balance(handle, "wallet"), "nothing yet")
       world.core.accounts.hold_paying()
       world:pump()
       world:advance(1000)
       assert.are.equal("Bought 2 for 10.", told(world))
-      assert.are.same({ wallet = 80, till = 20, water = 7, bread = 0, left = 1 }, holdings(world, handle))
+      assert.are.same({ wallet = 90, till = 10, water = 5, bread = 0, left = 3 }, holdings(world, handle))
     end,
   },
   {
@@ -491,7 +521,7 @@ conformance.run(busted, "the acme_shop example", {
       local shop, handle = at_the_counter(world)
       local api = world.api
       local jane = assert(api.players.get(handle))
-      local order = { listing = BREAD, price = 3, quantity = 2, selling = false }
+      local order = { listing = BREAD, revision = 1, price = 3, quantity = 2, selling = false }
       local op = api.ops.new()
       -- Made in memory, not yet in the outbox: the server dies here.
       world.core.connection.options.max_entries = 0

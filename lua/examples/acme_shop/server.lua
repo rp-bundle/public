@@ -124,7 +124,29 @@ end
 ---@field listing string The listing's id, from the server's own menu.
 ---@field selling boolean True to sell units back to the counter.
 ---@field price integer The unit price the player was shown.
+---@field revision integer The listing's revision when the player was shown it: an order for a listing staff changed since (another item, at the same price) is refused, never filled with what it has become.
 ---@field quantity any How many, as the player's client answered: checked here.
+
+---What the player is told of an order's result.
+---@param order acme_shop.Order The order.
+---@param ok boolean? Whether it was made.
+---@param status string? Why not: `refused`, `unavailable` or `unknown`.
+---@param why string? For `refused`, the reason.
+---@return boolean ok Whether it was made.
+---@return string message For the player; `unavailable` when the till could not be asked.
+local function answer(order, ok, status, why)
+  if ok then
+    local n = order.quantity
+    return true, (order.selling and "Sold " or "Bought ") .. n .. " for " .. order.price * n .. "."
+  end
+  if status == "unavailable" then
+    return false, "unavailable"
+  end
+  if status == "unknown" then
+    return false, "Something went wrong at the till. Staff have been told; do not pay again."
+  end
+  return false, acme_shop.SAY[why] or ("The till refused it (" .. tostring(why) .. ").")
+end
 
 ---Makes one sale or buy-back, once per op id, and says how it went. Every
 ---check is made again here, against the config and the stock as they are
@@ -141,6 +163,12 @@ function acme_shop.trade(rpf, player, order, op)
   local now = rpf.players.get(player.handle)
   if not now or now.player_id ~= player.player_id then
     return false, "You are not in the game."
+  end
+  -- An order sent again gets the answer it had, whatever has changed since
+  -- (the stock it took ran out, the price moved): only a new one is checked.
+  local done, recorded, reason = rpf.ops.result(op)
+  if done ~= nil then
+    return answer(order, done, recorded, reason)
   end
   local n = order.quantity
   local listing = rpf.records.get(acme_shop.LISTING, order.listing)
@@ -163,6 +191,9 @@ function acme_shop.trade(rpf, player, order, op)
   end
   if unit ~= order.price then
     return false, "The price is now " .. unit .. ". Try again."
+  end
+  if listing.revision ~= order.revision then
+    return false, acme_shop.SAY.stale
   end
   local slug = listing.fields.item
   if not rpf.config.item(slug) then
@@ -205,17 +236,7 @@ function acme_shop.trade(rpf, player, order, op)
       return rpf.records.update(acme_shop.STOCK, stock.id, { left = left }, { revision = stock.revision })
     end
   end
-  local ok, status, why = rpf.commerce.exchange(player.handle, deal, op, apply)
-  if ok then
-    return true, (order.selling and "Sold " or "Bought ") .. n .. " for " .. unit * n .. "."
-  end
-  if status == "unavailable" then
-    return false, "unavailable"
-  end
-  if status == "unknown" then
-    return false, "Something went wrong at the till. Staff have been told; do not pay again."
-  end
-  return false, acme_shop.SAY[why] or ("The till refused it (" .. tostring(why) .. ").")
+  return answer(order, rpf.commerce.exchange(player.handle, deal, op, apply))
 end
 
 ---Makes an order, trying again with the same op id while the till cannot be
@@ -269,12 +290,12 @@ function acme_shop.open(rpf, player, target)
     options[#options + 1] = {
       label = "Buy " .. name .. " for " .. listing.fields.price .. (left and (" (" .. left .. " left)") or ""),
       disabled = left == 0 or nil,
-      value = { listing = listing.id, selling = false, price = listing.fields.price, most = listing.fields.most },
+      value = { listing = listing.id, revision = listing.revision, selling = false, price = listing.fields.price, most = listing.fields.most },
     }
     if listing.fields.buyback > 0 then
       options[#options + 1] = {
         label = "Sell " .. name .. " for " .. listing.fields.buyback,
-        value = { listing = listing.id, selling = true, price = listing.fields.buyback, most = listing.fields.most },
+        value = { listing = listing.id, revision = listing.revision, selling = true, price = listing.fields.buyback, most = listing.fields.most },
       }
     end
   end
@@ -303,6 +324,7 @@ function acme_shop.open(rpf, player, target)
       end
       acme_shop.settle(rpf, player, {
         listing = choice.listing,
+        revision = choice.revision,
         selling = choice.selling,
         price = choice.price,
         quantity = values.quantity,

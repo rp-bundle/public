@@ -34,9 +34,10 @@ socket.
   counters and price listings as config records and stock what is limited
   as a live record; a player picks from a menu the server opens, and one
   exchange moves the money, the items and the stock. It runs on FiveM and
-  Gmod alike, and needs no Rust, route, protocol change or migration. The
-  conformance harness can now drop the portal's connection
-  (`World:disconnect`).
+  Gmod alike, and needs no Rust, route, protocol change or migration.
+  `rpf.api.ops.result(op_id)` says how an op id already went, so an addon
+  answers a repeated order as it was answered. The conformance harness can
+  now drop the portal's connection (`World:disconnect`).
 - Exchanges (J5, #82): `rpf.api.commerce.exchange(player, deal, op_id,
   apply)` moves money and items together, with an addon's change to its own
   records, as one journaled intent, once per op id; `check(player, deal)`

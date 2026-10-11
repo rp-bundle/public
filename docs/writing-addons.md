@@ -407,7 +407,9 @@ give can find the player has no room after the money is gone.
   setting of your own rather than a constant.
 - **Retries are safe with the same op id.** A command runs at most once per
   op id; sending it again returns the first answer. An op id is good for a
-  day.
+  day. `rpf.ops.result(op_id)` says how one already went (nil if it never
+  ran), so a repeated order is answered as it was, before you check it
+  again against stock or prices that have since moved.
 - **`unknown` is for staff.** It means the game server cannot tell whether
   the command happened (it stopped mid-way). It is logged with what it was,
   announced as `domains.op_unknown`, listed by `rpf.ops.unknown()`, and
@@ -496,7 +498,13 @@ never reach the client. Then:
   the listing and the stock named in `records` at the revisions just read.
 - **One op id per order**, minted when the player confirms. While the till
   cannot be asked (`unavailable`, just after a restart) the order is sent
-  again under the same op id, so it can never be made twice.
+  again under the same op id, so it can never be made twice, and an order
+  sent again is answered as it was (`rpf.ops.result`), even once the stock
+  it took has run out.
+- **The listing as the player saw it.** The menu keeps the listing's
+  revision with the option, so an order for a listing staff changed while
+  the dialog was open (another item at the same price) is refused, never
+  filled with what the listing has become.
 - **Staff see every sale** where they already look: the ledger entry on the
   till's and the player's account pages (`Corner shop: sold 2 water`), the
   player's containers, and the stock on its data page. What it bought is an

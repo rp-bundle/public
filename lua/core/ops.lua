@@ -348,6 +348,26 @@ function ops.known(id)
   return true, recorded(entry)
 end
 
+---How an op id already went here, for an addon answering a repeat of
+---something it did: a player's order sent again, after its stock ran out
+---or its price changed, gets the answer it had, not a fresh refusal, and
+---an `unknown` one is still `unknown`. What `run` would answer at once,
+---without running anything.
+---@param id any The op id.
+---@return boolean? done Nil when the journal has no result for it (it never ran here, it changed nothing because nothing could be asked, or it is older than the window), so it may run; true if it succeeded; false if not.
+---@return string? status For false: `refused`, `unknown`, or `unavailable` when the journal could not be read.
+---@return string? reason For `refused`, why.
+function ops.result(id)
+  local known, ok, status, reason = ops.known(id)
+  if not known then
+    return nil
+  end
+  if ok then
+    return true
+  end
+  return false, status, reason
+end
+
 ---Runs a command once per op id. A repeated id inside the window gets the
 ---recorded result; a new one is journaled `pending`, run, and its result
 ---recorded. A command that throws is `unknown`: it may have done part of

@@ -1121,6 +1121,7 @@ only; `rpf.api.characters`, `money`, `inventory`, `jobs` and `ops` front it.
 | `<domain>.supports(call)` | Whether the call works here: every native call does, except `money.debit` and `credit` without the addon account |
 | `ops.new()` | An op id, `<ms>-<16 hex>`: when it was minted, and the platform's randomness |
 | `ops.unknown()` | The commands whose result is `unknown`, oldest first, each `{ op_id, call, at, detail, cause }`: for a staff tool in game |
+| `ops.result(op_id)` | How an op id already went (`rpf.ops.result`): nil when it never ran here, `true`, or `false`, a status and a reason. What running it again would answer, without running it, so an addon answers a repeated order as it was answered |
 
 Every call takes the engine's handle of a logged-in player and acts on the
 character in play. A read is its value, or nil and `not_logged_in`,
@@ -1734,7 +1735,7 @@ internal.
 | `capabilities`, `world` | both, server | `capabilities()` on both sides (the world's on the server, the UI's on both), and `world.position` on the server (`rpf.world` above) |
 | `ui` | both | `notify`, `menu`, `input`, `progress`; on the server each takes the player first (`rpf.ui` above) |
 | `interactions` | both | `register` on the server, `send` and `request` on the client (`rpf.interactions` above) |
-| `characters`, `money`, `inventory`, `jobs`, `ops` | server | The domain-neutral facade (`rpf.facade` above): `characters.current`; `money.accounts`, `balance`, `debit`, `credit`; `inventory.count`, `give`, `take`; `jobs.current`; each domain's `supports`; `ops.new`, `ops.unknown` |
+| `characters`, `money`, `inventory`, `jobs`, `ops` | server | The domain-neutral facade (`rpf.facade` above): `characters.current`; `money.accounts`, `balance`, `debit`, `credit`; `inventory.count`, `give`, `take`; `jobs.current`; each domain's `supports`; `ops.new`, `ops.unknown`, `ops.result` |
 | `commerce` | server | `exchange`, `check` (J5, `rpf.commerce` above) |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
 | `staff` | server | `can`, `permissions`, `link`, `record` (F9, `rpf.staff` above) |
