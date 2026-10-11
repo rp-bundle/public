@@ -210,7 +210,7 @@ end
 ---Stops the server half cleanly, as its resource stops or the map changes:
 ---every change to a held record that is marked and not yet reported is
 ---flushed into the outbox, which is persisted, so a clean stop loses none
----of it and the next start sends it first (J6). Without it a stop loses
+---of it and the next start sends it first (J6, `rpf.sync.stop`). Without it a stop loses
 ---what changed since the last flush, at most `flush_interval_ms`, as a
 ---crash does. The holds themselves are given back by the next start's
 ---declaration. The adapter calls this, one line, before it closes the
@@ -220,7 +220,7 @@ function rpf.stop_server()
   if not rpf.sync.connection then
     return true
   end
-  local ok = rpf.sync.flush()
+  local ok = rpf.sync.stop()
   if not ok then
     rpf.sync.platform.log("error", "rpf: the outbox could not take every change as the server stopped; the rest is lost")
   end

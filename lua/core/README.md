@@ -92,8 +92,9 @@ On the server it wires two engine events, two lines each:
 core does for a player follows from those and from the client's messages.
 As its resource stops (or, on Gmod, the map changes) it calls
 `core.stop_server()` before it closes the transport, which flushes every
-change to a held record not yet reported into the persisted outbox, so a
-clean stop loses none of it (J6).
+change to a held record not yet reported into the persisted outbox
+(`rpf.sync.stop`), a change behind a create still on its way included,
+queued after it, so a clean stop loses none of it (J6).
 
 ## The server platform interface
 
@@ -1123,7 +1124,9 @@ installation rather than by whether the addon's code is loaded:
 - **The config disables or removes the installation**: every record of its
   types is released, sessions' included (`holding.drain`), tried again
   every `RETRY_MS` while some cannot go yet (a create on its way, a full
-  outbox), worked out afresh on each try.
+  outbox), worked out afresh on each try. A hold the portal answered
+  before the disable that lands after it (`records.held`) is drained as it
+  arrives.
 - **The config enables an installation**: a claim, and, if it has an
   `owner` type, a hold of each logged-in player's own and selected
   character's records for their session.

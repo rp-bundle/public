@@ -235,6 +235,37 @@ conformance.run(busted, "live record holds", {
       assert.is_true(held(world, tree), "claimed after the declaration")
     end,
   },
+  {
+    name = "a clean stop keeps a change made behind a create the portal has not answered",
+    run = function(world)
+      installed(world)
+      local tree = assert(world.api.records.create("acme_grove.tree", { label = "seedling" }, { owner = server }))
+      -- The create goes out, and nothing answers it yet.
+      world:advance(1000)
+      assert(world.api.records.update("acme_grove.tree", tree.id, { label = "sapling" }))
+      assert.is_true(world.core.stop_server(), "every change is on disk")
+      world:restart()
+      world:connect()
+      world:pump()
+      assert.are.equal("sapling", world.portal.records[tree.id].fields.label, "queued behind its create")
+    end,
+  },
+  {
+    name = "drains a claim the portal answered before staff disabled the addon, landing after",
+    run = function(world)
+      local tree = stored(world, 1, "tree", server)
+      assert(world.api.addons.register(grove()))
+      world:connect()
+      -- Enabled, so the core claims; the claim is on its way, unanswered,
+      -- when the disable arrives.
+      world:install({ conformance.installed(world.core, grove()) })
+      world:install({ conformance.installed(world.core, grove(), false) })
+      world:pump()
+      world:settle()
+      assert.is_false(held(world, tree), "drained as it landed")
+      assert.is_false(world.portal.records[tree].held)
+    end,
+  },
 })
 
 describe("rpf.holding", function()

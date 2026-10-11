@@ -35,7 +35,8 @@
 --- - **When the config disables or removes the installation**, every record
 ---   of its types is released with its final state, the ones players'
 ---   sessions hold included: the contract's drain. The portal refuses new
----   holds of them meanwhile.
+---   holds of them meanwhile, and one it answered before the disable that
+---   lands after it is drained as it arrives.
 --- - **When the config enables an installation** (installed, or enabled
 ---   again), its `server` records are claimed and the `owner` records of
 ---   every player already here are held for their sessions.
@@ -75,6 +76,13 @@ local claiming, again = false, false
 ---every `CLAIM_MS`.
 ---@type string?
 local last_refusal = nil
+
+---Installations the config took away (disabled or removed) since this
+---process saw them enabled, until it enables them again: a hold that was
+---answered for one of them after its drain ran (a claim or a session hold
+---already on its way when the disable arrived) is drained as it lands.
+---@type table<string, true>
+local withdrawn = {}
 
 ---Namespaces with a drain waiting to try again, so a drain that runs
 ---meanwhile (a stop, then the disable that caused it) starts no second loop.
@@ -313,7 +321,11 @@ local function on_config(change)
   enabled = now
   table.sort(gone)
   for _, namespace in ipairs(gone) do
+    withdrawn[namespace] = true
     holding.drain(namespace)
+  end
+  for namespace in pairs(now) do
+    withdrawn[namespace] = nil
   end
   for _, namespace in ipairs(newly) do
     local with_owner = false
@@ -340,7 +352,7 @@ end
 function holding.start(p, client)
   platform = p
   connection = client
-  enabled, retrying = {}, {}
+  enabled, retrying, withdrawn = {}, {}, {}
   claiming, again, last_refusal = false, false, nil
   ---Claims again every `CLAIM_MS`, read at each tick, for as long as the
   ---process runs.
@@ -364,6 +376,19 @@ function holding.start(p, client)
     end
   end
   events.on("config.changed", on_config)
+  -- A hold answered after the config took its addon away: drained as it
+  -- lands, or it would stay held, blocking staff's direct edits, until the
+  -- next restart.
+  events.on("records.held", function()
+    local names = {}
+    for namespace in pairs(withdrawn) do
+      names[#names + 1] = namespace
+    end
+    table.sort(names)
+    for _, namespace in ipairs(names) do
+      holding.drain(namespace)
+    end
+  end)
   events.on("addons.state", function(change)
     if change.state ~= "active" then
       holding.drain(change.namespace)

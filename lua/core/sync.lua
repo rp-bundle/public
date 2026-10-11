@@ -144,6 +144,11 @@ local holds_in_flight = 0
 ---Whether a flush is already scheduled.
 local scheduled = false
 
+---Whether the process is stopping (`sync.stop`): a change held back behind
+---a create the portal has not answered is then queued after it all the
+---same, since memory is about to go and the outbox is all that is left.
+local stopping = false
+
 ---How often a report that outlived a restart has been found stale with
 ---nothing queued before it, by frame id (`sync.orphaned`).
 ---@type table<string, integer>
@@ -281,7 +286,10 @@ local function change_of(entry)
         fields = entry.data.fields,
       }
     end
-    if entry.created then
+    if entry.created and not stopping then
+      -- Held back until the create is answered: a create the portal refuses
+      -- goes again whole, and a patch queued behind it would be answered as
+      -- a record this server does not hold, and the record forgotten.
       return nil
     end
     if entry.deleted then
@@ -704,6 +712,25 @@ function sync.flush()
   return ok
 end
 
+---Flushes for a stopping process (`rpf.stop_server`): everything marked is
+---queued in the persisted outbox, a change behind a create still on its way
+---included, queued after the create at the revision the create lands at.
+---Whatever the next process sends of it is all that survives, so it is
+---better queued than kept in memory; if the create turns out to be
+---refused, the change behind it is refused with it, as the record itself
+---is lost. Nothing is flushed normally afterwards.
+---@return boolean ok True only if every change to every held record is on disk.
+function sync.stop()
+  stopping = true
+  local ok = sync.flush()
+  for key in pairs(records.entries) do
+    if not sync.reported(key) then
+      ok = false
+    end
+  end
+  return ok
+end
+
 ---Whether every change made to a held record so far is on disk: carried by
 ---a report queued in the persisted outbox, or the record let go with its
 ---final state. What the journal waits on before it records a composite
@@ -721,7 +748,8 @@ function sync.reported(key)
   end
   if entry.kind == "addon_record" then
     -- Behind a create the portal has not answered, `change_of` holds a
-    -- later patch or deletion back: held back is not on disk.
+    -- later patch or deletion back (unless stopping): held back is not on
+    -- disk.
     return entry.created ~= "pending"
       and not entry.changed.fields
       and not (entry.deleted and not entry.delete_sent)
@@ -1218,6 +1246,7 @@ function sync.start(platform, connection, options)
   released_at = {}
   holds_in_flight = 0
   scheduled = false
+  stopping = false
   declaration = { pending = false, mark = 0 }
   records.reset()
   connection.on_ready = sync.connected
