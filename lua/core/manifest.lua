@@ -892,6 +892,12 @@ local function check_world(value, path, fields)
       then
         return refuse("world_field", role_path)
       end
+      -- A map field's default is a map's name too, or a record left to it
+      -- could never be written (#369). Null, every map, is fine.
+      if role.name == "map" and type(field.default) == "string" and not manifest.is_map_name(field.default) then
+        local fields_path = path:sub(1, #path - #"world")
+        return refuse("default", fields_path .. "fields." .. name .. ".default")
+      end
       if named[name] then
         return refuse("duplicate", role_path)
       end
