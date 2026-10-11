@@ -24,10 +24,20 @@
 ---   that threw or answered `unknown`, or an intent a restart cut off. It is
 ---   logged at `error` with what the operation was (the call, the player,
 ---   the account or item, the amount and the reason, `rpf.ops.Detail`),
----   announced as `domains.op_unknown`, and listed by `ops.unknown()` while
----   it is in the journal. Staff resolve it by hand, in the framework or
----   the portal: nothing here compensates, since nothing can tell a lost
----   payment from a lost grant.
+---   announced as `domains.op_unknown`, listed by `ops.unknown()` while it
+---   is in the journal, and reported to the portal (`report_unknown_ops`,
+---   #274), whose server page lists it for staff. Staff resolve it by hand,
+---   in the framework, and mark it resolved there: nothing here
+---   compensates, since nothing can tell a lost payment from a lost grant.
+--- - **Every `unknown` reaches the portal.** It is sent as it arises, and
+---   after every `Welcome` until the portal has answered it, so one surfaced
+---   before the connection, or whose frame was lost, is sent again; the
+---   answer marks the entry `reported`, on disk, so a restart does not send
+---   it once more. One not yet reported outlives the window until it is,
+---   though its id is refused for running all the same. The portal keeps
+---   one record per op id, so sending one twice changes nothing; and one it
+---   refuses (past its cap of unresolved ones) is logged here at `error`
+---   and not sent again.
 --- - **Tombstones go only by age.** The journal holds at most `MAX_ENTRIES`;
 ---   a new command past that is refused `journal_full` rather than evicting a
 ---   young tombstone, whose id could then run twice. An `op_id` older than
@@ -48,6 +58,8 @@
 ---@field SKEW_MS integer How far in the future an op id may claim to be minted, for a clock that stepped back.
 ---@field KEY string The storage key of the journal's index: every op id it holds, so a restart finds each entry.
 ---@field ENTRY_PREFIX string Each entry's storage key is this and its op id, so finishing one rewrites only it.
+---@field MAX_PER_REPORT integer Unknown operations one `report_unknown_ops` frame carries: `limits::MAX_UNKNOWN_OPS_PER_REPORT`.
+---@field MAX_TEXT_BYTES integer The longest text an unknown operation carries in each field, cut to it at a character boundary: `limits::MAX_UNKNOWN_OP_TEXT_BYTES`.
 local ops = {}
 
 local rpf = rpf
@@ -58,6 +70,8 @@ ops.MAX_ENTRIES = 1024
 ops.SKEW_MS = 5 * 60 * 1000
 ops.KEY = "rpf.ops.index"
 ops.ENTRY_PREFIX = "rpf.ops.op."
+ops.MAX_PER_REPORT = 32
+ops.MAX_TEXT_BYTES = 256
 
 ---One operation in the journal.
 ---@class rpf.ops.Entry
@@ -69,6 +83,7 @@ ops.ENTRY_PREFIX = "rpf.ops.op."
 ---@field reason string? Why it was refused.
 ---@field detail rpf.ops.Detail? What it was, for staff resolving an `unknown` one.
 ---@field cause string? For an `unknown` one, what went wrong, for staff.
+---@field reported boolean? For an `unknown` one, whether the portal has answered its report: it has it, or refused it for good.
 
 ---What an operation was, kept with its intent so that staff resolving an
 ---`unknown` one know what to grant or refund. Plain values only: it is
@@ -93,6 +108,9 @@ ops.ENTRY_PREFIX = "rpf.ops.op."
 ---@field detail rpf.ops.Detail What it was.
 ---@field cause string What went wrong.
 
+---A hyphenated uuid, as the protocol takes a player's id.
+local UUID_PATTERN = "^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$"
+
 ---The fields of `rpf.ops.Detail`, in the order the log names them.
 local DETAIL_KEYS = { "player", "account", "amount", "paid", "item", "count", "take", "give", "reason" }
 
@@ -100,6 +118,13 @@ local DETAIL_KEYS = { "player", "account", "amount", "paid", "item", "count", "t
 local entries = {}
 ---@type rpf.ServerPlatform?
 local platform = nil
+---The connection unknown operations are reported on, once started.
+---@type rpf.Client?
+local connection = nil
+---The op ids in a `report_unknown_ops` frame not yet answered, so a second
+---report does not send them again meanwhile.
+---@type table<string, true>
+local sending = {}
 ---The op ids whose durability check has thrown, logged once each.
 ---@type table<string, true>
 local complained = {}
@@ -170,14 +195,17 @@ function ops.new()
 end
 
 ---Drops tombstones older than the window, the only way one goes, from
----memory and storage.
+---memory and storage. An `unknown` one the portal has not yet answered
+---stays until it has, so staff see it however long the portal was out of
+---reach.
 ---@return boolean dropped Whether any went.
 local function sweep()
   local p = assert(platform)
   local now = p.now()
   local dropped = false
   for id, entry in pairs(entries) do
-    if entry.state == "done" and now - entry.at > ops.WINDOW_MS then
+    local unreported = entry.status == "unknown" and not entry.reported
+    if entry.state == "done" and now - entry.at > ops.WINDOW_MS and not unreported then
       entries[id] = nil
       p.kv_set(ops.ENTRY_PREFIX .. id, nil)
       dropped = true
@@ -257,6 +285,10 @@ local function surface(id, entry)
       .. (#parts > 0 and (": " .. table.concat(parts, " ")) or "")
   )
   rpf.events.emit("domains.op_unknown", unknown)
+  if connection and platform then
+    -- Next tick: a restart's entries join the journal only once read.
+    platform.after(0, ops.report)
+  end
 end
 
 ---Reads an entry from storage, as a restart does: one still `pending` is
@@ -503,13 +535,198 @@ function ops.settle(id, call, durable)
   end)
 end
 
+---The NUL byte, which Postgres cannot store in text: the portal refuses a
+---report carrying one, so it is taken out first.
+local NUL = string.char(0)
+
+---Text as the portal takes it: valid UTF-8 with no NUL, cut to
+---`MAX_TEXT_BYTES` at a character boundary.
+---@param value any The value.
+---@return string? text The text, or nil if it is not a string.
+local function text_of(value)
+  if type(value) ~= "string" then
+    return nil
+  end
+  local out = json.repair_utf8(value)
+  if out:find(NUL, 1, true) then
+    local parts, from = {}, 1
+    while true do
+      local at = out:find(NUL, from, true)
+      parts[#parts + 1] = out:sub(from, at and at - 1 or nil)
+      if not at then
+        break
+      end
+      from = at + 1
+    end
+    out = table.concat(parts)
+  end
+  if #out <= ops.MAX_TEXT_BYTES then
+    return out
+  end
+  out = out:sub(1, ops.MAX_TEXT_BYTES)
+  -- The cut may split the last character: at most three bytes of it.
+  for _ = 1, 3 do
+    if json.is_utf8(out) then
+      break
+    end
+    out = out:sub(1, -2)
+  end
+  return out
+end
+
+---A whole number from 0 to `protocol.MAX_AMOUNT`, or nil.
+---@param value any The value.
+---@return integer? number The number.
+local function number_of(value)
+  if type(value) == "number" and value >= 0 and value <= rpf.protocol.MAX_AMOUNT and value % 1 == 0 then
+    return value
+  end
+  return nil
+end
+
+---An unknown entry as `report_unknown_ops` carries it: only what the
+---portal accepts, every detail it lacks `null`.
+---@param id string The op id.
+---@param entry rpf.ops.Entry The entry.
+---@return table op The op, for the frame.
+local function reported_op(id, entry)
+  local detail = detail_of(entry.detail)
+  local call = tostring(entry.call)
+  if #call > 64 or not call:find("^[a-z][a-z0-9_.]*$") then
+    call = "unreadable"
+  end
+  local player = detail.player
+  if type(player) ~= "string" or not player:find(UUID_PATTERN) then
+    player = nil
+  end
+  return {
+    op_id = id,
+    call = call,
+    cause = text_of(entry.cause or "unknown"),
+    player_id = player,
+    account = text_of(detail.account),
+    amount = number_of(detail.amount),
+    paid = number_of(detail.paid),
+    item = text_of(detail.item),
+    count = number_of(detail.count),
+    take = text_of(detail.take),
+    give = text_of(detail.give),
+    reason = text_of(detail.reason),
+  }
+end
+
+---Marks the ops a report carried as the portal's, on disk, so neither a
+---reconnect nor a restart sends them again.
+---@param ids string[] The op ids.
+local function mark_reported(ids)
+  for _, id in ipairs(ids) do
+    local entry = entries[id]
+    if entry then
+      entry.reported = true
+      local saved, why = pcall(save, id, false)
+      if not saved then
+        log("error", "could not record that the portal has " .. id .. " (" .. tostring(why) .. "); it will be sent again")
+      end
+    end
+  end
+end
+
+---Reports to the portal every `unknown` operation it has not yet
+---answered and no frame is carrying, oldest first, `MAX_PER_REPORT` to a
+---frame (`report_unknown_ops`, #274). Called as one arises and after every
+---`Welcome`. A frame the outbox cannot take, or that is dropped
+---unanswered, leaves its ops for the next `Welcome`; one the portal
+---refuses is logged at `error` and not sent again, since the same frame
+---would be refused again.
+function ops.report()
+  local c = connection
+  if not c then
+    return
+  end
+  local pending = {}
+  for id, entry in pairs(entries) do
+    if entry.state == "done" and entry.status == "unknown" and not entry.reported and not sending[id] then
+      pending[#pending + 1] = id
+    end
+  end
+  table.sort(pending, function(a, b)
+    local at, bt = entries[a].at, entries[b].at
+    if at ~= bt then
+      return at < bt
+    end
+    return a < b
+  end)
+  local first = 1
+  while first <= #pending do
+    local ids, list = {}, {}
+    for i = first, math.min(first + ops.MAX_PER_REPORT - 1, #pending) do
+      ids[#ids + 1] = pending[i]
+      list[#list + 1] = reported_op(pending[i], entries[pending[i]])
+      sending[pending[i]] = true
+    end
+    first = first + #ids
+    ---What the portal said of one frame.
+    ---@param reply rpf.Frame? Its answer: the ack, or a refusal.
+    ---@param failure string? Why there is none.
+    local function settle_frame(reply, failure)
+      for _, id in ipairs(ids) do
+        sending[id] = nil
+      end
+      if reply and reply.type == "ack" then
+        mark_reported(ids)
+      elseif reply and reply.type == "rejected" then
+        log(
+          "error",
+          "the portal refused unknown operations "
+            .. table.concat(ids, ", ")
+            .. " ("
+            .. tostring(reply.code)
+            .. ": "
+            .. tostring(reply.reason)
+            .. "); staff must find them in this log"
+        )
+        mark_reported(ids)
+      elseif failure then
+        log("warn", "could not report unknown operations to the portal (" .. tostring(failure) .. "); trying again on reconnect")
+      end
+    end
+    local sent, id, err = pcall(c.send, c, "report_unknown_ops", { ops = json.array(list) }, settle_frame)
+    if not sent or not id then
+      for _, op in ipairs(ids) do
+        sending[op] = nil
+      end
+      if not sent then
+        log("error", "could not report unknown operations to the portal (" .. tostring(id) .. ")")
+      elseif err ~= "outbox_full" and err ~= "outbox_unavailable" then
+        log("warn", "could not report unknown operations to the portal (" .. tostring(err) .. ")")
+      end
+    end
+  end
+end
+
 ---Loads the journal, turning every intent a restart cut off into `unknown`
----and logging each for staff. Called by `rpf.start_server`.
+---and logging each for staff, and reports every `unknown` one after each
+---`Welcome`. Called by `rpf.start_server`, after `rpf.sync`, which sets the
+---connection's `on_ready` outright.
 ---@param p rpf.ServerPlatform The platform.
-function ops.start(p)
+---@param client rpf.Client? The connection to the portal; without one nothing is reported.
+function ops.start(p, client)
   platform = p
+  connection = client
   entries = {}
   complained = {}
+  sending = {}
+  if client then
+    local ready = client.on_ready
+    ---Runs at every `Welcome`: whatever was set before, then the report.
+    ---@param c rpf.Client The connection, now ready.
+    client.on_ready = function(c)
+      if ready then
+        ready(c)
+      end
+      ops.report()
+    end
+  end
   local text = p.kv_get(ops.KEY)
   local ids = text and json.decode(text) or nil
   if text and not json.is_array(ids) then

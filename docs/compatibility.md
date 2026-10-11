@@ -26,7 +26,7 @@ Two numbers are involved, and only one decides compatibility.
 | Protocol | First release | Served by portal releases | Status |
 |---|---|---|---|
 | 1 | 0.1.0 | 0.1.0 only | Dropped before 0.2.0: no released game-side build ever spoke it, since 0.1.0 had no FiveM or Gmod adapter, and the repository owner confirmed nobody runs it (2026-10-09) |
-| 2 | Unreleased | The next release and later | Current, unreleased, and the oldest served: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), the `domain_external` reject code (K1), in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`), an item's `image` hash in the config snapshot (P3), and the profile (K1) in `hello` and `welcome` |
+| 2 | Unreleased | The next release and later | Current, unreleased, and the oldest served: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), the `domain_external` reject code (K1), in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`), an item's `image` hash in the config snapshot (P3), the profile (K1) in `hello` and `welcome`, and the `report_unknown_ops` notice (#274) |
 
 A row is added when a release ships a new protocol version, and a version's
 last portal release is filled in when one drops it. `CHANGELOG.md` names the

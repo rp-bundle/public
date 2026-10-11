@@ -23,7 +23,8 @@ staff (F9: `link_player`, `staff_action`, `player_linked` and
 editing (E6: `config_changed`, `config_change_applied` and
 `config_change_discarded`), the `domain_external` reject code (K1), an
 item's `image` hash in the config snapshot (P3), and the profile (K1) in
-`hello` (optional: a core that leaves it out runs native) and `welcome`. A
+`hello` (optional: a core that leaves it out runs native) and `welcome`,
+and the `report_unknown_ops` notice (#274). A
 message newer than a connection's protocol is refused `malformed` at the
 socket.
 
@@ -43,6 +44,19 @@ socket.
   it cannot be undone and that bans, warnings and game records stay, and
   ends on a screen telling the player to reconnect. On FiveM the password
   is sealed and goes to the portal without reaching Lua.
+- Unknown facade operations in the portal (K2 follow-up, #274): the core
+  reports every operation its journal could not vouch for
+  (`report_unknown_ops`), as it arises and after each `Welcome` until the
+  portal has it, and staff holding the new `ops.view` see them on the
+  server's **Unknown operations** page (and a count on its overview): when,
+  the call, the player, what it moved, the addon's reason and what went
+  wrong. Staff holding the new `ops.resolve` mark one resolved with a note
+  on what they did in the framework, audited as
+  `server.unknown_op.resolve`; resolving moves nothing. One row per op id
+  on a server, the first report winning; a server may have 1024 open at
+  once; rows go 180 days after the portal first received them
+  (`retention::UNKNOWN_OP_RETENTION`). The migration
+  `20261011080758_unknown_ops` adds the table.
 - The property example (J8, #85): `lua/examples/acme_property/`,
   properties players buy and doors their owners lock, built on the public
   API and the generic types with no Rust, route, page, protocol variant or

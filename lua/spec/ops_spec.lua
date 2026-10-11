@@ -7,7 +7,8 @@
 -- once per op id, a repeat gets the recorded result, a restart turns an
 -- intent it cut off into `unknown`, tombstones go only by age, a full
 -- journal refuses rather than forgets, a lost index never lets an id run
--- twice, and every `unknown` is surfaced to staff with what it was.
+-- twice, every `unknown` is surfaced to staff with what it was, and
+-- reported to the portal until it has it (#274).
 
 local support = require("spec.support")
 
@@ -300,5 +301,182 @@ describe("rpf.ops", function()
     assert.are.equal(3, checks)
     assert.are.equal(1, #p.logged("error", "the outbox is broken"))
     assert.are.equal("done", rpf.json.decode(store[rpf.ops.ENTRY_PREFIX .. id]).state)
+  end)
+
+  describe("reporting unknowns to the portal", function()
+    local PLAYER = "00000002-0000-4000-8000-000000000002"
+
+    ---Starts the core over the shared store, connected, as a restart that
+    ---reaches the portal does, with the clock where it was.
+    local function connect()
+      local now = p.time
+      support.load_core()
+      p = support.fake_platform({ store = store, time = now })
+      support.connected(p)
+    end
+
+    ---Every `report_unknown_ops` frame sent, decoded as the portal reads it.
+    ---@return rpf.Frame[] reports The frames.
+    local function reports()
+      local out = {}
+      for _, text in ipairs(p.sent) do
+        local frame = assert(rpf.protocol.decode(rpf.protocol.SERVER_TO_PORTAL, text))
+        if frame.type == "report_unknown_ops" then
+          out[#out + 1] = frame
+        end
+      end
+      return out
+    end
+
+    ---Runs a command that ends `unknown`, a millisecond on, running no
+    ---timer: its report goes out at the test's next `advance`.
+    ---@param detail rpf.ops.Detail? What it was.
+    ---@return string id Its op id.
+    local function unknown(detail)
+      p.time = p.time + 1
+      local id = assert(rpf.ops.new())
+      rpf.ops.run(id, "money.debit", nil, function()
+        return nil, "unknown", "the framework did not answer"
+      end, detail)
+      return id
+    end
+
+    it("reports one as it arises, as the portal reads it, and not again once the portal has it", function()
+      connect()
+      local id = unknown({ player = PLAYER, account = "bank", amount = 250, reason = "Car" })
+      p.advance(0)
+      local sent = reports()
+      assert.are.equal(1, #sent)
+      assert.are.same({
+        op_id = id,
+        call = "money.debit",
+        cause = "the framework did not answer",
+        player_id = PLAYER,
+        account = "bank",
+        amount = 250,
+        reason = "Car",
+      }, sent[1].ops[1])
+      p.deliver(support.portal_frame("ack", { re = sent[1].id }))
+      assert.is_true(rpf.json.decode(store[rpf.ops.ENTRY_PREFIX .. id]).reported)
+      -- Still listed for an in-game tool, but never sent again.
+      connect()
+      assert.are.equal(id, rpf.ops.unknown()[1].op_id)
+      assert.are.equal(0, #reports())
+    end)
+
+    it("reports after a Welcome what a restart cut off before the connection", function()
+      local id = rpf.ops.new()
+      pcall(rpf.ops.run, id, "inventory.give", nil, function()
+        error({ died = true })
+      end, { player = PLAYER, item = "water_bottle", count = 2 })
+      local entry = rpf.json.decode(store[rpf.ops.ENTRY_PREFIX .. id])
+      entry.state = "pending"
+      store[rpf.ops.ENTRY_PREFIX .. id] = rpf.json.encode(entry)
+      connect()
+      p.advance(0)
+      local sent = reports()
+      assert.are.equal(1, #sent, "once, though both the restart and the Welcome asked")
+      assert.are.same({
+        op_id = id,
+        call = "inventory.give",
+        cause = "cut off by a restart",
+        player_id = PLAYER,
+        item = "water_bottle",
+        count = 2,
+      }, sent[1].ops[1])
+    end)
+
+    it("sends one dropped unanswered again on the next Welcome, and one in flight only once", function()
+      connect()
+      local id = unknown()
+      p.advance(0)
+      assert.are.equal(1, #reports())
+      -- A second unknown while the first is in flight goes alone.
+      local second = unknown()
+      p.advance(0)
+      local sent = reports()
+      assert.are.equal(2, #sent)
+      assert.are.same({ second }, { sent[2].ops[1].op_id })
+      -- A restart loses the callbacks; the outbox resends the frames, and
+      -- the Welcome reports both once more, which the portal takes as the
+      -- same two.
+      connect()
+      local ids = {}
+      for _, frame in ipairs(reports()) do
+        for _, op in ipairs(frame.ops) do
+          ids[op.op_id] = true
+        end
+      end
+      assert.are.same({ [id] = true, [second] = true }, ids)
+    end)
+
+    it("logs a refusal at error, naming what it carried, and does not send it again", function()
+      connect()
+      local id = unknown()
+      p.advance(0)
+      p.deliver(support.portal_frame("rejected", {
+        re = reports()[1].id,
+        code = "forbidden",
+        reason = "This server has as many unresolved unknown operations as it may: resolve some.",
+      }))
+      assert.are.equal(1, #p.logged("error", "refused unknown operations " .. id))
+      connect()
+      assert.are.equal(0, #reports())
+    end)
+
+    it("keeps one the portal has not answered past the window, and lets it go once answered", function()
+      local id = unknown()
+      p.advance(rpf.ops.WINDOW_MS + 1)
+      -- A new command sweeps the journal: the unreported one stays.
+      assert.is_true(rpf.ops.run(rpf.ops.new(), "money.credit", nil, function()
+        return true
+      end))
+      assert.are.equal(id, rpf.ops.unknown()[1].op_id)
+      assert.are.same({ nil, "refused", "expired_op" }, {
+        rpf.ops.run(id, "money.debit", nil, function()
+          error("must not run")
+        end),
+      })
+      -- The frame queued before the restart goes out again, without its
+      -- callback, and the Welcome's report with one: the portal acks both.
+      connect()
+      for _, frame in ipairs(reports()) do
+        p.deliver(support.portal_frame("ack", { re = frame.id }))
+      end
+      connect()
+      assert.are.same({}, rpf.ops.unknown())
+    end)
+
+    it("sends at most a frame's worth at once, and only what the portal accepts", function()
+      local long = string.rep("é", 200)
+      for i = 1, rpf.ops.MAX_PER_REPORT do
+        unknown({ player = "not-a-uuid", reason = i == 1 and long or nil, amount = 1.5 })
+      end
+      unknown({ account = "ba" .. string.char(0) .. "nk" .. string.char(0) })
+      connect()
+      local sent = reports()
+      assert.are.equal(2, #sent)
+      assert.are.equal(rpf.ops.MAX_PER_REPORT, #sent[1].ops)
+      assert.are.equal(1, #sent[2].ops)
+      local first = sent[1].ops[1]
+      assert.is_nil(first.player_id)
+      assert.is_nil(first.amount)
+      assert.is_true(#first.reason <= rpf.ops.MAX_TEXT_BYTES)
+      assert.is_true(rpf.json.is_utf8(first.reason))
+      assert.are.equal(string.rep("é", math.floor(rpf.ops.MAX_TEXT_BYTES / 2)), first.reason)
+      assert.are.equal("bank", sent[2].ops[1].account)
+    end)
+
+    it("keeps its bounds equal to the portal's", function()
+      local limits = support.read("crates/rpf-domain/src/limits.rs")
+      for name, ours in pairs({
+        MAX_UNKNOWN_OPS_PER_REPORT = rpf.ops.MAX_PER_REPORT,
+        MAX_UNKNOWN_OP_TEXT_BYTES = rpf.ops.MAX_TEXT_BYTES,
+      }) do
+        local theirs = limits:match("pub const " .. name .. ": usize = (%d+);")
+        assert.truthy(theirs, name .. " is no longer an integer literal")
+        assert.are.equal(tonumber(theirs), ours, name)
+      end
+    end)
   end)
 end)

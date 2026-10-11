@@ -1201,6 +1201,22 @@ never a framework's key), and an `unknown` one is logged at `error` with
 it, announced as `domains.op_unknown`, and listed by `ops.unknown()` until
 it ages out. A durability check that throws is logged once and tried again.
 
+**Every `unknown` reaches the portal** (#274). `ops.report()` sends each
+one the portal has not answered in `report_unknown_ops` frames of
+`MAX_PER_REPORT` (32, `limits::MAX_UNKNOWN_OPS_PER_REPORT`): on the next
+tick after one arises, and after every `Welcome` (chained on the
+connection's `on_ready`). Each carries the op id, the call, the cause and
+the detail, its text cut to `MAX_TEXT_BYTES` (256) at a character
+boundary, a player id only if it is a uuid, and numbers only whole and in
+range. The portal's ack marks the entry `reported` on disk, so neither a
+reconnect nor a restart sends it again; a frame dropped unanswered leaves
+its ops for the next `Welcome`, and one the portal refuses (past its cap of
+unresolved ones) is logged at `error` with the op ids and marked too, since
+the same frame would be refused again. The sweep keeps an `unknown` entry
+not yet reported past the window until it is: staff see it however long
+the portal was out of reach, and its op id is refused for running all the
+same.
+
 **A lost index never lets an op id run twice.** Each entry is written
 under its own key before the index, so an id the journal does not know (an
 unreadable index, or one a crash cut short) is looked up by that key before

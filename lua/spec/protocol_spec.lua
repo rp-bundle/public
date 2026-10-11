@@ -397,6 +397,7 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
         config_changed = "reply",
         declare_addons = "ack",
         query_records = "reply",
+        report_unknown_ops = "ack",
         ack = "nothing",
       },
       portal_to_server = {
@@ -449,7 +450,7 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
       end)
     end
 
-    it("reissues only state reports, holds and presence", function()
+    it("reissues only state reports, holds, presence and unknown operations", function()
       local reissuable = {}
       for _, direction in ipairs(DIRECTIONS) do
         for tag, spec in pairs(protocol.messages[direction]) do
@@ -465,6 +466,7 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
         "server_to_portal/hold",
         "server_to_portal/player_dropped",
         "server_to_portal/release",
+        "server_to_portal/report_unknown_ops",
         "server_to_portal/resync",
         "server_to_portal/state_changed",
       }, reissuable)

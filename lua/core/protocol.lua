@@ -662,6 +662,24 @@ local ONLINE_PLAYER = object({
   { "player_id", UUID },
 })
 
+---`UnknownOp`: one operation the journal could not vouch for, in
+---`report_unknown_ops` (#274): `rpf.ops`'s entry, never a framework's key.
+---Every detail is nullable, sent as `null` when the operation had none.
+local UNKNOWN_OP = object({
+  { "op_id", STRING },
+  { "call", STRING },
+  { "cause", STRING },
+  { "player_id", nullable(UUID) },
+  { "account", nullable(STRING) },
+  { "amount", nullable(integer(0, protocol.MAX_AMOUNT)) },
+  { "paid", nullable(integer(0, protocol.MAX_AMOUNT)) },
+  { "item", nullable(STRING) },
+  { "count", nullable(integer(0, protocol.MAX_AMOUNT)) },
+  { "take", nullable(STRING) },
+  { "give", nullable(STRING) },
+  { "reason", nullable(STRING) },
+})
+
 ---`StaffGrant`: one linked staff member on the online list and what they
 ---may do on this server (F9), in `staff_permissions`. The permissions are
 ---plain strings, not an enum: the portal adds flags (and addons will add
@@ -946,6 +964,11 @@ protocol.messages = {
     query_records = message("reply", false, {
       { "type_name", STRING },
       { "query", OPAQUE_OBJECT },
+    }),
+    -- Reissuable: the portal keeps one record per op id on this server, so
+    -- a resend under any id changes nothing (#274).
+    report_unknown_ops = message("ack", true, {
+      { "ops", array_of(UNKNOWN_OP) },
     }),
     ack = message("nothing", false, {
       { "re", UUID },
