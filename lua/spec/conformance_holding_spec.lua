@@ -446,11 +446,40 @@ conformance.run(busted, "live record holds", {
       installed(world)
       local handle = world:login(1, PLAYER)
       assert.is_true(held(world, tree), "claimed for the server")
+      -- The new release's code, running, so only the policy moves the tree.
+      assert(world.api.addons.register(grove("1.1.0", "owner", "owner")))
       world:install({ conformance.installed(world.core, grove("1.1.0", "owner", "owner")) })
       world:pump()
+      assert.are.equal("active", (world.api.addons.state("acme_grove")))
+      assert.is_true(held(world, tree), "still held while she is here")
       world.core.players.dropped(handle, "left")
       world:settle()
       assert.is_false(held(world, tree), "held with its owner now, so it went with her")
+    end,
+  },
+  {
+    name = "drains a claim that lands after an upgrade took its type's policy, with no code running",
+    run = function(world)
+      world:connect()
+      world:install({ conformance.installed(world.core, grove()) })
+      world:install({ conformance.installed(world.core, grove("1.1.0", "owner", false)) })
+      world:pump()
+      -- A claim the portal answered under the first release, landing now, as
+      -- `rpf.sync` takes a `held` reply.
+      local tree = stored(world, 1, "tree", server)
+      world.portal.records[tree].held = true
+      local json = world.core.json
+      local views = world.core.records.take({
+        {
+          kind = "addon_record",
+          revision = 3,
+          record = { id = tree, type = "acme_grove.tree", owner = server, fields = json.object({ label = "late" }) },
+        },
+      })
+      world.core.events.emit("records.held", views)
+      world:settle()
+      assert.is_false(held(world, tree), "held on demand now, by nobody")
+      assert.is_false(world.portal.records[tree].held)
     end,
   },
 })

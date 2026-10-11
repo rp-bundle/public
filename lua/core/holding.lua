@@ -434,13 +434,20 @@ function holding.start(p, client)
     end
   end
   events.on("config.changed", on_config)
-  -- A hold answered after the config took its addon away: drained as it
-  -- lands, or it would stay held, blocking staff's direct edits, until the
-  -- next restart.
+  -- A hold answered under a config that has changed since: one for an
+  -- addon the config took away, or for a type that lost its policy while
+  -- no code runs to hold its records, is drained as it lands, or it would
+  -- stay held, blocking staff's direct edits, until the next restart. A
+  -- drain lets go only what nothing keeps held, so the rest stays.
   events.on("records.held", function()
     local names = {}
     for namespace in pairs(withdrawn) do
       names[#names + 1] = namespace
+    end
+    for namespace in pairs(enabled) do
+      if not rpf.addons.running(namespace) then
+        names[#names + 1] = namespace
+      end
     end
     table.sort(names)
     for _, namespace in ipairs(names) do
