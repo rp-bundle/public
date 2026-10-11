@@ -357,6 +357,24 @@ local function stale_map(reply)
   return stale
 end
 
+---Why a refused frame's deletion came back, for the `records.changed` it is
+---announced with: the portal's own code, never one it did not send. The
+---portal applies a frame all or nothing, so a deletion is refused for
+---whatever refused the frame (another record's change failing its checks, a
+---reference that does not resolve), and only `referenced` says the record
+---itself is the cause. A frame that deleted several records cannot say which
+---of them was referenced, so then the reason is the generic `refused`.
+---@param refusal table? The portal's `rejected` reply.
+---@param deletions number How many records the frame deleted.
+---@return string reason The `reason` of the event.
+local function refusal_reason(refusal, deletions)
+  local code = refusal and refusal.code or "refused"
+  if code == "referenced" and deletions > 1 then
+    return "refused"
+  end
+  return code
+end
+
 ---Settles the addon records' creates and deletions a frame carried (J2),
 ---by what the frame carried rather than by what the records are marked as
 ---now: a later frame may carry a record's deletion while an earlier one,
@@ -368,14 +386,20 @@ end
 ---   goes again on the revision the portal has (`stale`) or the one it
 ---   named.
 --- - `refused`: a create goes again as a create, with every field; a
----   deletion is undone, and the record reported whole.
+---   deletion is undone, and the record reported whole, announced with the
+---   portal's refusal (`refusal`).
 --- - `lost`: neither is known to have landed: a create goes again (a resend
 ---   of one that did is a replay), and so does a deletion.
 ---@param sent table The frame's bookkeeping, with `creates` and `deletes`.
 ---@param outcome "applied"|"resync"|"refused"|"lost" How it was answered.
 ---@param stale table<string, number>? For `resync`, the portal's revisions by key.
-local function settle_addons(sent, outcome, stale)
+---@param refusal table? For `refused`, the portal's `rejected` reply.
+local function settle_addons(sent, outcome, stale, refusal)
   local again = false
+  local deletions = 0
+  for _ in pairs(sent.deletes or {}) do
+    deletions = deletions + 1
+  end
   for key in pairs(sent.creates or {}) do
     local entry = records.entries[key]
     if entry and entry.created == "sent" then
@@ -409,7 +433,8 @@ local function settle_addons(sent, outcome, stale)
           id = entry.id,
           record = rpf.data.view(entry.id),
           by = "portal",
-          reason = "referenced",
+          reason = refusal_reason(refusal, deletions),
+          detail = refusal and refusal.reason,
         })
       else
         entry.delete_sent = nil
@@ -497,7 +522,7 @@ local function settle_report(id, reply, err)
         entry.recovering = #sent.keys > 1 or nil
       end
     end
-    settle_addons(sent, "refused")
+    settle_addons(sent, "refused", nil, reply)
     if #sent.keys > 1 then
       sync.flush()
     end

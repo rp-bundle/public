@@ -449,7 +449,8 @@ function Records.batch(ops) end
 ---@field id string The record's id.
 ---@field record rpf.Record? The record now; nil for a deletion.
 ---@field by "addon"|"staff"|"portal" Who changed it.
----@field reason string? For a deletion the portal refused, why (`referenced`).
+---@field reason string? For a deletion the portal refused, the portal's refusal code: `referenced` when another record refers to it, or what refused the frame it was in (`malformed`, `forbidden`, `not_found`, …), as the portal sent it. `refused` when the frame deleted several records and one was referenced, so which is not known.
+---@field detail string? For a deletion the portal refused, the portal's own words, for the log; branch on `reason`.
 
 ---**The domain-neutral facade** (`docs/architecture/framework-integration.md`).
 ---How an addon reaches a player's character, money, items and job, whoever
