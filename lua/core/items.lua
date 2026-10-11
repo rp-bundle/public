@@ -262,13 +262,18 @@ local function with_catalog(force, callback)
     headers["If-None-Match"] = previous.etag
   end
   local mine = generation
+  -- Set once this request has answered its callers, by its response or by
+  -- the timeout. A response after that is ignored whole, cache included: a
+  -- later request may already have kept a newer catalog.
+  local settled = false
   local finish = once_or_timeout("unavailable", function(catalog, err)
+    settled = true
     if mine == generation then
       catalog_done(catalog, err)
     end
   end)
   p.http_request("GET", portal_url .. items.CATALOG_PATH, headers, nil, function(status, body, response_headers)
-    if mine ~= generation then
+    if mine ~= generation or settled then
       return
     end
     if status == 304 and previous and kept == previous then

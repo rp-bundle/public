@@ -262,11 +262,25 @@ describe("rpf.items", function()
     assert.are.equal("src", again.image.src)
   end)
 
-  it("gives up on a catalog request that never answers", function()
+  it("gives up on a catalog request that never answers, and ignores its late answer", function()
     local c = logged_in()
+    rpf.items.TIMEOUT_MS = 1000
     local got = ask("apple")
+    local late = c.requests[#c.requests]
+    late.answered = true
     c.advance(rpf.items.TIMEOUT_MS)
     assert.are.equal("unavailable", got.err)
+
+    -- A newer request keeps the newer catalog; the old answer, arriving
+    -- after it, must not roll it back.
+    local fresh = ask("apple")
+    c.respond(200, catalog({ apple = item(PEAR) }), { ETag = '"two"' })
+    c.images[1].done("pear")
+    assert.are.equal(PEAR, fresh.image.hash)
+    late.callback(200, assert(rpf.json.encode(rpf.json.object(catalog({ apple = item(APPLE) })))), { ETag = '"one"' })
+    local again = ask("apple")
+    assert.are.equal(PEAR, again.image.hash)
+    assert.are.equal(1, #c.images, "nothing fetched for the stale catalog")
   end)
 
   it("treats an adapter that throws or answers nonsense as unavailable, and logs a callback that throws", function()
