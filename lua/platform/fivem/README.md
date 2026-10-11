@@ -350,9 +350,10 @@ The bundle targets Node 16, the oldest an FXServer that runs this ships.
   to this resource's own page and from there to the portal in a header,
   never in a URL another resource could read. `fetch` follows the portal's
   redirect to the user-content domain and drops `Authorization` on the
-  cross-origin hop, as the Fetch standard requires; a browser too old to
-  drop it gets storage's refusal, and the page fetches the signed URL it
-  reached again with no header. The user-content domain must answer with
+  cross-origin hop, as the Fetch standard requires. A CEF too old to drop
+  it would fail the user-content domain's CORS preflight, and every image
+  would be `unavailable`: that is the first thing a real client checks.
+  The user-content domain must answer with
   `Access-Control-Allow-Origin: *` ([Deployment](../../../docs/deployment.md#the-user-content-domain)).
   The bytes are checked against the hash before they are kept, in
   IndexedDB (in memory where the page has none), so an image is fetched

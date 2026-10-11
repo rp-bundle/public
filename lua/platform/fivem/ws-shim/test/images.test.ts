@@ -107,16 +107,6 @@ describe("item images", () => {
     assert.deepEqual(await images.get(URL_ON_PORTAL, HEADERS, HASH), { error: "unavailable" });
   });
 
-  it("fetch the signed URL again with no header when storage refused a token an old browser passed on", async () => {
-    const { fn, calls } = fetcher([
-      { status: 400, redirectedTo: SIGNED },
-      { status: 200, body: PNG },
-    ]);
-    const images = new ItemImages(new MemoryStore(), fn);
-    assert.ok("src" in (await images.get(URL_ON_PORTAL, HEADERS, HASH)));
-    assert.deepEqual(calls[1], { url: SIGNED, headers: {} }, "the token never goes to storage on purpose");
-  });
-
   it("refuse a hash that is not one, without fetching", async () => {
     const { fn, calls } = fetcher([]);
     const images = new ItemImages(new MemoryStore(), fn);

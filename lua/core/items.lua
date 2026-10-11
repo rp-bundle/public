@@ -70,7 +70,7 @@ local images = {}
 local image_order = {}
 
 ---Callbacks waiting for an image fetch in flight, by hash.
----@type table<string, fun(src: string?, err: string?)[]>
+---@type table<string, fun(src: string?, err: string?, url: string?)[]>
 local loading = {}
 
 ---Logs with the core's prefix.
@@ -335,7 +335,7 @@ end
 ---at a time.
 ---@param hash string The image's hash.
 ---@param url string Its absolute URL on the portal, carrying the hash.
----@param callback fun(src: string?, err: string?) Called once.
+---@param callback fun(src: string?, err: string?, url: string?) Called once; with a failure, the URL that was fetched, which for a caller that joined a fetch in flight is another slug's.
 local function fetch(hash, url, callback)
   if images[hash] then
     callback(images[hash], nil)
@@ -368,7 +368,7 @@ local function fetch(hash, url, callback)
       err = err == "not_found" and "not_found" or "unavailable"
     end
     for _, waiter in ipairs(waiting) do
-      waiter(src, err)
+      waiter(src, err, url)
     end
   end)
   local ran, thrown = pcall(p.item_image, url, { Authorization = "Bearer " .. token }, hash, finish)
@@ -416,9 +416,11 @@ function items.image(slug, callback)
     return nil, "unavailable"
   end
   ---Looks the slug up in a catalog and fetches its image; after a `404`,
-  ---revalidates the catalog once and tries again if the image changed.
+  ---revalidates the catalog once and tries again unless the catalog still
+  ---names the URL refused. The URL, not the hash: two items may share an
+  ---image, and the one refused may be the other's, since removed.
   ---@param force boolean Revalidate the catalog first.
-  ---@param tried string? The hash already refused.
+  ---@param tried string? The URL already refused.
   local function attempt(force, tried)
     with_catalog(force, function(catalog, err)
       if not catalog then
@@ -435,17 +437,18 @@ function items.image(slug, callback)
         return
       end
       local hash = item.image --[[@as string]]
-      if hash == tried then
+      -- The catalog's own portal, never the one logged in to now: the path
+      -- is that portal's.
+      local url = catalog.portal_url .. path
+      if url == tried then
         deliver(callback, nil, "not_found")
         return
       end
-      -- The catalog's own portal, never the one logged in to now: the path
-      -- is that portal's.
-      fetch(hash, catalog.portal_url .. path, function(src, fetch_err)
+      fetch(hash, url, function(src, fetch_err, fetched)
         if src then
           deliver(callback, { slug = slug, hash = hash, src = src }, nil)
         elseif fetch_err == "not_found" and not tried then
-          attempt(true, hash)
+          attempt(true, fetched)
         else
           deliver(callback, nil, fetch_err)
         end

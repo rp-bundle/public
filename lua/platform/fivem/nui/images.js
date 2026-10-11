@@ -11,9 +11,12 @@
  * - **The token goes only to the portal, in a header.** `fetch` follows the
  *   portal's `302` to the user-content domain and drops `Authorization` on
  *   the way, as the Fetch standard requires for a cross-origin redirect: the
- *   signed URL is the credential there. A browser too old to drop it sends
- *   both, which object storage refuses; the signed URL the redirect reached
- *   is then fetched again with no header at all.
+ *   signed URL is the credential there. A browser too old to drop it would
+ *   send it on, and its CORS preflight to the user-content domain fails
+ *   (storage allows no request headers), so the fetch rejects and the
+ *   image is `unavailable`; nothing here can read the signed URL to try
+ *   again without the token. Whether FiveM's CEF drops it is checked on a
+ *   real client (#243).
  * - **The URL ends `#.png`.** ox_lib takes an `icon` as an image only if it
  *   contains `://`, `.png` or `.webp` (its `isIconUrl`), and draws anything
  *   else as a Font Awesome name. A fragment is not part of a `data:` URL's
@@ -257,13 +260,7 @@ export class ItemImages {
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), FETCH_TIMEOUT_MS);
     try {
-      let response = await this.fetcher(url, { headers, signal: abort.signal, credentials: "omit" });
-      if (!response.ok && response.redirected && new URL(response.url).origin !== new URL(url).origin) {
-        // An old browser sent the token on to storage, which refuses a
-        // request carrying two credentials: the URL it reached is signed,
-        // and enough alone.
-        response = await this.fetcher(response.url, { signal: abort.signal, credentials: "omit" });
-      }
+      const response = await this.fetcher(url, { headers, signal: abort.signal, credentials: "omit" });
       if (response.status === 404 && !response.redirected) {
         return { error: "not_found" };
       }
