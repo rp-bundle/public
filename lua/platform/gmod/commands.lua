@@ -79,7 +79,7 @@ function commands.on_command(name, handler)
   if not known then
     concommand.Add(name, function(player, _, args)
       console(name, player, args)
-    end, nil, nil, FCVAR_UNLOGGED)
+    end, nil, nil, { FCVAR_UNLOGGED })
   end
 end
 

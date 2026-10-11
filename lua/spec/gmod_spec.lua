@@ -526,7 +526,7 @@ describe("the Gmod adapter's commands (F9, #198)", function()
   it("registers the link command in the console, unlogged", function()
     local world = boot("server")
     assert.is_function(world.commands.rpflink)
-    assert.are.equal(FCVAR_UNLOGGED, world.command_flags.rpflink)
+    assert.are.same({ FCVAR_UNLOGGED }, world.command_flags.rpflink)
   end)
 
   it("links the player who typed the code in the console", function()

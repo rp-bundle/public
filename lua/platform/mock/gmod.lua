@@ -98,7 +98,7 @@ local gmod = {}
 ---@field partial table<string, string[]> Parts of a payload being joined, by player and name.
 ---@field convars table<string, table> Convars, by name.
 ---@field commands table<string, function> Console commands, by name.
----@field command_flags table<string, integer?> The `FCVAR_` flags each console command was added with.
+---@field command_flags table<string, (integer|integer[])?> The `FCVAR_` flags each console command was added with.
 ---@field console string[] Every `RunConsoleCommand`, as `name value…`.
 ---@field panels rpf.mock.GmodPanel[] Every Derma panel made, in order.
 ---@field notices { text: string, kind: integer, seconds: number }[] Every `notification.AddLegacy`, in order.
