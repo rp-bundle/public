@@ -48,19 +48,11 @@ local function load_example(world, edit)
   return property
 end
 
----A distance in the world's engine units.
----@param world spec.ConformanceWorld The world.
----@param metres number The distance in metres.
----@return number units The distance.
-local function units(world, metres)
-  return metres * (world.platform_name == "gmod" and 39.37 or 1)
-end
-
 ---Where the door is: five metres east of the middle of the lot, on it.
 ---@param world spec.ConformanceWorld The world.
 ---@return { x: number, y: number, z: number } spot The door.
 local function door_spot(world)
-  return { x = LOT.x + units(world, 5), y = LOT.y, z = LOT.z }
+  return { x = LOT.x + world:units(5), y = LOT.y, z = LOT.z }
 end
 
 ---The portal's copies of Jane, her bank account and the server's till.
@@ -110,7 +102,8 @@ local function seed(world, fields)
   local property = {
     name = "Ivy Cottage",
     spot = LOT,
-    radius = units(world, 10),
+    -- Metres, as staff set it in the portal, on every engine.
+    radius = 10,
     bucket = 0,
     price = PRICE,
     account = "bank",
@@ -370,7 +363,7 @@ conformance.run(busted, "the acme_property example", {
         assert.are.same({ false, case[2] }, { example.purchase(api, jane, case[1], api.ops.new()) }, tostring(i))
       end
       -- Off the lot, wherever the offer was opened.
-      world.place(1, { x = LOT.x + units(world, 11), y = LOT.y, z = LOT.z })
+      world.place(1, { x = LOT.x + world:units(11), y = LOT.y, z = LOT.z })
       assert.are.same({ false, "You walked off the lot." }, { example.purchase(api, jane, order(), api.ops.new()) })
       world.place(1, LOT)
       -- An order kept for a player who has gone lands on nobody else.
@@ -451,14 +444,14 @@ conformance.run(busted, "the acme_property example", {
       local _, handle = on_the_lot(world)
       local api = world.api
       local spot = door_spot(world)
-      world.place(1, { x = spot.x, y = spot.y + units(world, 1), z = spot.z })
+      world.place(1, { x = spot.x, y = spot.y + world:units(1), z = spot.z })
       local used = assert(aim(world, "acme_property.door", DOOR))
       assert.are.same({ true, true }, { used.ok, used.data and used.data.locked }, "not hers: she only finds it locked")
       assert.are.equal("It is locked.", told(world))
       assert.are.same({ true, true }, { api.addons.call("acme_property.locked", DOOR) })
       world.place(1, LOT)
       buy(world)
-      world.place(1, { x = spot.x, y = spot.y + units(world, 1), z = spot.z })
+      world.place(1, { x = spot.x, y = spot.y + world:units(1), z = spot.z })
       used = assert(aim(world, "acme_property.door", DOOR))
       assert.are.same({ true, false }, { used.ok, used.data.locked })
       assert.are.equal("You unlock the doors.", told(world))
@@ -482,7 +475,7 @@ conformance.run(busted, "the acme_property example", {
       buy(world)
       assert.are.equal("applied", staff_edit(world, { holder = JOE }))
       local spot = door_spot(world)
-      world.place(1, { x = spot.x, y = spot.y + units(world, 1), z = spot.z })
+      world.place(1, { x = spot.x, y = spot.y + world:units(1), z = spot.z })
       local used = assert(aim(world, "acme_property.door", DOOR))
       assert.are.same({ true, true }, { used.ok, used.data.locked })
       assert.are.equal("It is locked.", told(world), "no longer hers to unlock")
@@ -502,7 +495,7 @@ conformance.run(busted, "the acme_property example", {
       local portal = world.portal.records[PROPERTY]
       assert.are.same({ false, PLAYER }, { portal.held, portal.fields.holder }, "let go with its final state, and kept")
       local spot = door_spot(world)
-      world.place(1, { x = spot.x, y = spot.y + units(world, 1), z = spot.z })
+      world.place(1, { x = spot.x, y = spot.y + world:units(1), z = spot.z })
       local used = assert(aim(world, "acme_property.door", DOOR))
       assert.is_false(used.ok, "no door to use")
       assert.is_false((world.api.addons.call("acme_property.locked", DOOR)), "nor one to ask about")
@@ -530,7 +523,7 @@ conformance.run(busted, "the acme_property example", {
       local property = assert(world.api.records.get("acme_property.property", PROPERTY))
       assert.are.same({ PLAYER, false }, { property.fields.holder, property.fields.garden }, "an older property reads with the default")
       local spot = door_spot(world)
-      world.place(1, { x = spot.x, y = spot.y + units(world, 1), z = spot.z })
+      world.place(1, { x = spot.x, y = spot.y + world:units(1), z = spot.z })
       assert.is_true(assert(aim(world, "acme_property.door", DOOR)).ok, "and its doors are hers")
     end,
   },
@@ -540,7 +533,7 @@ conformance.run(busted, "the acme_property example", {
       on_the_lot(world)
       buy(world)
       local spot = door_spot(world)
-      world.place(1, { x = spot.x, y = spot.y + units(world, 1), z = spot.z })
+      world.place(1, { x = spot.x, y = spot.y + world:units(1), z = spot.z })
       assert.are.equal(false, assert(aim(world, "acme_property.door", DOOR)).data.locked)
       world:settle()
       world:settle()
@@ -557,7 +550,7 @@ conformance.run(busted, "the acme_property example", {
       assert.are.same({ PLAYER, false }, { property.fields.holder, property.fields.locked })
       local handle = world:login(1, PLAYER)
       world:select(handle, JANE)
-      world.place(1, { x = spot.x, y = spot.y + units(world, 1), z = spot.z })
+      world.place(1, { x = spot.x, y = spot.y + world:units(1), z = spot.z })
       local used = assert(aim(world, "acme_property.door", DOOR))
       assert.are.same({ true, true }, { used.ok, used.data.locked })
       assert.are.equal("You lock the doors.", told(world))

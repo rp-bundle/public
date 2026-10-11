@@ -169,6 +169,30 @@ conformance.run(busted, "World placements", {
     end,
   },
   {
+    name = "turns metres into the engine's units and back by the scale its adapter declares",
+    run = function(world)
+      local api = world.api.world
+      -- The scale is the harness's own table, not read from the adapter.
+      for _, metres in ipairs({ 0, 1, 2.5, -4, 1000 }) do
+        local units = assert(api.units(metres))
+        assert.is_true(math.abs(units - world:units(metres)) < 1e-9, metres .. " m is " .. units)
+        local back = assert(api.metres(units))
+        assert.is_true(math.abs(back - metres) < 1e-9, units .. " units is " .. back)
+      end
+      assert.are.equal(world:units(1), (api.units(1)))
+      for _, bad in ipairs({ "1", {}, true, 0 / 0, math.huge, -math.huge }) do
+        for _, convert in ipairs({ api.units, api.metres }) do
+          local none, err = convert(bad)
+          assert.is_nil(none, tostring(bad))
+          assert.are.equal("invalid", err, tostring(bad))
+        end
+      end
+      local none, err = api.units(nil)
+      assert.is_nil(none)
+      assert.are.equal("invalid", err)
+    end,
+  },
+  {
     name = "names a placed entity's record, and nothing for a ref that names nothing",
     run = function(world)
       register(world)

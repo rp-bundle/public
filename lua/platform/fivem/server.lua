@@ -53,6 +53,8 @@ function server.platform(shim, transport)
     expose = shared.expose,
     -- FiveM runs each event handler and timer in a coroutine of its own.
     thread = coroutine.running,
+    -- Positions are in metres.
+    units_per_metre = 1,
     -- The game world (J3, J4): a player's position is their ped's, which
     -- OneSync knows on the server, and entities are placed and inspected on
     -- the server, by their network id (`server.spawn`, `server.entity`).

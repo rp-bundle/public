@@ -13,20 +13,6 @@ acme_property = acme_property or {}
 ---no distance: the player must be on the lot, inside its radius.
 acme_property.DOOR_METRES = 2
 
----The engine's units in a metre: positions and interaction distances are in
----them. Source (Gmod) measures in inches, near enough; FiveM in metres. The
----addon's own table, since only an addon may tell engines apart.
----@type table<string, number>
-acme_property.UNITS_PER_METRE = { gmod = 39.37 }
-
----A distance in the engine's units.
----@param rpf rpf.Api The API.
----@param metres number The distance in metres.
----@return number units The same distance in the engine's units.
-function acme_property.units(rpf, metres)
-  return metres * (acme_property.UNITS_PER_METRE[rpf.engine] or 1)
-end
-
 ---How long to wait before trying a purchase again when the bank could not
 ---be asked, and how many times to try in all.
 acme_property.AGAIN_MS = 1000
@@ -67,8 +53,13 @@ local function on_the_lot(rpf, player, property)
   if not at or rpf.world.bucket(player.handle) ~= (fields.bucket or 0) then
     return false
   end
+  -- The lot's radius is in metres, as staff set it in the portal.
+  local radius = rpf.world.units(fields.radius)
+  if not radius then
+    return false
+  end
   local dx, dy, dz = at.x - fields.spot.x, at.y - fields.spot.y, at.z - fields.spot.z
-  return dx * dx + dy * dy + dz * dz <= fields.radius * fields.radius
+  return dx * dx + dy * dy + dz * dz <= radius * radius
 end
 
 ---What a player asked to buy: a property, as they were shown it.
@@ -313,7 +304,7 @@ function acme_property.start_server(rpf)
       end, { target = acme_property.PROPERTY, label = "Buy this property" }))
       assert(rpf.interactions.register("acme_property.door", function(player, _, target)
         return acme_property.use_door(rpf, player, target)
-      end, { target = acme_property.DOOR, label = "Use the door", distance = acme_property.units(rpf, acme_property.DOOR_METRES) }))
+      end, { target = acme_property.DOOR, label = "Use the door", distance = acme_property.DOOR_METRES }))
       assert(rpf.addons.provide("acme_property.locked", function(door_id)
         return acme_property.locked(rpf, door_id)
       end))

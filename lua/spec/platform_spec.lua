@@ -114,6 +114,7 @@ describe("rpf.platform", function()
       "send",
       "thread",
       "to_client",
+      "units_per_metre",
     }, names(rpf.platform.SERVER))
   end)
 
@@ -126,7 +127,7 @@ describe("rpf.platform", function()
     end
   end)
 
-  for _, member in ipairs({ "connect", "log", "engine", "expose" }) do
+  for _, member in ipairs({ "connect", "log", "engine", "expose", "units_per_metre" }) do
     it("refuses to start the server without " .. member .. ", and names it", function()
       local p = support.fake_platform()
       p[member] = nil
@@ -142,6 +143,19 @@ describe("rpf.platform", function()
     p.kv_get, p.random_hex = nil, nil
     local _, err = pcall(rpf.start_server, p, { url = "ws://portal", api_key = "k" })
     assert.truthy(tostring(err):find("kv_get (function), random_hex (function)", 1, true), tostring(err))
+  end)
+
+  it("refuses a scale that is not a positive, finite number, and names it", function()
+    -- Deliberately the wrong type or value: this is what an adapter bug looks like.
+    ---@diagnostic disable: assign-type-mismatch
+    for _, bad in ipairs({ 0, -1, math.huge, 0 / 0, "39.37", false }) do
+      local p = support.fake_platform()
+      p.units_per_metre = bad
+      local ok, err = pcall(rpf.start_server, p, { url = "ws://portal", api_key = "k" })
+      assert.is_false(ok, tostring(bad))
+      assert.truthy(tostring(err):find("units_per_metre (number)", 1, true), tostring(err))
+    end
+    ---@diagnostic enable: assign-type-mismatch
   end)
 
   it("refuses an engine that is not a non-empty string", function()

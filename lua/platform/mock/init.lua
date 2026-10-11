@@ -243,6 +243,8 @@ function mock.server(host, seed)
   p.buckets = {}
   p.entities = {}
   p.entity_seq = 0
+  -- Positions in the mock are metres, as FiveM's are.
+  p.units_per_metre = 1
 
   ---A networked entity in the mock's world.
   ---@class rpf.mock.Entity

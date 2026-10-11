@@ -746,9 +746,40 @@ function Commerce.check(player, deal) end
 ---Positions are plain `{ x, y, z }`, in the engine's units, which is how a
 ---record stores one (a `vector3` field).
 ---
+---**Distances are written in metres, on every engine.** An interaction's
+---`distance` and a zone's radius are metres, and `units` turns metres into
+---the engine's units for a distance you measure yourself against
+---`position`. FiveM's units are metres; Gmod's are about 39.37 to the
+---metre.
+---
 ---**Server only.**
 ---@class rpf.api.World
 local World = {}
+
+---A distance in metres, as the engine's units: what to compare against
+---positions you measure yourself (`position`, `entity`), so the same number
+---of metres comes out on FiveM, where the units are metres, and on Gmod,
+---where they are about 39.37 to the metre. The adapter declares the scale;
+---you never tell engines apart. An interaction's `distance` and a zone's
+---radius are already in metres and need no conversion.
+---
+---```lua
+---local reach = rpf.world.units(4) -- four metres
+---local at, spot = rpf.world.position(player.handle), counter.fields.spot
+---local dx, dy, dz = at.x - spot.x, at.y - spot.y, at.z - spot.z
+---local near = dx * dx + dy * dy + dz * dz <= reach * reach
+---```
+---@param metres number The distance in metres. Negative is allowed, for an offset.
+---@return number? units The same distance in the engine's units.
+---@return "invalid"|nil err For anything but a finite number.
+function World.units(metres) end
+
+---A distance in the engine's units, as metres: the inverse of `units`, for
+---a distance you measured from positions.
+---@param units number The distance in the engine's units.
+---@return number? metres The same distance in metres.
+---@return "invalid"|nil err For anything but a finite number.
+function World.metres(units) end
 
 ---Where a logged-in player is.
 ---@param player any The engine's handle.
@@ -856,8 +887,8 @@ local Interactions = {}
 ---   within `distance`. With a target the player must be in the world
 ---   (`not_active`), and a target that is missing, hidden, in another bucket
 ---   or not this server's is `not_found`; one out of reach is `too_far`.
---- - `distance`: how near, in the engine's units (metres on FiveM); 3
----   unless given. Set it for Gmod, whose units are smaller.
+--- - `distance`: how near, in metres on every engine; 3 unless given. A
+---   zone's radius is in metres too.
 --- - `cooldown`: milliseconds between one player's uses (`cooldown`).
 --- - `permission`: one of the addon's permissions, which the player must
 ---   hold as linked staff (`forbidden`).
@@ -865,7 +896,7 @@ local Interactions = {}
 ---   `false` and a reason.
 --- - `label`: what the menu (`open`) and a target resource show.
 ---@param name string `<namespace>.<name>`.
----@param handler fun(player: rpf.PlayerView, payload: table, target: rpf.targets.Target?): boolean, (table|string)? Answers `true` and, optionally, a table of plain data for a `request` (at most 16 KiB encoded, 8 deep), or `false` and a reason the player's client is told. `target` is the resolved target: `{ type, id, record, position, distance }` for a record, `{ ref, model, position, distance }` (with `type` and `id` when RPF placed it) for an entity.
+---@param handler fun(player: rpf.PlayerView, payload: table, target: rpf.targets.Target?): boolean, (table|string)? Answers `true` and, optionally, a table of plain data for a `request` (at most 16 KiB encoded, 8 deep), or `false` and a reason the player's client is told. `target` is the resolved target: `{ type, id, record, position, distance }` for a record, `{ ref, model, position, distance }` (with `type` and `id` when RPF placed it) for an entity. Its `distance` is how far the player is, in metres.
 ---@param rules { target: (string|{ type: string?, models: string[]? })?, distance: number?, cooldown: integer?, permission: string?, check: (fun(player: rpf.PlayerView, target: rpf.targets.Target?): boolean, string?)?, label: string? }? The rules.
 ---@return boolean? ok True once registered.
 ---@return "invalid"|"not_found"|"forbidden"|"inactive"|"too_large"|nil err `invalid` for a bad name, handler or rules, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an activation that has ended, `too_large` when the server's rules with a target would no longer fit what a client reads (64 KiB).
@@ -906,7 +937,7 @@ function Interactions.open() end
 
 ---Client only. Asks the server what this player may interact with near
 ---them, for a UI of your own: `callback(options)`, each `{ name, label,
----type, id, distance }`, nearest first, at most 16; or `callback(nil,
+---type, id, distance }` (metres), nearest first, at most 16; or `callback(nil,
 ---err)` (`timeout`, `failed`, `busy` while one is waiting). Send the one
 ---chosen with `request(name, { target = { id = id } }, …)`.
 ---@param callback fun(options: { name: string, label: string, type: string, id: string, distance: number }[]?, err: string?) Called once, later.

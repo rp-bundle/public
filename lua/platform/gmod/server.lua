@@ -239,6 +239,9 @@ local platform = {
   kv_set = shared.kv_set,
   random_hex = random.hex,
   thread = coroutine.running,
+  -- Positions are in Hammer units, about 39.37 to the metre (a unit is an
+  -- inch in all but name).
+  units_per_metre = 39.37,
   -- The game world (J3, J4): Gmod has one world, so no buckets; entities
   -- are named by their index, and placed as `prop_dynamic`s
   -- (`server.spawn`).

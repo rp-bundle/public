@@ -38,6 +38,11 @@ function.
    - `now` is the wall clock in milliseconds; `after` runs later, never inside
      the caller.
    - `random_hex` from the best source the engine has.
+   - `units_per_metre` is how many of the engine's position units are a
+     metre: 1 on FiveM, 39.37 on Gmod (Hammer units), a positive finite
+     number. The core multiplies every distance an addon gives in metres
+     by it (an interaction's `distance`, a zone's radius,
+     `rpf.api.world.units`), so an addon never tells engines apart.
    - `capabilities` declares what the engine can do with the game world,
      each capability a function or `false` (`rpf.world`): `position` a
      player's position as `{ x, y, z }`; `bucket` their routing bucket
@@ -200,6 +205,8 @@ for the clients' `HTTP`.
   `ShutDown`, and the next map's state is a new instance over the same store.
 - *Player disconnects* carry no reason in `PlayerDisconnected`, so the core
   is told `"disconnected"`.
+- *Scale.* `units_per_metre` is 39.37: Hammer units are inches in all but
+  name.
 - *Capabilities* (J3, J4): `position` is `ply:GetPos()`. Gmod has one
   world, so `bucket` is `false` and a record in any bucket but 0 is not
   placed. An entity's ref is its index; `model` lowercases a path, as

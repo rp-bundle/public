@@ -81,5 +81,6 @@ Gmod) to buy it, then use it again at the door.
 ## What only a real engine shows
 
 The interaction menu on the lot and at the door, the offer's menu and its
-notifications, and the radius and door distance in Gmod's units. Wiring
+notifications, and the lot's radius and the door distance on Gmod, whose
+units are not metres. Wiring
 `acme_property.locked` to a real door is the server's own script.

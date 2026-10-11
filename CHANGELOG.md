@@ -30,6 +30,19 @@ socket.
 
 ### Added
 
+- Distances in metres on every engine (J8 follow-up, #318). An
+  interaction's `distance`, a zone's `radius` field and the `distance` a
+  resolved target or a nearby option reports are metres on FiveM and Gmod
+  alike, converted by the engine's scale (FiveM 1, Gmod about 39.37 to the
+  metre). `rpf.api.world.units(metres)` gives the engine's units for a
+  distance an addon measures itself, and `rpf.api.world.metres(units)` takes
+  it back, so no addon keeps a table of engines. The platform gains a
+  required member, `units_per_metre`, which both adapters and the mock
+  declare; an adapter outside this repository must add it. The default
+  interaction distance (3) is three metres on Gmod too, where it was three
+  units, and the examples drop their hand conversions. Nothing on FiveM
+  changes. A Gmod server that stored a zone radius in game units (the
+  `acme_property` example) must enter it in metres.
 - A built-in command to enter a staff link code in game (F9 follow-up,
   #198): `/rpflink <code>` in chat or `rpflink <code>` in the console, on
   FiveM and Garry's Mod. The platform gains a required member,
