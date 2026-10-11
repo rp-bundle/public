@@ -225,6 +225,19 @@ local function isolate(value, seen)
   return setmetatable(out, getmetatable(value))
 end
 
+---Copies a list of arguments for one handler, keeping tables they share
+---shared. Can throw on a payload nested too deep for the stack.
+---@param args any[] The arguments.
+---@param argc integer How many there are, counting nils.
+---@return any[] copy The copies.
+local function isolate_all(args, argc)
+  local seen, copy = {}, {}
+  for n = 1, argc do
+    copy[n] = isolate(args[n], seen)
+  end
+  return copy
+end
+
 ---Calls every handler for a name, in registration order, with the given
 ---arguments. A handler that throws is logged, and the rest still run.
 ---
@@ -264,11 +277,14 @@ function events.emit(name, ...)
       end
       local ok, err
       if i < #snapshot and argc > 0 then
-        local seen, copy = {}, {}
-        for n = 1, argc do
-          copy[n] = isolate(args[n], seen)
+        -- A payload too deep to copy is a failure of this handler, not of
+        -- the emit: an error here would skip the `depth` decrement below.
+        local copied, copy = pcall(isolate_all, args, argc)
+        if copied then
+          ok, err = pcall(entry.fn, spread(copy, argc))
+        else
+          ok, err = false, "its payload could not be copied: " .. tostring(copy)
         end
-        ok, err = pcall(entry.fn, spread(copy, argc))
       else
         ok, err = pcall(entry.fn, ...)
       end

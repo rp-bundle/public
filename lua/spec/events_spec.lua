@@ -62,6 +62,25 @@ describe("rpf.events", function()
     assert.are.equal(payload, seen[2], "the last handler gets the emitter's own table")
   end)
 
+  it("counts a payload too deep to copy as a failed handler and keeps dispatching", function()
+    local ran = 0
+    events.on("thing", function() end)
+    events.on("thing", function()
+      ran = ran + 1
+    end)
+    local deep = {}
+    local node = deep
+    for _ = 1, 100000 do
+      node.next = {}
+      node = node.next
+    end
+    for _ = 1, events.MAX_DEPTH + 2 do
+      assert.are.equal(1, events.emit("thing", deep))
+    end
+    assert.are.equal(0, events.emit("thing", {}), "later emits still dispatch")
+    assert.is_true(ran > 0)
+  end)
+
   it("keeps a JSON mark on the copy", function()
     local marked
     events.on("thing", function() end)
