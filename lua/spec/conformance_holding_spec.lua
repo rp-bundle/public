@@ -482,6 +482,49 @@ conformance.run(busted, "live record holds", {
       assert.is_false(world.portal.records[tree].held)
     end,
   },
+  {
+    name = "lets go of a session's records when an upgrade takes their owner's hold away and no code runs",
+    run = function(world)
+      local hut = stored(world, 1, "hut", player)
+      -- Installed and enabled, its code not loaded here.
+      world:connect()
+      world:install({ conformance.installed(world.core, grove()) })
+      world:pump()
+      world:login(1, PLAYER)
+      assert.is_true(held(world, hut), "held with her session")
+      world:install({ conformance.installed(world.core, grove("1.1.0", false)) })
+      world:settle()
+      assert.is_false(held(world, hut), "held on demand now, by nobody")
+      assert.is_false(world.portal.records[hut].held)
+    end,
+  },
+  {
+    name = "takes back a page whose claim's reply was lost with the connection, in the same reconnect",
+    run = function(world)
+      local tree = stored(world, 1, "tree", server)
+      assert(world.api.addons.register(grove()))
+      world:connect()
+      -- The claim goes out, the portal holds its page, and the connection
+      -- drops before the answer arrives.
+      world:install({ conformance.installed(world.core, grove()) })
+      world.portal.records[tree].held = true
+      world:disconnect()
+      local asked_for = #world.connects
+      for _ = 1, 120 do
+        if #world.connects > asked_for then
+          break
+        end
+        world:advance(1000)
+      end
+      assert.is_true(#world.connects > asked_for, "the core connects again")
+      -- The resent claim finds nothing unheld; the declaration releases the
+      -- page nobody here took, and the claim after the Welcome takes it.
+      world:connect()
+      world:settle()
+      assert.is_true(held(world, tree), "back within the reconnect")
+      assert.is_true(world.portal.records[tree].held)
+    end,
+  },
 })
 
 describe("rpf.holding", function()

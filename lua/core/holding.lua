@@ -201,7 +201,15 @@ function holding.claimable()
 end
 
 ---Claims a page of the records this server holds by policy, and again while
----a page comes back full. Does nothing while the connection is not ready,
+---a page comes back full.
+---
+---A claim is not idempotent the way a hold by id is: resent after a lost
+---reply, it takes the next page. A reply is lost only with the connection,
+---though, and the frame is resent after the reconnect, ahead of the
+---declaration, which declares only what this server took and so releases
+---the page the lost reply held; the claim that follows the `Welcome` waits
+---for that declaration and takes it back. A resend refused `limit` for
+---that page recovers the same way. Does nothing while the connection is not ready,
 ---since the next `Welcome` claims, or when no enabled type has a policy.
 ---One claim is on its way at a time: asked for meanwhile, another runs once
 ---it is answered. The hold waits for the declaration and the reports queued
@@ -354,7 +362,9 @@ local function on_config(change)
   for _, entry in pairs(records.entries) do
     if entry.kind == "addon_record" then
       local policy = holding.policy(entry.data.type)
-      if entry.through ~= nil and policy == "server" then
+      if entry.through ~= nil and policy ~= "owner" then
+        -- To the server's hold, or none: no session holds it now. Held on
+        -- demand by nobody, the drain below lets it go if no code runs.
         records.hold_for(entry.kind, entry.id, nil)
       elseif entry.through == nil and policy == "owner" then
         local session = holding.session_of(entry.data.type, entry.data.owner)
