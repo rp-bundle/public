@@ -1718,6 +1718,37 @@ describe("the FiveM adapter", function()
       assert.are.equal(sealed, rpf.json.decode(request.body).password)
     end)
 
+    it("keeps the delete form up when a character reply arrives while a deletion waits, and applies it on Back", function()
+      local driver = started_client()
+      driver.nui("ready", {})
+      log_in(driver)
+      driver.commands.rpf_delete_account()
+      local sealed = "rpf-sealed-00112233445566778899aabbccddeeff"
+      assert.is_true(driver.nui("delete_account", { username = "sam", password = sealed, confirmed = true }).ok)
+      local sent = #driver.nui_sent
+      driver.from_server(
+        "rpf:characters",
+        rpf.handoff.encode("rpf:characters", {
+          characters = rpf.json.array({
+            rpf.json.object({ id = "c1", first_name = "Ada", last_name = "Ng", gender = "female" }),
+          }),
+        })
+      )
+      driver.from_server(
+        "rpf:character_result",
+        rpf.handoff.encode("rpf:character_result", { during = "select", ok = false, reason = "busy" })
+      )
+      assert.are.equal(sent, #driver.nui_sent, "the page, and its sealed password, were left alone")
+      assert.is_true(driver.focus)
+      nonce(driver)
+      local request = nui_messages(driver)[#driver.nui_sent]
+      assert.are.equal(sealed, rpf.json.decode(request.body).password)
+      driver.nui("http", { id = request.id, status = 401, body = '{"error":"invalid_credentials","message":"Nope."}', headers = {} })
+      assert.is_true(driver.nui("close_delete", {}).ok)
+      assert.are.equal("characters", last_screen(driver).screen)
+      assert.is_true(driver.focus)
+    end)
+
     it("deletes the account from the form opened in game, a sealed password and all", function()
       local driver, record = started_client()
       driver.nui("ready", {})

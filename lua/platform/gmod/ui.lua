@@ -79,13 +79,18 @@ local login_warning = ""
 ---@type fun()?
 local restore = nil
 
+---Where Back goes from the delete form opened from the game, while that form
+---is on show: opening it again must not replace the original target.
+---@type fun()?
+local game_back = nil
+
 ---Closes the screen on show.
 local function close()
   local open = frame
   if open and IsValid(open) then
     open:Remove()
   end
-  frame, status, actions, restore = nil, nil, {}, nil
+  frame, status, actions, restore, game_back = nil, nil, {}, nil, nil
 end
 
 ---Opens a new screen, replacing any on show.
@@ -102,7 +107,7 @@ local function window(title, height)
   f:SetDraggable(false)
   f:MakePopup()
   frame = f
-  restore = nil
+  restore, game_back = nil, nil
   return f
 end
 
@@ -382,8 +387,11 @@ local function open_delete()
   -- server whose characters are another framework's the picker is empty
   -- while the player is in the game, and an empty character screen would
   -- be one they could not leave.
+  if game_back and frame and IsValid(frame) then
+    return
+  end
   local back = restore
-  delete_account(function()
+  local function to_game()
     if back then
       browsing = core.picker.selected() ~= nil
       back()
@@ -391,7 +399,9 @@ local function open_delete()
       browsing = false
       close()
     end
-  end)
+  end
+  delete_account(to_game)
+  game_back = to_game
 end
 
 ---Listens to the core's login and character events. Called before the core

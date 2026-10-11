@@ -61,10 +61,18 @@ function ui.new(deps)
   }, Screens)
 end
 
+---Encodes a message for the page.
+---@param self rpf.fivem.Screens The screens.
+---@param message table The message.
+---@return string text The JSON.
+local function encode(self, message)
+  return assert(self.deps.core.json.encode(self.deps.core.json.object(message)))
+end
+
 ---Sends a message to the page, or keeps it until the page is ready.
 ---@param message table The message, encoded with `rpf.json`.
 function Screens:post(message)
-  local text = assert(self.deps.core.json.encode(self.deps.core.json.object(message)))
+  local text = encode(self, message)
   if message.type == "screen" then
     self.screen = text
   end
@@ -143,6 +151,33 @@ function Screens:close_delete()
   return true, nil
 end
 
+---Whether a deletion opened from the game is waiting for its nonce or the
+---portal. Any screen sent to the page now makes it forget its sealed
+---passwords, and the deletion would send a handle as the password, so what
+---would replace the form waits until the deletion is over.
+---@return boolean pending True while the form is up and a deletion is under way.
+function Screens:deferring()
+  return self.returning ~= nil and self.deps.core.auth.state() == "working"
+end
+
+---Goes to a screen with the lock it needs: now, or, while `deferring`, as
+---what Back puts back once the deletion has finished.
+---@param name "closed"|"characters" Which screen.
+---@param fields table? What it shows.
+---@param locked boolean Whether input is locked while it is up.
+function Screens:go(name, fields, locked)
+  if self:deferring() then
+    local message = { type = "screen", screen = name }
+    for key, value in pairs(fields or {}) do
+      message[key] = value
+    end
+    self.returning = { screen = encode(self, message), locked = locked }
+    return
+  end
+  self:lock(locked)
+  self:show(name, fields)
+end
+
 ---Shows an error on the screen that is up. `message` is written for the
 ---player.
 ---@param message string The text.
@@ -217,23 +252,19 @@ function Screens:start()
   -- character list follows at once and locks again; on one whose
   -- characters are another framework's, that framework takes over.
   events.on("auth.succeeded", function()
-    self:lock(false)
-    self:show("closed")
+    self:go("closed", nil, false)
   end)
   events.on("characters.listed", function(list, selected)
     if selected ~= nil then
-      self:lock(false)
-      self:show("closed")
+      self:go("closed", nil, false)
       return
     end
-    self:lock(true)
-    self:show("characters", { characters = listing(list) })
+    self:go("characters", { characters = listing(list) }, true)
   end)
   events.on("characters.result", function(result)
     if result.ok then
       if result.during == "select" then
-        self:lock(false)
-        self:show("closed")
+        self:go("closed", nil, false)
       end
       return
     end
@@ -241,8 +272,10 @@ function Screens:start()
     -- gets the character screen, empty, with its refresh, rather than
     -- nothing at all.
     if result.during == "load" then
-      self:lock(true)
-      self:show("characters", { characters = rpf.json.array({}) })
+      self:go("characters", { characters = rpf.json.array({}) }, true)
+    end
+    if self:deferring() then
+      return
     end
     local reason = result.reason
     self:error(CHARACTER_REASONS[reason] or ("That did not work" .. (type(reason) == "string" and (": " .. reason) or ".")))

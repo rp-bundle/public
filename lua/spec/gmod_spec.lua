@@ -1057,8 +1057,9 @@ describe("the Gmod adapter's client", function()
       }),
     }))
     world:command("rpf_delete_account")
+    world:command("rpf_delete_account")
     button(gmod, world, "Back"):DoClick()
-    assert.truthy(button(gmod, world, "Play Ada Byron"))
+    assert.truthy(button(gmod, world, "Play Ada Byron"), "running it twice keeps the way back")
   end)
 
   it("lists characters after login, and selects one through the server", function()
