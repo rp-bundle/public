@@ -395,6 +395,7 @@ function support.fake_client_platform(opts)
   ---@field server_request_handlers table<string, fun(payload: string, respond: fun(reply: string))> Answerers registered with `on_server_request`, by name.
   ---@field shown { kind: string, spec: table, done: fun(raw: any) }[] Every UI the core asked the platform to show, in order; a test answers with `done`.
   ---@field closed string[] Every kind `ui.close` took away, in order.
+  ---@field images { url: string, headers: table<string, string>, hash: string, done: fun(src: string?, err: string?) }[] Every image the core asked the adapter for, in order; a test answers with `done`.
   ---@field logs { level: string, message: string }[] Every log line.
   ---@field exposed table? What `expose` was given.
   local c = {
@@ -409,6 +410,7 @@ function support.fake_client_platform(opts)
     asked = {},
     server_request_handlers = {},
     shown = {},
+    images = {},
     logs = {},
   }
   local ui = {}
@@ -449,6 +451,10 @@ function support.fake_client_platform(opts)
 
   function c.to_server(name, payload)
     c.to_servers[#c.to_servers + 1] = { name = name, payload = payload }
+  end
+
+  function c.item_image(url, headers, hash, done)
+    c.images[#c.images + 1] = { url = url, headers = headers, hash = hash, done = done }
   end
 
   function c.on_server(name, handler)
@@ -525,7 +531,8 @@ function support.fake_client_platform(opts)
   ---Answers the oldest unanswered HTTP request.
   ---@param status integer The status, 0 for no response.
   ---@param body table|string? The body: a table, encoded here, or raw text.
-  function c.respond(status, body)
+  ---@param headers table<string, string>? The response's headers.
+  function c.respond(status, body, headers)
     local waiting = assert(c.pending(), "no request is waiting")
     local request = c.requests[waiting.index]
     request.answered = true
@@ -534,7 +541,7 @@ function support.fake_client_platform(opts)
       text = assert(support.core.json.encode(support.core.json.object(body)))
     end
     ---@cast text string
-    request.callback(status, text, {})
+    request.callback(status, text, headers or {})
   end
 
   ---The names of every message sent to the server, in order.

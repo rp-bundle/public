@@ -72,6 +72,7 @@ platform.CLIENT = members({
   "log",
   "expose",
   "ui",
+  "item_image",
 })
 
 ---Lists what a platform table lacks for one side. `engine` must also be a

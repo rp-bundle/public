@@ -10,9 +10,15 @@
  * are.
  */
 
+import { IndexedDbStore, ItemImages, MemoryStore } from "./images.js";
 import { Sealed } from "./seal.js";
 
 const sealed = new Sealed();
+
+/** Item images (`images.js`), kept in IndexedDB where the page has it. */
+const itemImages = IndexedDbStore.open()
+  .catch(() => null)
+  .then((store) => new ItemImages(store ?? new MemoryStore()));
 
 /** How long a portal request may take, headers and body, before it counts as no answer. */
 const HTTP_TIMEOUT_MS = 30_000;
@@ -197,6 +203,19 @@ async function http(message) {
   await call("http", { id: message.id, status, body, headers: received });
 }
 
+/**
+ * Fetches an item image for the client's core (`rpf.items.image`) and hands
+ * back a `data:` URL, or why there is none. The token in `message.headers`
+ * goes only to the portal, in a header.
+ * @param {Record<string, unknown>} message The request.
+ */
+async function image(message) {
+  const headers = /** @type {Record<string, string>} */ (message.headers ?? {});
+  const images = await itemImages;
+  const answer = await images.get(String(message.url), headers, String(message.hash));
+  await call("image", { id: message.id, ...answer });
+}
+
 window.addEventListener("message", (event) => {
   const message = event.data;
   if (typeof message !== "object" || message === null) {
@@ -209,6 +228,8 @@ window.addEventListener("message", (event) => {
     showError(String(message.message));
   } else if (message.type === "http") {
     void http(message);
+  } else if (message.type === "image") {
+    void image(message);
   }
 });
 

@@ -123,6 +123,7 @@ arrives as a function reference, which the core calls like a function.
 | `connect`, `disconnect`, `send` | The `rpf-ws` shim, below | `ws.lua` |
 | `http_request` (server) | `PerformHttpRequest`, with a failure's body taken from `errorData` and held to one callback | `server.lua` |
 | `http_request` (client) | The NUI page's `fetch` (client Lua has no HTTP) | `ui.lua`, `nui/app.js` |
+| `item_image` (client) | The NUI page's `fetch` too: the portal's redirect followed with `Authorization` dropped, the bytes checked with `crypto.subtle`, kept in IndexedDB under the hash (at most 512, least recently used dropped), answered as a `data:image/png;base64,` URL ending `#.png`, so ox_lib's `isIconUrl` takes it for an image, the only answer `ui.lua` takes (below) | `ui.lua`, `nui/images.js` |
 | `now` | `os.time` (server) or `GetCloudTimeAsInt` (client), whole seconds, refined to milliseconds with `GetGameTimer` and kept inside the wall clock's current second | `shared.lua` |
 | `after` | `Citizen.SetTimeout` | `shared.lua` |
 | `kv_get`, `kv_set` | Resource KVP, with the synchronous `SetResourceKvp`, never the `NoSync` one | `shared.lua` |
@@ -343,6 +344,24 @@ The bundle targets Node 16, the oldest an FXServer that runs this ships.
   named `rpf`.
 - The portal allows the page's origin, `https://cfx-nui-<resource>`, for the
   player endpoints (P1, P2).
+- **Item images** (P3, #243, `rpf.items.image`) are fetched by this page
+  too (`nui/images.js`), because the image route needs the API token in a
+  header, which an `<img>` cannot send. The token goes in the NUI message
+  to this resource's own page and from there to the portal in a header,
+  never in a URL another resource could read. `fetch` follows the portal's
+  redirect to the user-content domain and drops `Authorization` on the
+  cross-origin hop, as the Fetch standard requires. A CEF too old to drop
+  it would fail the user-content domain's CORS preflight, and every image
+  would be `unavailable`: that is the first thing a real client checks.
+  The user-content domain must answer with
+  `Access-Control-Allow-Origin: *` ([Deployment](../../../docs/deployment.md#the-user-content-domain)).
+  The bytes are checked against the hash before they are kept, in
+  IndexedDB (in memory where the page has none), so an image is fetched
+  once per hash, even across restarts. The answer is a `data:` URL, not a
+  blob URL, which would belong to this page's origin alone: any resource's
+  page can show it, and ox_lib takes it as an `image` or `icon`. A page
+  that reloads mid-fetch loses its requests: its next `ready` answers each
+  one `unavailable`, so nothing waits on them.
 - The character screen lists, creates and selects (D5's `rpf.picker`), so a
   fresh install reaches `active` with no script of the owner's. Styling is
   out of scope.
@@ -355,7 +374,7 @@ The bundle targets Node 16, the oldest an FXServer that runs this ships.
 | A hostile client's unknown name and another player's record id refused over `lib.callback`, against the real portal | `crates/fake-server/tests/scenarios/acme_tags.rs` | `cargo test -p fake-server --features lua54 acme_tags` |
 | The adapter against the real portal, under both Luas: a join with the identifiers in the expected shape, a staff kick, a cut and a restart | `crates/fake-server/tests/scenarios/fivem.rs` (`Engine::Fivem`) | `cargo test -p fake-server --features lua54 fivem` |
 | Annotations, every native name and every ox_lib call, against overextended's `fivem-lls-addon` and ox_lib's own annotations at 3.40.0 (both pinned in `dev/fivem-natives`) | `.luarc.json` | `dev/fivem-natives && lua-language-server --check=lua/platform/fivem` |
-| The shim: `tsc --strict` (and the NUI page's JS, `tsconfig.nui.json`), its unit tests against a local websocket server, and the contract test | `ws-shim/` | `npm ci && npm run typecheck && npm test` |
+| The shim: `tsc --strict` (and the NUI page's JS, `tsconfig.nui.json`), its unit tests against a local websocket server, the page's sealing and item images (`test/nui.test.ts`, `test/images.test.ts`), and the contract test | `ws-shim/` | `npm ci && npm run typecheck && npm test` |
 | Frames per second through the shim | `ws-shim/bench/` | `npm run bench` |
 | On a real FXServer (layer 5): resource KVP at the outbox's bounds, the benchmark under FXServer, the connection and the players | `dev.lua`, in a `dev/fivem-resources --dev` build | `rpf_dev_kv_bound`, `rpf_dev_bench`, `rpf_dev_status` at the server console |
 
@@ -426,6 +445,11 @@ Run for #186 on FXServer 35245 under OneSync, against a local portal:
   `active` on a fresh install, and the identifiers the portal stores (the
   account `license:` and the allowlisted kinds verbatim, with no `ip:`).
   It needs the game, and waits on the repository owner (#186).
+- Item images on a real client (#243) are still to run: CEF dropping
+  `Authorization` on the portal's redirect (the user-content domain's log
+  shows no bearer token), the user-content domain's CORS answer, IndexedDB
+  keeping an image across a restart of the game, and a `data:` URL drawn
+  in another resource's page and as ox_lib's `image`.
 - ox_lib on a real server (J10, #239) is still to run: `rpf` refusing to
   start beside an ox_lib older than 3.40.0 with the `ox.problem` line, and
   an interaction's request and answer crossing `lib.callback` from a real

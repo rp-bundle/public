@@ -25,7 +25,7 @@ local ui = {}
 
 local rpf = rpf
 
-ui.CALLBACKS = { "ready", "http", "login", "register", "change_password", "delete_account", "close_delete", "create", "select", "refresh" }
+ui.CALLBACKS = { "ready", "http", "image", "login", "register", "change_password", "delete_account", "close_delete", "create", "select", "refresh" }
 
 ---What the screens need from the client: the core and three engine actions.
 ---@class rpf.fivem.ScreenDeps
@@ -42,6 +42,7 @@ ui.CALLBACKS = { "ready", "http", "login", "register", "change_password", "delet
 ---@field screen string? The last screen message, sent again if the page reloads.
 ---@field locked boolean Whether input is locked.
 ---@field pending table<integer, fun(status: integer, body: string, headers: table<string, string>)> HTTP callbacks by request id, until the page answers.
+---@field images table<integer, fun(src: string?, err: string?)> Item image callbacks by request id, until the page answers. Numbered with `next_id`, like HTTP requests.
 ---@field next_id integer The last HTTP request id handed out.
 ---@field returning { screen: string, locked: boolean }? What was up when the delete form was opened from the game (`open_delete`), to put back when the player backs out. Any other screen replaces the form and forgets it.
 local Screens = {}
@@ -57,6 +58,7 @@ function ui.new(deps)
     queue = {},
     locked = false,
     pending = {},
+    images = {},
     next_id = 0,
   }, Screens)
 end
@@ -307,6 +309,30 @@ function Screens:http_request(method, url, headers, body, callback)
   })
 end
 
+---The client platform's `item_image` (P3): the page fetches the image with
+---`fetch`, keeps it in IndexedDB under its hash, and answers through the
+---`image` callback with a `data:` URL (`nui/images.js`). The token rides in
+---the message's headers to this resource's own page only, and from there
+---to the portal in a header, never in a URL another resource could read.
+---@param url string The image's URL on the portal.
+---@param headers table<string, string> The request's headers, with the token.
+---@param hash string The image's hash.
+---@param done fun(src: string?, err: string?) Called once, when the page answers.
+function Screens:item_image(url, headers, hash, done)
+  local json = self.deps.core.json
+  self.next_id = self.next_id + 1
+  self.images[self.next_id] = done
+  local sent = json.object({})
+  for key, value in pairs(headers or {}) do
+    sent[key] = value
+  end
+  self:post({ type = "image", id = self.next_id, url = url, headers = sent, hash = hash })
+end
+
+---The prefix of every image the page may answer with: a PNG as a `data:`
+---URL. Anything else is refused, so what reaches an addon is always one.
+local DATA_PNG = "data:image/png;base64,"
+
 ---A string field from the page, or nil.
 ---@param data any What the page sent.
 ---@param key string The field.
@@ -343,6 +369,14 @@ end
 function Screens:nui(name, data)
   local core = self.deps.core
   if name == "ready" then
+    -- A page that says it is ready again has reloaded, and the page that
+    -- had these requests is gone: none of them will be answered. A live
+    -- page always answers, within its own fetch bound (`nui/images.js`).
+    local lost = self.images
+    self.images = {}
+    for _, done in pairs(lost) do
+      done(nil, "unavailable")
+    end
     self.ready = true
     local queued = self.queue
     self.queue = {}
@@ -369,6 +403,20 @@ function Screens:nui(name, data)
       end
     end
     callback(tonumber(data.status) or 0, text(data, "body") or "", headers)
+    return { ok = true }
+  elseif name == "image" then
+    local id = type(data) == "table" and tonumber(data.id) or nil
+    local done = id and self.images[id]
+    if not id or not done then
+      return reply(false, "unknown request")
+    end
+    self.images[id] = nil
+    local src = text(data, "src")
+    if src and src:sub(1, #DATA_PNG) == DATA_PNG then
+      done(src, nil)
+    else
+      done(nil, text(data, "error") == "not_found" and "not_found" or "unavailable")
+    end
     return { ok = true }
   elseif name == "login" or name == "register" then
     local username, password = text(data, "username"), text(data, "password")

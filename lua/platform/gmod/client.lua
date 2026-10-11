@@ -20,6 +20,7 @@ local load = include("rpf/platform/gmod/load.lua") --[[@as rpf.gmod.Load]]
 local shared = include("rpf/platform/gmod/shared.lua") --[[@as rpf.gmod.Shared]]
 local messages = include("rpf/platform/gmod/messages.lua") --[[@as rpf.gmod.Messages]]
 local addon_ui = include("rpf/platform/gmod/addon_ui.lua") --[[@as rpf.gmod.AddonUi]]
+local images = include("rpf/platform/gmod/images.lua") --[[@as rpf.gmod.Images]]
 
 local core = load.core("client")
 
@@ -37,6 +38,7 @@ local platform = {
   request_server = messages.request_server,
   on_server_request = messages.on_server_request,
   ui = addon_ui.ui,
+  item_image = images.item_image(shared.http_request),
   log = shared.log,
   expose = shared.expose,
 }

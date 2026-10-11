@@ -32,6 +32,11 @@
 ---- **UI is recorded.** The client's `ui` keeps what it was asked to show
 ---  in `shown`, and the harness answers it (`answer_ui`), as a player
 ---  would.
+---- **Item images go through the host's HTTP,** as an engine's would: the
+---  portal's redirect is followed once, without the token, the bytes are
+---  checked against their hash with the host's `sha256`, and what passed is
+---  kept under the hash for the client's life, so a test sees exactly which
+---  fetches a client made (`P3`, `item_image`).
 ---
 ---No engine is involved, so this is not a game adapter: it does not wire
 ---engine events, and the harness calls `rpf.players.connected` and `dropped`
@@ -86,6 +91,7 @@ end
 ---@field kv_set fun(key: string, value: string?) Writes the player machine's store.
 ---@field http_request fun(id: integer, method: string, url: string, headers: table<string, string>, body: string?) Starts a request, answered through `http_done`.
 ---@field to_server fun(name: string, payload: string) Carries a message to the game server.
+---@field sha256 (fun(bytes: string): string)? SHA-256 as lowercase hex: the engine's hash, which `item_image` checks an image against. Without one, every image is refused.
 ---@field log fun(level: string, message: string) Writes a log line.
 
 ---Builds the members both sides share.
@@ -470,6 +476,8 @@ end
 ---@field closed string[] Every kind `ui.close` took away, in order.
 ---@field answer_ui fun(n: integer, raw: any) Answers the `n`th UI shown, as the player would: a menu option's number, the values by field number, a progress bar's `true` or `false`, or nil to close it.
 ---@field from_server fun(name: string, payload: string) A message arrived from the game server: a message, or the answer to a request.
+---@field images table<string, true> The hashes `item_image` fetched and kept.
+---@field image_fetches string[] Every URL `item_image` fetched, in order, the portal's and storage's.
 
 ---Builds a mock player client platform.
 ---@param host rpf.mock.ClientHost The harness's half.
@@ -493,6 +501,55 @@ function mock.client(host, seed)
   end
   p.closed = {}
   p.ui = ui
+  p.images = {}
+  p.image_fetches = {}
+
+  ---Fetches one URL for `item_image`, recording it.
+  ---@param url string The URL.
+  ---@param headers table<string, string> Its headers.
+  ---@param callback fun(status: integer, body: string, headers: table<string, string>) The answer.
+  local function image_get(url, headers, callback)
+    p.image_fetches[#p.image_fetches + 1] = url
+    p.http_request("GET", url, headers, nil, callback)
+  end
+
+  function p.item_image(url, headers, hash, done)
+    if p.images[hash] then
+      p.after(0, function()
+        done("mock:image/" .. hash)
+      end)
+      return
+    end
+    ---Takes the image's bytes, or what went wrong.
+    ---@param status integer The status.
+    ---@param body string The bytes.
+    local function finish(status, body)
+      if status == 404 then
+        done(nil, "not_found")
+      elseif status == 200 and host.sha256 and host.sha256(body) == hash then
+        p.images[hash] = true
+        done("mock:image/" .. hash)
+      else
+        done(nil, "unavailable")
+      end
+    end
+    image_get(url, headers, function(status, body, response_headers)
+      local location
+      for name, value in pairs(response_headers or {}) do
+        if type(name) == "string" and name:lower() == "location" then
+          location = value
+        end
+      end
+      if status >= 300 and status < 400 and location then
+        -- The redirect is followed without the token, as the engines do.
+        image_get(location, {}, function(next_status, next_body)
+          finish(next_status == 404 and 410 or next_status, next_body)
+        end)
+        return
+      end
+      finish(status, body)
+    end)
+  end
 
   function p.answer_ui(n, raw)
     local shown = assert(p.shown[n], "nothing was shown as number " .. tostring(n))

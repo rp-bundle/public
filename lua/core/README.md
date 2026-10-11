@@ -150,9 +150,14 @@ answer handed to `callback`, or nil; the core keeps the timeout),
 by `respond(reply)`), `ui` (what an addon shows the player, J10: `notify`,
 `menu`, `input`, `progress`, each a function taking a spec `rpf.ui` has
 checked and a `done` callback, or `false`, and `close(kind)`, which takes
-away what an addon that stopped had on show), `log`, and `expose`
-(the client's scripts get the public API too, with `auth` in place of
-`players`, `staff` and `config`). It has no websocket, no `random_hex` and no player
+away what an addon that stopped had on show),
+`item_image(url, headers, hash, done)` (fetches an item's image unless one
+is kept under `hash`, follows the portal's redirect without the
+`Authorization` header, refuses bytes whose SHA-256 is not `hash`, keeps
+them under it, and calls `done(src)` with what the engine draws, or
+`done(nil, "not_found" | "unavailable")`: `rpf.items` below), `log`, and
+`expose` (the client's scripts get the public API too, with `auth` and
+`items` in place of `players`, `staff` and `config`). It has no websocket, no `random_hex` and no player
 management.
 
 ## Refusal
@@ -1833,6 +1838,30 @@ adapters' login screens lead to a delete form that asks for the username and
 password and a ticked box, says it cannot be undone and what stays, and
 shows `account_deleted` as a screen telling the player to reconnect.
 
+### Items on the client (`rpf.items`, P3)
+
+A client has no config snapshot. `items.lua` keeps the server's catalog as
+the player API serves it (`GET /api/v1/player/items` with the API token,
+public fields only), used for `CATALOG_FRESH_MS` (a minute) and then
+revalidated with `If-None-Match`, one request at a time; a catalog that
+cannot be revalidated is still used, and one from another portal or server
+is dropped. `items.catalog(callback)` hands a script a copy of it.
+
+`items.image(slug, callback)` finds the slug in the catalog and asks the
+platform's `item_image` for the image at the catalog's `image_url` (only
+that path, which carries the hash), once per hash however many ask at a
+time, and keeps what comes back under the hash for the session
+(`MAX_IMAGES`); the adapter keeps it on disk, checked against the hash, so
+an unchanged image is never fetched again, even after a restart. The
+callback gets `{ slug, hash, src }`, `src` being what the engine draws: a
+`data:` URL on FiveM (an `<img>` in any resource's page, ox_lib's `image`
+and `icon`), a path for `Material()` on Gmod. A `404` means the image was
+replaced since the catalog was read: the catalog is revalidated, and the
+image asked for again once if its hash moved. Refusals: `invalid`,
+`not_logged_in` (no API token yet), `not_found` (no such item, or its image
+is gone), `no_image`, `busy` (the portal's rate limit), `unavailable`
+(anything else, including a fetch that took longer than `TIMEOUT_MS`).
+
 ### The public API
 
 `rpf.api` (`api.lua`) is the documented, supported surface, and the only
@@ -1856,6 +1885,7 @@ internal.
 | `staff` | server | `can`, `permissions`, `link`, `record` (F9, `rpf.staff` above) |
 | `config` | server | `item`, `item_base`, `item_defaults`, `employer`, `department`, `job`, `starting_accounts`, `default_job`, `setting`, `version`, and `edit` (E6, above) |
 | `auth` | client | `login`, `register`, `change_password`, `delete_account`, `logout`, `state`, `account`, `api_token`, `PASSWORD_REUSE_WARNING` |
+| `items` | client | `catalog`, `image` (P3, `rpf.items` above) |
 | `bridge` | server | `CONTRACT_MAJOR`, `CONTRACT_MINOR`, `register`, `character_loaded`, `character_unloaded`, `unavailable`, `available` (K2, `rpf.bridge` above) |
 
 **Nothing in it throws** (J1's rule for addons, `docs/architecture/addons.md`):

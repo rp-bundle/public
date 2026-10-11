@@ -81,6 +81,7 @@ client_scripts({
   "core/time.lua",
   "core/handoff.lua",
   "core/auth.lua",
+  "core/items.lua",
   "core/picker.lua",
   "core/targets.lua",
   "core/interactions.lua",
@@ -98,6 +99,7 @@ ui_page("nui/index.html")
 files({
   "nui/index.html",
   "nui/app.js",
+  "nui/images.js",
   "nui/seal.js",
   "nui/style.css",
 })

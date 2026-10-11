@@ -52,6 +52,7 @@
 ---@field handoff rpf.handoff The login messages between server and client.
 ---@field join rpf.join The server side of a player's login.
 ---@field auth rpf.auth The client side of a player's login.
+---@field items rpf.items The client's item catalog and item images, read from the player API (P3).
 ---@field connection rpf.Client? The running connection, once `start_server` has run.
 ---@field instance_id string? This process's instance id, once `start_server` has run.
 ---@field start_server fun(platform: rpf.ServerPlatform, options: rpf.ServerOptions): rpf.Client Starts the game-server half. Defined below.
@@ -136,6 +137,7 @@ rpf.files = {
     "time.lua",
     "handoff.lua",
     "auth.lua",
+    "items.lua",
     "picker.lua",
     "targets.lua",
     "interactions.lua",
@@ -254,6 +256,7 @@ function rpf.start_client(platform, options)
   rpf.events.bind(platform.log)
   rpf.publish(platform)
   rpf.auth.start(platform, options and options.auth)
+  rpf.items.start(platform)
   rpf.picker.start(platform)
   rpf.interactions.start_client(platform)
   rpf.ui.start_client(platform)

@@ -747,6 +747,18 @@ function auth.api_token()
   return api_token
 end
 
+---Where this client logs in: the portal's address and the game server's
+---id, from the last join nonce. Internal, for the core's other calls to the
+---player API (`rpf.items`); not part of the public API.
+---@return string? portal_url The portal's HTTP address, nil before the first nonce.
+---@return string? server_id The game server's id.
+function auth.portal()
+  if not where then
+    return nil, nil
+  end
+  return where.portal_url, where.server_id
+end
+
 ---The account this client is logged in as.
 ---@return rpf.AuthResult? account A copy, or nil before the server confirms the login.
 function auth.account()

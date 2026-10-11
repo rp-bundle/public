@@ -52,6 +52,7 @@
 ---@field staff rpf.api.Staff? In-game staff: what a linked staff member may do here, account linking, and staff actions for the audit log. Server only.
 ---@field config rpf.api.Config? Lookups over the config the portal pushed, and linked staff's edits of it in game. Server only.
 ---@field auth rpf.api.Auth? The player's own login. Client only.
+---@field items rpf.api.Items? The server's item catalog and item images, as the player's client sees them (P3). Client only.
 ---@field bridge rpf.api.Bridge The bridge to an existing RP framework (K2): how a bridge registers, and reports what its framework does. For bridge authors; an addon uses the facade, which routes to it. Server only.
 
 ---The event bus, shared by the core and every script.
@@ -1479,7 +1480,7 @@ function Config.edit(handle, base_version, changes) end
 ---@field weight number Weight of one unit.
 ---@field size rpf.ConfigSize Footprint in a grid container, before rotation.
 ---@field stack_limit number The most that may sit in one stack.
----@field image string? The item's image by content hash (P3): the SHA-256 of the image, 64 lowercase hex digits, nil if staff uploaded none. A player's client fetches it from the portal at `/api/v1/player/items/<slug>/image` with its API token, and may keep what it fetched under this hash, which changes exactly when the image does.
+---@field image string? The item's image by content hash (P3): the SHA-256 of the image, 64 lowercase hex digits, nil if staff uploaded none. A player's client draws it through `rpf.items.image`, which keeps what it fetched under this hash, which changes exactly when the image does.
 
 ---An item base as the config snapshot carries it (E3): what staff wrote,
 ---with the fields it leaves to the defaults absent.
@@ -1534,6 +1535,65 @@ function Config.edit(handle, base_version, changes) end
 ---@class rpf.ConfigChange
 ---@field version number The version just applied.
 ---@field sections string[] The top-level sections that differ from the snapshot before, sorted, such as `items` or `settings`.
+
+---The server's item catalog and its items' images, on the player's client
+---(P3). The client has no config snapshot; this reads the portal's player
+---API with the player's API token, keeps the catalog, and fetches an
+---image once per content hash, so an inventory or shop UI draws an item's
+---icon in one call:
+---
+---```lua
+---rpf.items.image("apple", function(image, err)
+---  if not image then
+---    return -- "no_image", "not_found", "not_logged_in", "busy" or "unavailable"
+---  end
+---  -- FiveM: a data: URL, for an <img> in your page or ox_lib's `image`.
+---  SendNUIMessage({ type = "icon", slug = image.slug, src = image.src })
+---  -- Gmod: a path for Material(): surface.SetMaterial(Material(image.src))
+---end)
+---```
+---
+---An image that has not changed is never fetched again, even after a
+---restart: the adapter keeps it on disk under its hash. Ask again whenever
+---you draw; a kept image answers at once. Nothing is sent before the player
+---has logged in (`not_logged_in`).
+---
+---**Client only.**
+---@class rpf.api.Items
+local Items = {}
+
+---The server's item catalog: every item its config defines, public fields
+---only, as the portal last said (revalidated after a minute).
+---@param callback fun(catalog: rpf.PlayerItemCatalog?, err: string?) Called once, later: a copy of the catalog, or nil and why (`not_logged_in`, `busy`, `unavailable`).
+---@return boolean? ok True once asked.
+---@return string? err `invalid` for a callback that cannot be called, `unavailable` before the client has started.
+function Items.catalog(callback) end
+
+---An item's image, by its slug.
+---@param slug string The item's slug.
+---@param callback fun(image: rpf.ItemImage?, err: string?) Called once, later: the image, or nil and why: `no_image` for an item staff gave none, `not_found` for a slug the catalog does not have (or an image removed meanwhile), `not_logged_in`, `busy` when the portal's rate limit was reached, `unavailable` for anything else (the portal or the image could not be reached).
+---@return boolean? ok True once asked.
+---@return string? err `invalid` for a slug that is not a non-empty string or a callback that cannot be called, `unavailable` before the client has started.
+function Items.image(slug, callback) end
+
+---The server's item catalog as a client sees it.
+---@class rpf.PlayerItemCatalog
+---@field defaults rpf.PlayerItem What an item missing from `items` behaves as. Never has an image.
+---@field items table<string, rpf.PlayerItem> Every item the server's config defines, by slug.
+
+---One item in the client's catalog: what draws it in a grid and predicts
+---what a move will do.
+---@class rpf.PlayerItem
+---@field weight integer Weight of one unit.
+---@field size { x: integer, y: integer } Footprint in a grid container, in cells, before rotation.
+---@field stack_limit integer The most that may sit in one stack.
+---@field image string? The image's content hash (SHA-256, 64 lowercase hex digits), nil when the item has none. It changes exactly when the image does.
+
+---An item's image, ready to draw.
+---@class rpf.ItemImage
+---@field slug string The item's slug.
+---@field hash string The image's content hash.
+---@field src string What the engine draws: on FiveM a `data:image/png;base64,…#.png` URL (the fragment is what makes ox_lib take it for an image), for an `<img>` in any resource's page or ox_lib's `image` and `icon`; on Gmod a path for `Material()` (`data/rpf/images/<hash>.png`). PNG, at most 256 pixels a side.
 
 ---The player's own login, on their client (P1). The client talks to the
 ---portal directly, so no server-side code handles the password.
