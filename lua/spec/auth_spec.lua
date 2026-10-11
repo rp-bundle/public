@@ -94,6 +94,34 @@ local function stored(c)
   return table.concat(out, "\n")
 end
 
+---Whether the client logged a warning containing some text.
+---@param c spec.FakeClient The platform.
+---@param text string The text, matched plainly.
+---@return boolean warned True if it did.
+local function warned(c, text)
+  for _, line in ipairs(c.logs) do
+    if line.level == "warn" and line.message:find(text, 1, true) then
+      return true
+    end
+  end
+  return false
+end
+
+---Logs in with a grant carrying an API token, and lets its refresh fall due.
+---@param c spec.FakeClient The platform.
+---@param overrides table? Fields of the grant to change.
+local function log_in_until_refresh(c, overrides)
+  nonce(c)
+  rpf.auth.login("sam", "pw")
+  local fields = { api_token = "rpf_at_one", api_token_expires_at = "2026-01-01T00:05:00Z" }
+  for key, value in pairs(overrides or {}) do
+    fields[key] = value
+  end
+  c.respond(200, grant(fields))
+  c.from_server(RESULT, { ok = true, player_id = PLAYER, username = "sam", created = false })
+  c.advance(4 * 60 * 1000)
+end
+
 ---Logs in with a password and completes the redemption.
 ---@param c spec.FakeClient The platform.
 local function log_in(c)
@@ -433,15 +461,74 @@ describe("rpf.auth", function()
       assert.is_nil(stored(c):find("rpf_at_", 1, true))
     end)
 
-    it("retries a refresh the portal did not answer", function()
+    it("retries a refresh the portal did not answer, and says so", function()
+      local c, seen = start()
+      log_in_until_refresh(c)
+      c.respond(0, "")
+      assert.is_true(warned(c, "the portal did not answer"))
+      assert.are.equal("rpf_at_one", rpf.auth.api_token())
+      c.advance(30000)
+      assert.are.equal(PORTAL .. "/api/v1/player/token", c.pending().url)
+      c.respond(503, "Service Unavailable")
+      assert.is_true(warned(c, "HTTP 503"))
+      c.advance(30000)
+      assert.are.equal(PORTAL .. "/api/v1/player/token", c.pending().url)
+      assert.are.same({ "auth.required", "auth.succeeded" }, names(seen))
+    end)
+
+    it("keeps refreshing, with a warning, when a success cannot be read", function()
+      -- A proxy's page, or a portal answering something unexpected, says
+      -- nothing about the session: the token in hand is kept, and the
+      -- refresh is tried again rather than given up on.
+      local answers = {
+        { "not json", "not a JSON object" },
+        { "[1, 2]", "not a JSON object" },
+        { { api_token_expires_at = "2026-01-01T00:10:00Z" }, "had no API token" },
+        { { api_token = 5, api_token_expires_at = "2026-01-01T00:10:00Z" }, "had no API token" },
+        { '{"api_token":null}', "had no API token" },
+        { { api_token = "", api_token_expires_at = "2026-01-01T00:10:00Z" }, "had no API token" },
+      }
+      for _, case in ipairs(answers) do
+        local c, seen = start()
+        log_in_until_refresh(c)
+        c.respond(200, case[1])
+        local label = type(case[1]) == "string" and case[1] or tostring(case[1].api_token)
+        assert.is_true(warned(c, case[2]), label)
+        assert.are.equal("rpf_at_one", rpf.auth.api_token(), label)
+        assert.are.same({ "auth.required", "auth.succeeded" }, names(seen), label)
+        c.advance(30000)
+        local retry = assert(c.pending(), label)
+        assert.are.equal(PORTAL .. "/api/v1/player/token", retry.url, label)
+        assert.are.same({ session_token = "rpf_st_session" }, retry.body, label)
+        c.respond(200, { api_token = "rpf_at_two", api_token_expires_at = "2026-01-01T00:15:00Z" })
+        assert.are.equal("rpf_at_two", rpf.auth.api_token(), label)
+      end
+    end)
+
+    it("takes a refreshed token whose expiry cannot be read, and refreshes it again soon", function()
+      -- Raw JSON, because each case starts a fresh core with its own null.
+      for _, expiry in ipairs({ "null", '"soon"', "5" }) do
+        local c = start()
+        log_in_until_refresh(c)
+        c.respond(200, '{"api_token":"rpf_at_two","api_token_expires_at":' .. expiry .. "}")
+        assert.are.equal("rpf_at_two", rpf.auth.api_token(), expiry)
+        assert.is_true(warned(c, "expiry is missing or unreadable"), expiry)
+        c.advance(29999)
+        assert.is_nil(c.pending(), expiry)
+        c.advance(1)
+        assert.are.equal(PORTAL .. "/api/v1/player/token", assert(c.pending()).url, expiry)
+      end
+    end)
+
+    it("refreshes a granted token whose expiry cannot be read, after a warning", function()
       local c = start()
       nonce(c)
       rpf.auth.login("sam", "pw")
-      c.respond(200, grant({ api_token = "rpf_at_one", api_token_expires_at = "2026-01-01T00:05:00Z" }))
-      c.advance(4 * 60 * 1000)
-      c.respond(0, "")
+      c.respond(200, grant({ api_token = "rpf_at_one", api_token_expires_at = "whenever" }))
+      assert.are.equal("rpf_at_one", rpf.auth.api_token())
+      assert.is_true(warned(c, "expiry is missing or unreadable"))
       c.advance(30000)
-      assert.are.equal(PORTAL .. "/api/v1/player/token", c.pending().url)
+      assert.are.equal(PORTAL .. "/api/v1/player/token", assert(c.pending()).url)
     end)
 
     it("stops when the session has ended", function()
@@ -457,10 +544,11 @@ describe("rpf.auth", function()
       assert.is_nil(c.pending())
     end)
 
-    it("is not scheduled while the portal issues none", function()
+    it("is not scheduled while the portal issues none, which is logged", function()
       local c = start()
       log_in(c)
       assert.is_nil(rpf.auth.api_token())
+      assert.is_true(warned(c, "issued no API token"))
       c.advance(60 * 60 * 1000)
       assert.is_nil(c.pending())
     end)
@@ -665,6 +753,35 @@ describe("rpf.auth", function()
       assert.are.equal(PORTAL .. "/api/v1/player/logout", request.url)
       assert.are.same({ nonce = "rpf_jn_logout", remember_token = "rpf_rt_remember" }, request.body)
       assert.is_nil(stored(c):find("rpf_rt_remember", 1, true))
+    end)
+
+    it("reports a logout the portal did not confirm, which may still hold the login", function()
+      for _, case in ipairs({ { 0, "portal_unreachable" }, { 502, "portal_error" }, { 200, "portal_error" } }) do
+        local status, code = case[1], case[2]
+        local c, seen = start()
+        log_in(c)
+        rpf.auth.logout()
+        nonce(c, "rpf_jn_logout")
+        c.respond(status, "")
+        assert.is_true(warned(c, "the portal did not confirm the logout (HTTP " .. status .. ")"), tostring(status))
+        local failed = seen[#seen]
+        assert.are.equal("auth.failed", failed.name, tostring(status))
+        assert.are.equal(code, failed.value.code, tostring(status))
+        assert.are.equal("logout", failed.value.during, tostring(status))
+        -- Forgotten here all the same, and the player stays logged in.
+        assert.is_nil(c.store[REMEMBER_KEY], tostring(status))
+        assert.are.equal("authenticated", rpf.auth.state(), tostring(status))
+      end
+    end)
+
+    it("reports nothing once the portal has answered", function()
+      local c, seen = start()
+      log_in(c)
+      rpf.auth.logout()
+      nonce(c, "rpf_jn_logout")
+      c.respond(204, "")
+      assert.are.same({ "auth.required", "auth.succeeded" }, names(seen))
+      assert.is_false(warned(c, "logout"))
     end)
 
     it("does nothing at the portal when nothing is saved", function()

@@ -26,8 +26,10 @@
 ---   the API token and nothing else, so refreshing never rotates (and so never
 ---   risks) the remember token.
 --- - The **API token** (P2) is for scripts calling the portal directly. It is
----   refreshed before it expires. A grant without one (a portal older than P2) is
----   accepted, and simply has nothing to refresh.
+---   refreshed before it expires, and again after `retry_ms` when a refresh
+---   gets no usable answer or the expiry cannot be read, each time with a
+---   warning. A grant without one (a portal older than P2) is accepted with a
+---   warning, and simply has nothing to refresh.
 ---
 ---This module is the flow. The login form is the adapter's (Milestone 2): it
 ---calls these functions and listens for `auth.required`, `auth.succeeded`,
@@ -56,7 +58,7 @@ auth.REMEMBER_PREFIX = "rpf.auth.remember."
 ---@field refresh_margin_ms number? How long before the API token expires it is refreshed.
 ---@field min_refresh_ms number? The shortest wait before a refresh, so a token that looks already expired is not refreshed in a tight loop.
 ---@field max_refresh_ms number? The longest wait before a refresh. The expiry is read against this client's clock, which may be wrong, so the refresh never waits longer than this whatever the clock says.
----@field retry_ms number? How long to wait before retrying a refresh the portal did not answer.
+---@field retry_ms number? How long to wait before retrying a refresh that got no usable answer, or refreshing a token whose expiry could not be read.
 ---@field ready_retry_ms number? How often the client tells the server again that it is ready while no nonce has arrived, in case the first message beat the server's own record of the player.
 auth.DEFAULTS = {
   nonce_margin_ms = 15 * 1000,
@@ -309,15 +311,52 @@ local function valid_grant(body)
   return type(body.created) == "boolean" and (api == nil or api == json.null or type(api) == "string")
 end
 
----Schedules the next API-token refresh, if there is an API token.
+---The API token in a grant or refresh, if it is one a script can use.
+---@param value any The `api_token` field as the portal wrote it.
+---@return string? token The token, or nil for anything else, an empty string included.
+local function usable_token(value)
+  if type(value) == "string" and value ~= "" then
+    return value
+  end
+  return nil
+end
+
+---Says in a log line why a refresh got no usable answer. Never includes
+---the body, which may hold a token.
+---@param status integer The HTTP status, 0 when no response arrived.
+---@param body table? The decoded body.
+---@return string reason The reason.
+local function refresh_trouble(status, body)
+  if status == 0 then
+    return "the portal did not answer"
+  end
+  if status ~= 200 then
+    return "the portal answered HTTP " .. status
+  end
+  if not body then
+    return "the portal's answer was not a JSON object"
+  end
+  return "the portal's answer had no API token"
+end
+
+---Schedules the next API-token refresh, if there is an API token. An expiry
+---that cannot be read is logged and refreshed again after `retry_ms`, rather
+---than never: a client that stops refreshing finds every call to the portal
+---refused a few minutes later, with nothing saying why.
 ---@param expires_at any When it expires, as the portal wrote it.
 local function schedule_refresh(expires_at)
-  local expires = time.parse(expires_at)
-  if not api_token or not expires or not session_token then
+  if not api_token or not session_token then
     return
   end
-  local delay = expires - platform.now() - options.refresh_margin_ms
-  delay = math.max(options.min_refresh_ms, math.min(options.max_refresh_ms, delay))
+  local expires = time.parse(expires_at)
+  local delay
+  if expires then
+    delay = expires - platform.now() - options.refresh_margin_ms
+    delay = math.max(options.min_refresh_ms, math.min(options.max_refresh_ms, delay))
+  else
+    log("warn", "the API token's expiry is missing or unreadable; refreshing it again in " .. options.retry_ms .. " ms")
+    delay = options.retry_ms
+  end
   local mine = generation
   ---Refreshes the API token with the session token, and reschedules.
   local function refresh()
@@ -328,10 +367,22 @@ local function schedule_refresh(expires_at)
       if mine ~= generation then
         return
       end
-      if status == 200 and body then
-        api_token = type(body.api_token) == "string" and body.api_token or nil
+      if status == 200 and body and usable_token(body.api_token) then
+        api_token = usable_token(body.api_token)
         schedule_refresh(body.api_token_expires_at)
-      elseif status == 0 or status >= 500 then
+      elseif status == 0 or status >= 500 or status < 400 then
+        -- An outage, or an answer that is not the portal's (a proxy's
+        -- page, a success without a token). Neither says the session
+        -- ended, so the token in hand is kept, still good until it
+        -- expires, and the refresh is tried again.
+        log(
+          "warn",
+          "could not refresh the API token: "
+            .. refresh_trouble(status, body)
+            .. "; trying again in "
+            .. options.retry_ms
+            .. " ms"
+        )
         platform.after(options.retry_ms, refresh)
       else
         log("warn", "the session ended; the API token can no longer be refreshed")
@@ -363,7 +414,12 @@ local function granted(body, remember)
   end
   drop_session()
   session_token = body.session_token
-  api_token = type(body.api_token) == "string" and body.api_token or nil
+  api_token = usable_token(body.api_token)
+  if not api_token then
+    -- Only a portal older than P2 issues none, so this is worth a line:
+    -- every script's call to the portal will be refused.
+    log("warn", "the portal issued no API token; calls to the portal's player API will be refused")
+  end
   schedule_refresh(body.api_token_expires_at)
   pending = { player_id = body.player_id, username = body.username, created = body.created }
   state = "redeeming"
@@ -555,8 +611,10 @@ end
 ---guild and engine account (#70), so a token read out of shared client
 ---storage cannot be used to log its owner out. The client asks the server
 ---for a fresh nonce for this connection and sends it with the token. The
----token is forgotten here at once either way, and the portal answers `204`
----whatever it did, so there is nothing to report back.
+---token is forgotten here at once either way. The portal answers `204`
+---whatever it did, so any other answer means the token may not be revoked:
+---that is logged and reported as `auth.failed` with `during = "logout"`,
+---because the token may still be valid at the portal.
 function auth.logout()
   local token = saved_token() or unsaved_token
   save_token(nil)
@@ -579,7 +637,25 @@ function auth.logout()
     return
   end
   with_nonce(function(n)
-    post("logout", { nonce = n.value, remember_token = token }, function() end)
+    post("logout", { nonce = n.value, remember_token = token }, function(status)
+      if status == 204 then
+        return
+      end
+      -- The portal answers `204` whatever it did with the token, so anything
+      -- else (no answer, an error, a proxy's page) means it cannot be known
+      -- to have revoked it. The token is forgotten here either way, but may
+      -- stay valid at the portal until it expires, which the player should
+      -- hear about: they may have logged out because they no longer trust
+      -- this device.
+      log("warn", "the portal did not confirm the logout (HTTP " .. status .. "); the saved login was forgotten here, but may not be revoked")
+      ---@type rpf.AuthFailure
+      local failure = {
+        code = status == 0 and "portal_unreachable" or "portal_error",
+        message = "Your saved login was forgotten on this device, but the login service couldn't confirm it was cancelled. Change your password to be sure nobody can use it.",
+        during = "logout",
+      }
+      events.emit("auth.failed", failure)
+    end)
   end, "logout")
 end
 

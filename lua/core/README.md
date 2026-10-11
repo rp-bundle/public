@@ -1818,7 +1818,13 @@ On the client, each token is kept by its own rule:
   public API. It refreshes the P2 API token through `/token`, which never
   rotates the remember token.
 - **API token**: memory only, refreshed before `api_token_expires_at` (clamped
-  to 10 minutes, because the client's clock may be wrong). Always issued since P2; a grant without one (an older portal) is accepted and just never refreshed.
+  to 10 minutes, because the client's clock may be wrong). Always issued since P2; a grant without one (an older portal) is accepted with a warning and just never refreshed.
+  A refresh never stops silently (#363). An expiry that cannot be read, an
+  outage or `5xx`, and an answer that is not the portal's (a `200` that is
+  not a JSON object or has no token, a redirect) each log a warning and try
+  again after `retry_ms` (30 s), keeping the token in hand, which is still
+  good until it expires. Only a `4xx` ends the session: both tokens are
+  forgotten and `auth.failed` is emitted with `during = "refresh"`.
 
 `auth.logout()` forgets the saved login at once, then asks the server for a
 fresh nonce for this connection and posts `{ nonce, remember_token }` (#70),
@@ -1826,8 +1832,14 @@ so a token read out of shared client storage cannot log its owner out. It
 cancels a login whose portal request is still in flight, but not a ticket
 already handed to the server, which may have redeemed it: that result is
 honoured, leaving the player logged in for this session with nothing saved,
-exactly as a logout after login does. A nonce the portal calls
-`invalid_nonce` is replaced once with a fresh one.
+exactly as a logout after login does. The portal answers `204` whatever it
+did with the token, so any other answer (no answer, an error, a proxy's page)
+logs a warning and emits `auth.failed` with `during = "logout"`: the token is
+forgotten here, but may still be valid at the portal. The adapters do not
+put it on the login form. Every other request that sends a nonce (a login,
+registration, password change, resume or deletion) is sent once more with a
+fresh nonce when the portal calls the first `invalid_nonce`; a logout never
+hears that, since it is always `204`.
 
 `auth.delete_account(username, password)` deletes the account at the portal
 (H6): it posts `{ nonce, username, password }` to `/delete_account` with a
