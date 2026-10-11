@@ -606,8 +606,16 @@ function data.hold(type_name, ids, callback)
     local out = nil
     if not why and not rpf.addons.running(namespace) then
       -- The addon stopped while the hold was on its way, and its drain
-      -- found nothing to release: what arrived goes back now.
-      give_back(fresh)
+      -- found nothing to release: what arrived goes back now, but for what
+      -- its type's policy keeps held without the code (J6).
+      local unkept = {}
+      for _, ref in ipairs(fresh) do
+        local entry = records.entries[records.key(ref.kind, ref.id)]
+        if not (entry and rpf.holding.keeps(entry)) then
+          unkept[#unkept + 1] = ref
+        end
+      end
+      give_back(unkept)
       why = "inactive"
     elseif not why then
       -- The portal holds by id alone: a record of another type it handed
@@ -638,7 +646,10 @@ function data.hold(type_name, ids, callback)
   return true
 end
 
----Lets held records go, each reported with its final state.
+---Lets held records go, each reported with its final state. One whose type
+---the server holds by policy (`hold = "server"`) is claimed again by the
+---core within a claim's period (J6, `rpf.holding`): releasing it hands it
+---to staff for a moment, not for good.
 ---@param type_name any The type.
 ---@param ids any The records' ids.
 ---@return boolean? ok True once every one named is released.

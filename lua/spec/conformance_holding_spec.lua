@@ -379,6 +379,27 @@ conformance.run(busted, "live record holds", {
       assert.is_nil(world.core.records.entries[world.core.records.key("addon_record", hut)].through, "the server's")
     end,
   },
+  {
+    name = "keeps a server record an addon's own hold brought after its code stopped",
+    run = function(world)
+      local tree = stored(world, 1, "tree", server)
+      local rock = stored(world, 2, "rock", server)
+      -- Claimed by nothing yet: the portal refuses claims for now.
+      world.portal.refuse = { hold = "retry" }
+      installed(world)
+      world.portal.refuse = nil
+      assert.is_false(held(world, tree))
+      assert(world.api.records.hold("acme_grove.tree", { tree }))
+      assert(world.api.records.hold("acme_grove.rock", { rock }))
+      -- The code stops (the files and the portal disagree) before either
+      -- hold is answered.
+      world:install({ conformance.installed(world.core, grove("1.0.1")) })
+      world:pump()
+      world:settle()
+      assert.is_true(held(world, tree), "the server's, code or not")
+      assert.is_false(held(world, rock), "held on demand, so it goes back")
+    end,
+  },
 })
 
 describe("rpf.holding", function()

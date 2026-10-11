@@ -166,6 +166,18 @@ local function is_enabled(namespace)
   return type(installed) == "table" and installed.enabled == true
 end
 
+---Whether a held record stays held whether or not its addon's code runs:
+---its installation is enabled, and its type's policy holds it for the
+---server, or a session holds it. What a stop of the code must not let go,
+---whoever lets go: the drain, and a hold answered after the code stopped
+---(`rpf.data.hold`).
+---@param entry rpf.records.Entry The record.
+---@return boolean kept True if only a disable or the session's end lets it go.
+function holding.keeps(entry)
+  local namespace = entry.kind == "addon_record" and string.match(entry.data.type, "^([^.]+)%.") or nil
+  return namespace ~= nil and is_enabled(namespace) and (entry.through ~= nil or kept_for_server(entry))
+end
+
 ---Every type the config's enabled installations hold by policy for the
 ---server, in name order: what a claim names.
 ---@return string[] types The types.
