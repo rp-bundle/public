@@ -39,9 +39,10 @@ acme_garden.MANIFEST = {
   permissions = { tend = "Water, harvest and remove any plant" },
   types = {
     plant = {
-      -- Schema 1 had no `water`. Adding it with a default is a compatible
-      -- change, so 1.1.0 installs over 1.0.0 without touching a record: an
-      -- older plant reads as full until the next tick writes it at schema 2.
+      -- Schema 1 had no `water` (nor `harvest_op`). Adding them, with a
+      -- default or nullable, is a compatible change, so 1.1.0 installs over
+      -- 1.0.0 without touching a record: an older plant reads as full until
+      -- the next tick writes it at schema 2.
       schema = 2,
       authority = "live",
       owners = { "player" },
@@ -61,6 +62,9 @@ acme_garden.MANIFEST = {
         -- The moment growth was last counted: time is kept here, not in a
         -- timer, so a restart loses none of it.
         ticked_at = { type = "timestamp", required = true, read_only = true },
+        -- The op id a harvest gives its item under, kept so a harvest asked
+        -- for again is answered from how it went, never given twice.
+        harvest_op = { type = "string", max_len = 128, nullable = true, hidden = true },
       },
       list = { "stage", "water", "planted_at" },
       actions = { create = false, edit = "tend", delete = "tend" },

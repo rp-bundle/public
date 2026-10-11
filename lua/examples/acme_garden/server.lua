@@ -147,7 +147,14 @@ end
 
 ---Harvests the player's own grown plant: the plant goes, and the harvest
 ---item (if the server has one) comes, as one intent through the facade, so
----a plant is never harvested twice and never lost without its item.
+---a plant is never lost without its item.
+---
+---The op id the item is given under is written to the plant before it is
+---given, so a harvest asked for again (a player pressing twice, or after a
+---give whose outcome is unknown) is answered from how that op went rather
+---than given again under a fresh id: done, the plant is picked; unknown,
+---it waits for staff, who resolve it by hand (`rpf.ops.unknown`); refused or
+---never run, it is tried again.
 ---@param rpf rpf.Api The API.
 ---@param player rpf.PlayerView The player who asked.
 ---@param target table The plant the rules resolved.
@@ -174,13 +181,37 @@ function acme_garden.harvest(rpf, player, target)
     end
     return true
   end
+  local earlier = plant.fields.harvest_op
+  if earlier then
+    local done, status = rpf.ops.result(earlier)
+    if done then
+      -- Given already; only the picking is left.
+      local picked, why = pick()
+      if not picked then
+        return false, "It would not come up (" .. tostring(why) .. ")."
+      end
+      return true
+    elseif status == "unknown" then
+      return false, "This harvest is waiting on staff."
+    elseif status == "unavailable" then
+      return false, "The garden cannot tell yet; try again in a moment."
+    end
+  end
   local op = rpf.ops.new()
   if not op then
     return false, "The garden is not open yet."
   end
-  local ok, status, why = rpf.inventory.give(player.handle, item, 1, op, pick)
+  local marked, why = rpf.records.update(acme_garden.TYPE, plant.id, { harvest_op = op }, { revision = plant.revision })
+  if not marked then
+    return false, "It would not come up (" .. tostring(why) .. ")."
+  end
+  plant = marked
+  local ok, status, reason = rpf.inventory.give(player.handle, item, 1, op, pick)
   if not ok then
-    return false, "Nothing to carry it in (" .. tostring(why or status) .. ")."
+    if status == "unknown" then
+      return false, "This harvest is waiting on staff."
+    end
+    return false, "Nothing to carry it in (" .. tostring(reason or status) .. ")."
   end
   return true
 end
