@@ -81,6 +81,19 @@ local function within_reach(rpf, player, counter)
   return dx * dx + dy * dy + dz * dz <= reach * reach
 end
 
+---Tells a player something. A notification that could not be shown is logged
+---with what it said, so a refusal is never silently lost.
+---@param rpf rpf.Api The API.
+---@param player rpf.PlayerView The player.
+---@param text string What to tell them.
+---@param kind ("info"|"success"|"error")? How it looks.
+local function tell(rpf, player, text, kind)
+  local shown, why = rpf.ui.notify(player.handle, { title = "Shop", text = text, kind = kind })
+  if not shown then
+    print("[acme_shop] could not tell " .. tostring(player.player_id) .. " (" .. tostring(why) .. "): " .. text)
+  end
+end
+
 ---What a player asked for: a listing, which way, at the price they were
 ---shown, and how many.
 ---@class acme_shop.Order
@@ -216,17 +229,19 @@ function acme_shop.settle(rpf, player, order, op, tries)
   local ok, message = acme_shop.trade(rpf, player, order, op)
   if not ok and message == "unavailable" then
     if tries < acme_shop.TRIES then
-      rpf.time.after(acme_shop.AGAIN_MS, function()
+      local timer, why = rpf.time.after(acme_shop.AGAIN_MS, function()
         acme_shop.settle(rpf, player, order, op, tries)
       end)
-      return
+      if timer then
+        return
+      end
+      -- The addon is stopping (`inactive`): the order was not made, and the
+      -- player hears so rather than nothing.
+      print("[acme_shop] could not try " .. op .. " again (" .. tostring(why) .. ")")
     end
     message = "The till is closed for now. Try again in a while."
   end
-  local shown, why = rpf.ui.notify(player.handle, { title = "Shop", text = message, kind = ok and "success" or "error" })
-  if not shown then
-    print("[acme_shop] could not tell " .. tostring(player.player_id) .. " (" .. tostring(why) .. "): " .. message)
-  end
+  tell(rpf, player, message, ok and "success" or "error")
 end
 
 ---How many of a counter's options one menu shows before "More": one
@@ -249,7 +264,7 @@ local function ask_quantity(rpf, player, counter, choice)
     -- One op id per order, minted when the player confirms it.
     local op = rpf.ops.new()
     if not op then
-      rpf.ui.notify(player.handle, { title = "Shop", text = "The till is closed for now.", kind = "error" })
+      tell(rpf, player, "The till is closed for now.", "error")
       return
     end
     acme_shop.settle(rpf, player, {
@@ -264,7 +279,7 @@ local function ask_quantity(rpf, player, counter, choice)
     -- Another dialog is open for them (`busy`), or they left: say so
     -- rather than leave them with a menu that went nowhere.
     print("[acme_shop] could not ask " .. tostring(player.player_id) .. " how many (" .. tostring(refused) .. ")")
-    rpf.ui.notify(player.handle, { title = "Shop", text = "Close your other window first, then try again.", kind = "error" })
+    tell(rpf, player, "Close your other window first, then try again.", "error")
   end
 end
 

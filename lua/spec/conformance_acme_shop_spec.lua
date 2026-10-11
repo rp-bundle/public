@@ -264,6 +264,48 @@ local function told(world)
   return nil
 end
 
+---Runs a function with the API's calls answering as they do when they
+---refuse, and `print` captured. The real API is frozen, so a table stands in
+---front of it.
+---@param world spec.ConformanceWorld The world.
+---@param refuse table<string, boolean> Which of `time.after`, `ops.new`, `ui.input` and `ui.notify` refuse.
+---@param fn fun(api: table, printed: string[], told_them: string[]) The body: the API to hand the example, what it printed, and what it tried to tell the player.
+local function refusing(world, refuse, fn)
+  local printed, told_them = {}, {}
+  local real = world.api
+  local function front(module, name, fake)
+    return function(...)
+      if refuse[module .. "." .. name] then
+        return fake(...)
+      end
+      return real[module][name](...)
+    end
+  end
+  local api = setmetatable({
+    time = setmetatable({ after = front("time", "after", function() return nil, "inactive" end) }, { __index = real.time }),
+    ops = setmetatable({ new = front("ops", "new", function() return nil end) }, { __index = real.ops }),
+    ui = setmetatable({
+      input = front("ui", "input", function() return nil, "busy" end),
+      notify = function(handle, spec)
+        told_them[#told_them + 1] = spec.text
+        if refuse["ui.notify"] then
+          return nil, "unavailable"
+        end
+        return real.ui.notify(handle, spec)
+      end,
+    }, { __index = real.ui }),
+  }, { __index = real })
+  local print_was = _G.print
+  _G.print = function(...)
+    printed[#printed + 1] = table.concat({ ... }, " ")
+  end
+  local ok, err = pcall(fn, api, printed, told_them)
+  _G.print = print_was
+  if not ok then
+    error(err, 0)
+  end
+end
+
 ---Opens the counter's menu and picks the option whose label starts so.
 ---@param world spec.ConformanceWorld The world.
 ---@param label string The start of the option's label.
@@ -540,6 +582,54 @@ conformance.run(busted, "the acme_shop example", {
       world:advance(1000)
       assert.are.equal("Bought 2 for 10.", told(world))
       assert.are.same({ wallet = 90, till = 10, water = 5, bread = 0, left = 3 }, holdings(world, handle))
+    end,
+  },
+  {
+    name = "tells the player the order was not made when the addon is stopping and cannot try it again",
+    run = function(world)
+      local shop, handle = at_the_counter(world)
+      local jane = assert(world.api.players.get(handle))
+      world.core.records.forget({ { kind = "account", id = TILL } })
+      local op = world.api.ops.new()
+      refusing(world, { ["time.after"] = true }, function(api, printed, told_them)
+        shop.settle(api, jane, { listing = WATER, revision = 1, price = 5, quantity = 2, selling = false }, op)
+        assert.are.same({ "The till is closed for now. Try again in a while." }, told_them)
+        assert.is_truthy(printed[1] and printed[1]:find("could not try", 1, true), "and logs why")
+      end)
+      assert.are.equal("The till is closed for now. Try again in a while.", told(world))
+    end,
+  },
+  {
+    name = "logs a notification it could not show, and a quantity dialog or op id it could not get",
+    run = function(world)
+      local shop, handle = at_the_counter(world)
+      local jane = assert(world.api.players.get(handle))
+      local counter = assert(world.api.records.get(shop.COUNTER, COUNTER))
+      local target = { id = COUNTER, record = counter }
+      local function choose(api)
+        assert.is_true(shop.open(api, jane, target))
+        local number, request = asked(world)
+        for i, option in ipairs(request.spec.options) do
+          if option.label:sub(1, 9) == "Buy Water" then
+            answer(world, number, { ok = true, index = i })
+            return
+          end
+        end
+        error("no Buy Water")
+      end
+      -- No op id: the player is told, and the failed notice is logged.
+      refusing(world, { ["ops.new"] = true, ["ui.notify"] = true }, function(api, printed, told_them)
+        choose(api)
+        how_many(world, 1)
+        assert.are.same({ "The till is closed for now." }, told_them)
+        assert.is_truthy(printed[#printed] and printed[#printed]:find("could not tell", 1, true), "the lost notice is logged")
+      end)
+      -- No dialog: the same.
+      refusing(world, { ["ui.input"] = true, ["ui.notify"] = true }, function(api, printed, told_them)
+        choose(api)
+        assert.are.same({ "Close your other window first, then try again." }, told_them)
+        assert.is_truthy(printed[#printed] and printed[#printed]:find("could not tell", 1, true), "the lost notice is logged")
+      end)
     end,
   },
   {
