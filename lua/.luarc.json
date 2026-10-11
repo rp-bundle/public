@@ -15,7 +15,7 @@
     "${3rd}/lfs/library"
   ],
   "workspace.checkThirdParty": false,
-  "workspace.ignoreDir": ["platform/gmod", "platform/fivem", "examples/acme_tags/fivem", "examples/acme_tags/gmod", "examples/acme_shop/fivem", "examples/acme_shop/gmod", "examples/acme_garden/fivem", "examples/acme_garden/gmod", "examples/acme_notes/fivem", "examples/acme_notes/gmod", "examples/acme_property/fivem", "examples/acme_property/gmod", "bridges/qbox/fivem", "bridges/darkrp/gmod"],
+  "workspace.ignoreDir": ["platform/gmod", "platform/fivem", "examples/*/fivem", "examples/*/gmod", "bridges/*/fivem", "bridges/*/gmod"],
   "diagnostics.globals": [],
   "diagnostics.neededFileStatus": {
     "missing-global-doc": "Any!",
