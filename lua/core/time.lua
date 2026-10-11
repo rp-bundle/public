@@ -61,6 +61,15 @@ function time.now()
   return clock and clock.now()
 end
 
+---Whether a value is a finite whole number. `math.floor` returns an infinity
+---unchanged, so a floor check alone lets `math.huge` through, and NaN compares
+---unequal to itself, so it is refused by hand as well.
+---@param n any The value.
+---@return boolean ok True if it is a number that is neither NaN nor infinite and has no fraction.
+local function finite_whole(n)
+  return type(n) == "number" and n == n and n ~= math.huge and n ~= -math.huge and n == math.floor(n)
+end
+
 ---How much time has passed since a moment a record stored, for keeping
 ---time across restarts (J6). Timers end with the process; a timestamp in a
 ---record's fields does not, so a timed record keeps the moment it last
@@ -74,16 +83,16 @@ end
 ---@param since any The moment last counted, milliseconds since the Unix epoch.
 ---@param max_ms any? The most to count, a whole number of milliseconds; no bound if nil.
 ---@return number? elapsed Milliseconds passed, from 0 to `max_ms`.
----@return number|string now The clock it was measured on, or why not: `invalid` for a moment or bound that is not a whole number of milliseconds (a negative bound included), `unavailable` before a platform is bound.
+---@return number|string now The clock it was measured on, or why not: `invalid` for a moment or bound that is not a finite whole number of milliseconds (a negative bound, NaN and the infinities included), `unavailable` before a platform is bound.
 function time.elapsed(since, max_ms)
   local now = time.now()
   if not now then
     return nil, "unavailable"
   end
-  if type(since) ~= "number" or since ~= math.floor(since) then
+  if not finite_whole(since) then
     return nil, "invalid"
   end
-  if max_ms ~= nil and (type(max_ms) ~= "number" or max_ms ~= math.floor(max_ms) or max_ms < 0) then
+  if max_ms ~= nil and (not finite_whole(max_ms) or max_ms < 0) then
     return nil, "invalid"
   end
   local elapsed = math.max(0, now - since)
