@@ -1127,9 +1127,13 @@ installation rather than by whether the addon's code is loaded:
   outbox), worked out afresh on each try. A hold the portal answered
   before the disable that lands after it (`records.held`) is drained as it
   arrives.
-- **The config enables an installation**: a claim, and, if it has an
-  `owner` type, a hold of each logged-in player's own and selected
-  character's records for their session.
+- **The config enables an installation, or gives an enabled type `hold =
+  "owner"`**: a claim, and, for an `owner` type new to it, a hold of each
+  logged-in player's own and selected character's records for their
+  session.
+- **Putting a character away** (`rpf.characters`) releases what its
+  selection brought: its accounts, containers and `owner` records, never a
+  `server` record or one held on demand.
 
 ### The domain-neutral facade (`rpf.facade`, `rpf.ops`, J3)
 

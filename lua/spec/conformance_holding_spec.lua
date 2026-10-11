@@ -21,17 +21,21 @@ local SERVER = "00000001-0000-4000-8000-000000000001"
 ---A grove: trees held by the server, huts held with their owner, rocks held
 ---on demand.
 ---@param version string? The release.
+---@param hut_hold string|false? The huts' `hold`: `owner` unless given, false for none.
 ---@return table manifest The manifest.
-local function grove(version)
+local function grove(version, hut_hold)
   local label = { label = { type = "string" } }
+  if hut_hold == nil then
+    hut_hold = "owner"
+  end
   return {
     namespace = "acme_grove",
     version = version or "1.0.0",
     api = 1,
     title = "Grove",
     types = {
-      tree = { schema = 1, authority = "live", owners = { "player", "server" }, hold = "server", fields = label },
-      hut = { schema = 1, authority = "live", owners = { "player", "character", "server" }, hold = "owner", fields = label },
+      tree = { schema = 1, authority = "live", owners = { "player", "character", "server" }, hold = "server", fields = label },
+      hut = { schema = 1, authority = "live", owners = { "player", "character", "server" }, hold = hut_hold or nil, fields = label },
       rock = { schema = 1, authority = "live", owners = { "server" }, fields = label },
     },
   }
@@ -264,6 +268,53 @@ conformance.run(busted, "live record holds", {
       world:settle()
       assert.is_false(held(world, tree), "drained as it landed")
       assert.is_false(world.portal.records[tree].held)
+    end,
+  },
+  {
+    name = "putting a character away releases its own records, never one the server holds",
+    run = function(world)
+      local jane = "0000000f-0000-4000-8000-00000000000f"
+      world.portal.owned[jane] = {
+        kind = "character",
+        revision = 1,
+        data = {
+          id = jane,
+          server_id = SERVER,
+          owner = player,
+          first_name = "Jane",
+          last_name = "Doe",
+          gender = "female",
+        },
+      }
+      local character = { kind = "character", id = jane }
+      local tree = stored(world, 1, "tree", character)
+      local hut = stored(world, 2, "hut", character)
+      installed(world)
+      local handle = world:login(1, PLAYER)
+      world:select(handle, jane)
+      assert.is_true(held(world, tree))
+      assert.is_true(held(world, hut), "brought by the selection")
+      assert(world.core.characters.deselect(handle))
+      world:settle()
+      assert.is_false(held(world, hut), "put away with her")
+      assert.is_true(held(world, tree), "the server's to keep")
+      assert.is_true(world.portal.records[tree].held)
+    end,
+  },
+  {
+    name = "holds the records of players already here when an upgrade gives a type its owner's hold",
+    run = function(world)
+      local hut = stored(world, 1, "hut", player)
+      assert(world.api.addons.register(grove("1.0.0", false)))
+      world:connect()
+      world:install({ conformance.installed(world.core, grove("1.0.0", false)) })
+      world:pump()
+      world:login(1, PLAYER)
+      assert.is_false(held(world, hut), "held on demand, so nobody took it")
+      world:install({ conformance.installed(world.core, grove("1.1.0")) })
+      world:pump()
+      assert.is_true(held(world, hut), "held for her session")
+      assert.are.equal(PLAYER, world.core.records.entries[world.core.records.key("addon_record", hut)].through)
     end,
   },
 })

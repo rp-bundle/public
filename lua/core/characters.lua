@@ -211,8 +211,12 @@ local function own_character(player_id, id)
   return nil
 end
 
----The records a character owns that this server holds: its accounts and
----containers. Never the character itself, which is a session record.
+---The records a character owns that this server holds by its selection:
+---its accounts and containers, and its records of addon types held with
+---their owner (J6). Never the character itself, which is a session record,
+---and never a record of an addon type held by the server or on demand,
+---which its selection did not bring and putting it away must not end
+---(`rpf.holding`).
 ---@param id string The character.
 ---@return rpf.RecordRef[] refs The records.
 local function owned_records(id)
@@ -220,7 +224,8 @@ local function owned_records(id)
   for _, ref in ipairs(records.held()) do
     if ref.kind ~= "character" then
       local data = records.get(ref.kind, ref.id)
-      if data and owned(data, "character", id) then
+      local selected = ref.kind ~= "addon_record" or (data and rpf.holding.policy(data.type) == "owner")
+      if data and selected and owned(data, "character", id) then
         out[#out + 1] = ref
       end
     end

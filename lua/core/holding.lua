@@ -39,7 +39,11 @@
 ---   lands after it is drained as it arrives.
 --- - **When the config enables an installation** (installed, or enabled
 ---   again), its `server` records are claimed and the `owner` records of
----   every player already here are held for their sessions.
+---   every player already here are held for their sessions; so are they
+---   when an upgrade gives an enabled type `hold = "owner"`.
+--- - **Putting a character away** releases what its selection brought (its
+---   accounts, containers and `owner` records), never a `server` record or
+---   one held on demand that it owns (`rpf.characters`).
 ---
 ---A drain that cannot finish yet (a create still on its way to the
 ---portal, a full outbox) tries again every `RETRY_MS` for as long as the
@@ -67,6 +71,12 @@ local connection = nil
 ---a config change can tell which it enabled and which it took away.
 ---@type table<string, true>
 local enabled = {}
+
+---The types of those installations held with their owner when the config
+---was last seen, so a config change can tell a type that became one (a new
+---installation, or an upgrade that gave a type `hold = "owner"`).
+---@type table<string, true>
+local with_owner = {}
 
 ---Whether a claim is on its way, and whether another was asked for
 ---meanwhile, which then runs once it is answered.
@@ -226,7 +236,7 @@ local function hold_sessions()
       end
       rpf.sync.hold({ owners = owners }, player_id, function(_, err)
         if err then
-          log("warn", "could not hold a player's records of a newly enabled addon (" .. tostring(err) .. ")")
+          log("warn", "could not hold a player's records of a type now held with its owner (" .. tostring(err) .. ")")
         end
       end)
     end
@@ -291,8 +301,8 @@ function holding.drain(namespace)
   end
 end
 
----Takes a config change: drains what it disabled or removed, and claims
----and holds sessions for what it enabled. Any change to the installations
+---Takes a config change: drains what it disabled or removed, holds
+---sessions for the types it made held with their owner, and claims. Any change to the installations
 ---claims again, since an upgrade may have given a type a policy.
 ---@param change rpf.ConfigChange The change.
 local function on_config(change)
@@ -303,15 +313,19 @@ local function on_config(change)
   if not touched then
     return
   end
-  local now, newly = {}, {}
+  local now, owner_types, newly_owner = {}, {}, false
   for _, namespace in ipairs(rpf.config.addon_namespaces()) do
     if is_enabled(namespace) then
       now[namespace] = true
-      if not enabled[namespace] then
-        newly[#newly + 1] = namespace
+      for _, type_name in ipairs(rpf.addons.type_names(namespace)) do
+        if holding.policy(type_name) == "owner" then
+          owner_types[type_name] = true
+          newly_owner = newly_owner or not with_owner[type_name]
+        end
       end
     end
   end
+  with_owner = owner_types
   local gone = {}
   for namespace in pairs(enabled) do
     if not now[namespace] then
@@ -327,15 +341,10 @@ local function on_config(change)
   for namespace in pairs(now) do
     withdrawn[namespace] = nil
   end
-  for _, namespace in ipairs(newly) do
-    local with_owner = false
-    for _, type_name in ipairs(rpf.addons.type_names(namespace)) do
-      with_owner = with_owner or holding.policy(type_name) == "owner"
-    end
-    if with_owner then
-      hold_sessions()
-      break
-    end
+  if newly_owner then
+    -- No session hold brought these types' records: the players already
+    -- here have theirs held now.
+    hold_sessions()
   end
   holding.claim()
 end
@@ -352,7 +361,7 @@ end
 function holding.start(p, client)
   platform = p
   connection = client
-  enabled, retrying, withdrawn = {}, {}, {}
+  enabled, with_owner, retrying, withdrawn = {}, {}, {}, {}
   claiming, again, last_refusal = false, false, nil
   ---Claims again every `CLAIM_MS`, read at each tick, for as long as the
   ---process runs.
