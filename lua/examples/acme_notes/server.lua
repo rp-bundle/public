@@ -86,8 +86,9 @@ end
 
 ---Takes a note down. The delete names the revision the note was read at, so
 ---it never removes a note changed since (a staff edit landing first); then
----it reads the note again, checks again, and tries once more. A note
----already gone is done: pressing again after a lost answer is harmless.
+---it reads the note again, checks again, and tries once more. A note that
+---went meanwhile (staff removed it) is said to be gone, never taken down
+---twice.
 ---@param rpf rpf.Api The API.
 ---@param player rpf.PlayerView The player who asked.
 ---@param note rpf.Record The note, as read.
@@ -103,12 +104,13 @@ function acme_notes.take_down(rpf, player, note, anyone)
     if done then
       return true
     end
-    if why ~= "stale" then
+    if why ~= "stale" and why ~= "not_held" then
       return false, "It would not come off (" .. tostring(why) .. ")."
     end
+    -- Changed (`stale`) or gone (`not_held`: no longer here) since it was read.
     local now = rpf.records.get(acme_notes.TYPE, note.id)
     if not now then
-      return true
+      return false, "That note is gone."
     end
     note = now
   end

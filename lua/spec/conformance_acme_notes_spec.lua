@@ -191,6 +191,10 @@ conformance.run(busted, "the acme_notes example", {
       local own = pinned(world)
       assert.is_true(at(world, 1, "acme_notes.take_down", own.id).ok, "its author")
       assert.is_nil(world.api.records.get(TYPE, own.id))
+      -- Sent again, as a client does when the first answer was lost: the
+      -- note no longer resolves, so the rules refuse it before the handler.
+      local again = at(world, 1, "acme_notes.take_down", own.id)
+      assert.are.same({ false, "not_found" }, { again.ok, again.reason })
     end,
   },
   {
@@ -256,9 +260,10 @@ describe("acme_notes.take_down", function()
     assert.are.same({ 4, 5 }, deletes)
   end)
 
-  it("answers done for a note already gone, so pressing again is harmless", function()
-    local rpf = fake({ { nil, "stale" } }, nil)
-    assert.are.same({ true }, { rawget(_G, "acme_notes").take_down(rpf, player, note(4), false) })
+  it("says a note that went meanwhile is gone, whether it was changed first or not", function()
+    local take_down = rawget(_G, "acme_notes").take_down
+    assert.are.same({ false, "That note is gone." }, { take_down(fake({ { nil, "not_held" } }, nil), player, note(4), false) })
+    assert.are.same({ false, "That note is gone." }, { take_down(fake({ { nil, "stale" } }, nil), player, note(4), false) })
   end)
 
   it("checks again after reading: a note that changed hands is refused", function()
@@ -273,5 +278,51 @@ describe("acme_notes.take_down", function()
       { false, "Someone is changing it; try again." },
       { rawget(_G, "acme_notes").take_down(rpf, player, note(4), false) }
     )
+  end)
+end)
+
+describe("acme_notes.ask_pin", function()
+  before_each(function()
+    rawset(_G, "acme_notes", nil)
+    dofile(support.path("lua/examples/acme_notes/client.lua"))
+  end)
+
+  ---A fake client API whose request and dialog answer as given at once.
+  ---@param request table What `interactions.request` returns.
+  ---@param input table? What `ui.input` returns; the engine has no dialog without it.
+  ---@return table rpf The fake.
+  local function fake(request, input)
+    return {
+      events = { on = function() end },
+      capabilities = function()
+        return { input = input ~= nil }
+      end,
+      interactions = {
+        request = function()
+          return request[1], request[2]
+        end,
+      },
+      ui = {
+        input = function()
+          return input[1], input[2]
+        end,
+      },
+    }
+  end
+
+  it("tells the player a refusal that came before anything was sent, never drops it", function()
+    local told = {}
+    local function tell(line)
+      told[#told + 1] = line
+    end
+    local ask = rawget(_G, "acme_notes").ask_pin
+    assert.are.same({ nil, "too_many" }, { ask(fake({ nil, "too_many" }), "hi", tell) })
+    assert.are.same({ nil, "busy" }, { ask(fake({ true }, { nil, "busy" }), nil, tell) })
+    assert.are.same({ nil, "unsupported" }, { ask(fake({ true }), "", tell) })
+    assert.are.same({
+      "The note was not sent (too_many).",
+      "No dialog now (busy).",
+      "Write the note after the command.",
+    }, told)
   end)
 end)

@@ -9,7 +9,9 @@ acme_notes = acme_notes or {}
 local listening = false
 
 ---Asks to pin a note: with the text given, at once; without, from a dialog
----(`rpf.ui.input`) where the engine shows one.
+---(`rpf.ui.input`) where the engine shows one. A refusal before anything
+---was sent (a dialog already open, too many requests waiting) is told to
+---the player too, never dropped.
 ---@param rpf rpf.Api The API.
 ---@param text string? What the note says, from the command line.
 ---@param tell fun(message: string) Shows the player a line.
@@ -29,17 +31,22 @@ function acme_notes.ask_pin(rpf, text, tell)
   ---@return boolean? sent True once asked.
   ---@return string? err Why not.
   local function send(values)
-    return rpf.interactions.request("acme_notes.pin", values, function(ok, reason)
+    local sent, err = rpf.interactions.request("acme_notes.pin", values, function(ok, reason)
       tell(ok and "Pinned." or tostring(reason))
     end)
+    if not sent then
+      tell("The note was not sent (" .. tostring(err) .. ").")
+    end
+    return sent, err
   end
   if text and text ~= "" then
     return send({ text = text })
   end
   if not rpf.capabilities().input then
+    tell("Write the note after the command.")
     return nil, "unsupported"
   end
-  return rpf.ui.input({
+  local shown, err = rpf.ui.input({
     title = "Pin a note",
     fields = {
       { name = "text", label = "Note", required = true, max = 120 },
@@ -54,6 +61,10 @@ function acme_notes.ask_pin(rpf, text, tell)
       send(values)
     end
   end)
+  if not shown then
+    tell("No dialog now (" .. tostring(err) .. ").")
+  end
+  return shown, err
 end
 
 ---A way to tell the player something: a notification where the engine shows

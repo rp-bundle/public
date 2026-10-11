@@ -384,14 +384,19 @@ release never lowers a schema, so rolling back loses nothing
 Every request crosses a network, and an answer can be lost. Write each
 handler so that a second attempt does no harm:
 
-- **An interaction the client sends again** after `timeout` reaches your
-  handler again. Make repeating it harmless: `take_down` answers a note
-  that is already gone as done, so pressing again is not an error.
+- **An interaction the client sends again** after `timeout` reaches the
+  server again, so make sure a repeat cannot do the thing twice. An aimed
+  interaction is safe by its rules: a take-down sent again after the first
+  worked names a note that no longer resolves, and is refused `not_found`
+  before your handler runs. `pin` has no target, so a pin sent twice makes
+  two notes, both inside the player's cap. Where a duplicate would matter,
+  check for it in the handler before you make anything.
 - **A write over a change you did not see.** `delete` (and `update`) with
   `{ revision = note.revision }` is refused `stale` if the note changed
-  since you read it: staff edited it in the portal, say. `take_down` then
-  reads the note again, checks again that the player may take it down, and
-  tries once more:
+  since you read it (staff edited it in the portal, say), and `not_held`
+  if it is no longer here at all. `take_down` then reads the note again.
+  If the note is still there, it checks again that the player may take it
+  down and tries once more:
 
   ```lua
   function acme_notes.take_down(rpf, player, note, anyone)
@@ -403,12 +408,12 @@ handler so that a second attempt does no harm:
       if done then
         return true
       end
-      if why ~= "stale" then
+      if why ~= "stale" and why ~= "not_held" then
         return false, "It would not come off (" .. tostring(why) .. ")."
       end
       local now = rpf.records.get(acme_notes.TYPE, note.id)
       if not now then
-        return true -- gone already
+        return false, "That note is gone."
       end
       note = now
     end
