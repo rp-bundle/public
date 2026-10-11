@@ -29,6 +29,14 @@ socket.
 
 ### Added
 
+- The Lua framework is licensed MIT (H4 follow-up, #190). `lua/LICENSE`
+  covers everything a game server runs: the core, both adapters, the `rpf-ws`
+  shim, the NUI pages, the bridges and the examples, and every FiveM
+  resource, the Gmod addon and the addon kit carries it. The portal is closed
+  source and has no licence file. The shim and NUI `package.json` files say
+  `"license": "MIT"`. `rpf-ws` now ships `THIRD-PARTY-NOTICES`, the licence
+  text of what the shim bundles (`ws`, MIT), in place of `LICENSE.ws`. The
+  first release tag is no longer refused for want of a licence.
 - The property example (J8, #85): `lua/examples/acme_property/`,
   properties players buy and doors their owners lock, built on the public
   API and the generic types with no Rust, route, page, protocol variant or
