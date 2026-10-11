@@ -1617,6 +1617,158 @@ describe("the FiveM adapter", function()
       assert.is_false(driver.nui("delete_account", { username = "sam", password = sealed, confirmed = true }).ok)
     end)
 
+    ---Logs the player in through the page and the server's answer, as a
+    ---returning one would be.
+    ---@param driver table The client's driver.
+    local function log_in(driver)
+      nonce(driver)
+      assert.is_true(driver.nui("login", { username = "sam", password = "rpf-sealed-x" }).ok)
+      local request = nui_messages(driver)[#driver.nui_sent]
+      driver.nui("http", {
+        id = request.id,
+        status = 200,
+        body = rpf.json.encode(rpf.json.object({
+          player_id = "00000000-0000-4000-8000-000000000001",
+          username = "sam",
+          created = false,
+          ticket = "rpf_jt_ticket",
+          ticket_expires_at = "2026-01-01T00:01:00Z",
+          remember_token = "rpf_rt_remember",
+          remember_token_expires_at = "2026-01-31T00:00:00Z",
+          session_token = "rpf_st_session",
+          session_token_expires_at = "2026-01-01T12:00:00Z",
+          api_token = rpf.json.null,
+          api_token_expires_at = rpf.json.null,
+        })),
+        headers = {},
+      })
+      driver.from_server(
+        "rpf:join_result",
+        rpf.handoff.encode("rpf:join_result", {
+          ok = true,
+          player_id = "00000000-0000-4000-8000-000000000001",
+          username = "sam",
+          created = false,
+        })
+      )
+      assert.are.equal("authenticated", rpf.auth.state())
+    end
+
+    it("opens the delete form from a command for a logged-in player, locks input, and Back releases it", function()
+      local driver = started_client()
+      driver.nui("ready", {})
+      assert.is_function(driver.commands.rpf_delete_account)
+      driver.commands.rpf_delete_account()
+      assert.are.equal("connecting", last_screen(driver).screen, "nothing opens before the login")
+      log_in(driver)
+      assert.is_false(driver.focus)
+      assert.are.equal("closed", last_screen(driver).screen)
+
+      driver.commands.rpf_delete_account()
+      local form = last_screen(driver)
+      assert.are.equal("delete", form.screen)
+      assert.are.equal("game", form.from)
+      assert.is_true(driver.focus)
+      assert.is_true(driver.frozen)
+      driver.commands.rpf_delete_account()
+      driver.commands.rpf_delete_account()
+
+      assert.is_true(driver.nui("close_delete", {}).ok)
+      assert.are.equal("closed", last_screen(driver).screen)
+      assert.is_false(driver.focus)
+      assert.is_false(driver.frozen)
+      assert.is_false(driver.nui("close_delete", {}).ok, "nothing to close")
+    end)
+
+    it("puts back the character screen when a player choosing backs out of the delete form", function()
+      local driver = started_client()
+      driver.nui("ready", {})
+      log_in(driver)
+      driver.from_server(
+        "rpf:characters",
+        rpf.handoff.encode("rpf:characters", {
+          characters = rpf.json.array({
+            rpf.json.object({ id = "c1", first_name = "Ada", last_name = "Ng", gender = "female" }),
+          }),
+        })
+      )
+      driver.commands.rpf_delete_account()
+      assert.are.equal("delete", last_screen(driver).screen)
+      assert.is_true(driver.nui("close_delete", {}).ok)
+      assert.are.equal("characters", last_screen(driver).screen)
+      assert.is_true(driver.focus, "still choosing, so still locked")
+    end)
+
+    it("refuses Back while a deletion waits, which would forget its sealed password", function()
+      local driver = started_client()
+      driver.nui("ready", {})
+      log_in(driver)
+      driver.commands.rpf_delete_account()
+      local sealed = "rpf-sealed-00112233445566778899aabbccddeeff"
+      -- No nonce yet: the deletion waits for one.
+      assert.is_true(driver.nui("delete_account", { username = "sam", password = sealed, confirmed = true }).ok)
+      local sent = #driver.nui_sent
+      local answer = driver.nui("close_delete", {})
+      assert.is_false(answer.ok)
+      assert.truthy(answer.error:find("wait", 1, true))
+      assert.are.equal(sent, #driver.nui_sent, "the page was not told anything, so it keeps the password")
+      assert.are.equal("delete", last_screen(driver).screen)
+      nonce(driver)
+      local request = nui_messages(driver)[#driver.nui_sent]
+      assert.are.equal(sealed, rpf.json.decode(request.body).password)
+    end)
+
+    it("keeps the delete form up when a character reply arrives while a deletion waits, and applies it on Back", function()
+      local driver = started_client()
+      driver.nui("ready", {})
+      log_in(driver)
+      driver.commands.rpf_delete_account()
+      local sealed = "rpf-sealed-00112233445566778899aabbccddeeff"
+      assert.is_true(driver.nui("delete_account", { username = "sam", password = sealed, confirmed = true }).ok)
+      local sent = #driver.nui_sent
+      driver.from_server(
+        "rpf:characters",
+        rpf.handoff.encode("rpf:characters", {
+          characters = rpf.json.array({
+            rpf.json.object({ id = "c1", first_name = "Ada", last_name = "Ng", gender = "female" }),
+          }),
+        })
+      )
+      driver.from_server(
+        "rpf:character_result",
+        rpf.handoff.encode("rpf:character_result", { during = "select", ok = false, reason = "busy" })
+      )
+      assert.are.equal(sent, #driver.nui_sent, "the page, and its sealed password, were left alone")
+      assert.is_true(driver.focus)
+      nonce(driver)
+      local request = nui_messages(driver)[#driver.nui_sent]
+      assert.are.equal(sealed, rpf.json.decode(request.body).password)
+      driver.nui("http", { id = request.id, status = 401, body = '{"error":"invalid_credentials","message":"Nope."}', headers = {} })
+      assert.is_true(driver.nui("close_delete", {}).ok)
+      assert.are.equal("characters", last_screen(driver).screen)
+      assert.is_true(driver.focus)
+    end)
+
+    it("deletes the account from the form opened in game, a sealed password and all", function()
+      local driver, record = started_client()
+      driver.nui("ready", {})
+      log_in(driver)
+      nonce(driver)
+      driver.commands.rpf_delete_account()
+      local sealed = "rpf-sealed-00112233445566778899aabbccddeeff"
+      assert.is_false(driver.nui("delete_account", { username = "sam", password = sealed }).ok, "unconfirmed")
+      assert.is_true(driver.nui("delete_account", { username = "sam", password = sealed, confirmed = true }).ok)
+      local request = nui_messages(driver)[#driver.nui_sent]
+      assert.are.equal("https://portal.example/api/v1/player/delete_account", request.url)
+      driver.nui("http", { id = request.id, status = 204, body = "", headers = {} })
+      assert.are.equal("deleted", last_screen(driver).screen)
+      assert.is_true(driver.focus)
+      assert.is_false(driver.nui("close_delete", {}).ok, "the deleted screen has no way back")
+      for _, message in ipairs(record.to_server) do
+        assert.is_nil(message.payload:find("rpf-sealed", 1, true))
+      end
+    end)
+
     it("shows why a deletion was refused, an account linked to staff included", function()
       local driver = started_client()
       driver.nui("ready", {})

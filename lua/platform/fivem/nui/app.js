@@ -131,6 +131,13 @@ function clearSecrets() {
 }
 
 /**
+ * Whether the delete form was opened from the game (`ui.lua`'s `open_delete`,
+ * for a player who is logged in) rather than from the login form. Back then
+ * goes to `ui.lua`, which puts back the screen that was up, not to the login.
+ */
+let deleteFromGame = false;
+
+/**
  * Shows one screen and hides the rest. A new screen ends any login attempt,
  * so the passwords it sealed are forgotten.
  * @param {Record<string, unknown>} message The screen message.
@@ -139,6 +146,7 @@ function screen(message) {
   sealed.clear();
   showError(null);
   const name = String(message.screen);
+  deleteFromGame = name === "delete" && message.from === "game";
   byId("panel").hidden = name === "closed";
   for (const section of document.querySelectorAll(".screen")) {
     if (section instanceof HTMLElement) {
@@ -301,7 +309,17 @@ function switchTo(name) {
 }
 
 byId("show-delete").addEventListener("click", () => switchTo("delete"));
-byId("cancel-delete").addEventListener("click", () => switchTo("login"));
+byId("cancel-delete").addEventListener("click", () => {
+  if (deleteFromGame) {
+    void call("close_delete", {}).then((answer) => {
+      if (answer.ok !== true && answer.error) {
+        showError(answer.error);
+      }
+    });
+  } else {
+    switchTo("login");
+  }
+});
 
 byId("delete-form").addEventListener("submit", (event) => {
   event.preventDefault();

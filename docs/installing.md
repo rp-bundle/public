@@ -96,6 +96,11 @@ from the portal's in-game account page, typed as `/rpflink <code>` in chat
 or `rpflink <code>` in the F8 console. It is registered for every player
 (it needs no ace permission), and nothing logs the code.
 
+A player deletes their own account, for good, from the login screen or, once
+logged in, with `rpf_delete_account` in the F8 console or chat. It asks for
+the username and password and a ticked box, and an account linked to a staff
+account must be unlinked on the portal first.
+
 Players open a menu of what they can interact with near them with **E**
 (`rpf_interact`, which each player can rebind in FiveM's key settings).
 Change the default with `setr rpf_interact_key "G"`: `setr`, because each
@@ -189,6 +194,11 @@ Staff link their player account to their portal account with the code
 from the portal's in-game account page, typed as `rpflink <code>` in the
 console or `/rpflink <code>` in chat. The console is the safer way where
 other addons log chat: their hooks may see a chat line before RPF drops it.
+
+A player deletes their own account, for good, from the login screen or, once
+logged in, with the console command `rpf_delete_account`. It asks for the
+username and password and a ticked box, and an account linked to a staff
+account must be unlinked on the portal first.
 
 Players need nothing installed: the server sends their client the
 framework's Lua when they join. Optional: `rpf_portal_url

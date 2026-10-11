@@ -210,6 +210,9 @@ AddEventHandler("onClientResourceStop", function(name) fivem.target.stopped(name
 -- The minimal interaction UI (J4): what is near, as a menu, on a key.
 RegisterCommand("rpf_interact", function() core.targets.open() end, false)
 RegisterKeyMapping("rpf_interact", "Interact with what is near", "keyboard", GetConvar(client.INTERACT_KEY, "E"))
+-- Deleting the account (H6) from the game, for a player who is logged in and
+-- so never sees the login screen. The same form, behind a command.
+RegisterCommand("rpf_delete_account", function() screens:open_delete() end, false)
 -- Stopping the resource takes the page away but not the frozen ped, so a
 -- player stopped mid-login would be left unable to move.
 AddEventHandler("onClientResourceStop", function(name)

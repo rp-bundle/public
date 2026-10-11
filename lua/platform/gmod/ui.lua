@@ -25,7 +25,10 @@
 ---account page.
 ---
 ---`rpf_characters` in the console opens the character screen again, to switch
----or put away the character in play.
+---or put away the character in play. `rpf_delete_account` opens the delete
+---form for a player who is logged in, who was resumed silently and so never
+---saw the login form; its Back returns to the game, or to the character
+---screen for a player still choosing.
 ---@class rpf.gmod.Ui
 ---@field WIDTH number Every screen's width, in pixels.
 ---@field GENDERS string[] The genders the create form offers. The core also accepts a server's own, which a server owner's screen can offer.
@@ -71,13 +74,23 @@ local pending_message = nil
 ---@type string
 local login_warning = ""
 
+---How to put the screen on show back, if it is one that can be: the
+---character screens set it, and `window` clears it for any other.
+---@type fun()?
+local restore = nil
+
+---Where Back goes from the delete form opened from the game, while that form
+---is on show: opening it again must not replace the original target.
+---@type fun()?
+local game_back = nil
+
 ---Closes the screen on show.
 local function close()
   local open = frame
   if open and IsValid(open) then
     open:Remove()
   end
-  frame, status, actions = nil, nil, {}
+  frame, status, actions, restore, game_back = nil, nil, {}, nil, nil
 end
 
 ---Opens a new screen, replacing any on show.
@@ -94,6 +107,7 @@ local function window(title, height)
   f:SetDraggable(false)
   f:MakePopup()
   frame = f
+  restore, game_back = nil, nil
   return f
 end
 
@@ -190,6 +204,7 @@ local function attempt(working, started, err)
 end
 
 local delete_account
+local characters
 
 ---The login form: log in, or register a new account.
 ---@param warning string The password reuse warning, shown at the password.
@@ -218,7 +233,9 @@ local function login(warning)
     )
   end, true)
   button(f, "Delete my account…", function()
-    delete_account()
+    delete_account(function()
+      login(login_warning)
+    end)
   end)
   status_line(f)
 end
@@ -226,7 +243,8 @@ end
 ---The form that deletes an account for good (H6). It asks for the account's
 ---own username and password, and for a ticked box that the player understands
 ---it cannot be undone, because nothing here can bring an account back.
-function delete_account()
+---@param back fun() Where Back goes: the login form, or the game.
+function delete_account(back)
   local f = window("Delete my account", 420)
   label(f, ui.DELETE_WARNING)
   local username = field(f, "Username")
@@ -243,9 +261,7 @@ function delete_account()
     end
     attempt("Deleting your account…", core.auth.delete_account(username:GetValue(), password:GetValue()))
   end, true)
-  button(f, "Back", function()
-    login(login_warning)
-  end)
+  button(f, "Back", back)
   status_line(f)
 end
 
@@ -287,8 +303,11 @@ end
 ---@param list rpf.picker.Character[] The player's characters.
 ---@param selected string? The id of the character in play.
 ---@param truncated boolean Whether some characters are not shown.
-local function characters(list, selected, truncated)
+function characters(list, selected, truncated)
   local f = window("Characters", 520)
+  restore = function()
+    characters(list, selected, truncated)
+  end
   local scroll = vgui.Create("DScrollPanel", f) --[[@as DScrollPanel]]
   scroll:Dock(FILL)
   if #list == 0 then
@@ -339,6 +358,9 @@ end
 ---@param reason string? Why, as the server said.
 local function load_failed(reason)
   local f = window("Characters", 160)
+  restore = function()
+    load_failed(reason)
+  end
   label(f, "Your characters could not be loaded (" .. tostring(reason or "unknown") .. ").")
   button(f, "Try again", function()
     attempt("Loading your characters…", core.picker.refresh())
@@ -354,6 +376,32 @@ local function open_characters()
   browsing = true
   local selected = core.picker.selected()
   characters(core.picker.list(), type(selected) == "string" and selected or nil, false)
+end
+
+---Opens the delete form from the console, once the player is logged in.
+local function open_delete()
+  if core.auth.state() ~= "authenticated" then
+    return
+  end
+  -- Back puts back what was up. It is not inferred from the picker: on a
+  -- server whose characters are another framework's the picker is empty
+  -- while the player is in the game, and an empty character screen would
+  -- be one they could not leave.
+  if game_back and frame and IsValid(frame) then
+    return
+  end
+  local back = restore
+  local function to_game()
+    if back then
+      browsing = core.picker.selected() ~= nil
+      back()
+    else
+      browsing = false
+      close()
+    end
+  end
+  delete_account(to_game)
+  game_back = to_game
 end
 
 ---Listens to the core's login and character events. Called before the core
@@ -406,6 +454,7 @@ function ui.install(internal)
     end
   end)
   concommand.Add("rpf_characters", open_characters, nil, "Choose, switch or put away your character.")
+  concommand.Add("rpf_delete_account", open_delete, nil, "Delete your account for good.")
 end
 
 return ui
