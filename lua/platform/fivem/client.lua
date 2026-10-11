@@ -197,6 +197,7 @@ local screens = fivem.ui.new({
   send = SendNuiMessage,
   lock = client.lock,
   log = shared.logger(true),
+  after = shared.after,
 })
 local platform = client.platform(screens)
 

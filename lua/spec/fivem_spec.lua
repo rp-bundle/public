@@ -1691,6 +1691,7 @@ describe("the FiveM adapter", function()
         send = function() end,
         lock = function() end,
         log = function() end,
+        after = function() end,
       })
       screens:nui("ready", {})
       local got = {}
@@ -1705,6 +1706,119 @@ describe("the FiveM adapter", function()
       assert.is_nil(next(screens.images), "forgotten")
       assert.is_false(screens:nui("image", { id = id, src = "data:image/png;base64,AA" }).ok)
       assert.are.equal(1, #got)
+    end)
+
+    ---Screens on their own, with a page and timers the test drives.
+    ---@return table screens The screens (`rpf.fivem.Screens`, which the specs cannot name).
+    ---@return table page What was sent to the page (`sent`), logged (`logs`), and the timers (`timers`), run with `fire`.
+    local function bare_screens()
+      local page = { sent = {}, logs = {}, timers = {} }
+      local screens = rpf.fivem.ui.new({
+        core = rpf,
+        send = function(text)
+          page.sent[#page.sent + 1] = assert(rpf.json.decode(text))
+        end,
+        lock = function() end,
+        log = function(level, message)
+          page.logs[#page.logs + 1] = { level = level, message = message }
+        end,
+        after = function(delay, fn)
+          page.timers[#page.timers + 1] = { delay = delay, fn = fn }
+        end,
+      })
+      function page.fire()
+        local due = page.timers
+        page.timers = {}
+        for _, timer in ipairs(due) do
+          timer.fn()
+        end
+      end
+      return screens, page
+    end
+
+    it("answers an HTTP request status 0 once the page has not answered in time, and refuses its late answer", function()
+      started_client()
+      local screens, page = bare_screens()
+      screens:nui("ready", {})
+      local got = {}
+      screens:http_request("POST", "https://portal.example/api/v1/player/login", {}, "{}", function(status, body, headers)
+        got[#got + 1] = { status = status, body = body, headers = headers }
+      end)
+      local id = page.sent[#page.sent].id
+      assert.are.equal(1, #page.timers)
+      assert.are.equal(rpf.fivem.ui.HTTP_TIMEOUT_MS, page.timers[1].delay)
+      page.fire()
+      assert.are.same({ { status = 0, body = "", headers = {} } }, got)
+      assert.are.equal("warn", page.logs[#page.logs].level, "said in the log")
+      assert.is_nil(next(screens.pending), "forgotten")
+      assert.is_false(screens:nui("http", { id = id, status = 200, body = "{}" }).ok, "a late answer is refused")
+      assert.are.equal(1, #got, "answered once")
+
+      -- One the page answers in time is answered by the page, and the
+      -- deadline passing afterwards does nothing.
+      screens:http_request("GET", "https://portal.example/x", {}, nil, function(status)
+        got[#got + 1] = { status = status }
+      end)
+      assert.is_true(screens:nui("http", { id = page.sent[#page.sent].id, status = 204 }).ok)
+      page.fire()
+      assert.are.same({ status = 204 }, got[2])
+      assert.are.equal(2, #got)
+    end)
+
+    it("answers HTTP requests the page had status 0 when it reloads, and sends one still queued", function()
+      started_client()
+      local screens, page = bare_screens()
+      local got = {}
+      ---@param name string Which request.
+      local function request(name)
+        screens:http_request("GET", "https://portal.example/" .. name, {}, nil, function(status)
+          got[#got + 1] = { name = name, status = status }
+        end)
+      end
+      -- Queued before the page first says it is ready: sent then, not lost.
+      request("early")
+      assert.are.equal(0, #page.sent)
+      screens:nui("ready", {})
+      assert.are.equal("https://portal.example/early", page.sent[1].url)
+      assert.are.same({}, got)
+      request("second")
+      local second = page.sent[#page.sent].id
+      -- The page reloads: both requests it had are gone with it.
+      screens:nui("ready", {})
+      assert.are.same({ { name = "early", status = 0 }, { name = "second", status = 0 } }, got)
+      assert.is_false(screens:nui("http", { id = second, status = 200 }).ok)
+      page.fire()
+      assert.are.equal(2, #got, "the deadlines find nothing left to answer")
+    end)
+
+    it("never sends a request that timed out while the page was not yet ready", function()
+      started_client()
+      local screens, page = bare_screens()
+      local got = {}
+      screens:http_request("GET", "https://portal.example/x", {}, nil, function(status)
+        got[#got + 1] = status
+      end)
+      page.fire()
+      assert.are.same({ 0 }, got)
+      screens:nui("ready", {})
+      for _, message in ipairs(page.sent) do
+        assert.are_not.equal("http", message.type, "its caller was already told it failed")
+      end
+    end)
+
+    it("tells the player the login service can't be reached when the page never answers the login", function()
+      local driver, record = started_client()
+      driver.nui("ready", {})
+      nonce(driver)
+      assert.is_true(driver.nui("login", { username = "sam", password = "rpf-sealed-x" }).ok)
+      local request = nui_messages(driver)[#driver.nui_sent]
+      assert.are.equal("http", request.type)
+      record.time = record.time + rpf.fivem.ui.HTTP_TIMEOUT_MS
+      driver.run_due()
+      local error = nui_messages(driver)[#driver.nui_sent]
+      assert.are.equal("error", error.type)
+      assert.truthy(error.message:find("can't be reached", 1, true))
+      assert.is_false(driver.nui("http", { id = request.id, status = 200, body = "{}" }).ok)
     end)
 
     it("shows a failure, and refuses what the page sends that is not text", function()

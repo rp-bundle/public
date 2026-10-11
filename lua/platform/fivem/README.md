@@ -122,7 +122,7 @@ arrives as a function reference, which the core calls like a function.
 |---|---|---|
 | `connect`, `disconnect`, `send` | The `rpf-ws` shim, below | `ws.lua` |
 | `http_request` (server) | `PerformHttpRequest`, with a failure's body taken from `errorData` and held to one callback | `server.lua` |
-| `http_request` (client) | The NUI page's `fetch` (client Lua has no HTTP) | `ui.lua`, `nui/app.js` |
+| `http_request` (client) | The NUI page's `fetch` (client Lua has no HTTP), bounded at 30 s on the page and answered status 0 by `ui.lua` once 45 s pass or the page reloads, so it is answered exactly once whatever the page does | `ui.lua`, `nui/bridge.js` |
 | `item_image` (client) | The NUI page's `fetch` too: the portal's redirect followed with `Authorization` dropped, the bytes checked with `crypto.subtle`, kept in IndexedDB under the hash (at most 512, least recently used dropped), answered as a `data:image/png;base64,` URL ending `#.png`, so ox_lib's `isIconUrl` takes it for an image, the only answer `ui.lua` takes (below) | `ui.lua`, `nui/images.js` |
 | `now` | `os.time` (server) or `GetCloudTimeAsInt` (client), whole seconds, refined to milliseconds with `GetGameTimer` and kept inside the wall clock's current second | `shared.lua` |
 | `after` | `Citizen.SetTimeout` | `shared.lua` |
@@ -321,6 +321,16 @@ The bundle targets Node 16, the oldest an FXServer that runs this ships.
   before `fetch` (`nui/seal.js`). So it goes from the form to the portal
   without crossing into Lua or any event. That is a mitigation, not a
   guarantee: the server owner ships this page.
+- **Nothing waits without an answer** (#362). The page's `fetch` to the
+  portal gives up after 30 s, and `ui.lua` answers any request the page has
+  not answered status 0 after 45 s, or at once if the page reloads (it says
+  `ready` again), and refuses the page's answer after that; a request that
+  timed out before the page was ready is never sent. Either is an outage the
+  core reports and the player can retry, with a line in the client's log. A
+  NUI callback that fails, takes over 10 s or answers anything but `{ ok }`
+  shows "The game did not answer" and is written to the page's console
+  (`nui/bridge.js`); a login it may have started keeps its sealed
+  passwords.
 - The login form, which also registers, and the password change both show
   `auth.PASSWORD_REUSE_WARNING`. A saved login resumes silently.
 - The login form leads to a "Delete my account" form (H6): username,
@@ -374,7 +384,7 @@ The bundle targets Node 16, the oldest an FXServer that runs this ships.
 | A hostile client's unknown name and another player's record id refused over `lib.callback`, against the real portal | `crates/fake-server/tests/scenarios/acme_tags.rs` | `cargo test -p fake-server --features lua54 acme_tags` |
 | The adapter against the real portal, under both Luas: a join with the identifiers in the expected shape, a staff kick, a cut and a restart | `crates/fake-server/tests/scenarios/fivem.rs` (`Engine::Fivem`) | `cargo test -p fake-server --features lua54 fivem` |
 | Annotations, every native name and every ox_lib call, against overextended's `fivem-lls-addon` and ox_lib's own annotations at 3.40.0 (both pinned in `dev/fivem-natives`) | `.luarc.json` | `dev/fivem-natives && lua-language-server --check=lua/platform/fivem` |
-| The shim: `tsc --strict` (and the NUI page's JS, `tsconfig.nui.json`), its unit tests against a local websocket server, the page's sealing and item images (`test/nui.test.ts`, `test/images.test.ts`), and the contract test | `ws-shim/` | `npm ci && npm run typecheck && npm test` |
+| The shim: `tsc --strict` (and the NUI page's JS, `tsconfig.nui.json`), its unit tests against a local websocket server, the page's sealing, callbacks and portal requests, and item images (`test/nui.test.ts`, `test/bridge.test.ts`, `test/images.test.ts`), and the contract test | `ws-shim/` | `npm ci && npm run typecheck && npm test` |
 | Frames per second through the shim | `ws-shim/bench/` | `npm run bench` |
 | On a real FXServer (layer 5): resource KVP at the outbox's bounds, the benchmark under FXServer, the connection and the players | `dev.lua`, in a `dev/fivem-resources --dev` build | `rpf_dev_kv_bound`, `rpf_dev_bench`, `rpf_dev_status` at the server console |
 
