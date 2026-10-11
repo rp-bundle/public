@@ -50,6 +50,7 @@ function acme_tags.mine(rpf, player)
   local tags = {}
   local held, err = rpf.records.list(acme_tags.TYPE, { owner = { kind = "player", id = player.player_id } })
   if not held then
+    print("[acme_tags] could not list " .. tostring(player.player_id) .. "'s tags (" .. tostring(err) .. ")")
     return false, "Your tags cannot be listed now (" .. tostring(err) .. ")."
   end
   for _, tag in ipairs(held) do
@@ -80,7 +81,9 @@ end
 ---server find the tag the client named, visible and within reach, before
 ---this runs, so all that is left is to show its text. It is shown to the
 ---player (`rpf.ui.notify`), since the menu that sent it shows only
----refusals, and answered too, for a client script of the addon's own.
+---refusals, and answered too, for a client script of the addon's own. A
+---notice that could not be shown is logged, so the player's lost read is
+---never silent.
 ---@param rpf rpf.Api The API.
 ---@param player rpf.PlayerView The player who asked.
 ---@param target table The tag the rules resolved: `{ type, id, record, position, distance }`.
@@ -88,7 +91,10 @@ end
 ---@return { text: string } data The tag's text.
 function acme_tags.read(rpf, player, target)
   local text = target.record.fields.text
-  rpf.ui.notify(player.handle, { title = "A tag", text = text })
+  local shown, why = rpf.ui.notify(player.handle, { title = "A tag", text = text })
+  if not shown then
+    print("[acme_tags] could not show " .. tostring(player.player_id) .. " a tag (" .. tostring(why) .. ")")
+  end
   return true, { text = text }
 end
 
@@ -149,6 +155,8 @@ function acme_tags.start_server(rpf)
       assert(rpf.interactions.register("acme_tags.read", function(player, _, target)
         return acme_tags.read(rpf, player, target)
       end, { target = acme_tags.TYPE, label = "Read the tag", distance = 3 }))
+      -- `distance` is metres on every engine: the core converts it to the
+      -- engine's units (`rpf.world.units`), so 3 is 3 metres on Gmod too.
     end,
   })
 end
