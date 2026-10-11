@@ -165,6 +165,20 @@ conformance.run(busted, "the addon lifecycle", {
     end,
   },
   {
+    name = "measures time since a stored moment, bounded, and never backwards",
+    run = function(world)
+      local time = world.api.time
+      local now = time.now()
+      assert.are.same({ 1500, now }, { time.elapsed(now - 1500) })
+      assert.are.same({ 1000, now }, { time.elapsed(now - 1500, 1000) }, "a bounded catch-up")
+      assert.are.same({ 0, now }, { time.elapsed(now + 60000) }, "a clock stepped back counts as nothing")
+      assert.are.same({ 0, now }, { time.elapsed(now - 1500, 0) })
+      for _, bad in ipairs({ { "1" }, { 1.5 }, { now, -1 }, { now, 2.5 }, { nil } }) do
+        assert.are.same({ nil, "invalid" }, { time.elapsed(bad[1], bad[2]) })
+      end
+    end,
+  },
+  {
     name = "keeps a timer that throws going, and logs it",
     run = function(world)
       local ticks = 0

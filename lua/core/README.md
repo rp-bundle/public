@@ -583,6 +583,12 @@ context it was made in (`rpf.addons`): one that throws is logged, and an
 `every` keeps going. A timer an addon makes while its code runs is its own,
 and is cancelled when it stops.
 
+`elapsed(since, max_ms)` (J6) is how a record keeps time across restarts,
+which end every timer: the milliseconds from a moment a record stored to
+`now()`, never negative (a clock stepped back counts as nothing) and at
+most `max_ms` (a bounded catch-up), with `now()` to store as the new
+moment.
+
 ### `rpf.players`
 
 The players on this server and one state machine per connection:

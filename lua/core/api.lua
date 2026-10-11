@@ -203,6 +203,9 @@ local surface = {
     cancel = function(id)
       return rpf.time.cancel(id)
     end,
+    elapsed = function(since, max_ms)
+      return rpf.time.elapsed(since, max_ms)
+    end,
   }, "rpf.time"),
 }
 

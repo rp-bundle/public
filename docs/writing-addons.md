@@ -214,6 +214,33 @@ on disk, until it is back. Every change to a held record is announced:
 who (`addon`, `staff`, or `portal` when it refused a deletion because
 another record refers to the one you deleted, which puts it back).
 
+### Records that keep time
+
+A timer ends when the server stops; a record does not. Keep time in the
+record's fields, never in a timer, and let a timer only read it:
+
+- **Something that happens at a moment** (a tag that fades after a day)
+  stores the moment, `fades_at = rpf.time.now() + DAY`, and a timer checks
+  it against `rpf.time.now()`. It happens on time even across a restart.
+- **Something that happens only while in play** (a plant that grows while a
+  server holds it) stores when it last counted, and each tick adds what
+  passed, bounded so a server that was down for a week does not apply a
+  week at once:
+
+```lua
+local spent, now = rpf.time.elapsed(plant.fields.ticked_at, 5 * 60000) -- at most five minutes
+local ticks = math.floor(spent / TICK)
+if ticks > 0 then
+  rpf.records.update("acme_garden.plant", plant.id, {
+    grown = plant.fields.grown + ticks,
+    ticked_at = now - (spent - ticks * TICK), -- keep the part of a tick not yet counted
+  }, { revision = plant.revision })
+end
+```
+
+`lua/examples/acme_garden/` is a whole addon built this way: placed in the
+world, watered and harvested through interactions, growing on its own
+clock, and upgraded with a new field without losing a plant.
 ## Interactions
 
 A request from a player's client reaches only a handler your addon
