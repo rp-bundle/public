@@ -9,8 +9,24 @@
 ---how many, and both are checked here again.
 acme_shop = acme_shop or {}
 
----How close to a counter a player must stand to buy, in the engine's units.
-acme_shop.REACH = 4
+---How close to a counter a player must stand, in metres: to be offered the
+---shop, and (a little further, for the player who shuffles while choosing)
+---to buy.
+acme_shop.OFFER_METRES = 3
+acme_shop.REACH_METRES = 4
+---The engine's units in a metre: positions are in them. Source (Gmod)
+---measures in inches, near enough; FiveM in metres. This is the addon's own
+---table, since only an addon may tell engines apart (the core never does).
+---@type table<string, number>
+acme_shop.UNITS_PER_METRE = { gmod = 39.37 }
+
+---A distance in the engine's units.
+---@param rpf rpf.Api The API.
+---@param metres number The distance in metres.
+---@return number units The same distance in the engine's units.
+function acme_shop.units(rpf, metres)
+  return metres * (acme_shop.UNITS_PER_METRE[rpf.engine] or 1)
+end
 ---How often the server takes the stock staff added since: J6 (#83) will hold
 ---a `hold = "server"` type's records for the addon; until then it holds them.
 acme_shop.HOLD_EVERY = 60000
@@ -114,8 +130,15 @@ local function within_reach(rpf, player, counter)
   if not at or type(spot) ~= "table" then
     return false
   end
+  -- A counter has no bucket field, so it stands in bucket 0: a player who
+  -- went to another routing bucket while choosing is not at it, wherever
+  -- they stand.
+  if rpf.world.bucket(player.handle) ~= 0 then
+    return false
+  end
+  local reach = acme_shop.units(rpf, acme_shop.REACH_METRES)
   local dx, dy, dz = at.x - spot.x, at.y - spot.y, at.z - spot.z
-  return dx * dx + dy * dy + dz * dz <= acme_shop.REACH * acme_shop.REACH
+  return dx * dx + dy * dy + dz * dz <= reach * reach
 end
 
 ---What a player asked for: a listing, which way, at the price they were
@@ -309,7 +332,7 @@ function acme_shop.open(rpf, player, target)
     if not choice then
       return -- closed, or the player left
     end
-    rpf.ui.input(player.handle, {
+    local asked, refused = rpf.ui.input(player.handle, {
       title = counter.fields.name,
       fields = { { name = "quantity", label = "How many", kind = "number", min = 1, max = choice.most, default = 1, required = true } },
     }, function(values)
@@ -330,6 +353,12 @@ function acme_shop.open(rpf, player, target)
         quantity = values.quantity,
       }, op)
     end)
+    if not asked then
+      -- Another dialog is open for them (`busy`), or they left: say so
+      -- rather than leave them with a menu that went nowhere.
+      print("[acme_shop] could not ask " .. tostring(player.player_id) .. " how many (" .. tostring(refused) .. ")")
+      rpf.ui.notify(player.handle, { title = "Shop", text = "Close your other window first, then try again.", kind = "error" })
+    end
   end)
   if not shown then
     return false, "The shop cannot open here (" .. tostring(why) .. ")."
@@ -351,7 +380,7 @@ function acme_shop.start_server(rpf)
       -- (`rpf_interact`), and ox_target or qb-target on FiveM, offer it.
       assert(rpf.interactions.register("acme_shop.shop", function(player, _, target)
         return acme_shop.open(rpf, player, target)
-      end, { target = acme_shop.COUNTER, label = "Shop", distance = 3 }))
+      end, { target = acme_shop.COUNTER, label = "Shop", distance = acme_shop.units(rpf, acme_shop.OFFER_METRES) }))
       assert(rpf.time.every(acme_shop.HOLD_EVERY, function()
         acme_shop.hold_stock(rpf, nil)
       end))

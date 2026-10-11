@@ -190,7 +190,9 @@ local function at_the_counter(world, room)
   assert.are.equal("active", (world.api.addons.state("acme_shop")))
   local handle = world:login(1, PLAYER)
   world:select(handle, JANE)
-  world.place(1, { x = SPOT.x, y = SPOT.y + 1, z = SPOT.z })
+  -- Two metres off, in the engine's units (inches on Gmod), where a player
+  -- stands to talk to a shopkeeper.
+  world.place(1, { x = SPOT.x, y = SPOT.y + shop.units(world.api, 2), z = SPOT.z })
   return shop, handle
 end
 
@@ -383,6 +385,16 @@ conformance.run(busted, "the acme_shop example", {
         local ok, message = shop.trade(world.api, jane, order, world.api.ops.new())
         assert.are.same({ false, case[2] }, { ok, message }, tostring(i))
       end
+      -- A player who went to another routing bucket while choosing is not
+      -- at the counter, wherever they stand.
+      if world.set_bucket then
+        world.set_bucket(1, 1)
+        assert.are.same(
+          { false, "You walked away from the counter." },
+          { shop.trade(world.api, jane, { listing = BREAD, revision = 1, price = 3, quantity = 1, selling = false }, world.api.ops.new()) }
+        )
+        world.set_bucket(1, 0)
+      end
       -- An order kept for a player who has gone lands on nobody else.
       local stranger = { handle = jane.handle, player_id = "00000003-0000-4000-8000-000000000003" }
       assert.are.same(
@@ -416,6 +428,19 @@ conformance.run(busted, "the acme_shop example", {
       how_many(world, 1)
       assert.are.equal("The shelf changed while you chose. Try again.", told(world))
       assert.are.same({ wallet = 100, till = 0, water = 3, bread = 0, left = 5 }, holdings(world, handle), "no bread for water")
+    end,
+  },
+  {
+    name = "tells a player it cannot ask how many while another window of theirs is open",
+    run = function(world)
+      local _, handle = at_the_counter(world)
+      assert.is_true(world.api.ui.input(handle, { title = "Another addon", fields = { { name = "x", label = "X" } } }, function() end))
+      local lines = console(function()
+        pick(world, "Buy Water")
+      end)
+      assert.are.equal("Close your other window first, then try again.", told(world))
+      assert.truthy(lines[1] and lines[1]:find("busy", 1, true), tostring(lines[1]))
+      assert.are.same({ wallet = 100, till = 0, water = 3, bread = 0, left = 5 }, holdings(world, handle))
     end,
   },
   {
@@ -542,7 +567,7 @@ conformance.run(busted, "the acme_shop example", {
       )
       handle = world:login(1, PLAYER)
       world:select(handle, JANE)
-      world.place(1, { x = SPOT.x, y = SPOT.y + 1, z = SPOT.z })
+      world.place(1, { x = SPOT.x, y = SPOT.y + shop.units(api, 2), z = SPOT.z })
       jane = assert(api.players.get(handle))
       assert.are.same(
         { false, "Something went wrong at the till. Staff have been told; do not pay again." },
