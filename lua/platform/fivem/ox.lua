@@ -82,7 +82,18 @@ end
 ---@return string? problem What is wrong and what to do about it.
 function ox.problem()
   local state = GetResourceState(ox.RESOURCE)
-  if state ~= "started" or type(rawget(_G, "lib")) ~= "table" then
+  if state == "started" and type(rawget(_G, "lib")) ~= "table" then
+    -- Running, but its loader (`@ox_lib/init.lua`, which the manifest names)
+    -- did not give this resource `lib`: telling the owner to install what is
+    -- installed would send them the wrong way.
+    return "rpf: ox_lib is started, but its loader (@ox_lib/init.lua) gave RPF no `lib`;"
+      .. " its own error is above. Replace the ox_lib folder with the ox_lib.zip of a release from "
+      .. ox.RELEASES_URL
+      .. " ("
+      .. ox.MINIMUM
+      .. " or newer), not GitHub's source archive, and restart the server; not connecting"
+  end
+  if state ~= "started" then
     return "rpf: ox_lib is "
       .. tostring(state)
       .. ", and RPF's FiveM adapter is built on it; install "

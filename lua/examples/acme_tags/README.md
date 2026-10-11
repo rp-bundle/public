@@ -14,6 +14,11 @@ addons](../../../docs/writing-addons.md) is the guide.
 | `fivem/` | The FiveM resource's manifest and entry points |
 | `gmod/autorun.lua` | The Gmod entry point |
 
+Every release's addon kit (`rpf-addon-kit-<version>.zip`, on the release
+page) has it laid out already: `fivem/[rpf-examples]/acme_tags` is the FiveM
+resource and `gmod/acme_tags` the Garry's Mod addon. Nothing installs it for
+you. From this directory, by hand:
+
 ## On FiveM
 
 Make a resource folder `acme_tags` holding `manifest.lua`, `server.lua`,
