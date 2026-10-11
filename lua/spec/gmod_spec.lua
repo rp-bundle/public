@@ -1325,7 +1325,7 @@ describe("the Gmod adapter's item images (P3, #243)", function()
   ---Boots a client and builds `item_image` over its HTTP.
   ---@return rpf.mock.GmodWorld world The fake.
   ---@return table record What the host recorded.
-  ---@return rpf.gmod.Images images The module.
+  ---@return table images The module (`rpf.gmod.Images`, which the main check does not load).
   ---@return fun(url: string, headers: table, hash: string, done: fun(src: string?, err: string?)) item_image The member.
   local function client()
     local world, record = boot("client")

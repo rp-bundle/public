@@ -413,7 +413,7 @@ function items.image(slug, callback)
         deliver(callback, nil, "no_image")
         return
       end
-      local hash = item.image
+      local hash = item.image --[[@as string]]
       if hash == tried then
         deliver(callback, nil, "not_found")
         return

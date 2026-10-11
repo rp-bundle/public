@@ -197,6 +197,7 @@ describe("rpf.items", function()
       assert.is_nil(ok)
       assert.are.equal("invalid", err, tostring(bad))
     end
+    ---@diagnostic disable-next-line: param-type-mismatch
     assert.are.same({ nil, "invalid" }, { rpf.api.items.image("apple", "not a function") })
   end)
 
@@ -270,20 +271,25 @@ describe("rpf.items", function()
 
   it("treats an adapter that throws or answers nonsense as unavailable, and logs a callback that throws", function()
     local c = logged_in()
-    c.item_image = function()
+    ---What the adapter does, which each case replaces.
+    ---@type fun(done: fun(...))
+    local adapter = function()
       error("boom")
+    end
+    c.item_image = function(_, _, _, done)
+      adapter(done)
     end
     local got = ask("apple")
     c.respond(200, catalog({ apple = item(APPLE) }))
     assert.are.equal("unavailable", got.err)
 
-    c.item_image = function(_, _, _, done)
+    adapter = function(done)
       done(42, "weird")
     end
     got = ask("apple")
     assert.are.equal("unavailable", got.err)
 
-    c.item_image = function(_, _, _, done)
+    adapter = function(done)
       done("src")
     end
     assert.is_true(rpf.api.items.image("apple", function()
