@@ -32,6 +32,47 @@ describe("rpf.events", function()
     assert.are.same({ "first xy", "second xy" }, calls)
   end)
 
+  it("gives each handler its own copy of plain tables, so one cannot change what the next sees", function()
+    local ref = setmetatable({}, { __name = "handle" })
+    local fn = function() end
+    local seen = {}
+    events.on("thing", function(payload)
+      payload.id = "x"
+      payload.nested.n = 99
+      payload.list[1] = "changed"
+    end)
+    events.on("thing", function(payload)
+      seen[#seen + 1] = payload
+    end)
+    events.on("thing", function(payload)
+      seen[#seen + 1] = payload
+    end)
+    local payload = { id = "a", nested = { n = 1 }, list = { "one" }, ref = ref, fn = fn }
+    payload.self = payload
+    events.emit("thing", payload)
+    for _, got in ipairs(seen) do
+      assert.are.equal("a", got.id)
+      assert.are.equal(1, got.nested.n)
+      assert.are.equal("one", got.list[1])
+      assert.are.equal(ref, got.ref, "a table with a metatable of its own is passed by reference")
+      assert.are.equal(fn, got.fn)
+      assert.are.equal(got, got.self, "a cycle stays a cycle")
+    end
+    assert.are_not.equal(payload, seen[1])
+    assert.are.equal(payload, seen[2], "the last handler gets the emitter's own table")
+  end)
+
+  it("keeps a JSON mark on the copy", function()
+    local marked
+    events.on("thing", function() end)
+    events.on("thing", function(payload)
+      marked = payload
+    end)
+    local original = rpf.json.array({})
+    events.emit("thing", original)
+    assert.is_true(rpf.json.is_array(marked))
+  end)
+
   it("emits to nobody without complaint", function()
     assert.are.equal(0, events.emit("nobody.listens"))
     assert.are.same({}, logs)
