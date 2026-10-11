@@ -515,21 +515,21 @@ end
 ---@param respond fun(reply: string) Answers it.
 local function on_offers(player, payload, respond)
   local request = handoff.decode(handoff.TARGET_OFFERS, payload)
-  local names = request and request.names
-  local valid = json.is_array(names) and #names <= rpf.targets.MAX_OFFER_NAMES
-  if valid then
-    for i = 1, #names do
-      if not interactions.is_name(names[i]) then
-        valid = false
+  ---@type string[]?
+  local names = nil
+  if request and json.is_array(request.names) and #request.names <= rpf.targets.MAX_OFFER_NAMES then
+    names = request.names
+    for i = 1, #request.names do
+      if not interactions.is_name(request.names[i]) then
+        names = nil
         break
       end
     end
   end
-  if not valid or not admit(player.player_id, offer_counts, interactions.MAX_OFFERS_PER_WINDOW) then
+  if not request or not names or not admit(player.player_id, offer_counts, interactions.MAX_OFFERS_PER_WINDOW) then
     respond(handoff.encode(handoff.TARGET_OFFERS_RESULT, { names = json.array({}) }))
     return
   end
-  ---@cast request table
   local offered = rpf.targets.offers(handlers, player, request.ref, names)
   respond(handoff.encode(handoff.TARGET_OFFERS_RESULT, { names = json.array(offered) }))
 end

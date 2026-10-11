@@ -518,6 +518,9 @@ local listing = {}
 ---@return rpf.targets.Budget? budget What it may spend, or nil when it may not start.
 local function begin_listing(player)
   local id = player.player_id
+  if not id then
+    return nil
+  end
   local running = listing[id] or 0
   if running >= targets.MAX_LISTING then
     return nil
@@ -530,6 +533,9 @@ end
 ---@param player rpf.PlayerView The player.
 local function end_listing(player)
   local id = player.player_id
+  if not id then
+    return
+  end
   local running = (listing[id] or 1) - 1
   listing[id] = running > 0 and running or nil
 end
