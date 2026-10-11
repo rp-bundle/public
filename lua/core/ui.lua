@@ -33,6 +33,8 @@
 ---@field MAX_OPTIONS integer The most options a menu offers.
 ---@field MAX_FIELDS integer The most fields an input dialog asks for.
 ---@field MAX_LABEL integer The longest title, label, description or placeholder, in bytes.
+---@field MAX_ITEM integer The longest item slug a menu option names, in bytes: the portal's identifier length.
+---@field IMAGE_WAIT_MS integer How long a menu whose options name items waits for their images before it is shown without the ones still to come.
 ---@field MAX_NOTICE integer The longest notification text, in bytes.
 ---@field TEXT_MAX integer The longest text a text field takes unless it says otherwise, in bytes.
 ---@field TEXT_LIMIT integer The most a text field's `max` may be, in bytes, so a dialog's answer fits one message.
@@ -55,6 +57,8 @@ ui.NOTICE_KINDS = { "info", "success", "warning", "error" }
 ui.MAX_OPTIONS = 32
 ui.MAX_FIELDS = 12
 ui.MAX_LABEL = 128
+ui.MAX_ITEM = 64
+ui.IMAGE_WAIT_MS = 2000
 ui.MAX_NOTICE = 256
 ui.TEXT_MAX = 128
 ui.TEXT_LIMIT = 512
@@ -129,6 +133,16 @@ local function optional_text(value, n)
   return value == nil or text(value, n)
 end
 
+---Whether a value is an item's slug as the portal names one: an identifier,
+---`[a-z][a-z0-9_]*` of at most `MAX_ITEM` bytes (`rpf_domain::slug::is_identifier`).
+---Only the shape: whether the server has such an item is the client's
+---catalog's to say when it draws the menu.
+---@param value any The value.
+---@return boolean ok True if it is.
+local function slug(value)
+  return type(value) == "string" and #value <= ui.MAX_ITEM and value:find("^[a-z][a-z0-9_]*$") ~= nil
+end
+
 ---Whether a value is a finite number.
 ---@param n any The value.
 ---@return boolean finite True if it is.
@@ -169,9 +183,12 @@ local function notify_spec(opts)
 end
 
 ---Checks a menu's options. Each option's `value` is kept here and never
----shown, so it may be anything; an option with none answers its number.
+---shown, so it may be anything; an option with none answers its number. An
+---option may name an item (`item`, a slug), whose image the client finds
+---for itself when it shows the menu (`with_images`): the spec carries the
+---slug alone, never an image, from whichever side it came.
 ---@param opts any What the caller passed.
----@return table? spec The plain spec: `title` and `options` (`label`, `description`, `disabled`).
+---@return table? spec The plain spec: `title` and `options` (`label`, `description`, `disabled`, `item`).
 ---@return rpf.ui.Kept? kept The values and the options that cannot be picked.
 local function menu_spec(opts)
   if type(opts) ~= "table" or not text(opts.title, ui.MAX_LABEL) or type(opts.options) ~= "table" then
@@ -189,10 +206,11 @@ local function menu_spec(opts)
       or not text(option.label, ui.MAX_LABEL)
       or not optional_text(option.description, ui.MAX_LABEL)
       or (option.disabled ~= nil and type(option.disabled) ~= "boolean")
+      or (option.item ~= nil and not slug(option.item))
     then
       return nil
     end
-    options[i] = { label = option.label, description = option.description, disabled = option.disabled or nil }
+    options[i] = { label = option.label, description = option.description, disabled = option.disabled or nil, item = option.item }
     if option.value == nil then
       values[i] = i
     else
@@ -460,14 +478,78 @@ end
 
 -- The client ----------------------------------------------------------------
 
+---Finds the images of the items a menu's options name, through
+---`rpf.items.image`, and puts each under its option as `image`, what the
+---engine draws, before `continue` runs: at once when no option names an
+---item or every image is kept already, else once all have answered or
+---`IMAGE_WAIT_MS` has passed, whichever is first. An option whose image
+---did not come (no such item, none uploaded, not logged in yet, too slow)
+---is shown without one, its label still there; a slow one is kept for the
+---next menu. The same slug is asked for once however many options name it.
+---@param spec table The menu's checked spec, decorated in place.
+---@param continue fun() Called once, with the spec decorated.
+local function with_images(spec, continue)
+  ---@type table<string, integer[]>
+  local by_slug = {}
+  local slugs = {}
+  for i, option in ipairs(spec.options) do
+    if option.item then
+      if not by_slug[option.item] then
+        by_slug[option.item] = {}
+        slugs[#slugs + 1] = option.item
+      end
+      local list = by_slug[option.item]
+      list[#list + 1] = i
+    end
+  end
+  if #slugs == 0 or not rpf.items then
+    continue()
+    return
+  end
+  local pending = #slugs
+  local over = false
+  ---Continues, the first time only: when the last image is in, or time is up.
+  local function finish()
+    if over then
+      return
+    end
+    over = true
+    continue()
+  end
+  for _, item in ipairs(slugs) do
+    local asked = rpf.items.image(item, function(image)
+      if image and not over then
+        for _, i in ipairs(by_slug[item]) do
+          spec.options[i].image = image.src
+        end
+      end
+      pending = pending - 1
+      if pending == 0 then
+        finish()
+      end
+    end)
+    if not asked then
+      pending = pending - 1
+    end
+  end
+  if pending <= 0 then
+    finish()
+    return
+  end
+  assert(platform).after(ui.IMAGE_WAIT_MS, finish)
+end
+
 ---Shows something through the client's adapter, and reads the answer it
----gives once.
+---gives once. A menu whose options name items is shown once their images
+---are in (`with_images`), which may be later: then the call is `true` at
+---once, and an adapter that throws when it is shown says so through
+---`done` (`failed`), since the call has been answered.
 ---@param kind string The kind.
 ---@param spec table The checked spec.
 ---@param kept rpf.ui.Kept What reading the answer needs.
----@param done fun(raw: any, result: any, err: string?)? Called once with the raw answer and what it reads as; nil for a notification.
+---@param done fun(raw: any, result: any, err: string?)? Called once with the raw answer and what it reads as, or `failed` for an adapter that threw later; nil for a notification.
 ---@param id string? The server's request it shows, so the server can close it.
----@return boolean? ok True once shown.
+---@return boolean? ok True once shown, or to be shown once its images are in.
 ---@return string? err `unsupported` where the adapter has none, `busy` while one of the kind is open, `failed` when the adapter threw (logged).
 local function show_here(kind, spec, kept, done, id)
   local p = platform --[[@as rpf.ClientPlatform?]]
@@ -482,26 +564,61 @@ local function show_here(kind, spec, kept, done, id)
   local finished = false
   ---Takes the adapter's answer, once.
   ---@param raw any What the player did.
-  local function answered(raw)
+  ---@param failed boolean? True when the adapter threw instead, once the call had been answered.
+  local function answered(raw, failed)
     if finished then
       return
     end
     finished = true
     open_here[kind] = nil
     if done then
-      done(raw, ui.read(kind, kept, raw))
+      if failed then
+        done(nil, nil, "failed")
+      else
+        done(raw, ui.read(kind, kept, raw))
+      end
     end
   end
   if kind ~= "notify" then
     open_here[kind] = { id = id, finish = answered }
   end
-  local ok, err = pcall(adapter, spec, answered)
-  if not ok then
+  ---Hands the spec to the adapter, unless the server closed the request
+  ---while the menu's images were on their way.
+  ---@return boolean? ok True once shown.
+  ---@return string? err `closed` or `failed` (logged).
+  local function present()
+    if finished then
+      return nil, "closed"
+    end
+    local ok, err = pcall(adapter, spec, answered)
+    if not ok then
+      p.log("error", "rpf: the platform's ui." .. kind .. " failed: " .. tostring(err))
+      return nil, "failed"
+    end
+    return true
+  end
+  local shown, why
+  local now = true
+  if kind == "menu" then
+    with_images(spec, function()
+      shown, why = present()
+      if not now and why == "failed" then
+        answered(nil, true)
+      end
+    end)
+  else
+    shown, why = present()
+  end
+  now = false
+  if shown then
+    return true
+  end
+  if why then
     open_here[kind] = nil
     finished = true
-    p.log("error", "rpf: the platform's ui." .. kind .. " failed: " .. tostring(err))
-    return nil, "failed"
+    return nil, why
   end
+  -- Shown once its images are in.
   return true
 end
 
@@ -509,8 +626,8 @@ end
 ---@param kind string The kind.
 ---@param opts any The caller's options.
 ---@param callback any The callback, for every kind but `notify`.
----@return boolean? ok True once shown.
----@return string? err `invalid`, `unsupported`, `busy`, `failed`, or `unavailable` before the client has started.
+---@return boolean? ok True once shown, or, for a menu whose options name items, once it is to be shown with their images (`with_images`).
+---@return string? err `invalid`, `unsupported`, `busy`, `failed`, or `unavailable` before the client has started. A menu that waited for its images and whose adapter then threw is `failed` through the callback instead.
 local function show_client(kind, opts, callback)
   if not platform then
     return nil, "unavailable"
@@ -572,7 +689,13 @@ local function on_show(payload, respond)
   end
   ---@cast kind string
   local id = request and type(request.id) == "string" and request.id or nil
-  local shown, why = show_here(kind, spec, kept, function(raw)
+  local shown, why = show_here(kind, spec, kept, function(raw, _, err)
+    if err == "failed" then
+      -- The adapter threw once the menu's images were in: the answer the
+      -- call would have been, had it thrown at once.
+      respond(handoff.encode(handoff.UI_ANSWER, { ok = false, reason = "failed" }))
+      return
+    end
     local fields = { ok = true }
     if kind == "menu" and type(raw) == "number" then
       fields.index = raw

@@ -178,7 +178,10 @@ local open_menu = nil
 ---A menu, over ox_lib's context menu. Picking an option closes it without
 ---`onExit`; closing it runs `onExit`. Another resource's menu can replace
 ---it with no word to anyone, so while it waits it checks every `WATCH_MS`
----that it is still the one on show, and counts one replaced as closed.
+---that it is still the one on show, and counts one replaced as closed. An
+---option's item image (P3, #361) is its `icon`, beside the title: the
+---`data:` URL `rpf.items` keeps, which ox_lib takes for an image by its
+---`#.png` end (`nui/images.js`).
 ---@param spec rpf.ui.MenuSpec The menu.
 ---@param done fun(index: integer?) Called once.
 local function menu(spec, done)
@@ -201,6 +204,7 @@ local function menu(spec, done)
       title = option.label,
       description = option.description,
       disabled = option.disabled,
+      icon = option.image,
       onSelect = function()
         finish(i)
       end,

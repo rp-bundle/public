@@ -1335,6 +1335,16 @@ describe("the FiveM adapter", function()
       assert.are.same({ nil, "cancelled" }, got[2])
     end)
 
+    it("draws an option's item image as the context's icon (P3, #361)", function()
+      local driver = load_side("client")
+      driver.start()
+      rpf.fivem.ox.ui.menu({ title = "Shop", options = { { label = "Apple", item = "apple", image = "data:image/png;base64,AAAA#.png" }, { label = "Close" } } }, function() end)
+      local context = driver.contexts[rpf.fivem.ox.MENU_ID]
+      assert.are.same({ "Apple", "data:image/png;base64,AAAA#.png", "Close" }, { context.options[1].title, context.options[1].icon, context.options[2].title })
+      assert.is_nil(context.options[2].icon)
+      assert.is_nil(context.options[1].image, "the hover card is a FiveM-only addon's own")
+    end)
+
     it("tells a menu it was closed once ox_lib has finished closing, so its callback may open the next", function()
       local driver, record = load_side("client")
       driver.start()
@@ -1682,6 +1692,60 @@ describe("the FiveM adapter", function()
       -- Anything but a PNG data URL is refused, whatever the page says.
       driver.nui("image", { id = plum.id, src = "data:text/html;base64,PHNjcmlwdD4=" })
       assert.are.same({ err = "unavailable" }, got.plum)
+    end)
+
+    it("shows a menu naming an item once the page has fetched its image, as the option's icon (P3, #361)", function()
+      local driver = started_client()
+      driver.nui("ready", {})
+      nonce(driver)
+      driver.nui("login", { username = "sam", password = "rpf-sealed-x" })
+      local login = nui_messages(driver)[#driver.nui_sent]
+      driver.nui("http", {
+        id = login.id,
+        status = 200,
+        body = rpf.json.encode(rpf.json.object({
+          player_id = "00000000-0000-4000-8000-000000000001",
+          username = "sam",
+          created = false,
+          ticket = "rpf_jt_ticket",
+          ticket_expires_at = "2026-01-01T00:01:00Z",
+          remember_token = "rpf_rt_remember",
+          remember_token_expires_at = "2026-01-31T00:00:00Z",
+          session_token = "rpf_st_session",
+          session_token_expires_at = "2026-01-01T12:00:00Z",
+          api_token = "rpf_at_token.mac",
+          api_token_expires_at = "2026-01-01T00:15:00Z",
+        })),
+        headers = {},
+      })
+      local hash = string.rep("c", 64)
+      local got = {}
+      assert.is_true(rpf.api.ui.menu({ title = "Shop", options = { { label = "Apple", item = "apple", value = "sku-1" }, { label = "Close" } } }, function(choice, err)
+        got[#got + 1] = { choice, err }
+      end))
+      assert.is_nil(driver.contexts[rpf.fivem.ox.MENU_ID], "not shown until its image is in")
+      local catalog = nui_messages(driver)[#driver.nui_sent]
+      assert.are.equal("http", catalog.type)
+      assert.are.equal("https://portal.example/api/v1/player/items", catalog.url)
+      local plain = { weight = 1, size = { x = 1, y = 1 }, stack_limit = 1 }
+      driver.nui("http", {
+        id = catalog.id,
+        status = 200,
+        body = rpf.json.encode(rpf.json.object({
+          defaults = plain,
+          items = rpf.json.object({ apple = { weight = 1, size = { x = 1, y = 1 }, stack_limit = 1, image = hash, image_url = "/api/v1/player/items/apple/image?v=" .. hash } }),
+        })),
+        headers = {},
+      })
+      local image = nui_messages(driver)[#driver.nui_sent]
+      assert.are.equal("image", image.type)
+      assert.are.equal(hash, image.hash)
+      assert.are.same({ ok = true }, driver.nui("image", { id = image.id, src = "data:image/png;base64,AAAA#.png" }))
+      local context = driver.contexts[rpf.fivem.ox.MENU_ID]
+      assert.are.same({ "Apple", "data:image/png;base64,AAAA#.png", "Close" }, { context.options[1].title, context.options[1].icon, context.options[2].title })
+      assert.is_nil(context.options[2].icon)
+      driver.pick(1)
+      assert.are.same({ { "sku-1" } }, got)
     end)
 
     it("answers an item image unavailable when the page reloads before answering it", function()

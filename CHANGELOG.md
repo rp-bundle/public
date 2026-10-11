@@ -40,6 +40,15 @@ socket.
   each image under its content hash, checked, on disk (IndexedDB on FiveM,
   `data/rpf/images/` on Gmod), so an unchanged image is fetched once. A
   client platform now has an `item_image` member.
+- Item images in `rpf.api.ui` menus (P3 follow-up, #361). A menu option
+  names an item with `item = "apple"`, on the client or from the server,
+  and is drawn with the item's image beside its label on either engine
+  (ox_lib's `icon` on FiveM, a `DImage` on Gmod). The spec carries the
+  slug alone: the player's client finds the image through
+  `rpf.api.items.image`, waiting up to two seconds the first time, and an
+  item it cannot draw keeps its label. An adapter's menu spec may now carry
+  an option's `item` and `image`; an adapter outside this repository that
+  ignores them draws the label as before.
 
 - Distances in metres on every engine (J8 follow-up, #318). An
   interaction's `distance`, a zone's `radius` field and the `distance` a

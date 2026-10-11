@@ -843,11 +843,20 @@ rpf.ui.menu(player.handle, {
   options = {
     { label = "hello", value = tag.id },          -- the callback gets tag.id
     { label = "faded", disabled = true },
+    { label = "Spray can", item = "spray_can" },  -- drawn with the item's image
   },
 }, function(id, err)
   if id then scrub(player, id) end -- err: "cancelled", "timeout", "gone", ...
 end)
 ```
+
+An option that names an item (`item`, its slug) is drawn with the item's
+image beside its label, on either engine and from either side: the
+player's client fetches it for itself (below), so the server sends the
+slug alone. An item the catalog does not have, or one staff gave no
+image, leaves the option with its label. The first time an image is
+needed the menu waits up to two seconds for it, then shows without it;
+from then on it is kept.
 
 The fields an input dialog takes are `text`, `number`, `checkbox` and
 `select`, each with `required`, a `default` and bounds (`min`, `max`); on
@@ -886,10 +895,12 @@ with your addon.
 ### Item images
 
 An inventory or a shop shows items by their images. Staff upload one per
-item in the portal; on the player's client, ask for it by the item's slug
-and draw what comes back. RPF fetches it with the player's token, checks
-it, and keeps it on disk under its content hash, so an image is fetched
-once and asking again answers at once: ask whenever you draw.
+item in the portal. A `rpf.ui` menu draws them for you: put `item =
+"apple"` on the option (above). For UI of your own, on the player's
+client, ask for the image by the item's slug and draw what comes back. RPF
+fetches it with the player's token, checks it, and keeps it on disk under
+its content hash, so an image is fetched once and asking again answers at
+once: ask whenever you draw.
 
 ```lua
 -- client
@@ -897,9 +908,10 @@ rpf.items.image("apple", function(image, err)
   if not image then
     return -- "no_image", "not_found", "not_logged_in", "busy", "unavailable"
   end
-  -- FiveM: a data: URL. Put it in your page's <img>, or in ox_lib:
+  -- FiveM: a data: URL. Put it in your page's <img>, or in ox_lib (`icon`
+  -- beside the title, `image` in the hover card):
   lib.registerContext({ id = "shop", title = "Shop",
-    options = { { title = "Apple", image = image.src } } })
+    options = { { title = "Apple", icon = image.src, image = image.src } } })
   -- Garry's Mod: a path for Material().
   -- local material = Material(image.src)
 end)

@@ -1012,10 +1012,13 @@ function Ui.notify(opts) end
 
 ---Shows a menu to pick one option from. The callback gets the chosen
 ---option's `value` (its number if it has none), or nil and `cancelled`
----when the player closed it.
+---when the player closed it. An option that names an item (`item`) is
+---drawn with the item's image beside its label, on either engine, as
+---`rpf.items.image` would give it: the client finds the image itself, so
+---the server sends the slug alone.
 ---@param opts rpf.UiMenu The menu.
----@param callback fun(choice: any, err: string?) Called once.
----@return boolean? ok True once shown.
+---@param callback fun(choice: any, err: string?) Called once. `failed` when the engine could not show a menu that waited for its items' images (logged).
+---@return boolean? ok True once shown; for a menu whose options name items, once it is to be shown with their images, which may take a moment the first time.
 ---@return "invalid"|"too_large"|"unsupported"|"busy"|"not_found"|"inactive"|"failed"|"unavailable"|nil err Why not.
 ---@overload fun(player: any, opts: rpf.UiMenu, callback: fun(choice: any, err: string?)): boolean?, string?
 function Ui.menu(opts, callback) end
@@ -1056,8 +1059,9 @@ function Ui.progress(opts, callback) end
 ---One menu option.
 ---@class rpf.UiMenuOption
 ---@field label string What it says, at most 128 bytes.
----@field description string? A line under it.
+---@field description string? A line under it (a tooltip on Gmod).
 ---@field disabled boolean? Shown, but cannot be picked.
+---@field item string? An item's slug (`[a-z][a-z0-9_]*`, at most 64 bytes), whose image is drawn beside the label: ox_lib's `icon` on FiveM, a `DImage` on Gmod. The client finds the image through `rpf.items.image`, so only the slug travels; an item the catalog does not have, or one staff gave no image, or an image that takes longer than two seconds to arrive, leaves the option with its label alone (the image is kept for the next menu).
 ---@field value any? What the callback gets when it is picked: its number unless given. Never sent to the client.
 
 ---An input dialog.
@@ -1556,7 +1560,9 @@ function Config.edit(handle, base_version, changes) end
 ---An image that has not changed is never fetched again, even after a
 ---restart: the adapter keeps it on disk under its hash. Ask again whenever
 ---you draw; a kept image answers at once. Nothing is sent before the player
----has logged in (`not_logged_in`).
+---has logged in (`not_logged_in`). A menu shown through `rpf.ui.menu`
+---draws an option's item for you: name it with `item = "apple"` on the
+---option, on either side (`rpf.UiMenuOption`).
 ---
 ---**Client only.**
 ---@class rpf.api.Items
@@ -1593,7 +1599,7 @@ function Items.image(slug, callback) end
 ---@class rpf.ItemImage
 ---@field slug string The item's slug.
 ---@field hash string The image's content hash.
----@field src string What the engine draws: on FiveM a `data:image/png;base64,…#.png` URL (the fragment is what makes ox_lib take it for an image), for an `<img>` in any resource's page or ox_lib's `image` and `icon`; on Gmod a path for `Material()` (`data/rpf/images/<hash>.png`). PNG, at most 256 pixels a side.
+---@field src string What the engine draws: on FiveM a `data:image/png;base64,…#.png` URL (the fragment is what makes ox_lib take it for an image), for an `<img>` in any resource's page or ox_lib's `icon` (beside an option's title) and `image` (in its hover card); on Gmod a path for `Material()` and `DImage:SetImage` (`data/rpf/images/<hash>.png`). PNG, at most 256 pixels a side.
 
 ---The player's own login, on their client (P1). The client talks to the
 ---portal directly, so no server-side code handles the password.

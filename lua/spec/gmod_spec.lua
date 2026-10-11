@@ -1200,6 +1200,20 @@ describe("the Gmod adapter's addon UI (J10)", function()
     addon_ui.ui.close("menu")
   end)
 
+  it("draws an option's item image beside its button (P3, #361)", function()
+    local world = client()
+    local addon_ui = world.include("rpf/platform/gmod/addon_ui.lua")
+    local src = "data/rpf/images/" .. string.rep("a", 64) .. ".png"
+    addon_ui.ui.menu({ title = "Shop", options = { { label = "Apple", item = "apple", image = src }, { label = "Close", item = "pear" } } }, function() end)
+    local images = shown(world, "DImage")
+    assert.are.equal(1, #images, "one image, for the option that has one")
+    assert.are.equal(src, images[1].image)
+    assert.are.equal(button(world, "Apple"), images[1].parent, "in its own button")
+    assert.are.same({}, button(world, "Close").children, "none for an item whose image did not come")
+    button(world, "Apple"):DoClick()
+    assert.are.same({}, shown(world, "DImage"), "gone with the menu")
+  end)
+
   it("will not submit a required checkbox left unticked", function()
     local world, api = client()
     local got

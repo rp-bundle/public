@@ -63,13 +63,15 @@ conformance.run(busted, "UI from the server", {
       local got = {}
       assert.is_true(world.api.ui.menu(handle, {
         title = "Your tags",
-        options = { { label = "hello", value = "tag-1" }, { label = "Close" } },
+        options = { { label = "hello", value = "tag-1", item = "spray_can" }, { label = "Close" } },
       }, function(choice, err)
         got[#got + 1] = { choice, err }
       end))
       local number, request = asked(world, 1)
       assert.are.same({ "menu", "Your tags", "hello" }, { request.kind, request.spec.title, request.spec.options[1].label })
       assert.is_nil(request.spec.options[1].value, "a value never leaves the server")
+      assert.are.equal("spray_can", request.spec.options[1].item, "an item goes as its slug (P3, #361)")
+      assert.is_nil(request.spec.options[1].image, "and never as an image: the client finds that")
       answer(world, 1, number, { ok = true, index = 1 })
       assert.are.same({ { "tag-1" } }, got)
     end,

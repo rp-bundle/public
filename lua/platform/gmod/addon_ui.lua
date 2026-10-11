@@ -11,12 +11,14 @@
 ---and mouse while it is open, as the login screens do (`ui.lua`).
 ---@class rpf.gmod.AddonUi
 ---@field WIDTH number Every window's width, in pixels.
+---@field ICON number The side of an item's image beside a menu option, in pixels.
 ---@field CANCEL_KEY integer The key that cancels a progress bar: X, as on ox_lib.
 ---@field MAX_SCREEN number The most of the screen's height a window takes; a longer menu or dialog scrolls.
 ---@field ui rpf.ClientUi What the client platform's `ui` is.
 local addon_ui = {}
 
 addon_ui.WIDTH = 360
+addon_ui.ICON = 16
 addon_ui.CANCEL_KEY = KEY_X
 addon_ui.MAX_SCREEN = 0.8
 
@@ -115,8 +117,10 @@ local function show_notice(spec, done)
   done()
 end
 
----A menu: one button per option, a disabled option's greyed out.
----Closing the window is closing the menu.
+---A menu: one button per option, a disabled option's greyed out, and an
+---option's item image (P3, #361) a `DImage` at the left of its button, from
+---the `Material()` path `rpf.items` keeps (`images.lua`), its text moved
+---over to make room. Closing the window is closing the menu.
 ---@param spec rpf.ui.MenuSpec The menu.
 ---@param done fun(index: integer?) Called once.
 local function show_menu(spec, done)
@@ -133,6 +137,14 @@ local function show_menu(spec, done)
     end
     if option.disabled then
       b:SetEnabled(false)
+    end
+    if option.image then
+      local icon = vgui.Create("DImage", b) --[[@as DImage]]
+      icon:Dock(LEFT)
+      icon:DockMargin(4, 3, 4, 3)
+      icon:SetWide(addon_ui.ICON)
+      icon:SetImage(option.image)
+      b:SetTextInset(addon_ui.ICON + 8, 0)
     end
   end
   frame.OnClose = function()

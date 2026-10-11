@@ -59,10 +59,14 @@ function ToServer.on_server_request(name, handler) end
 ---@field kind "info"|"success"|"warning"|"error" How it looks.
 ---@field duration_ms integer How long it shows.
 
----A menu, checked.
+---A menu, checked. An option that names an item (`item`) has its image
+---under `image` when `rpf.items.image` found it in time (`rpf.ui`'s
+---`IMAGE_WAIT_MS`): what `item_image` answered, a `data:` URL on FiveM, a
+---`Material()` path on Gmod, to draw beside the label. One it did not is
+---shown by its label alone.
 ---@class rpf.ui.MenuSpec
 ---@field title string Its title.
----@field options { label: string, description: string?, disabled: boolean? }[] Its options, in order.
+---@field options { label: string, description: string?, disabled: boolean?, item: string?, image: string? }[] Its options, in order.
 
 ---An input dialog, checked.
 ---@class rpf.ui.InputSpec

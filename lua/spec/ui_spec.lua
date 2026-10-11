@@ -37,6 +37,64 @@ local function dialog()
   }
 end
 
+---A shop menu: two options naming the same item, one naming another, and
+---one naming none.
+---@return table opts The menu.
+local function shop()
+  return {
+    title = "Shop",
+    options = {
+      { label = "Apple", item = "apple", value = "sku-1" },
+      { label = "Pear", item = "pear" },
+      { label = "Another apple", item = "apple" },
+      { label = "Close" },
+    },
+  }
+end
+
+local PORTAL = "https://portal.example"
+local APPLE = string.rep("a", 64)
+
+---Logs a started client in, so `rpf.items` has an API token and a portal:
+---the join as `items_spec.lua` plays it.
+---@param c spec.FakeClient The platform.
+local function log_in(c)
+  c.from_server("rpf:join_nonce", {
+    nonce = "rpf_jn_one",
+    expires_in_ms = 120000,
+    portal_url = PORTAL,
+    server_id = "00000001-0000-4000-8000-000000000001",
+  })
+  assert(rpf.auth.login("sam", "correct horse"))
+  c.respond(200, {
+    player_id = "00000002-0000-4000-8000-000000000002",
+    username = "sam",
+    created = false,
+    ticket = "rpf_jt_ticket",
+    ticket_expires_at = "2026-01-01T00:01:00Z",
+    remember_token = "rpf_rt_remember",
+    remember_token_expires_at = "2026-01-31T00:00:00Z",
+    session_token = "rpf_st_session",
+    session_token_expires_at = "2026-01-01T12:00:00Z",
+    api_token = "rpf_at_token.mac",
+    api_token_expires_at = "2026-01-01T00:15:00Z",
+  })
+  c.from_server("rpf:join_result", { ok = true, player_id = "00000002-0000-4000-8000-000000000002", username = "sam", created = false })
+end
+
+---A catalog body with an apple that has an image and a pear that has none.
+---@return table body The catalog, as the portal sends it.
+local function catalog()
+  local plain = { weight = 1, size = { x = 1, y = 1 }, stack_limit = 1 }
+  return {
+    defaults = plain,
+    items = {
+      apple = { weight = 1, size = { x = 1, y = 1 }, stack_limit = 1, image = APPLE, image_url = "/api/v1/player/items/apple/image?v=" .. APPLE },
+      pear = plain,
+    },
+  }
+end
+
 describe("rpf.ui", function()
   describe("checking options", function()
     before_each(function()
@@ -58,6 +116,15 @@ describe("rpf.ui", function()
         },
       }, spec)
       assert.are.same({ "tag-1", "tag-2", 3 }, kept.values)
+    end)
+
+    it("keeps the item an option names, as a slug the portal could name, and never an image", function()
+      local spec = assert(rpf.ui.spec("menu", { title = "Shop", options = { { label = "Apple", item = "apple", image = "data:image/png;base64,AAAA" } } }))
+      assert.are.same({ label = "Apple", item = "apple" }, spec.options[1], "the image is the client's to find")
+      assert.is_truthy(rpf.ui.spec("menu", { title = "Shop", options = { { label = "Long", item = "a" .. string.rep("_1", 31) .. "z" } } }), "64 bytes")
+      for _, bad in ipairs({ "Apple", "red-apple", "", "1apple", "apple pie", string.rep("a", 65), 7, true, {} }) do
+        assert.is_nil(rpf.ui.spec("menu", { title = "Shop", options = { { label = "Apple", item = bad } } }), tostring(bad))
+      end
     end)
 
     it("shows a select's labels and its default by number", function()
@@ -300,6 +367,102 @@ describe("rpf.ui", function()
       c.from_server("rpf:ui_notify", { spec = { text = "Welcome", kind = "success", duration_ms = 3000 } })
       assert.are.same({ text = "Welcome", kind = "success", duration_ms = 3000 }, c.shown[1].spec)
     end)
+
+    describe("with item images (P3, #361)", function()
+      it("shows a menu's items by their images, found through rpf.items once per slug, and at once when they are kept", function()
+        log_in(c)
+        local got = {}
+        assert.is_true(rpf.api.ui.menu(shop(), function(choice, err)
+          got[#got + 1] = { choice, err }
+        end))
+        assert.are.same({}, c.shown, "not shown until its images are in")
+        assert.are.same({ nil, "busy" }, { rpf.api.ui.menu(shop(), function() end) }, "and its kind is taken meanwhile")
+        c.respond(200, catalog())
+        assert.are.equal(1, #c.images, "one fetch for the apple; the pear has no image")
+        assert.are.equal(APPLE, c.images[1].hash)
+        assert.are.same({}, c.shown, "still waiting for it")
+        c.images[1].done("src-apple")
+        assert.are.equal(1, #c.shown)
+        local options = c.shown[1].spec.options
+        assert.are.same({ "apple", "src-apple", "pear", "src-apple" }, { options[1].item, options[1].image, options[2].item, options[3].image })
+        assert.is_nil(options[2].image, "none uploaded")
+        assert.is_nil(options[4].image, "none named")
+        c.shown[1].done(1)
+        assert.are.same({ { "sku-1" } }, got)
+        assert.is_true(rpf.api.ui.menu(shop(), function() end))
+        assert.are.equal(2, #c.shown, "shown at once from what is kept")
+        assert.are.equal("src-apple", c.shown[2].spec.options[1].image)
+        assert.are.equal(1, #c.images, "not fetched again")
+      end)
+
+      it("shows a menu without the images that are slow, after IMAGE_WAIT_MS, and keeps one that comes late for the next", function()
+        log_in(c)
+        assert.is_true(rpf.api.ui.menu(shop(), function() end))
+        c.respond(200, catalog())
+        c.advance(rpf.ui.IMAGE_WAIT_MS - 1)
+        assert.are.same({}, c.shown)
+        c.advance(1)
+        assert.are.equal(1, #c.shown, "shown when time is up")
+        assert.is_nil(c.shown[1].spec.options[1].image)
+        assert.are.equal("apple", c.shown[1].spec.options[1].item, "its label and slug are still there")
+        c.images[1].done("src-apple")
+        assert.are.equal(1, #c.shown, "a late image shows nothing twice")
+        c.shown[1].done(nil)
+        assert.is_true(rpf.api.ui.menu(shop(), function() end))
+        assert.are.equal("src-apple", c.shown[2].spec.options[1].image, "kept for the next menu")
+      end)
+
+      it("shows a menu by its labels alone before the player has logged in, at once", function()
+        assert.is_true(rpf.api.ui.menu(shop(), function() end))
+        assert.are.equal(1, #c.shown)
+        assert.is_nil(c.shown[1].spec.options[1].image)
+        assert.are.equal("apple", c.shown[1].spec.options[1].item)
+        assert.is_nil(c.pending(), "nothing asked of the portal")
+        assert.are.same({}, c.images)
+      end)
+
+      it("never shows a menu its server closed while its images were on their way, and is free for the next", function()
+        log_in(c)
+        local spec = assert(rpf.ui.spec("menu", shop()))
+        local replies = {}
+        c.server_request_handlers["rpf:ui"](rpf.handoff.encode("rpf:ui", { kind = "menu", id = "4", spec = rpf.json.object(rpf.json.copy(spec)) }), function(reply)
+          replies[#replies + 1] = rpf.json.decode(reply)
+        end)
+        assert.are.same({}, c.shown)
+        c.from_server("rpf:ui_close", { id = "4" })
+        assert.are.same({ "menu" }, c.closed)
+        assert.are.same({ true }, { replies[1].ok, replies[1].index }, "answered as closed")
+        c.respond(200, catalog())
+        c.images[1].done("src-apple")
+        c.advance(rpf.ui.IMAGE_WAIT_MS)
+        assert.are.same({}, c.shown, "closed before it was shown")
+        assert.is_true(rpf.api.ui.menu(menu(), function() end), "free for the next")
+        assert.are.equal(1, #c.shown)
+      end)
+
+      it("says failed, to the caller or the server, for an adapter that throws once the images are in", function()
+        log_in(c)
+        c.ui.menu = function()
+          error("no menu")
+        end
+        local got = {}
+        assert.is_true(rpf.api.ui.menu(shop(), function(choice, err)
+          got[#got + 1] = { choice, err }
+        end))
+        c.respond(200, catalog())
+        c.images[1].done("src-apple")
+        assert.are.same({ { nil, "failed" } }, got)
+        assert.are.equal(1, #c.logs, "logged")
+        assert.are.equal("error", c.logs[1].level)
+        local spec = assert(rpf.ui.spec("menu", shop()))
+        local replies = {}
+        c.server_request_handlers["rpf:ui"](rpf.handoff.encode("rpf:ui", { kind = "menu", id = "5", spec = rpf.json.object(rpf.json.copy(spec)) }), function(reply)
+          replies[#replies + 1] = rpf.json.decode(reply)
+        end)
+        assert.are.same({ { ok = false, reason = "failed" } }, replies, "refused at once: the apple's image is kept and the pear has none")
+        assert.are.same({ nil, "failed" }, { rpf.api.ui.menu(menu(), function() end) }, "free, and refused at once with no image to wait for")
+      end)
+    end)
   end)
 
   describe("on the server", function()
@@ -451,6 +614,13 @@ describe("rpf.ui", function()
         return true
       end
       assert.are.same({ nil, "inactive" }, { rpf.api.ui.notify(7, "x") })
+    end)
+
+    it("sends the item an option names, as its slug alone, and refuses one that is not a slug", function()
+      assert.is_true(rpf.api.ui.menu(7, shop(), function() end))
+      local sent = rpf.json.decode(p.client_requests[1].payload)
+      assert.are.same({ label = "Apple", item = "apple" }, sent.spec.options[1], "no value, no image")
+      assert.are.same({ nil, "invalid" }, { rpf.api.ui.menu(7, { title = "Shop", options = { { label = "Apple", item = "Red Apple" } } }, function() end) })
     end)
 
     it("sends a notification as a message of its own", function()
