@@ -348,6 +348,23 @@ local function reach(steps)
   return fns
 end
 
+---What `check` answers when a read it asked the bridge for failed: never
+---that the deal can be made, since the read was what would have said so.
+---@param err string? The read's reason.
+---@param not_found string What a `not_found` means for this read: `no_account` for a balance, `insufficient` for a count.
+---@return nil
+---@return string status `unavailable` for an outage, else `refused`.
+---@return string? why For `refused`, why.
+local function read_failed(err, not_found)
+  if err == "unavailable" then
+    return nil, "unavailable"
+  end
+  if err == "not_found" or err == nil then
+    return nil, "refused", not_found
+  end
+  return nil, "refused", err
+end
+
 ---What a companion deal can be checked for before it runs: the player's
 ---character, the named records, and, through the bridge's reads where it
 ---supports them, the balance and the counts. Whether a give fits is the
@@ -370,19 +387,28 @@ local function precheck_external(handle, deal)
     return nil, "refused", why
   end
   if deal.pay and rpf.bridge.supports("money", "balance") then
-    local balance = facade.balance(handle, deal.account)
-    if balance ~= nil and balance < deal.pay then
+    local balance, failed = facade.balance(handle, deal.account)
+    if balance == nil then
+      return read_failed(failed, "no_account")
+    end
+    if balance < deal.pay then
       return nil, "refused", "insufficient_funds"
     end
   end
   if #deal.take > 0 and rpf.bridge.supports("inventory", "count") then
-    local wanted = {}
+    local wanted, order = {}, {}
     for _, line in ipairs(deal.take) do
+      if not wanted[line.item] then
+        order[#order + 1] = line.item
+      end
       wanted[line.item] = (wanted[line.item] or 0) + line.count
     end
-    for item, count in pairs(wanted) do
-      local held = facade.count(handle, item)
-      if held ~= nil and held < count then
+    for _, item in ipairs(order) do
+      local held, failed = facade.count(handle, item)
+      if held == nil then
+        return read_failed(failed, "insufficient")
+      end
+      if held < wanted[item] then
         return nil, "refused", "insufficient"
       end
     end

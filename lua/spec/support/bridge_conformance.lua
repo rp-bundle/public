@@ -485,6 +485,12 @@ function suite.cases(kit)
         deal.pay = 99999
         assert.are.same({ nil, "refused", "insufficient_funds" }, { api.commerce.check(handle, deal) })
         assert.are.same({ nil, "refused", "insufficient_funds" }, { api.commerce.exchange(handle, deal, api.ops.new()) })
+        -- A read that fails never passes a check: an account the framework
+        -- does not have is one the player cannot pay from.
+        assert.are.same(
+          { nil, "refused", "no_account" },
+          { api.commerce.check(handle, { account = "no_such_account", pay = 1, reason = "Corner shop" }) }
+        )
         deal.pay = 10
         assert(api.records.update("acme_badges.badge", badge.id, { label = "Silver" }))
         assert.are.same({ nil, "refused", "stale" }, { api.commerce.exchange(handle, deal, api.ops.new()) })
