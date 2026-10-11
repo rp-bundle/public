@@ -809,7 +809,7 @@ describe("the Gmod adapter's client", function()
     assert.are.equal(requests, #record.requests, "nothing was sent")
     assert.truthy(labels(gmod, world):find("Tick the box", 1, true))
 
-    gmod.shown(world, "DCheckBoxLabel")[1]:SetValue(true)
+    gmod.shown(world, "DCheckBoxLabel")[1].value = true
     button(gmod, world, "Delete my account"):DoClick()
     local request = record.requests[#record.requests]
     assert.are.equal("https://portal.test/api/v1/player/delete_account", request.url)
@@ -831,7 +831,7 @@ describe("the Gmod adapter's client", function()
     local fields = gmod.shown(world, "DTextEntry")
     fields[1].value = "alice"
     fields[2].value = "correct horse battery"
-    gmod.shown(world, "DCheckBoxLabel")[1]:SetValue(true)
+    gmod.shown(world, "DCheckBoxLabel")[1].value = true
     button(gmod, world, "Delete my account"):DoClick()
     local request = record.requests[#record.requests]
     world:http_done(
