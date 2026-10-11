@@ -427,7 +427,9 @@ function Screens:nui(name, data)
     -- had these requests is gone: none of them will be answered. A live
     -- page always answers, within its own fetch bound (`nui/images.js`).
     -- HTTP requests the page was given are lost the same way, while one
-    -- still queued for it is sent now.
+    -- still queued for it is sent now. They are answered only once the
+    -- screen is back: a failure they report is an error over that screen,
+    -- which showing the screen afterwards would wipe.
     local lost = self.images
     self.images = {}
     for _, done in pairs(lost) do
@@ -440,9 +442,6 @@ function Screens:nui(name, data)
       end
     end
     table.sort(sent)
-    for _, id in ipairs(sent) do
-      self:abandon(id, "was lost when the page reloaded")
-    end
     self.ready = true
     local queued = self.queue
     self.queue = {}
@@ -451,6 +450,9 @@ function Screens:nui(name, data)
     end
     for _, message in ipairs(queued) do
       self:deliver(message.text, message.http)
+    end
+    for _, id in ipairs(sent) do
+      self:abandon(id, "was lost when the page reloaded")
     end
     return { ok = true }
   elseif name == "http" then

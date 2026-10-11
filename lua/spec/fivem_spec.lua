@@ -1821,6 +1821,24 @@ describe("the FiveM adapter", function()
       assert.is_false(driver.nui("http", { id = request.id, status = 200, body = "{}" }).ok)
     end)
 
+    it("shows the player why a login stopped when the page reloads under it, over the screen it puts back", function()
+      local driver = started_client()
+      driver.nui("ready", {})
+      nonce(driver)
+      assert.is_true(driver.nui("login", { username = "sam", password = "rpf-sealed-x" }).ok)
+      local request = nui_messages(driver)[#driver.nui_sent]
+      assert.are.equal("http", request.type)
+      local before = #driver.nui_sent
+      driver.nui("ready", {})
+      local after = {}
+      for i = before + 1, #driver.nui_sent do
+        after[#after + 1] = rpf.json.decode(driver.nui_sent[i])
+      end
+      assert.are.equal("screen", after[1].type, "the screen first")
+      assert.are.equal("error", after[#after].type, "then why, which the screen does not wipe")
+      assert.truthy(after[#after].message:find("can't be reached", 1, true))
+    end)
+
     it("shows a failure, and refuses what the page sends that is not text", function()
       local driver = started_client()
       driver.nui("ready", {})
