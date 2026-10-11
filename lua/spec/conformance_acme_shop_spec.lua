@@ -113,6 +113,7 @@ end
 ---@field shown boolean? Whether the counter is open; true unless given.
 ---@field revision integer? The records' revision; 1 unless given.
 ---@field water_item string? What the water listing sells; `water` unless given.
+---@field extra integer? How many more bread listings the counter has, each at 2 and bought back at 1: more than one menu holds.
 
 ---The installed addon with staff's records, and the snapshot's sections.
 ---@param world spec.ConformanceWorld The world.
@@ -151,6 +152,10 @@ local function config(world, shop, setup)
     record(DEAR, "listing", { counter = COUNTER, item = "bread", price = 500 }),
     record(GONE, "listing", { counter = COUNTER, item = "unobtainium", price = 1 }),
   })
+  for i = 1, setup.extra or 0 do
+    local id = string.format("000000%02x-0000-4000-8000-0000000000%02x", 0x40 + i, 0x40 + i)
+    installed.records[#installed.records + 1] = record(id, "listing", { counter = COUNTER, item = "bread", price = 2, buyback = 1 })
+  end
   local size = json.object({ x = 1, y = 1 })
   return installed,
     {
@@ -441,6 +446,29 @@ conformance.run(busted, "the acme_shop example", {
       assert.are.equal("Close your other window first, then try again.", told(world))
       assert.truthy(lines[1] and lines[1]:find("busy", 1, true), tostring(lines[1]))
       assert.are.same({ wallet = 100, till = 0, water = 3, bread = 0, left = 5 }, holdings(world, handle))
+    end,
+  },
+  {
+    name = "pages a counter with more options than one menu holds, hiding none",
+    run = function(world)
+      local shop, handle = at_the_counter(world)
+      install(world, shop, { extra = 16 })
+      assert.is_true(assert(aim(world)).ok)
+      local number, request = asked(world)
+      local options = request.spec.options
+      assert.are.equal(32, #options, "a full menu")
+      assert.are.equal("More…", options[32].label)
+      answer(world, number, { ok = true, index = 32 })
+      number, request = asked(world)
+      options = request.spec.options
+      -- 5 options of the first listings, 16 bread listings of 2 each: 37,
+      -- of which the first page showed 31.
+      assert.are.equal(6, #options)
+      assert.are.equal("Sell Bread for 1", options[6].label)
+      answer(world, number, { ok = true, index = 5 })
+      how_many(world, 1)
+      assert.are.equal("Bought 1 for 2.", told(world))
+      assert.are.same({ wallet = 98, till = 2, water = 3, bread = 1, left = 5 }, holdings(world, handle))
     end,
   },
   {

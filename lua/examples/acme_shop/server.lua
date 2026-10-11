@@ -289,6 +289,78 @@ function acme_shop.settle(rpf, player, order, op, tries)
   end
 end
 
+---How many of a counter's options one menu shows before "More": one
+---fewer than a menu holds (`rpf.ui`'s 32), to leave room for it.
+acme_shop.PAGE = 31
+
+---Asks how many of what the player picked, then makes the order.
+---@param rpf rpf.Api The API.
+---@param player rpf.PlayerView The player.
+---@param counter rpf.Record The counter.
+---@param choice table The option's value, kept on the server.
+local function ask_quantity(rpf, player, counter, choice)
+  local asked, refused = rpf.ui.input(player.handle, {
+    title = counter.fields.name,
+    fields = { { name = "quantity", label = "How many", kind = "number", min = 1, max = choice.most, default = 1, required = true } },
+  }, function(values)
+    if not values then
+      return
+    end
+    -- One op id per order, minted when the player confirms it.
+    local op = rpf.ops.new()
+    if not op then
+      rpf.ui.notify(player.handle, { title = "Shop", text = "The till is closed for now.", kind = "error" })
+      return
+    end
+    acme_shop.settle(rpf, player, {
+      listing = choice.listing,
+      revision = choice.revision,
+      selling = choice.selling,
+      price = choice.price,
+      quantity = values.quantity,
+    }, op)
+  end)
+  if not asked then
+    -- Another dialog is open for them (`busy`), or they left: say so
+    -- rather than leave them with a menu that went nowhere.
+    print("[acme_shop] could not ask " .. tostring(player.player_id) .. " how many (" .. tostring(refused) .. ")")
+    rpf.ui.notify(player.handle, { title = "Shop", text = "Close your other window first, then try again.", kind = "error" })
+  end
+end
+
+---Shows one page of a counter's options, with "More" while there are
+---more, so a counter with more than a menu holds hides none of them.
+---@param rpf rpf.Api The API.
+---@param player rpf.PlayerView The player.
+---@param counter rpf.Record The counter.
+---@param options table[] Every option, in order.
+---@param page integer Which page, from 1.
+---@return boolean? shown True once the menu is open.
+---@return string? why Why not.
+function acme_shop.page(rpf, player, counter, options, page)
+  local first = (page - 1) * acme_shop.PAGE + 1
+  local shown = {}
+  for i = first, math.min(#options, first + acme_shop.PAGE - 1) do
+    shown[#shown + 1] = options[i]
+  end
+  if #options >= first + acme_shop.PAGE then
+    shown[#shown + 1] = { label = "More…", value = { more = page + 1 } }
+  end
+  return rpf.ui.menu(player.handle, { title = counter.fields.name, options = shown }, function(choice)
+    if not choice then
+      return -- closed, or the player left
+    end
+    if choice.more then
+      local next_shown, why = acme_shop.page(rpf, player, counter, options, choice.more)
+      if not next_shown then
+        print("[acme_shop] could not show " .. tostring(player.player_id) .. " more (" .. tostring(why) .. ")")
+      end
+      return
+    end
+    ask_quantity(rpf, player, counter, choice)
+  end)
+end
+
 ---The counter's menu, then how many, then the sale: the shop interaction,
 ---which a player aims at a counter (J4). The rules found the counter, open
 ---and within reach, before this runs.
@@ -325,41 +397,7 @@ function acme_shop.open(rpf, player, target)
   if #options == 0 then
     return false, "Nothing for sale here."
   end
-  while #options > 32 do
-    table.remove(options)
-  end
-  local shown, why = rpf.ui.menu(player.handle, { title = counter.fields.name, options = options }, function(choice)
-    if not choice then
-      return -- closed, or the player left
-    end
-    local asked, refused = rpf.ui.input(player.handle, {
-      title = counter.fields.name,
-      fields = { { name = "quantity", label = "How many", kind = "number", min = 1, max = choice.most, default = 1, required = true } },
-    }, function(values)
-      if not values then
-        return
-      end
-      -- One op id per order, minted when the player confirms it.
-      local op = rpf.ops.new()
-      if not op then
-        rpf.ui.notify(player.handle, { title = "Shop", text = "The till is closed for now.", kind = "error" })
-        return
-      end
-      acme_shop.settle(rpf, player, {
-        listing = choice.listing,
-        revision = choice.revision,
-        selling = choice.selling,
-        price = choice.price,
-        quantity = values.quantity,
-      }, op)
-    end)
-    if not asked then
-      -- Another dialog is open for them (`busy`), or they left: say so
-      -- rather than leave them with a menu that went nowhere.
-      print("[acme_shop] could not ask " .. tostring(player.player_id) .. " how many (" .. tostring(refused) .. ")")
-      rpf.ui.notify(player.handle, { title = "Shop", text = "Close your other window first, then try again.", kind = "error" })
-    end
-  end)
+  local shown, why = acme_shop.page(rpf, player, counter, options, 1)
   if not shown then
     return false, "The shop cannot open here (" .. tostring(why) .. ")."
   end
