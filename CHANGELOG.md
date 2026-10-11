@@ -27,7 +27,7 @@ record refers to), an
 item's `image` hash in the config snapshot (P3), and the profile (K1) in
 `hello` (optional: a core that leaves it out runs native) and `welcome`,
 the `report_unknown_ops` notice (#274), and the map the game server runs
-in `hello` (#369, required). A
+in `hello` (#369; `default` when left out). A
 message newer than a connection's protocol is refused `malformed` at the
 socket.
 

@@ -315,6 +315,7 @@ receiver takes the default (empty, `false` or `None`).
 | Field | Where | Default | Why optional |
 |---|---|---|---|
 | `domains` | `hello` | Native | Added by K1. A core from before it runs only the native profile, so an absent field means native, never `null`, which is a core with no profile fixed yet |
+| `map` | `hello` | `default` | Added by #369. A core from before it places every world record on whatever map it runs, which is what FiveM's unnamed setup, `default`, means |
 | `types` | `hold` | Empty: claims nothing | Added by J6 to a frame a game server sends, and left out by one that claims nothing, so every hold before it decodes as one that claims nothing |
 | `domains` | `welcome` | Native | Added by K1, and left out when native: a native server's `welcome` is the one it was before K1, which is what every portal enforced then |
 | `items`, `item_bases`, `item_defaults`, `employers`, `employer_departments`, `employer_jobs`, `new_character`, `paying_accounts`, `addons` | `ConfigSnapshot` (`config`) | Empty | Sections added after `settings`, so a snapshot from before one still decodes |
