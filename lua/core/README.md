@@ -1784,6 +1784,14 @@ spec holds to the portal's `PASSWORD_REUSE_WARNING` word for word.
    `RedeemTicket`, registers the player on `PlayerAuthenticated`, and answers
    `rpf:join_result`. The client emits `auth.succeeded`.
 
+A malformed `rpf:join_result` is logged with the decoder's reason, never
+the payload. If a ticket is pending, it ends that attempt, drops its session
+and API tokens, and emits `auth.failed` with `during = "redeem"`, followed
+by `auth.required`, so the client cannot stay stuck in `redeeming`. The
+message tells the player to reconnect: an unreadable answer does not say
+whether the server already redeemed the ticket. Outside `redeeming`, the
+warning leaves the login state alone.
+
 **The online list (F2).** The portal lists a player as online on this server
 when it answers `RedeemTicket`, and unlists them on `player_dropped`. It
 forgets the whole list when the connection goes, so after every `Welcome`,
@@ -1846,7 +1854,10 @@ honoured, leaving the player logged in for this session with nothing saved,
 exactly as a logout after login does. The portal answers `204` whatever it
 did with the token, so any other answer (no answer, an error, a proxy's page)
 logs a warning and emits `auth.failed` with `during = "logout"`: the token is
-forgotten here, but may still be valid at the portal. The adapters do not
+forgotten here, but may still be valid at the portal. A fresh nonce that
+does not arrive within `nonce_wait_ms` (30 s) is reported the same way,
+without changing the login state or discarding a pending ticket's result.
+The adapters do not
 put it on the login form. Every other request that sends a nonce (a login,
 registration, password change, resume or deletion) is sent once more with a
 fresh nonce when the portal calls the first `invalid_nonce`; a logout never
