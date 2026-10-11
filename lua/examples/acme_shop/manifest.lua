@@ -99,6 +99,9 @@ acme_shop.MANIFEST = {
       schema = 1,
       authority = "live",
       owners = { "server" },
+      -- Held by the server while it runs (J6): the core takes back the stock
+      -- after a restart, and takes stock staff add within a minute.
+      hold = "server",
       title = "Stock",
       fields = {
         listing = { type = "ref", to = "acme_shop.listing", required = true, index = true, unique = true, title = "Listing" },

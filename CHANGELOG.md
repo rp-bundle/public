@@ -44,7 +44,8 @@ socket.
   stored moment with a bounded catch-up, and a new example,
   `lua/examples/acme_garden/`, is a timed live type built on it. The
   portal shows each live type's hold policy on the addon page and the
-  record page.
+  record page. The `acme_shop` example's stock is `hold = "server"` too,
+  rather than held by the addon on a timer.
 - The commerce example (J5, #82): `lua/examples/acme_shop/`, counters that
   sell items and buy them back, built only on `rpf.api`. Staff place
   counters and price listings as config records and stock what is limited

@@ -27,9 +27,6 @@ acme_shop.UNITS_PER_METRE = { gmod = 39.37 }
 function acme_shop.units(rpf, metres)
   return metres * (acme_shop.UNITS_PER_METRE[rpf.engine] or 1)
 end
----How often the server takes the stock staff added since: J6 (#83) will hold
----a `hold = "server"` type's records for the addon; until then it holds them.
-acme_shop.HOLD_EVERY = 60000
 ---How long to wait before trying a sale again when the till could not be
 ---asked, and how many times to try in all.
 acme_shop.AGAIN_MS = 1000
@@ -64,50 +61,6 @@ local function fit(text, n)
     cut = cut - 1
   end
   return text:sub(1, cut)
-end
-
----Holds every stock record the server does not hold yet, a page at a time.
----One the portal will not hand over (deleted since the query) is tried on
----the next round; a round that fails is said in the console, and the timer
----runs the next.
----@param rpf rpf.Api The API.
----@param after table? Where the last page ended.
-function acme_shop.hold_stock(rpf, after)
-  local asked, refused = rpf.records.query(acme_shop.STOCK, { limit = 64, after = after }, function(found, next_page, err)
-    if not found then
-      print("[acme_shop] could not look for stock (" .. tostring(err) .. ")")
-      return
-    end
-    local ids = {}
-    for _, stock in ipairs(found) do
-      if not stock.held then
-        ids[#ids + 1] = stock.id
-      end
-    end
-    ---Takes the next page, once this one is held.
-    local function next_one()
-      if next_page then
-        acme_shop.hold_stock(rpf, next_page)
-      end
-    end
-    if #ids == 0 then
-      next_one()
-      return
-    end
-    local holding, why = rpf.records.hold(acme_shop.STOCK, ids, function(_, hold_err)
-      if hold_err then
-        print("[acme_shop] could not take the stock (" .. tostring(hold_err) .. ")")
-      else
-        next_one()
-      end
-    end)
-    if not holding then
-      print("[acme_shop] could not take the stock (" .. tostring(why) .. ")")
-    end
-  end)
-  if not asked then
-    print("[acme_shop] could not look for stock (" .. tostring(refused) .. ")")
-  end
 end
 
 ---A listing's stock, if the server holds it.
@@ -419,10 +372,6 @@ function acme_shop.start_server(rpf)
       assert(rpf.interactions.register("acme_shop.shop", function(player, _, target)
         return acme_shop.open(rpf, player, target)
       end, { target = acme_shop.COUNTER, label = "Shop", distance = acme_shop.units(rpf, acme_shop.OFFER_METRES) }))
-      assert(rpf.time.every(acme_shop.HOLD_EVERY, function()
-        acme_shop.hold_stock(rpf, nil)
-      end))
-      acme_shop.hold_stock(rpf, nil)
     end,
   })
 end
