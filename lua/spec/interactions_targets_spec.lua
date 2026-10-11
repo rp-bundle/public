@@ -50,6 +50,46 @@ describe("rpf.interactions with rules", function()
     assert.is_false(ran)
   end)
 
+  it("logs a check's refusal whose reason cannot be encoded, and still answers refused", function()
+    local world = conformance.boot("mock")
+    local core = world.core
+    local json = core.json
+    local manifest = conformance.manifest("acme_npcs")
+    assert(world.api.addons.register(manifest, {}))
+    world:install({ conformance.installed(core, manifest) })
+    world:connect()
+    world:activate(world:login(1, "00000002-0000-4000-8000-000000000002"))
+    local real_admit, real_encode = core.targets.admit, core.handoff.encode
+    core.targets.admit = function()
+      return { type = "acme_npcs.thing", id = "one", position = { x = 0, y = 0, z = 0 }, distance = 0 }
+    end
+    assert(world.api.interactions.register("acme_npcs.use", function()
+      return true
+    end, { target = "acme_npcs.thing", check = function()
+      -- The refusal's reason, then the answer, can be written only as the
+      -- plain `refused`, as if the codec rejected anything else.
+      core.handoff.encode = function(kind, fields)
+        if fields.ok == false and fields.reason ~= "refused" then
+          error("the codec refuses this")
+        end
+        return real_encode(kind, fields)
+      end
+      return false, "Not for you."
+    end }))
+    world.from_client(1, "rpf:interact", "1\n" .. assert(json.encode(json.object({ name = "acme_npcs.use", payload = json.object({}) }))))
+    core.handoff.encode, core.targets.admit = real_encode, real_admit
+    local answer
+    for _, sent in ipairs(world.to_clients) do
+      if sent.name == "rpf:interact" then
+        answer = assert(json.decode(sent.payload:match("^%d+\n(.*)$")))
+      end
+    end
+    local logged = world:logged("error", "acme_npcs.use refused with a reason that could not be read")
+    world.finish()
+    assert.are.equal("refused", answer.reason)
+    assert.are.equal(1, logged)
+  end)
+
   it("never gives back a newer registration's cooldown when a stale request gives its own back", function()
     local world = conformance.boot("mock")
     local core = world.core

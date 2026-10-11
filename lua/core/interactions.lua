@@ -385,6 +385,9 @@ local function on_interact(player, payload, respond)
       end
       if allowed ~= true then
         local read, text = pcall(encode_answer, name, false, why)
+        if not read then
+          p.log("error", "rpf: the check of the interaction " .. name .. " refused with a reason that could not be read; answering refused: " .. tostring(text))
+        end
         respond(read and text or refusal("refused"))
         return
       end
