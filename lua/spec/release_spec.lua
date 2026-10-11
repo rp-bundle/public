@@ -505,6 +505,50 @@ describe("the addon kit", function()
   end)
 end)
 
+describe("every Gmod addon", function()
+  -- Gmod mounts every addon's `lua/` over one tree, so two addons shipping
+  -- the same path collide and only one file loads; under `lua/autorun/`,
+  -- that is one addon silently not starting. Each addon keeps its files
+  -- under `lua/<name>/` and its one entry point at
+  -- `lua/autorun/[server/]<name>.lua`.
+  it("ships one autorun file, named after the addon, and no lua/ path another addon ships", function()
+    local addons = {}
+    for name in pairs(shipped("gmod")) do
+      local addon, path = name:match("^([^/]+)/(lua/.+)$")
+      if addon then
+        addons[#addons + 1] = { addon = addon, path = path }
+      end
+    end
+    for name in pairs(shipped("kit")) do
+      local addon, path = name:match("^gmod/([^/]+)/(lua/.+)$")
+      if addon then
+        addons[#addons + 1] = { addon = addon, path = path }
+      end
+    end
+    local owner, autoruns = {}, {}
+    for _, file in ipairs(addons) do
+      assert.is_nil(owner[file.path], file.path .. " ships in both " .. tostring(owner[file.path]) .. " and " .. file.addon)
+      owner[file.path] = file.addon
+      if file.path:match("^lua/autorun/") then
+        assert.is_nil(autoruns[file.addon], file.addon .. " ships a second autorun file, " .. file.path)
+        autoruns[file.addon] = file.path
+        assert.truthy(
+          file.path == "lua/autorun/" .. file.addon .. ".lua" or file.path == "lua/autorun/server/" .. file.addon .. ".lua",
+          file.path .. " is named after " .. file.addon
+        )
+      else
+        assert.truthy(file.path:find("lua/" .. file.addon .. "/", 1, true) == 1, file.path .. " is under lua/" .. file.addon .. "/")
+      end
+    end
+    for _, name in ipairs({ "rpf", "rpf_darkrp" }) do
+      assert.is_truthy(autoruns[name], name .. " ships an autorun file")
+    end
+    for _, name in ipairs(examples()) do
+      assert.is_truthy(autoruns[name], name .. " ships an autorun file")
+    end
+  end)
+end)
+
 describe("the txAdmin recipe", function()
   it("installs this release's FiveM zip, with OneSync on and both resources ensured", function()
     local recipe = read_file(DIR .. "/rpf-txadmin-recipe.yaml")

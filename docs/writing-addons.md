@@ -134,6 +134,10 @@ On Garry's Mod, an addon: the three files under `lua/acme_notes/`, and an
 autorun file, `lua/autorun/acme_notes.lua`, that includes them on each
 side and starts the server half at `Initialize`, when `rpf` is there
 ([`gmod/autorun.lua`](../lua/examples/acme_notes/gmod/autorun.lua)).
+Gmod mounts every addon's `lua/` over one tree, so keep to that shape: one
+autorun file, named after your addon, and everything else under
+`lua/<your addon>/`. Two addons shipping the same path collide, and only
+one of the files loads.
 
 ### 2. Declare the type
 
