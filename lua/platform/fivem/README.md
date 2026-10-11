@@ -327,8 +327,7 @@ The bundle targets Node 16, the oldest an FXServer that runs this ships.
   naming what stays (bans, warnings, game records). The password is sealed
   like the others and goes to the portal, never to Lua, and `ui.lua`
   refuses a `delete_account` callback the page does not say was confirmed.
-  A refusal shows the portal's message (`account_linked` points at the
-  in-game account page); `auth.account_deleted` shows a screen telling the
+  A refusal shows the portal's message; `auth.account_deleted` shows a screen telling the
   player to reconnect, with input still held. A player who is logged in, and
   so never sees the login screen, opens the same form with the client
   command `rpf_delete_account` (`RegisterCommand`, not restricted; F8 or

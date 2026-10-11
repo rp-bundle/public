@@ -1819,8 +1819,8 @@ fresh nonce, which the portal does not consume, and on `204` forgets the
 saved login and the session and moves to `deleted`, in which nothing more
 can be started on this connection. The player is still in the game, as an
 account that no longer exists, until they leave; the adapter tells them to
-reconnect. A refusal (`account_linked` for an account linked to a staff
-account, a wrong password) is `auth.failed` with `during = "delete_account"`,
+reconnect. A refusal (a wrong password, a staff reset's temporary one)
+is `auth.failed` with `during = "delete_account"`,
 and the login stands. The password goes in the body as a login's does, so
 FiveM's sealed handles work for it unchanged.
 

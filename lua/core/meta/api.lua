@@ -1599,9 +1599,9 @@ function Auth.logout() end
 
 ---Deletes the player's account at the portal, for good (H6): nobody can log
 ---in to it again, and its names, identifiers and logins are gone. Needs the
----account's own password; an account linked to a staff account is refused
----`account_linked` until the link is removed on the portal. Ends in
----`auth.account_deleted` or `auth.failed`. Once deleted the state is
+---account's own password. An account linked to a staff account is deleted
+---too: the link goes with it, and the portal takes its in-game permissions
+---away. Ends in `auth.account_deleted` or `auth.failed`. Once deleted the state is
 ---`deleted` and nothing more can be started on this connection: the player
 ---is still in the game until they leave, so tell them to reconnect.
 ---@param username string The username.
