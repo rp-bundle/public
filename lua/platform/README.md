@@ -104,7 +104,9 @@ function.
    shows (J10): `notify`, `menu`, `input` and `progress`, each over the
    engine's own toolkit where it has one, taking a spec `rpf.ui` checked
    and calling `done` once with what the player did; and `close(kind)`
-   takes away a window whose addon stopped.
+   takes away a window whose addon stopped. A menu option with an `image`
+   (P3, #361: what this platform's `item_image` answered for the item the
+   option names) is drawn with it beside the label.
 3. **The engine events**, two lines each: a player handed over calls
    `core.players.connected(handle)`, a player gone calls
    `core.players.dropped(handle, reason)`. Use the handle the engine keeps
@@ -142,7 +144,7 @@ function.
 | `random.lua` | `random_hex`: SHA-256 in counter mode over an entropy pool |
 | `lock.lua` | The input lock |
 | `ui.lua` | The Derma login form and character screen |
-| `addon_ui.lua` | The UI addons show (J10): Gmod's notifications, and a Derma menu, input dialog and progress bar |
+| `addon_ui.lua` | The UI addons show (J10): Gmod's notifications, and a Derma menu (an option's item image a `DImage` beside its button, #361), input dialog and progress bar |
 | `images.lua` | Item images (P3, `item_image`): fetched with `HTTP`, checked with `util.SHA256`, kept under `data/rpf/images/<hash>.png` (at most 512, the oldest written dropped), answered as the path `Material()` takes |
 | `dev.lua` | Development-only console commands for the smoke test; not shipped |
 | `meta/gwsockets.lua` | Annotations for GWSockets, which ships none |
@@ -229,9 +231,11 @@ for the clients' `HTTP`.
   (the character screen) and `rpf_delete_account` (H6, #322: the login
   screen's delete form, whose Back returns to the game or the character
   screen). All four UI kinds are supported
-  (`addon_ui.lua`): a progress bar is X to cancel, as on ox_lib, and an
+  (`addon_ui.lua`): a progress bar is X to cancel, as on ox_lib, an
   input dialog will not submit a required field left empty or a value out
-  of its bounds. Drawn on fake Derma only so far: a real Gmod client is
+  of its bounds, and a menu option that names an item gets a `DImage` of
+  it at the left of its button, from the path `images.lua` keeps (#361).
+  Drawn on fake Derma only so far: a real Gmod client is
   still to show them (layer 5).
 - *Item images* (P3, #243, `images.lua`): `HTTP` with the token in a
   header, the bytes checked with `util.SHA256`, written under `data/` by

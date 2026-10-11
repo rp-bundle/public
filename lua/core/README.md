@@ -1496,7 +1496,18 @@ answer is read by; `ui.read` reads an answer against it, on both sides.
   `true` for a bar that ran to its end, or nil and `cancelled`. One of each
   kind is open at a time (`busy`); `unsupported` where the adapter has
   none. It answers the server's `rpf:ui` requests the same way, with what
-  the player did, raw.
+  the player did, raw. A menu option that names an item (`item`, a slug
+  `[a-z][a-z0-9_]*` of at most `MAX_ITEM` bytes; P3, #361) is shown with
+  the item's image: before the adapter sees the spec, `with_images` asks
+  `rpf.items.image` for each distinct slug and puts what came under the
+  option as `image`, at once when every image is kept, else once all have
+  answered or `IMAGE_WAIT_MS` has passed. The spec carries the slug alone
+  from either side, never an image, so a server cannot make a client draw
+  anything but its own catalog's; an option whose image did not come keeps
+  its label. The kind is `busy` while the images are on their way, and a
+  close from the server meanwhile means the menu is never shown. An
+  adapter that throws once the wait is over says `failed` through the
+  callback (or the `rpf:ui_answer`), the call having been answered already.
 - **Server.** The four take the player's handle first. `notify` is a
   message (`rpf:ui_notify`); the other three are a request to the client
   (`rpf:ui`, `request_client`) with the spec alone: a menu's values and a
