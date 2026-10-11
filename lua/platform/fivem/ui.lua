@@ -21,27 +21,41 @@
 ---walking off mid-login.
 ---@class rpf.fivem.ui
 ---@field CALLBACKS string[] Every NUI callback name the page uses, each registered by `client.lua`.
+---@field HTTP_TIMEOUT_MS integer How long an HTTP request may wait for the page's answer before it is answered status 0. Longer than the page's own bound on `fetch` (`nui/bridge.js`), so a live page always answers first.
 local ui = {}
 
 local rpf = rpf
 
 ui.CALLBACKS = { "ready", "http", "image", "login", "register", "change_password", "delete_account", "close_delete", "create", "select", "refresh" }
 
----What the screens need from the client: the core and three engine actions.
+ui.HTTP_TIMEOUT_MS = 45000
+
+---What the screens need from the client: the core and four engine actions.
 ---@class rpf.fivem.ScreenDeps
 ---@field core rpf The core table, for `events`, `auth`, `picker` and `json`.
 ---@field send fun(text: string) Sends one JSON message to the page (`SendNuiMessage`).
 ---@field lock fun(on: boolean) Locks or releases the player's input: page focus and a frozen ped.
 ---@field log fun(level: string, message: string) The platform's log.
+---@field after fun(delay_ms: number, callback: fun()) Runs a callback once, later (the platform's `after`), for the HTTP deadline.
+
+---An HTTP request waiting for the page's answer.
+---@class rpf.fivem.PendingHttp
+---@field callback fun(status: integer, body: string, headers: table<string, string>) The platform caller's callback, called once.
+---@field sent boolean Whether the page was given the request. One still queued for a page not yet ready is not lost when that page says it is ready.
+
+---A message waiting for the page to be ready.
+---@class rpf.fivem.Queued
+---@field text string The encoded message.
+---@field http integer? The HTTP request it carries, if any. One that timed out while queued is never sent: its caller was already told it failed.
 
 ---The screens for one client.
 ---@class rpf.fivem.Screens
 ---@field deps rpf.fivem.ScreenDeps What it was built with.
 ---@field ready boolean Whether the page has said it is loaded. Messages wait in `queue` until it has.
----@field queue string[] Messages sent before the page was ready.
+---@field queue rpf.fivem.Queued[] Messages sent before the page was ready.
 ---@field screen string? The last screen message, sent again if the page reloads.
 ---@field locked boolean Whether input is locked.
----@field pending table<integer, fun(status: integer, body: string, headers: table<string, string>)> HTTP callbacks by request id, until the page answers.
+---@field pending table<integer, rpf.fivem.PendingHttp> HTTP requests by id, until the page answers, the deadline passes or the page reloads. Each is answered once, by whichever comes first.
 ---@field images table<integer, fun(src: string?, err: string?)> Item image callbacks by request id, until the page answers. Numbered with `next_id`, like HTTP requests.
 ---@field next_id integer The last HTTP request id handed out.
 ---@field returning { screen: string, locked: boolean }? What was up when the delete form was opened from the game (`open_delete`), to put back when the player backs out. Any other screen replaces the form and forgets it.
@@ -73,16 +87,46 @@ end
 
 ---Sends a message to the page, or keeps it until the page is ready.
 ---@param message table The message, encoded with `rpf.json`.
-function Screens:post(message)
+---@param http integer? The HTTP request it carries, if it is one.
+function Screens:post(message, http)
   local text = encode(self, message)
   if message.type == "screen" then
     self.screen = text
   end
   if self.ready then
-    self.deps.send(text)
+    self:deliver(text, http)
   else
-    self.queue[#self.queue + 1] = text
+    self.queue[#self.queue + 1] = { text = text, http = http }
   end
+end
+
+---Hands a message to the page, marking the HTTP request it carries as sent.
+---A request already answered (by its deadline) is dropped instead.
+---@param text string The encoded message.
+---@param http integer? The HTTP request it carries, if any.
+function Screens:deliver(text, http)
+  if http then
+    local request = self.pending[http]
+    if not request then
+      return
+    end
+    request.sent = true
+  end
+  self.deps.send(text)
+end
+
+---Answers an HTTP request with no response (status 0) and forgets it, so a
+---late answer from the page is refused.
+---@param id integer The request.
+---@param why string What happened, for the log.
+function Screens:abandon(id, why)
+  local request = self.pending[id]
+  if not request then
+    return
+  end
+  self.pending[id] = nil
+  self.deps.log("warn", "rpf: an HTTP request through the login page " .. why .. "; answering it as no response")
+  request.callback(0, "", {})
 end
 
 ---Locks or releases input, once per change.
@@ -286,6 +330,12 @@ end
 
 ---The client platform's `http_request`: the page makes the request with
 ---`fetch` and answers through the `http` callback.
+---
+---The platform promises the callback exactly once, and a page can fail to
+---keep that: it may reload, or never load, and take the request with it. So
+---the request is answered status 0 once `HTTP_TIMEOUT_MS` passes, or at once
+---when the page reloads, and the page's answer after that is refused. One
+---that times out before the page is ready is never sent at all.
 ---@param method string The method.
 ---@param url string The absolute url.
 ---@param headers table<string, string> Request headers.
@@ -294,19 +344,23 @@ end
 function Screens:http_request(method, url, headers, body, callback)
   local json = self.deps.core.json
   self.next_id = self.next_id + 1
-  self.pending[self.next_id] = callback
+  local id = self.next_id
+  self.pending[id] = { callback = callback, sent = false }
   local sent = json.object({})
   for key, value in pairs(headers or {}) do
     sent[key] = value
   end
+  self.deps.after(ui.HTTP_TIMEOUT_MS, function()
+    self:abandon(id, "had no answer from the page in " .. math.floor(ui.HTTP_TIMEOUT_MS / 1000) .. " s")
+  end)
   self:post({
     type = "http",
-    id = self.next_id,
+    id = id,
     method = method,
     url = url,
     headers = sent,
     body = body or json.null,
-  })
+  }, id)
 end
 
 ---The client platform's `item_image` (P3): the page fetches the image with
@@ -372,25 +426,39 @@ function Screens:nui(name, data)
     -- A page that says it is ready again has reloaded, and the page that
     -- had these requests is gone: none of them will be answered. A live
     -- page always answers, within its own fetch bound (`nui/images.js`).
+    -- HTTP requests the page was given are lost the same way, while one
+    -- still queued for it is sent now. They are answered only once the
+    -- screen is back: a failure they report is an error over that screen,
+    -- which showing the screen afterwards would wipe.
     local lost = self.images
     self.images = {}
     for _, done in pairs(lost) do
       done(nil, "unavailable")
     end
+    local sent = {}
+    for id, request in pairs(self.pending) do
+      if request.sent then
+        sent[#sent + 1] = id
+      end
+    end
+    table.sort(sent)
     self.ready = true
     local queued = self.queue
     self.queue = {}
     if #queued == 0 and self.screen then
-      queued = { self.screen }
+      queued = { { text = self.screen } }
     end
     for _, message in ipairs(queued) do
-      self.deps.send(message)
+      self:deliver(message.text, message.http)
+    end
+    for _, id in ipairs(sent) do
+      self:abandon(id, "was lost when the page reloaded")
     end
     return { ok = true }
   elseif name == "http" then
     local id = type(data) == "table" and tonumber(data.id) or nil
-    local callback = id and self.pending[id]
-    if not id or not callback then
+    local request = id and self.pending[id]
+    if not id or not request then
       return reply(false, "unknown request")
     end
     self.pending[id] = nil
@@ -402,7 +470,7 @@ function Screens:nui(name, data)
         end
       end
     end
-    callback(tonumber(data.status) or 0, text(data, "body") or "", headers)
+    request.callback(tonumber(data.status) or 0, text(data, "body") or "", headers)
     return { ok = true }
   elseif name == "image" then
     local id = type(data) == "table" and tonumber(data.id) or nil

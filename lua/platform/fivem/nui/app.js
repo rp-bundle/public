@@ -10,6 +10,7 @@
  * are.
  */
 
+import { Bridge } from "./bridge.js";
 import { IndexedDbStore, ItemImages, MemoryStore } from "./images.js";
 import { Sealed } from "./seal.js";
 
@@ -19,9 +20,6 @@ const sealed = new Sealed();
 const itemImages = IndexedDbStore.open()
   .catch(() => null)
   .then((store) => new ItemImages(store ?? new MemoryStore()));
-
-/** How long a portal request may take, headers and body, before it counts as no answer. */
-const HTTP_TIMEOUT_MS = 30_000;
 
 /**
  * The resource this page belongs to, which names its NUI callbacks. FiveM
@@ -33,23 +31,18 @@ function resource() {
   return named.GetParentResourceName ? named.GetParentResourceName() : "rpf";
 }
 
+/** NUI callbacks and portal requests (`bridge.js`). */
+const bridge = new Bridge({ resource: resource() });
+
 /**
  * Calls one of `ui.lua`'s NUI callbacks.
  * @param {string} name The callback.
  * @param {object} data What to send.
- * @returns {Promise<{ ok?: boolean, error?: string }>} Its answer, or `{}` if there was none.
+ * @param {{ quiet?: boolean }} [options] Whether to leave a failure out of the console.
+ * @returns {Promise<import("./bridge.js").Answer>} Its answer, or `UNANSWERED` if there was none.
  */
-async function call(name, data) {
-  try {
-    const response = await fetch(`https://${resource()}/${name}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json; charset=UTF-8" },
-      body: JSON.stringify(data),
-    });
-    return await response.json();
-  } catch {
-    return {};
-  }
+function call(name, data, options) {
+  return bridge.call(name, data, options);
 }
 
 /**
@@ -110,8 +103,8 @@ function list(characters) {
     button.textContent = String(character.name);
     button.addEventListener("click", async () => {
       const answer = await call("select", { id: String(character.id) });
-      if (answer.ok === false) {
-        showError(answer.error ?? "That did not work.");
+      if (!answer.ok) {
+        showError(answer.error);
       }
     });
     li.append(button);
@@ -169,41 +162,6 @@ function screen(message) {
 }
 
 /**
- * Makes an HTTP request for the client's core and hands back the answer.
- * Status 0 means no response arrived, as the platform interface says.
- * @param {Record<string, unknown>} message The request.
- */
-async function http(message) {
-  const headers = /** @type {Record<string, string>} */ (message.headers ?? {});
-  let status = 0;
-  let body = "";
-  /** @type {Record<string, string>} */
-  let received = {};
-  // A portal or proxy that stalls would otherwise leave the login waiting
-  // for ever; abandoned, it is status 0, an outage the core reports and lets
-  // the player retry. The bound covers the body as well as the headers.
-  const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), HTTP_TIMEOUT_MS);
-  try {
-    const response = await fetch(String(message.url), {
-      method: String(message.method),
-      headers,
-      body: sealed.unseal(typeof message.body === "string" ? message.body : null),
-      signal: abort.signal,
-    });
-    body = await response.text();
-    status = response.status;
-    received = Object.fromEntries(response.headers.entries());
-  } catch {
-    status = 0;
-    body = "";
-  } finally {
-    clearTimeout(timer);
-  }
-  await call("http", { id: message.id, status, body, headers: received });
-}
-
-/**
  * Fetches an item image for the client's core (`rpf.items.image`) and hands
  * back a `data:` URL, or why there is none. The token in `message.headers`
  * goes only to the portal, in a header.
@@ -227,7 +185,7 @@ window.addEventListener("message", (event) => {
     sealed.clear();
     showError(String(message.message));
   } else if (message.type === "http") {
-    void http(message);
+    void bridge.http(message, sealed);
   } else if (message.type === "image") {
     void image(message);
   }
@@ -262,7 +220,8 @@ function remember(form) {
 /**
  * Sends a request that starts an attempt, and shows a refusal at once. A
  * refused submission forgets only its own passwords: an earlier attempt may
- * still be waiting for a nonce, and its request needs the ones it sealed.
+ * still be waiting for a nonce, and its request needs the ones it sealed. One
+ * `ui.lua` never answered keeps them too, since it may have started.
  * @param {string} name The callback.
  * @param {object} data Its data, passwords already sealed.
  * @param {string[]} [handles] The handles sealed for this submission.
@@ -270,9 +229,11 @@ function remember(form) {
 async function attempt(name, data, handles = []) {
   showError(null);
   const answer = await call(name, data);
-  if (answer.ok === false) {
-    sealed.forget(handles);
-    showError(answer.error ?? "That did not work.");
+  if (!answer.ok) {
+    if (!answer.unanswered) {
+      sealed.forget(handles);
+    }
+    showError(answer.error);
   }
 }
 
@@ -333,7 +294,7 @@ byId("show-delete").addEventListener("click", () => switchTo("delete"));
 byId("cancel-delete").addEventListener("click", () => {
   if (deleteFromGame) {
     void call("close_delete", {}).then((answer) => {
-      if (answer.ok !== true && answer.error) {
+      if (!answer.ok) {
         showError(answer.error);
       }
     });
@@ -366,16 +327,18 @@ byId("create-form").addEventListener("submit", (event) => {
 /**
  * Tells `ui.lua` the page is ready for its screens, until it answers: the
  * page can load before the client script has registered its callbacks, and
- * until it hears this the screens wait.
+ * until it hears this the screens wait. The tries before that fail by
+ * design, so only giving up is reported.
  */
 async function announce() {
   for (let attempt = 0; attempt < 120; attempt += 1) {
-    const answer = await call("ready", {});
-    if (answer.ok === true) {
+    const answer = await call("ready", {}, { quiet: true });
+    if (answer.ok) {
       return;
     }
     await new Promise((wake) => setTimeout(wake, 500));
   }
+  console.error('rpf: the NUI callback "ready" never answered; the login screen cannot be shown');
 }
 
 void announce();

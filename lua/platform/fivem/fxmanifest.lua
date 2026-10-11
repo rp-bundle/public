@@ -99,6 +99,7 @@ ui_page("nui/index.html")
 files({
   "nui/index.html",
   "nui/app.js",
+  "nui/bridge.js",
   "nui/images.js",
   "nui/seal.js",
   "nui/style.css",
