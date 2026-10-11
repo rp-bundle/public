@@ -29,6 +29,12 @@ socket.
 
 ### Added
 
+- The addon walkthrough (J7, #84): `docs/writing-addons.md` now begins with
+  what RPF provides and what only the examples supply, then builds a new
+  example, `acme_notes`, step by step. The steps are the type, registering
+  and installing, records, interactions, the permission in the portal and
+  in game, a staff edit, a schema upgrade, retries and per-engine values.
+  `acme_notes` ships in the addon kit with the other examples.
 - The addon kit (J7, #84): each release gains `rpf-addon-kit-<version>.zip`,
   for addon authors and for nobody's server by default. It holds the API's
   annotations for the language server (`meta/`) and the example addons

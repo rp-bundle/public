@@ -32,7 +32,9 @@ the contract.
 - **State transitions on its own clock.** A tick counts the time since the
   plant's `ticked_at` with `rpf.time.elapsed`: one stage of growth per whole
   tick while it has water, `seed` → `sprout` → `grown`, or `withered` once
-  dry. This is active time: a plant grows only while a server holds it.
+  dry. This is active time, near enough: a plant grows only while a server
+  holds it, except that the first tick after an outage or a restart counts
+  up to `MAX_CATCH_UP_MS` of the time it was away (below).
 - **Collection and destruction.** `harvest` takes the gardener's grown
   plant out of the ground, and `uproot` pulls one up whatever its stage.
   A harvest that paid out an item would go through an exchange
