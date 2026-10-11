@@ -140,6 +140,20 @@ end
 
 conformance.run(busted, "the acme_garden example", {
   {
+    name = "reaches a plant from a step away on every engine, in the engine's own units",
+    run = function(world)
+      gardening(world)
+      local garden = rawget(_G, "acme_garden")
+      local plant = sown(world)
+      local step = garden.units(world.api, 1.5)
+      world.place(1, { x = 10 + step, y = 20, z = 30 })
+      assert.is_true(at(world, 1, "acme_garden.water", plant.id).ok, "a metre and a half away")
+      world.place(1, { x = 10 + garden.units(world.api, 3), y = 20, z = 30 })
+      local far = at(world, 1, "acme_garden.water", plant.id)
+      assert.are.same({ false, "too_far" }, { far.ok, far.reason }, "three metres away")
+    end,
+  },
+  {
     name = "sows a seed where the player stands and places it in the world; the portal keeps it",
     run = function(world)
       gardening(world)
