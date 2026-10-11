@@ -25,7 +25,7 @@ local ui = {}
 
 local rpf = rpf
 
-ui.CALLBACKS = { "ready", "http", "login", "register", "change_password", "create", "select", "refresh" }
+ui.CALLBACKS = { "ready", "http", "login", "register", "change_password", "delete_account", "create", "select", "refresh" }
 
 ---What the screens need from the client: the core and three engine actions.
 ---@class rpf.fivem.ScreenDeps
@@ -84,7 +84,7 @@ function Screens:lock(on)
 end
 
 ---Shows a screen.
----@param name "connecting"|"login"|"password"|"characters"|"closed" Which.
+---@param name "connecting"|"login"|"password"|"deleted"|"characters"|"closed" Which.
 ---@param fields table? What it shows.
 function Screens:show(name, fields)
   local message = { type = "screen", screen = name }
@@ -138,6 +138,12 @@ function Screens:start()
     self:show("login", { warning = prompt and prompt.warning or core.auth.PASSWORD_REUSE_WARNING })
   end)
   events.on("auth.failed", function(failure)
+    -- A refresh or logout that failed in the background is not the form's
+    -- to show, and an error on the page forgets every sealed password: a
+    -- deletion still waiting for its nonce would then send its handle as is.
+    if type(failure) == "table" and (failure.during == "refresh" or failure.during == "logout") then
+      return
+    end
     self:error(type(failure) == "table" and failure.message or "Something went wrong. Please try again.")
   end)
   events.on("auth.password_change_required", function(change)
@@ -145,6 +151,17 @@ function Screens:start()
       username = change.username,
       message = change.message,
       warning = core.auth.PASSWORD_REUSE_WARNING,
+    })
+  end)
+  -- The core is in `deleted` and starts nothing more, and the player is
+  -- still in the game as an account that no longer exists, so input stays
+  -- locked and the only way on is to reconnect.
+  events.on("auth.account_deleted", function(deleted)
+    self:lock(true)
+    self:show("deleted", {
+      message = "The account "
+        .. deleted.username
+        .. " was deleted. Disconnect and reconnect to this server to log in to another account or register a new one.",
     })
   end)
   -- The login lock ends here, on every server. On a native server the
@@ -283,6 +300,17 @@ function Screens:nui(name, data)
       return reply(false, "invalid")
     end
     return reply(core.auth.change_password(username, password, new_password, remember(data)))
+  elseif name == "delete_account" then
+    local username, password = text(data, "username"), text(data, "password")
+    if not username or not password then
+      return reply(false, "invalid")
+    end
+    -- The page requires the box, and a deletion cannot be undone, so one it
+    -- does not say was confirmed is refused here too.
+    if type(data) ~= "table" or data.confirmed ~= true then
+      return reply(false, "confirm that you want to delete the account")
+    end
+    return reply(core.auth.delete_account(username, password))
   elseif name == "create" then
     local first_name, last_name, gender = text(data, "first_name"), text(data, "last_name"), text(data, "gender")
     if not first_name or not last_name or not gender then

@@ -114,6 +114,23 @@ function list(characters) {
 }
 
 /**
+ * Empties every password field, and unticks the delete form's confirmation so
+ * a deletion is confirmed afresh each time the form is opened.
+ */
+function clearSecrets() {
+  for (const input of document.querySelectorAll('input[type="password"]')) {
+    if (input instanceof HTMLInputElement) {
+      input.value = "";
+    }
+  }
+  for (const input of document.querySelectorAll('input[name="confirmed"]')) {
+    if (input instanceof HTMLInputElement) {
+      input.checked = false;
+    }
+  }
+}
+
+/**
  * Shows one screen and hides the rest. A new screen ends any login attempt,
  * so the passwords it sealed are forgotten.
  * @param {Record<string, unknown>} message The screen message.
@@ -134,11 +151,7 @@ function screen(message) {
   if (name === "characters") {
     list(message.characters);
   }
-  for (const input of document.querySelectorAll('input[type="password"]')) {
-    if (input instanceof HTMLInputElement) {
-      input.value = "";
-    }
-  }
+  clearSecrets();
 }
 
 /**
@@ -266,6 +279,38 @@ byId("password-form").addEventListener("submit", (event) => {
     { username, password: handles[0], new_password: handles[1], remember: remember(form) },
     handles,
   );
+});
+
+/**
+ * Moves between the login form and the delete form without a message from
+ * `ui.lua`, which would end a login still waiting for its nonce: only what is
+ * shown changes, and the passwords typed on the screen left are cleared.
+ * @param {"login" | "delete"} name The screen to show.
+ */
+function switchTo(name) {
+  const from = byId(name === "delete" ? "login" : "delete");
+  const typed = from.querySelector('input[name="username"]');
+  showError(null);
+  clearSecrets();
+  byId("login").hidden = name !== "login";
+  byId("delete").hidden = name !== "delete";
+  const target = byId(name).querySelector('input[name="username"]');
+  if (typed instanceof HTMLInputElement && target instanceof HTMLInputElement) {
+    target.value = typed.value;
+  }
+}
+
+byId("show-delete").addEventListener("click", () => switchTo("delete"));
+byId("cancel-delete").addEventListener("click", () => switchTo("login"));
+
+byId("delete-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = formOf(event);
+  const { username = "", password = "" } = fields(form);
+  const box = form.elements.namedItem("confirmed");
+  const confirmed = box instanceof HTMLInputElement && box.checked;
+  const handle = sealed.seal(password);
+  void attempt("delete_account", { username, password: handle, confirmed }, [handle]);
 });
 
 byId("refresh").addEventListener("click", () => {

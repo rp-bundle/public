@@ -17,15 +17,30 @@
 ---password change) the form shows `PASSWORD_REUSE_WARNING`, and nothing here
 ---claims the server cannot see the password: the server sends this file.
 ---
+---The login form also leads to the form that deletes an account for good
+---(H6): the player types the account's username and password and ticks that
+---they understand it cannot be undone. The text says what stays (bans,
+---warnings, game records), and a refusal is the portal's own words, which
+---for an account linked to a staff account point at the portal's in-game
+---account page.
+---
 ---`rpf_characters` in the console opens the character screen again, to switch
 ---or put away the character in play.
 ---@class rpf.gmod.Ui
 ---@field WIDTH number Every screen's width, in pixels.
 ---@field GENDERS string[] The genders the create form offers. The core also accepts a server's own, which a server owner's screen can offer.
+---@field DELETE_WARNING string What the delete form says about what cannot be undone and what stays.
 local ui = {}
 
 ui.WIDTH = 440
 ui.GENDERS = { "male", "female" }
+
+---What the delete form says before anything is typed. It names what stays so
+---the player is not surprised by it: deleting an account removes the login,
+---not what staff or the game recorded about it.
+ui.DELETE_WARNING = "Deleting your account cannot be undone. Your username, your saved logins and your name "
+  .. "are removed for good, and nobody can log in to the account again. Bans, warnings and game records "
+  .. "(your characters, money and items) stay on this community's server."
 
 ---The core's internal table, from `install`.
 ---@type rpf
@@ -50,6 +65,11 @@ local browsing = false
 ---A failure that arrived with no form to show it in, shown by the next one.
 ---@type string?
 local pending_message = nil
+
+---The password reuse warning the last login form showed, so the delete form's
+---back button can show the same form again.
+---@type string
+local login_warning = ""
 
 ---Closes the screen on show.
 local function close()
@@ -169,10 +189,13 @@ local function attempt(working, started, err)
   end
 end
 
+local delete_account
+
 ---The login form: log in, or register a new account.
 ---@param warning string The password reuse warning, shown at the password.
 local function login(warning)
-  local f = window("Log in", 330)
+  login_warning = warning
+  local f = window("Log in", 390)
   label(f, "Log in to your account for this community, or register a new one.")
   local username = field(f, "Username")
   local password = field(f, "Password", true)
@@ -194,6 +217,35 @@ local function login(warning)
       core.auth.register(username:GetValue(), password:GetValue(), { remember = remember:GetChecked() })
     )
   end, true)
+  button(f, "Delete my account…", function()
+    delete_account()
+  end)
+  status_line(f)
+end
+
+---The form that deletes an account for good (H6). It asks for the account's
+---own username and password, and for a ticked box that the player understands
+---it cannot be undone, because nothing here can bring an account back.
+function delete_account()
+  local f = window("Delete my account", 420)
+  label(f, ui.DELETE_WARNING)
+  local username = field(f, "Username")
+  local password = field(f, "Password", true)
+  local confirm = vgui.Create("DCheckBoxLabel", f) --[[@as DCheckBoxLabel]]
+  confirm:Dock(TOP)
+  confirm:DockMargin(0, 4, 0, 4)
+  confirm:SetText("I understand this cannot be undone")
+  confirm:SetValue(false)
+  button(f, "Delete my account", function()
+    if not confirm:GetChecked() then
+      say("Tick the box to confirm that you want to delete the account.", false)
+      return
+    end
+    attempt("Deleting your account…", core.auth.delete_account(username:GetValue(), password:GetValue()))
+  end, true)
+  button(f, "Back", function()
+    login(login_warning)
+  end)
   status_line(f)
 end
 
@@ -212,6 +264,23 @@ local function change_password(change)
     )
   end, true)
   status_line(f)
+end
+
+---What a player sees once their account is deleted. They are still in the
+---game as an account that no longer exists, and the core starts nothing more
+---on this connection, so the only way on is to reconnect.
+---@param deleted rpf.AuthDeleted Whose account.
+local function account_deleted(deleted)
+  local f = window("Account deleted", 200)
+  label(
+    f,
+    "The account "
+      .. deleted.username
+      .. " was deleted. Disconnect and reconnect to this server to log in to another account or register a new one."
+  )
+  button(f, "Disconnect", function()
+    RunConsoleCommand("disconnect")
+  end)
 end
 
 ---The character select screen.
@@ -298,6 +367,9 @@ function ui.install(internal)
   end)
   events.on("auth.password_change_required", function(change)
     change_password(change)
+  end)
+  events.on("auth.account_deleted", function(deleted)
+    account_deleted(deleted)
   end)
   events.on("auth.failed", function(failure)
     if failure.during ~= "refresh" and failure.during ~= "logout" then

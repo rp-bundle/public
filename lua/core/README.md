@@ -1765,7 +1765,10 @@ Events: `auth.required`, `auth.succeeded`, `auth.failed` (with `code`,
 `message`, `during`, and `retry_after` when rate limited),
 `auth.password_change_required` and `auth.account_deleted`. The form that calls this is the adapter's:
 Gmod's is `lua/platform/gmod/ui.lua` (D8). FiveM's is an NUI page that keeps
-the password out of Lua altogether (`lua/platform/fivem/README.md`).
+the password out of Lua altogether (`lua/platform/fivem/README.md`). Both
+adapters' login screens lead to a delete form that asks for the username and
+password and a ticked box, says it cannot be undone and what stays, and
+shows `account_deleted` as a screen telling the player to reconnect.
 
 ### The public API
 

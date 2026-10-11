@@ -37,6 +37,12 @@ socket.
   `"license": "MIT"`. `rpf-ws` now ships `THIRD-PARTY-NOTICES`, the licence
   text of what the shim bundles (`ws`, MIT), in place of `LICENSE.ws`. The
   first release tag is no longer refused for want of a licence.
+- Account deletion on the login screens (H6, #229): a "Delete my account"
+  button beside "Log in" opens a form in the FiveM NUI page and the Gmod
+  Derma UI that asks for the username and password and a ticked box, says
+  it cannot be undone and that bans, warnings and game records stay, and
+  ends on a screen telling the player to reconnect. On FiveM the password
+  is sealed and goes to the portal without reaching Lua.
 - The property example (J8, #85): `lua/examples/acme_property/`,
   properties players buy and doors their owners lock, built on the public
   API and the generic types with no Rust, route, page, protocol variant or
