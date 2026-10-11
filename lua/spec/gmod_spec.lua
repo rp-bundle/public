@@ -918,7 +918,7 @@ describe("the Gmod adapter's client", function()
     assert.are.same({ "disconnect" }, world.console)
   end)
 
-  it("shows why a deletion was refused, an account linked to staff included", function()
+  it("shows why a deletion was refused", function()
     local gmod, world, record = at_login()
     button(gmod, world, "Delete my account"):DoClick()
     local fields = gmod.shown(world, "DTextEntry")
@@ -929,11 +929,11 @@ describe("the Gmod adapter's client", function()
     local request = record.requests[#record.requests]
     world:http_done(
       request.id,
-      403,
-      '{"error":"account_linked","message":"This account is linked to a staff account. Remove the link on the portal\'s in-game account page first, then delete the account."}',
+      401,
+      '{"error":"invalid_credentials","message":"That username and password do not match."}',
       {}
     )
-    assert.truthy(labels(gmod, world):find("in-game account page", 1, true))
+    assert.truthy(labels(gmod, world):find("do not match", 1, true))
     assert.is_true(button(gmod, world, "Delete my account").enabled)
     assert.are_not.equal("deleted", world.core.auth.state())
   end)
@@ -1029,11 +1029,11 @@ describe("the Gmod adapter's client", function()
     button(gmod, world, "Delete my account"):DoClick()
     world:http_done(
       record.requests[#record.requests].id,
-      403,
-      '{"error":"account_linked","message":"This account is linked to a staff account. Remove the link on the portal\'s in-game account page first, then delete the account."}',
+      401,
+      '{"error":"invalid_credentials","message":"That username and password do not match."}',
       {}
     )
-    assert.truthy(labels(gmod, world):find("in-game account page", 1, true))
+    assert.truthy(labels(gmod, world):find("do not match", 1, true))
     assert.are.equal("authenticated", world.core.auth.state())
   end)
 

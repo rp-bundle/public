@@ -586,8 +586,9 @@ end
 ---Deletes the player's account at the portal (H6), for good: what is left
 ---is a tombstone nobody can log in to, and its names, identifiers and
 ---logins are gone. It needs the account's own password (a staff reset's
----temporary one is not enough), and an account linked to a staff account is
----refused `account_linked` until the link is removed on the portal.
+---temporary one is not enough). An account linked to a staff account is
+---deleted too: the link goes with it, and the portal takes its in-game
+---permissions away.
 ---
 ---Ends in `auth.account_deleted` or `auth.failed`. Once deleted, this
 ---device's saved login and the session are forgotten, the state is

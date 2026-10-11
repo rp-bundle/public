@@ -79,6 +79,11 @@ socket.
   command of that name on FiveM (F8 or chat), with the same text,
   confirmation and sealed password. Back returns to the game, or to the
   character screen.
+- A player linked to a staff account can delete their own account (H6,
+  #331): it is no longer refused `account_linked`. The link goes with the
+  account, the staff account stays, and the portal pushes the guild's servers
+  their staff lists, so the link's in-game permissions go at once, as when
+  staff delete the account.
 - Unknown facade operations in the portal (K2 follow-up, #274): the core
   reports every operation its journal could not vouch for
   (`report_unknown_ops`), as it arises and after each `Welcome` until the

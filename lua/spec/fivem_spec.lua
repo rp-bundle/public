@@ -1819,7 +1819,7 @@ describe("the FiveM adapter", function()
       end
     end)
 
-    it("shows why a deletion was refused, an account linked to staff included", function()
+    it("shows why a deletion was refused", function()
       local driver = started_client()
       driver.nui("ready", {})
       nonce(driver)
@@ -1828,16 +1828,16 @@ describe("the FiveM adapter", function()
       local request = nui_messages(driver)[#driver.nui_sent]
       driver.nui("http", {
         id = request.id,
-        status = 403,
+        status = 401,
         body = rpf.json.encode(rpf.json.object({
-          error = "account_linked",
-          message = "This account is linked to a staff account. Remove the link on the portal's in-game account page first, then delete the account.",
+          error = "invalid_credentials",
+          message = "That username and password do not match.",
         })),
         headers = {},
       })
       local error = nui_messages(driver)[#driver.nui_sent]
       assert.are.equal("error", error.type)
-      assert.truthy(error.message:find("in-game account page", 1, true))
+      assert.truthy(error.message:find("do not match", 1, true))
       assert.are_not.equal("deleted", rpf.auth.state())
       assert.is_true(driver.nui("delete_account", { username = "sam", password = sealed, confirmed = true }).ok, "the login stands, so the player may try again")
     end)
