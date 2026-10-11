@@ -433,6 +433,41 @@ conformance.run(busted, "Interactions with targets", {
     end,
   },
   {
+    name = "checks everything again after a check that may have yielded, and every later option as things are then",
+    run = function(world)
+      ready(world)
+      local json = world.core.json
+      local ref = assert(world.api.world.placed("acme_npcs.greeter", NEAR))
+      assert(world.api.interactions.register("acme_npcs.nod", function()
+        return true
+      end, { target = "acme_npcs.greeter", check = function()
+        -- As a check that yields might resume: the player walked away.
+        world.place(1, { x = 500, y = 20, z = 30 })
+        return true
+      end }))
+      local answer = ask(world, "rpf:targets", json.object({}))
+      assert.are.same({}, listed(answer), "nod's target is out of reach now, and so are talk and rest")
+      world.place(1, { x = 10, y = 20, z = 30 })
+      local offered = ask(world, "rpf:target_offers", json.object({ ref = ref, names = json.array({ "acme_npcs.nod", "acme_npcs.bow" }) }))
+      assert.are.same({}, offered.names)
+    end,
+  },
+  {
+    name = "offers nothing whose addon reloaded while its check ran",
+    run = function(world)
+      ready(world)
+      assert(world.api.interactions.register("acme_npcs.nod", function()
+        return true
+      end, { target = "acme_npcs.greeter", check = function()
+        -- As a check that yields might resume: the addon reloaded meanwhile.
+        assert(world.api.addons.register(manifest(), {}))
+        return true
+      end }))
+      local answer = ask(world, "rpf:targets", world.core.json.object({}))
+      assert.are.same({}, listed(answer))
+    end,
+  },
+  {
     name = "lets a player have at most MAX_LISTING listings running, as checks that yield would leave them",
     run = function(world)
       ready(world)

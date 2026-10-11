@@ -540,41 +540,71 @@ local function end_listing(player)
   listing[id] = running > 0 and running or nil
 end
 
----Whether the addon's own check lets a player use an interaction on a
----target, run as a request runs it (in the addon's context, under `pcall`,
----with a copy of each), for a listing: within its budget, and only while
----the registration and the player are still the ones listed for, since an
----earlier check may have yielded. Not run, failed or refused are all false.
+---The player as they are now, if still the one a listing is for, logged in
+---and in the world: a check that yielded may resume after they left.
+---@param player rpf.PlayerView The player the listing is for.
+---@return rpf.PlayerView? fresh A fresh copy, or nil.
+local function still(player)
+  local fresh = rpf.players.get(player.handle)
+  if not fresh or fresh.player_id ~= player.player_id or fresh.state ~= "active" then
+    return nil
+  end
+  return fresh
+end
+
+---Whether a player is offered an interaction on a target for a listing:
+---everything a request for it would pass, the same way. The registration
+---is still the one listed and its addon running; `admit` (permission,
+---cooldown, the target as the server has it now) passes for the player as
+---they are now; and the addon's own check, if it has one, answers `true`,
+---run in its context under `pcall` with copies, within the listing's
+---budget. A check may yield, so after it everything is checked again as a
+---request checks it: the same activation, the player still here, and the
+---same target admitted. Not run, failed, refused or changed are all no.
 ---@param entries table<string, { rules: rpf.targets.Rules?, namespace: string }> The registrations, by name, as they are now.
 ---@param name string The interaction.
 ---@param entry { rules: rpf.targets.Rules?, namespace: string } Its registration, as listed.
 ---@param player rpf.PlayerView The player.
----@param target rpf.targets.Target The resolved target.
+---@param named table What a request would name: `{ id }` or `{ ref }`.
 ---@param budget rpf.targets.Budget What the listing may still spend.
----@return boolean passes True if the check ran and answered `true`, or there is none.
-local function passes(entries, name, entry, player, target, budget)
+---@return rpf.targets.Target? target The target as admitted, if offered.
+local function vet(entries, name, entry, player, named, budget)
   local rules = entry.rules --[[@as rpf.targets.Rules]]
+  if entries[name] ~= entry or not rpf.addons.running(entry.namespace) then
+    return nil
+  end
+  local fresh = still(player)
+  local target = fresh and targets.admit(name, rules, fresh, { target = named }) or nil
+  if not fresh or not target then
+    return nil
+  end
   if rules.check == nil then
-    return true
+    return target
   end
   local p = assert(platform)
   if budget.checks >= targets.MAX_CHECKS or p.now() - budget.since >= targets.CHECK_BUDGET_MS then
-    return false
-  end
-  if entries[name] ~= entry or not rpf.addons.running(entry.namespace) then
-    return false
-  end
-  local fresh = rpf.players.get(player.handle)
-  if not fresh or fresh.player_id ~= player.player_id or fresh.state ~= "active" then
-    return false
+    return nil
   end
   budget.checks = budget.checks + 1
-  local ran, allowed = rpf.addons.run(rpf.addons.context_of(entry.namespace), rules.check, fresh, targets.copy(target))
+  local context = rpf.addons.context_of(entry.namespace)
+  local ran, allowed = rpf.addons.run(context, rules.check, fresh, targets.copy(target))
   if not ran then
     p.log("error", "rpf: the check of the interaction " .. name .. " failed while listing: " .. tostring(allowed))
-    return false
+    return nil
   end
-  return allowed == true
+  if allowed ~= true then
+    return nil
+  end
+  local now = rpf.addons.context_of(entry.namespace)
+  if entries[name] ~= entry or not rpf.addons.running(entry.namespace) or not now or not context or now.run ~= context.run then
+    return nil
+  end
+  fresh = still(player)
+  local again = fresh and targets.admit(name, rules, fresh, { target = named }) or nil
+  if not again or not targets.same(target, again) then
+    return nil
+  end
+  return again
 end
 
 ---The options near a player: each type's rule's records within its reach,
@@ -613,20 +643,21 @@ function targets.options(entries, player)
           found[#found + 1] = {
             name = name,
             entry = entry,
-            target = { type = rules.type, id = record.id, record = record, position = spot, distance = rpf.world.metres(d) },
+            id = record.id,
+            distance = d,
           }
         end
       end
     end
   end
   table.sort(found, function(a, b)
-    if a.target.distance ~= b.target.distance then
-      return a.target.distance < b.target.distance
+    if a.distance ~= b.distance then
+      return a.distance < b.distance
     end
     if a.name ~= b.name then
       return a.name < b.name
     end
-    return a.target.id < b.target.id
+    return a.id < b.id
   end)
   local budget = begin_listing(player)
   if not budget then
@@ -637,14 +668,15 @@ function targets.options(entries, player)
     if #out >= targets.MAX_NEARBY then
       break
     end
-    if passes(entries, option.name, option.entry, player, option.target, budget) then
+    local target = vet(entries, option.name, option.entry, player, { id = option.id }, budget)
+    if target then
       local rules = option.entry.rules --[[@as rpf.targets.Rules]]
       out[#out + 1] = {
         name = option.name,
         label = rules.label or option.name,
-        type = option.target.type,
-        id = option.target.id,
-        distance = option.target.distance,
+        type = target.type,
+        id = target.id,
+        distance = target.distance,
       }
     end
   end
@@ -678,8 +710,7 @@ function targets.offers(entries, player, ref, names)
     local rules = entry and entry.rules
     if not seen[name] and rules and (rules.type or rules.models) and rpf.addons.running(entry.namespace) then
       seen[name] = true
-      local target = targets.admit(name, rules, player, { target = { ref = ref } })
-      if target and passes(entries, name, entry, player, target, budget) then
+      if vet(entries, name, entry, player, { ref = ref }, budget) then
         out[#out + 1] = name
       end
     end
@@ -844,20 +875,19 @@ local offer_refs = 0
 ---is one request.
 ---@type table<any, table<string, true>>
 local to_ask = {}
----Refs with a request waiting for its answer.
----@type table<any, true>
+---The request waiting for its answer about each ref, by ref: a token its
+---answer must still find here to be kept, so one `recheck` or a change of
+---rules has made stale is dropped, and does not hold up a new one.
+---@type table<any, table>
 local offers_asking = {}
 ---How many `rpf:target_offers` requests are waiting.
 local offers_waiting = 0
 ---Whether a turn of the clock is due to send what is gathered.
 local offers_due = false
----Bumped whenever every answer is forgotten, so one that comes after is dropped.
-local offers_epoch = 0
-
 ---Forgets every answer about entities: the rules changed, or the client is
----keeping too many.
+---keeping too many. An answer still on its way is dropped when it comes.
 local function forget_offers()
-  offers, offer_refs, offers_epoch = {}, 0, offers_epoch + 1
+  offers, offer_refs, offers_asking = {}, 0, {}
 end
 
 ---Asks the server about one entity's gathered rules, if a request may go now.
@@ -877,9 +907,9 @@ local function ask_offers(p, ref, names)
   while #list > targets.MAX_OFFER_NAMES do
     list[#list] = nil
   end
-  local epoch = offers_epoch
+  local token = {}
   local finished = false
-  offers_asking[ref], offers_waiting = true, offers_waiting + 1
+  offers_asking[ref], offers_waiting = token, offers_waiting + 1
   ---Keeps the answer, once: nil (no answer, or a timeout) keeps nothing, so
   ---the next look asks again.
   ---@param said table<string, true>? The names offered.
@@ -888,8 +918,12 @@ local function ask_offers(p, ref, names)
       return
     end
     finished = true
-    offers_asking[ref], offers_waiting = nil, offers_waiting - 1
-    if not said or epoch ~= offers_epoch then
+    offers_waiting = offers_waiting - 1
+    if offers_asking[ref] ~= token then
+      return -- made stale since it was asked
+    end
+    offers_asking[ref] = nil
+    if not said then
       return
     end
     if not offers[ref] then
@@ -972,12 +1006,14 @@ end
 
 ---Forgets what the server said about an entity, so the next look asks
 ---again: a request was just made there, which may have started a cooldown
----or changed what is offered.
+---or changed what is offered. An answer still on its way was given before,
+---so it is dropped when it comes.
 ---@param ref any The entity's ref.
 function targets.recheck(ref)
   if offers[ref] then
     offers[ref], offer_refs = nil, offer_refs - 1
   end
+  offers_asking[ref] = nil
 end
 
 ---Tells the player something went wrong, through the client's UI if it has

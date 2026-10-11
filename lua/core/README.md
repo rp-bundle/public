@@ -1448,8 +1448,11 @@ on both sides, before `rpf.interactions`.
   addon's context, `pcall`, a copy of the player and the target, only
   `true` passes, a throw logged), so a menu never lists what the addon
   will refuse. Checks may yield, so one listing runs at most `MAX_CHECKS`
-  (32), nearest first, starts none after `CHECK_BUDGET_MS` (2 s), and
-  skips one whose registration, addon or player changed meanwhile; a
+  (32), nearest first, and starts none after `CHECK_BUDGET_MS` (2 s).
+  Each option is admitted as the player and the target are when it is
+  reached, and after its check everything is checked again as a request
+  checks it (the same activation, the player still here, the same target
+  admitted), since a check that yielded may resume after they changed; a
   player may have at most `MAX_LISTING` (4) running, past which a listing
   answers nothing. An option whose check did not run is left out.
 - **Client.** `start_client` keeps the server's `rpf:target_rules` and

@@ -155,6 +155,21 @@ describe("rpf.targets on the client", function()
     assert.is_false(targets.offered("acme_npcs.talk", 8))
   end)
 
+  it("drops an answer asked before a recheck, and asks again at once", function()
+    local targets = rpf.targets
+    targets.offered("acme_npcs.talk", 7)
+    c.advance(0)
+    local stale = offer_requests()[1]
+    targets.recheck(7)
+    targets.offered("acme_npcs.talk", 7)
+    c.advance(0)
+    assert.are.equal(2, #offer_requests(), "not held up by the stale one")
+    stale.callback(offers_reply({ "acme_npcs.talk" }))
+    assert.is_false(targets.offered("acme_npcs.talk", 7), "the stale answer is dropped")
+    offer_requests()[2].callback(offers_reply({}))
+    assert.is_false(targets.offered("acme_npcs.talk", 7))
+  end)
+
   it("has at most MAX_OFFERS_ASKING requests waiting, drops a late answer after the rules change, and asks again after a timeout", function()
     local targets = rpf.targets
     for ref = 1, targets.MAX_OFFERS_ASKING + 1 do
