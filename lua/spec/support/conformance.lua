@@ -379,11 +379,12 @@ end
 ---with the same fake portal and clock, not yet connected. The world is
 ---the new one in place, so a case's handle on it stays good.
 ---@param storage table<string, string>? What the new process finds.
-function World:restart(storage)
+---@param map string? The map the new process runs, as after a map change (#369); the engine's default unless given.
+function World:restart(storage, map)
   local kv = storage or self:snapshot()
   local name, portal, time = self.platform_name, self.portal, self.time
   self.finish()
-  conformance.boot(name, { kv = kv, portal = portal, time = time, into = self })
+  conformance.boot(name, { kv = kv, portal = portal, time = time, into = self, map = map })
 end
 
 ---Puts a player in the game as the engine does, logs them in as an account
@@ -478,6 +479,7 @@ end
 ---@field portal spec.FakePortal? The fake portal, which outlives a game server.
 ---@field time number? The clock.
 ---@field into table? The world table to boot into (`World:restart`).
+---@field map string? The map the game server runs (#369): the mock host's, FiveM's `rpf_map`, Gmod's `game.GetMap()`. Each engine's default unless given.
 
 ---A host for a mock platform: a clock the world moves, storage, and a log;
 ---the socket and HTTP go nowhere, since the cases install addons by config.
@@ -492,6 +494,7 @@ local function host_for(world, opts)
   world.portal = opts.portal or { records = {}, frames = {}, owned = {} }
   world.time = opts.time or world.time
   return {
+    map = opts.map,
     now = function()
       return world.time
     end,
@@ -613,7 +616,12 @@ local function boot_fivem(opts)
   local mock = dofile(support.path("lua/platform/mock/init.lua"))
   local fakes = dofile(support.path("lua/platform/mock/fivem.lua")).bind(mock)
   local host = host_for(world, opts)
-  local driver = fakes.server(_G, host, 1, { rpf_url = "wss://portal.test/ws", rpf_api_key = "rpf_sk_conformance" })
+  local driver = fakes.server(
+    _G,
+    host,
+    1,
+    { rpf_url = "wss://portal.test/ws", rpf_api_key = "rpf_sk_conformance", rpf_map = opts and opts.map }
+  )
   for _, script in ipairs(fakes.scripts(support.read("lua/platform/fivem/fxmanifest.lua"), "server")) do
     dofile(support.path(fivem_path(script)))
   end
@@ -679,6 +687,7 @@ local function boot_gmod(opts)
       return support.read("lua/" .. relative)
     end,
     convars = { rpf_ws_url = "wss://portal.test/ws", rpf_api_key = "rpf_sk_conformance" },
+    map = opts and opts.map,
   })
   fake:boot()
   local core = fake.core

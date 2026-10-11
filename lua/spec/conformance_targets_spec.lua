@@ -9,8 +9,8 @@
 -- server decides, from its own state, whether the player is in the world,
 -- may, is past their cooldown, and is near a visible record in their bucket
 -- or an entity of the right model, and only then runs the handler, with the
--- target resolved. Missing, hidden, another bucket and another type are one
--- answer.
+-- target resolved. Missing, hidden, another bucket, another map (#369) and
+-- another type are one answer.
 
 local conformance = require("spec.support.conformance")
 
@@ -24,6 +24,7 @@ local HIDDEN = "0000000c-0000-4000-8000-00000000000c"
 local ELSEWHERE = "0000000d-0000-4000-8000-00000000000d"
 local AREA = "0000000e-0000-4000-8000-00000000000e"
 local MISSING = "0000000f-0000-4000-8000-00000000000f"
+local ABROAD = "00000010-0000-4000-8000-000000000010"
 local MODELS = { fivem = "a_m_y_business_01", gmod = "models/humans/group01/male_02.mdl", mock = "mock_greeter" }
 
 ---An addon with greeters (placed peds) and areas (zones).
@@ -54,8 +55,9 @@ local function manifest()
         fields = {
           centre = { type = "vector3", required = true },
           radius = { type = "number", required = true },
+          map = { type = "string", index = true, nullable = true },
         },
-        world = { kind = "zone", position = "centre", radius = "radius" },
+        world = { kind = "zone", position = "centre", radius = "radius", map = "map" },
       },
     },
   }
@@ -137,6 +139,13 @@ local function ready(world, extra)
     greeter(ELSEWHERE, point(world, 10, 19, 30), { bucket = 5 }),
     -- Six metres across, on every engine.
     { id = AREA, type = "acme_npcs.area", revision = 1, fields = { centre = point(world, 10, 20, 25), radius = 6 } },
+    -- The same area, on a map this server does not run: never in reach.
+    {
+      id = ABROAD,
+      type = "acme_npcs.area",
+      revision = 1,
+      fields = { centre = point(world, 10, 20, 25), radius = 6, map = "rp_elsewhere" },
+    },
   }
   entry.records = assert(json.decode(assert(json.encode(json.array(records)))))
   world:install({ entry })
@@ -216,6 +225,9 @@ conformance.run(busted, "Interactions with targets", {
         assert.is_false(answer.ok, id)
         assert.are.equal("not_found", answer.reason, id)
       end
+      -- A zone on another map is not there, however close its centre.
+      assert.is_true(interact(world, "acme_npcs.rest", { id = AREA }).ok)
+      assert.are.equal("not_found", interact(world, "acme_npcs.rest", { id = ABROAD }).reason)
       local none = interact(world, "acme_npcs.talk", nil)
       assert.are.equal("not_found", none.reason)
       local far = interact(world, "acme_npcs.talk", { id = FAR })
@@ -292,7 +304,7 @@ conformance.run(busted, "Interactions with targets", {
     end,
   },
   {
-    name = "lists what is near the player, nearest first, offered to them, and nothing hidden or elsewhere",
+    name = "lists what is near the player, nearest first, offered to them, and nothing hidden, elsewhere or on another map",
     run = function(world)
       ready(world)
       local answer = ask(world, "rpf:targets", world.core.json.object({}))

@@ -87,7 +87,11 @@ include it: the txAdmin recipe installs it, and by hand you download
 
 Optional convars: `set rpf_portal_url "https://portal.example"` when
 players reach the portal's web address somewhere other than the websocket's
-host, and `set rpf_debug "true"` for the core's debug lines. Other
+host, `set rpf_debug "true"` for the core's debug lines, and `set rpf_map
+"<name>"` when the server loads a setup of the map whose placed things
+staff keep apart, such as an event's: things placed in the portal for
+another map name stay out of the world. Without it the map is `default`.
+`restart rpf` takes a new name. Other
 resources reach the framework as `exports.rpf:api()`
 ([the FiveM adapter](../lua/platform/fivem/README.md)).
 
@@ -206,6 +210,9 @@ framework's Lua when they join. Optional: `rpf_portal_url
 "https://portal.example"` when players reach the portal's web address
 somewhere other than the websocket's host. Other addons reach the framework
 through the `rpf` global ([the platform adapters](../lua/platform/README.md)).
+Things staff place in the portal for one map appear only on that map: the
+server reports the map it loaded, and a map change reconnects with the new
+one.
 
 ### Upgrading
 

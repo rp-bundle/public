@@ -229,6 +229,9 @@ end
 ---@type rpf.ServerPlatform
 local platform = {
   engine = "gmod",
+  -- The map this Lua state runs: a map change ends the state, so it never
+  -- changes under the core (#369).
+  map = game.GetMap(),
   connect = transport.connect,
   disconnect = transport.disconnect,
   send = transport.send,

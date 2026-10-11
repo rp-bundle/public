@@ -82,6 +82,7 @@ end
 ---@field kick fun(player: any, reason: string) Disconnects a player, as the engine would.
 ---@field notify fun(player: any, message: string) Shows a player a message.
 ---@field to_client fun(player: any, name: string, payload: string) Carries a message to that player's client.
+---@field map string? The map this process runs (#369); `default` unless given.
 ---@field log fun(level: string, message: string) Writes a log line.
 
 ---What the harness supplies to a mock client platform.
@@ -251,6 +252,8 @@ function mock.server(host, seed)
   p.entity_seq = 0
   -- Positions in the mock are metres, as FiveM's are.
   p.units_per_metre = 1
+  -- The map the host says this process runs (#369), fixed until it stops.
+  p.map = host.map or "default"
 
   ---A networked entity in the mock's world.
   ---@class rpf.mock.Entity

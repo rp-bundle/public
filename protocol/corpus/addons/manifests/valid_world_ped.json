@@ -44,6 +44,12 @@
           "label": {
             "type": "string",
             "max_len": 48
+          },
+          "map": {
+            "type": "string",
+            "max_len": 64,
+            "index": true,
+            "nullable": true
           }
         },
         "world": {
@@ -52,7 +58,8 @@
           "heading": "heading",
           "bucket": "bucket",
           "model": "model",
-          "visible": "shown"
+          "visible": "shown",
+          "map": "map"
         }
       }
     }

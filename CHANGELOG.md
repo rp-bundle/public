@@ -26,12 +26,21 @@ editing (E6: `config_changed`, `config_change_applied` and
 record refers to), an
 item's `image` hash in the config snapshot (P3), and the profile (K1) in
 `hello` (optional: a core that leaves it out runs native) and `welcome`,
-and the `report_unknown_ops` notice (#274). A
+the `report_unknown_ops` notice (#274), and the map the game server runs
+in `hello` (#369; `default` when left out). A
 message newer than a connection's protocol is refused `malformed` at the
 socket.
 
 ### Added
 
+- Placements know which map they belong to (#369). A game server reports
+  the map it runs in `Hello`: `game.GetMap()` on Gmod, and on FiveM the
+  new `rpf_map` convar, which names one setup of the one map (`default`
+  unset). A world type may name a `map` field (an indexed string) in its
+  `world`, and the core places and targets only the records on the map it
+  runs, or those whose map is null, which are on every map.
+  `rpf.api.world.map()` says which map that is. Each placement's page
+  shows its map.
 - Item images on the player's client (#243). `rpf.api.items.image(slug,
   callback)` hands an addon an item's image ready to draw: a `data:` URL on
   FiveM, for an `<img>` in any resource's page or ox_lib's `image`, and a

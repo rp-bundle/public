@@ -267,6 +267,21 @@ describe("the FiveM adapter", function()
       assert.are.equal("fivem", platform.engine)
       local hello = frames(record, "hello")[1]
       assert.are.equal("fivem", hello.engine)
+      assert.are.equal("default", hello.map, "no rpf_map: the one map's default setup")
+    end)
+
+    it("reports the map setup the owner names in rpf_map, and the default for an empty one", function()
+      for given, reported in pairs({ ["rp_event_xmas"] = "rp_event_xmas", [""] = "default" }) do
+        local convars = { rpf_map = given }
+        for name, value in pairs(CONVARS) do
+          convars[name] = value
+        end
+        local driver, record = load_side("server", convars)
+        driver.start()
+        driver.socket_open(record.connects[1].id)
+        assert.are.equal(reported, frames(record, "hello")[1].map, given)
+        assert.are.equal(reported, (rpf.world.map()), given)
+      end
     end)
 
     it("does not connect without its convars, and says which", function()

@@ -1,0 +1,18 @@
+{
+  "description": "A map's name is at most 64 bytes.",
+  "type": "sign",
+  "fields": {
+    "spot": {
+      "x": 1,
+      "y": 2,
+      "z": 3
+    },
+    "map": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+  },
+  "expect": {
+    "error": {
+      "error": "too_long",
+      "field": "map"
+    }
+  }
+}

@@ -89,8 +89,12 @@ troubleshooting section is keyed by.
 leaves it stopped, because FiveM stops a resource with its dependency but
 does not start it again, so follow it with `ensure rpf`. Optional:
 `set rpf_portal_url "https://portal.example"` when the portal's HTTP address
-is not the websocket's host, and `set rpf_debug "true"` for the core's debug
-lines.
+is not the websocket's host, `set rpf_debug "true"` for the core's debug
+lines, and `set rpf_map "<name>"` to name the map setup this server runs
+(#369): FiveM has one map, so this is the name staff give the records of
+one setup (an event's, say), and the core places only those and the ones on
+every map. `default` when unset. It is read as the resource starts, so
+change it with `restart rpf`.
 
 Other resources reach the public API (`rpf.api`, `lua/core/README.md`) as an
 export:

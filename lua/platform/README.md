@@ -38,6 +38,12 @@ function.
    - `now` is the wall clock in milliseconds; `after` runs later, never inside
      the caller.
    - `random_hex` from the best source the engine has.
+   - `map` is the map this process runs, a non-empty string reported in
+     `Hello` (#369): Gmod's `game.GetMap()`, FiveM's `rpf_map` convar
+     (`default` when unset or empty, since FiveM has one map and the name
+     is a setup's). Read once as the adapter starts: a map change is a new
+     process. The core decides which world records are placed and
+     targetable by it.
    - `units_per_metre` is how many of the engine's position units are a
      metre: 1 on FiveM, 39.37 on Gmod (Hammer units), a positive finite
      number. The core multiplies every distance an addon gives in metres

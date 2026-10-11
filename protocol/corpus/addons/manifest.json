@@ -117,6 +117,26 @@
           "type": "text"
         }
       }
+    },
+    "sign": {
+      "schema": 1,
+      "authority": "config",
+      "fields": {
+        "spot": {
+          "type": "vector3",
+          "required": true
+        },
+        "map": {
+          "type": "string",
+          "index": true,
+          "nullable": true
+        }
+      },
+      "world": {
+        "kind": "point",
+        "position": "spot",
+        "map": "map"
+      }
     }
   }
 }

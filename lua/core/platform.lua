@@ -18,7 +18,7 @@ local platform = {}
 
 ---Members that are not functions, and what they are.
 ---@type table<string, "string"|"table"|"number">
-local KINDS = { engine = "string", capabilities = "table", ui = "table", units_per_metre = "number" }
+local KINDS = { engine = "string", map = "string", capabilities = "table", ui = "table", units_per_metre = "number" }
 
 ---Builds a member list from names, all functions but those `KINDS` names.
 ---@param names string[] The member names, in the order the README lists them.
@@ -33,6 +33,7 @@ end
 
 platform.SERVER = members({
   "engine",
+  "map",
   "connect",
   "disconnect",
   "send",
@@ -75,8 +76,8 @@ platform.CLIENT = members({
   "item_image",
 })
 
----Lists what a platform table lacks for one side. `engine` must also be a
----non-empty string, since it is reported in `Hello`, and `units_per_metre` a
+---Lists what a platform table lacks for one side. `engine` and `map` must
+---also be non-empty strings, since both are reported in `Hello`, and `units_per_metre` a
 ---positive finite number, since every distance an addon gives is multiplied
 ---by it.
 ---@param candidate any The table an adapter or test supplied.

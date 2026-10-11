@@ -1,0 +1,22 @@
+{
+  "description": "A record's map field holds a map's name, compared exactly, case and all.",
+  "type": "sign",
+  "fields": {
+    "spot": {
+      "x": 1,
+      "y": 2,
+      "z": 3
+    },
+    "map": "rp_Downtown_v2.1-b"
+  },
+  "expect": {
+    "fields": {
+      "spot": {
+        "x": 1,
+        "y": 2,
+        "z": 3
+      },
+      "map": "rp_Downtown_v2.1-b"
+    }
+  }
+}

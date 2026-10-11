@@ -921,6 +921,9 @@ function Client:handshake(generation)
     api_key = self.api_key,
     instance_id = self.instance_id,
     engine = self.platform.engine,
+    -- Checked as the core started (`rpf.world.start`), so a bad one is
+    -- reported as the default rather than refused.
+    map = rpf.world.map() or rpf.world.DEFAULT_MAP,
     core_version = rpf.VERSION,
     config_version = version,
     config_hash = hash,

@@ -25,11 +25,24 @@ server.CONVARS = {
   api_key = "rpf_api_key",
   portal_url = "rpf_portal_url",
   debug = "rpf_debug",
+  map = "rpf_map",
 }
 
 ---The event a server sends to show a player a message, handled by
 ---`client.lua`.
 server.NOTIFY = "rpf:notify"
+
+---The map this server reports (#369): the owner's `rpf_map`, so staff can
+---place records for one setup of FiveM's one map, or `default` when it is
+---unset or empty. Read once, as the resource starts.
+---@return string map The map's name.
+function server.map()
+  local map = GetConvar(server.CONVARS.map, "")
+  if map == "" then
+    return "default"
+  end
+  return map
+end
 
 ---Builds the game-server platform (`rpf.ServerPlatform`).
 ---@param shim rpf.fivem.WsShim `exports["rpf-ws"]`, for the socket and randomness.
@@ -42,6 +55,9 @@ function server.platform(shim, transport)
   ---@type rpf.ServerPlatform
   local p = {
     engine = "fivem",
+    -- FiveM has one map, so the map is a name the owner gives a setup
+    -- (#369), read as the resource starts: `default` unless set.
+    map = server.map(),
     connect = transport.connect,
     disconnect = transport.disconnect,
     send = transport.send,

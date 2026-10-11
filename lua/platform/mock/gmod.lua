@@ -37,6 +37,7 @@ local gmod = {}
 ---@field gwsockets_load_error string? What `require("gwsockets")` raises, for a module that is installed but will not load (built for another platform).
 ---@field query_typed boolean? False for a Gmod build without `sql.QueryTyped`.
 ---@field data table<string, rpf.mock.GmodDataFile>? The `data/` directory, by path: a table the harness keeps, so a restarted client finds what it wrote. A fresh one otherwise.
+---@field map string? The map `game.GetMap()` names; `gm_construct` unless given.
 
 ---One file under the fake `data/`.
 ---@class rpf.mock.GmodDataFile
@@ -166,6 +167,7 @@ local GLOBALS = {
   "Vector",
   "Angle",
   "Material",
+  "game",
 }
 
 ---The Gmod adapter's part framing (`lua/platform/gmod/messages.lua`): part
@@ -925,6 +927,14 @@ function gmod.install(side, host, options)
   _G.Vector = function(x, y, z)
     return { x = x, y = y, z = z }
   end
+  -- The map the server runs, fixed for the Lua state as a map change ends
+  -- it (#369).
+  local map = options.map or "gm_construct"
+  _G.game = {
+    GetMap = function()
+      return map
+    end,
+  }
   _G.Angle = function(pitch, yaw, roll)
     return { p = pitch, y = yaw, r = roll }
   end

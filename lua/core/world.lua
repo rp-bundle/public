@@ -53,12 +53,24 @@
 ---  record of its own that no client can write, never from a tag.
 ---
 ---A live record is placed only while held here: one let go is despawned,
----and placed again by whichever server holds it next.
+---and placed again whenever this server holds it next.
+---
+---**Maps (#369).** The adapter names the map this process runs
+---(`platform.map`: `game.GetMap()` on Gmod, the `rpf_map` convar on FiveM),
+---which the core reports in `Hello` and keeps until it stops: a Gmod map
+---change restarts the Lua state, and FiveM reads the convar as the resource
+---starts, so a new map is a new process that places from scratch. A type's
+---`world` may name a `map` field; a record whose map is another one is
+---neither placed nor targetable, and one whose map is null, like every
+---record of a type with no map field, is on every map. The config carries
+---every map's records, so a server that cannot reach the portal still
+---places the right ones for the map it starts on.
 ---@class rpf.world
 ---@field CAPABILITIES string[] Every capability an adapter declares, in order.
 ---@field KINDS table<string, true> The world kinds the core places an entity for.
 ---@field MAX_PLACED integer The most entities the core keeps placed on one server: past it, the rest are left out and logged once, so a large type cannot exhaust the engine's entity pool.
 ---@field CHECK_MS integer How often the core checks that what it placed is still there.
+---@field DEFAULT_MAP string The map a server reports when its adapter names one that is no map's name, so it still connects.
 local world = {}
 
 local rpf = rpf
@@ -68,11 +80,15 @@ world.CAPABILITIES = { "position", "bucket", "model", "entity", "spawn", "despaw
 world.KINDS = { ped = true, object = true }
 world.MAX_PLACED = 1024
 world.CHECK_MS = 10000
+world.DEFAULT_MAP = "default"
 
 ---@type rpf.Capabilities?
 local declared = nil
 ---@type rpf.ServerPlatform?
 local platform = nil
+---The map this process runs, from `start` on.
+---@type string?
+local current_map = nil
 
 ---What the core has placed, or is placing, by record id.
 ---@class rpf.world.Placed
@@ -186,6 +202,34 @@ function world.metres(units)
     return nil, "invalid"
   end
   return units / platform.units_per_metre
+end
+
+---The map this server runs, as it reported it in `Hello`: what decides
+---which world records are placed and targetable here.
+---@return string? map The map's name.
+---@return string? err `unsupported` before the core has started.
+function world.map()
+  if not current_map then
+    return nil, "unsupported"
+  end
+  return current_map
+end
+
+---Whether a world record is on the map this server runs: its type names no
+---map field, its map is null (every map), or it is this one.
+---@param where table The type's `world`.
+---@param fields table The record's fields.
+---@return boolean here True if it is.
+function world.on_map(where, fields)
+  local name = where.map
+  if type(name) ~= "string" then
+    return true
+  end
+  local map = fields[name]
+  if map == nil or rawequal(map, json.null) then
+    return true
+  end
+  return current_map ~= nil and map == current_map
 end
 
 ---Calls an adapter's capability under `pcall`, logging a throw.
@@ -388,8 +432,8 @@ local function key_of(spec)
   )
 end
 
----A record's placement, or nil if it is not placed: hidden, or with no
----position or model.
+---A record's placement, or nil if it is not placed: hidden, on another
+---map, or with no position or model.
 ---@param type_name string Its type.
 ---@param where table The type's `world`.
 ---@param record table The record, as the config carries it or `rpf.data.list` copies it.
@@ -397,6 +441,9 @@ end
 local function spec_of(type_name, where, record)
   local fields = type(record.fields) == "table" and record.fields or {}
   if where.visible and fields[where.visible] == false then
+    return nil
+  end
+  if not world.on_map(where, fields) then
     return nil
   end
   local at = position_of(fields[where.position])
@@ -628,9 +675,11 @@ function world.clear()
   end
 end
 
----Reads the adapter's capabilities, and starts placing. One that is neither
----a function nor `false` is logged and counts as unsupported, so a typo is
----one line at start rather than a nil call later. Called by
+---Reads the adapter's capabilities and map, and starts placing. A
+---capability that is neither a function nor `false` is logged and counts as
+---unsupported, so a typo is one line at start rather than a nil call later;
+---a map that is no map's name is logged and reported as `DEFAULT_MAP`, so
+---the server still connects rather than have its `Hello` refused. Called by
 ---`rpf.start_server`, before the stored config is restored, whose
 ---`config.changed` places what it holds.
 ---@param p rpf.ServerPlatform The platform.
@@ -639,6 +688,12 @@ function world.start(p)
   declared = p.capabilities
   placed, failed, refused, stopped, due = {}, {}, {}, false, false
   warned = { limit = false, unsupported = false }
+  if rpf.manifest.is_map_name(p.map) then
+    current_map = p.map
+  else
+    current_map = world.DEFAULT_MAP
+    p.log("error", "rpf: the platform's map " .. tostring(p.map) .. " is no map's name (1 to 64 bytes of printable ASCII with no space); reporting " .. world.DEFAULT_MAP)
+  end
   for _, name in ipairs(world.CAPABILITIES) do
     local value = declared[name]
     if value ~= false and type(value) ~= "function" then

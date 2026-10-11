@@ -1,0 +1,18 @@
+{
+  "description": "A map's name has no space, so one typed with a stray space is refused where it is typed rather than matching no map.",
+  "type": "sign",
+  "fields": {
+    "spot": {
+      "x": 1,
+      "y": 2,
+      "z": 3
+    },
+    "map": "rp_downtown "
+  },
+  "expect": {
+    "error": {
+      "error": "charset",
+      "field": "map"
+    }
+  }
+}

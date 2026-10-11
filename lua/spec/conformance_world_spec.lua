@@ -7,8 +7,8 @@
 -- the mock platform and on the real FiveM and Gmod adapters
 -- (`spec/support/conformance.lua`). A world-backed `config` type's ped and
 -- object records are placed by the core through each adapter, kept placed
--- once each, moved, hidden and removed as the config says, and placed again
--- when something else deletes them.
+-- once each, moved, hidden and removed as the config says, placed again
+-- when something else deletes them, and placed only on their map (#369).
 
 local conformance = require("spec.support.conformance")
 
@@ -18,6 +18,7 @@ local busted = { describe = describe, it = it, before_each = before_each, after_
 local GREETER = "acme_npcs.greeter"
 local A = "0000000a-0000-4000-8000-00000000000a"
 local B = "0000000b-0000-4000-8000-00000000000b"
+local C = "0000000c-0000-4000-8000-00000000000c"
 local PLAYER = "00000002-0000-4000-8000-000000000002"
 
 ---How long a placement may take to arrive: FiveM makes an entity
@@ -45,8 +46,17 @@ local function manifest()
           bucket = { type = "integer", min = 0, default = 0 },
           model = { type = "json", engine = true, required = true },
           shown = { type = "boolean", default = true },
+          map = { type = "string", index = true, nullable = true },
         },
-        world = { kind = "ped", position = "spot", heading = "heading", bucket = "bucket", model = "model", visible = "shown" },
+        world = {
+          kind = "ped",
+          position = "spot",
+          heading = "heading",
+          bucket = "bucket",
+          model = "model",
+          visible = "shown",
+          map = "map",
+        },
       },
     },
   }
@@ -281,6 +291,35 @@ conformance.run(busted, "World placements", {
       assert.are.same({}, world.entities(), "the addon has not registered in the new process yet")
       register(world)
       assert.are.same({ A }, placed_ids(world), "from the stored config: no socket has opened")
+    end,
+  },
+  {
+    name = "names the map each engine runs, as its adapter reads it",
+    run = function(world)
+      local defaults = { mock = "default", fivem = "default", gmod = "gm_construct" }
+      assert.are.equal(defaults[world.platform_name], (world.api.world.map()))
+      world:restart(nil, "rp_downtown")
+      assert.are.equal("rp_downtown", (world.api.world.map()))
+    end,
+  },
+  {
+    name = "places only the greeters on the map it runs or on every map, and another map's after restarting on it",
+    run = function(world)
+      register(world)
+      local here = assert(world.api.world.map())
+      install(world, { greeter(A, { map = here }), greeter(B, { map = "rp_elsewhere" }), greeter(C, { map = world.core.json.null }) })
+      assert.are.same({ A, C }, placed_ids(world), "B is on another map; C, with no map, on every one")
+      world:restart(nil, "rp_elsewhere")
+      register(world)
+      assert.are.same({ B, C }, placed_ids(world), "from the stored config, for the map it now runs")
+    end,
+  },
+  {
+    name = "reports a map that is no map's name as the default, so the server still connects",
+    run = function(world)
+      world:restart(nil, "rp downtown")
+      assert.are.equal("default", (world.api.world.map()))
+      assert.are.equal(1, world:logged("error", "is no map's name"))
     end,
   },
   {

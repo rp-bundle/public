@@ -35,6 +35,7 @@
 ---@field MAX_FIELDS_PER_TYPE integer `limits::MAX_FIELDS_PER_TYPE`.
 ---@field MAX_INDEXED_FIELDS_PER_TYPE integer `limits::MAX_INDEXED_FIELDS_PER_TYPE`.
 ---@field MAX_RECORDS_PER_TYPE integer `limits::MAX_RECORDS_PER_TYPE`.
+---@field MAX_MAP_NAME_BYTES integer The longest map name, in bytes: `manifest::MAX_MAP_NAME_BYTES`.
 local manifest = {}
 
 local rpf = rpf
@@ -89,6 +90,7 @@ manifest.MAX_TYPES_PER_ADDON = 16
 manifest.MAX_FIELDS_PER_TYPE = 64
 manifest.MAX_INDEXED_FIELDS_PER_TYPE = 8
 manifest.MAX_RECORDS_PER_TYPE = 50000
+manifest.MAX_MAP_NAME_BYTES = 64
 
 -- The rules' own bounds, mirroring `crates/rpf-domain/src/addons/`.
 local MAX_NAME_BYTES = 32
@@ -827,6 +829,19 @@ local function check_field(field, path, context)
   return out
 end
 
+---Whether a value is a map's name (#369): 1 to `MAX_MAP_NAME_BYTES` bytes
+---of printable ASCII with no space, compared exactly
+---(`manifest::is_map_name`). What a game server reports in `Hello`, and
+---what a record's map field must hold when it is not null.
+---@param text any The value.
+---@return boolean ok True if it is one.
+function manifest.is_map_name(text)
+  return type(text) == "string"
+    and #text >= 1
+    and #text <= manifest.MAX_MAP_NAME_BYTES
+    and not text:find("[^!-~]")
+end
+
 ---The roles a type's `world` may give, in the order they are checked, each
 ---with the field kinds it may name: `manifest::WorldRole`.
 local WORLD_ROLES = {
@@ -836,6 +851,7 @@ local WORLD_ROLES = {
   { name = "model", kinds = set({ "string", "json" }) },
   { name = "visible", kinds = set({ "boolean" }) },
   { name = "radius", kinds = set({ "number", "integer" }) },
+  { name = "map", kinds = set({ "string" }) },
 }
 
 ---A type's `world`, against its checked fields: `manifest::check_world`.
@@ -869,8 +885,18 @@ local function check_world(value, path, fields)
       if field == nil then
         return refuse("unknown_field", role_path)
       end
-      if not role.kinds[field.type] or (role.name == "model" and not field.engine) then
+      if
+        not role.kinds[field.type]
+        or (role.name == "model" and not field.engine)
+        or (role.name == "map" and field.index ~= true)
+      then
         return refuse("world_field", role_path)
+      end
+      -- A map field's default is a map's name too, or a record left to it
+      -- could never be written (#369). Null, every map, is fine.
+      if role.name == "map" and type(field.default) == "string" and not manifest.is_map_name(field.default) then
+        local fields_path = path:sub(1, #path - #"world")
+        return refuse("default", fields_path .. "fields." .. name .. ".default")
       end
       if named[name] then
         return refuse("duplicate", role_path)
@@ -1397,6 +1423,7 @@ end
 ---@return table? fields A marked copy with defaults in place, or nil.
 ---@return table? refusal `{ error = <rule>, field = <name or "">, item = <index>? }`.
 function manifest.check_fields(def, fields)
+  local map_field = type(def.world) == "table" and def.world.map or nil
   local given = mark(fields)
   if not is_object(given) then
     return refuse_field("wrong_type", "")
@@ -1422,6 +1449,14 @@ function manifest.check_fields(def, fields)
       local checked, rule, item = check_value(field, value)
       if checked == nil then
         return refuse_field(rule --[[@as string]], name, item)
+      end
+      if name == map_field and type(checked) == "string" and not manifest.is_map_name(checked) then
+        if checked == "" then
+          return refuse_field("too_short", name)
+        elseif #checked > manifest.MAX_MAP_NAME_BYTES then
+          return refuse_field("too_long", name)
+        end
+        return refuse_field("charset", name)
       end
       out[name] = checked
     end
