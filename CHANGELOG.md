@@ -29,6 +29,15 @@ socket.
 
 ### Added
 
+- The addon kit (J7, #84): each release gains `rpf-addon-kit-<version>.zip`,
+  for addon authors and for nobody's server by default. It holds the API's
+  annotations for the language server (`meta/`) and the example addons
+  (`acme_tags`, `acme_shop`, `acme_garden`) ready to install, as FiveM
+  resources under `fivem/[rpf-examples]/` and Garry's Mod addons under
+  `gmod/`. An example runs only once a server ensures it and staff install
+  the manifest it proposes. On FiveM, an ox_lib that runs but whose loader
+  gave RPF nothing now says so at start, instead of asking for ox_lib to be
+  installed.
 - Hold policies for live addon records (J6, #83): a live type's `hold =
   "server"` records are held by the server while it runs, claimed from the
   portal with a new optional `types` field on `hold` (a page at a time,

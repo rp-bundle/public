@@ -27,6 +27,7 @@ end
 local RESOURCES = DIR .. "/fivem/[rpf]/"
 local ADDON = DIR .. "/gmod/rpf/"
 local BRIDGE = DIR .. "/gmod/rpf_darkrp/"
+local KIT = DIR .. "/kit/"
 
 ---Reads a whole file, failing like a missing file does.
 ---@param path string The file.
@@ -44,7 +45,7 @@ end
 ---Every file in one of the zips, as the zip names them, directories left
 ---out. `dev/verify-addon-release` writes the listing beside the unpacked
 ---tree, because Lua cannot list a directory.
----@param zip "fivem"|"gmod" Which zip.
+---@param zip "fivem"|"gmod"|"kit" Which zip.
 ---@return table<string, true> files The set.
 local function shipped(zip)
   local files = {}
@@ -67,6 +68,19 @@ local function sorted(set)
   end
   table.sort(keys)
   return keys
+end
+
+---The example addons the repository has, by name (`lua/examples/<name>/`),
+---which the addon kit must hold every one of. `dev/verify-addon-release`
+---lists them, because Lua cannot list a directory.
+---@return string[] names The names, sorted.
+local function examples()
+  local names = {}
+  for line in read_file(DIR .. "/examples.list"):gmatch("[^\n]+") do
+    names[#names + 1] = line
+  end
+  table.sort(names)
+  return names
 end
 
 ---A host that records what the fakes hand it.
@@ -222,6 +236,37 @@ describe("the FiveM zip", function()
     assert.are.equal("rpf:client_ready", record.to_server[1].name)
   end)
 
+  it("starts every example in the addon kit from its packaged files, beside the packaged core", function()
+    local driver = load_side("server", { rpf_url = "wss://portal.example/ws", rpf_api_key = "rpf_sk_release" })
+    driver.start()
+    local scripts = dofile(support.path("lua/platform/mock/fivem.lua")).scripts
+    for _, name in ipairs(examples()) do
+      local folder = KIT .. "fivem/[rpf-examples]/" .. name .. "/"
+      -- Each resource is a Lua state of its own, reaching `rpf` through its
+      -- export as itself.
+      local env = setmetatable({
+        exports = { rpf = { api = function()
+          return driver.resource(name)
+        end } },
+      }, { __index = _G })
+      for _, script in ipairs(scripts(read_file(folder .. "fxmanifest.lua"), "server")) do
+        local source = read_file(folder .. script)
+        local chunk
+        if rawget(_G, "setfenv") then
+          chunk = assert(loadstring(source, "=" .. script))
+          setfenv(chunk, env)
+        else
+          chunk = assert(load(source, "=" .. script, "t", env))
+        end
+        chunk()
+      end
+      assert.is_table(rawget(env, name), name .. " loaded, in its own state")
+      -- Registered and waiting for staff: nothing installs an example.
+      local state = driver.resource(name).addons.state(name)
+      assert.are.equal("not_installed", state, name)
+    end
+  end)
+
   it("starts the Qbox bridge's server from the packaged files, beside the packaged core", function()
     local driver = load_side("server", { rpf_url = "wss://portal.example/ws", rpf_api_key = "rpf_sk_release" })
     driver.start()
@@ -283,9 +328,10 @@ describe("the Gmod zip", function()
   ---@param side "server"|"client" Which side.
   ---@param read_paths table<string, true> Filled with every file read, as a path in the zip.
   ---@param bridge boolean? Whether `rpf_darkrp` is installed too.
+  ---@param kit string[]? Example addons from the addon kit installed beside it, on the server.
   ---@return rpf.mock.GmodWorld world The fake.
   ---@return table record What the host recorded.
-  local function boot(side, read_paths, bridge)
+  local function boot(side, read_paths, bridge, kit)
     local gmod = dofile(support.path("lua/platform/mock/gmod.lua"))
     local host, record = fake_host()
     local function read(relative)
@@ -297,8 +343,15 @@ describe("the Gmod zip", function()
       elseif bridge and relative:match("^rpf_darkrp/") then
         root, path = BRIDGE, "lua/" .. relative
       end
+      local owner = root == BRIDGE and "rpf_darkrp/" or "rpf/"
+      for _, name in ipairs(kit or {}) do
+        local autorun = relative:match("^autorun/[%w_/]*%.lua$") and relative:match("([%w_]+)%.lua$")
+        if relative:match("^" .. name .. "/") or autorun == name then
+          root, path, owner = KIT .. "gmod/" .. name .. "/", "lua/" .. relative, "gmod/" .. name .. "/"
+        end
+      end
       local source = read_file(root .. path)
-      read_paths[(root == BRIDGE and "rpf_darkrp/" or "rpf/") .. path] = true
+      read_paths[owner .. path] = true
       return source
     end
     local world = gmod.install(side, host, {
@@ -306,7 +359,20 @@ describe("the Gmod zip", function()
       convars = { rpf_ws_url = "wss://portal.example/ws", rpf_api_key = "rpf_sk_release" },
     })
     installed = world
-    if bridge then
+    if kit then
+      -- Gmod runs every addon's autorun files, then `Initialize`.
+      world.include("rpf/platform/gmod/autorun.lua")
+      for _, name in ipairs(kit) do
+        local server_only = KIT .. "gmod/" .. name .. "/lua/autorun/server/" .. name .. ".lua"
+        local found = io.open(server_only, "rb")
+        if found then
+          found:close()
+        end
+        world.include(found and "autorun/server/" .. name .. ".lua" or "autorun/" .. name .. ".lua")
+      end
+      world:run_hook("Initialize")
+      world:run_hook("InitPostEntity")
+    elseif bridge then
       world.include("rpf/platform/gmod/autorun.lua")
       world.include("autorun/server/rpf_darkrp.lua")
       world:run_hook("Initialize")
@@ -357,6 +423,16 @@ describe("the Gmod zip", function()
     assert.are.same({ nil, "registered" }, again, "the core took it")
   end)
 
+  it("starts every example in the addon kit from its packaged files, beside the packaged addon", function()
+    local read = {}
+    boot("server", read, false, examples())
+    local api = rawget(_G, "rpf")
+    for _, name in ipairs(examples()) do
+      assert.are.equal("not_installed", (api.addons.state(name)), name .. " registered, and waits for staff")
+      assert.is_truthy(read["gmod/" .. name .. "/lua/" .. name .. "/manifest.lua"], name .. "'s manifest came from the kit")
+    end
+  end)
+
   it("ships exactly the files the two sides load, the bridge's, and the licences", function()
     local loaded = {}
     local server = boot("server", loaded, true)
@@ -371,6 +447,55 @@ describe("the Gmod zip", function()
     end
     assert.are.same(sorted(loaded), sorted(files))
     assert.is_nil(files["rpf/lua/rpf/platform/gmod/dev.lua"], "its presence alone turns the smoke test's commands on")
+  end)
+end)
+
+describe("the addon kit", function()
+  it("holds the API's annotations and every example, each laid out as its engine loads it, and nothing else", function()
+    local expected = {}
+    for _, file in ipairs({ "api.lua", "platform_client.lua", "platform_server.lua", "platform_shared.lua" }) do
+      expected["meta/" .. file] = true
+    end
+    local licensed = { "meta/" }
+    for _, name in ipairs(examples()) do
+      local resource = "fivem/[rpf-examples]/" .. name .. "/"
+      local addon = "gmod/" .. name .. "/"
+      local manifest = read_file(KIT .. resource .. "fxmanifest.lua")
+      expected[resource .. "fxmanifest.lua"] = true
+      local client = false
+      for file in manifest:gmatch('"([^"@][^"]*%.lua)"') do
+        expected[resource .. file] = true
+        -- The engine-neutral files are the Gmod addon's too; the FiveM entry
+        -- points are not.
+        if not file:match("^fivem/") then
+          expected[addon .. "lua/" .. name .. "/" .. file] = true
+          client = client or file == "client.lua"
+        end
+      end
+      -- With a client file, Gmod runs the entry point on both sides.
+      expected[addon .. "lua/autorun/" .. (client and "" or "server/") .. name .. ".lua"] = true
+      licensed[#licensed + 1] = resource
+      licensed[#licensed + 1] = addon
+    end
+    local files = shipped("kit")
+    for _, folder in ipairs(licensed) do
+      if files[folder .. "LICENSE"] then
+        expected[folder .. "LICENSE"] = true
+      end
+    end
+    assert.are.same(sorted(expected), sorted(files))
+  end)
+
+  it("installs nothing for a server: no RPF resource or addon, and no credential", function()
+    for name in pairs(shipped("kit")) do
+      assert.is_nil(name:find("[rpf]/", 1, true), name)
+      assert.is_nil(name:find("^gmod/rpf"), name)
+      if name:match("%.lua$") then
+        local source = read_file(KIT .. name)
+        assert.is_nil(source:find("rpf_[a-z]+_[%w]+"), name .. " carries something shaped like a key")
+        assert.is_nil(source:find("wss?://"), name .. " names a portal")
+      end
+    end
   end)
 end)
 

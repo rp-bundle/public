@@ -307,6 +307,12 @@ own error is earlier in the console. A folder from GitHub's "Source code"
 archive fails this way (`Unable to load UI`): use the release's
 `ox_lib.zip`.
 
+**`rpf: ox_lib is started, but its loader (@ox_lib/init.lua) gave RPF no `lib`; …`**:
+ox_lib runs, but loading it into RPF failed; its own error is above. This
+is usually a folder from GitHub's "Source code" archive, or a damaged
+copy: replace the folder with a release's `ox_lib.zip` and restart the
+server.
+
 **`rpf: ox_lib is version 3.30.0, and RPF needs 3.40.0 or newer; …`**: the
 server's ox_lib is too old. Replace its folder with a current release's,
 then restart the server. RPF is built and checked against 3.40.0, which

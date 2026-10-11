@@ -364,6 +364,15 @@ describe("the FiveM adapter", function()
       assert.truthy(line:find("ox_lib is version nil", 1, true), line)
     end)
 
+    it("says ox_lib's loader failed, not that it is missing, when it runs but gave RPF no lib", function()
+      local line = refused(CONVARS, function()
+        rawset(_G, "lib", nil)
+      end)
+      assert.truthy(line:find("ox_lib is started, but its loader (@ox_lib/init.lua) gave RPF no `lib`", 1, true), line)
+      assert.truthy(line:find("its own error is above", 1, true), line)
+      assert.truthy(line:find(rpf.fivem.ox.RELEASES_URL, 1, true), line)
+    end)
+
     it("compares ox_lib's versions number by number", function()
       load_side("server")
       local ox = rpf.fivem.ox

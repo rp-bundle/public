@@ -46,6 +46,11 @@ the contract.
   every plant keeps its record, reading as full until its next tick writes
   it at schema 2.
 
+Every release's addon kit (`rpf-addon-kit-<version>.zip`, on the release
+page) has it laid out already: `fivem/[rpf-examples]/acme_garden` is the FiveM
+resource and `gmod/acme_garden` the Garry's Mod addon. Nothing installs it for
+you. From this directory, by hand:
+
 ## On FiveM
 
 Make a resource folder `acme_garden` holding `manifest.lua`, `server.lua`,
