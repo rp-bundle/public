@@ -304,7 +304,8 @@ describe("acme_notes.ask_pin", function()
       },
       ui = {
         input = function()
-          return input[1], input[2]
+          local answer = assert(input, "no dialog on this engine")
+          return answer[1], answer[2]
         end,
       },
     }
