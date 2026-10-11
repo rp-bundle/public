@@ -1684,6 +1684,29 @@ describe("the FiveM adapter", function()
       assert.are.same({ err = "unavailable" }, got.plum)
     end)
 
+    it("answers an item image unavailable when the page reloads before answering it", function()
+      started_client()
+      local screens = rpf.fivem.ui.new({
+        core = rpf,
+        send = function() end,
+        lock = function() end,
+        log = function() end,
+      })
+      screens:nui("ready", {})
+      local got = {}
+      screens:item_image("https://portal.example/x", {}, string.rep("e", 64), function(src, err)
+        got[#got + 1] = { src = src, err = err }
+      end)
+      local id = screens.next_id
+      -- The page reloads: it says it is ready again, and the request it had
+      -- is gone with it.
+      screens:nui("ready", {})
+      assert.are.same({ { err = "unavailable" } }, got)
+      assert.is_nil(next(screens.images), "forgotten")
+      assert.is_false(screens:nui("image", { id = id, src = "data:image/png;base64,AA" }).ok)
+      assert.are.equal(1, #got)
+    end)
+
     it("shows a failure, and refuses what the page sends that is not text", function()
       local driver = started_client()
       driver.nui("ready", {})

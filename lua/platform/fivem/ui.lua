@@ -369,6 +369,14 @@ end
 function Screens:nui(name, data)
   local core = self.deps.core
   if name == "ready" then
+    -- A page that says it is ready again has reloaded, and the page that
+    -- had these requests is gone: none of them will be answered. A live
+    -- page always answers, within its own fetch bound (`nui/images.js`).
+    local lost = self.images
+    self.images = {}
+    for _, done in pairs(lost) do
+      done(nil, "unavailable")
+    end
     self.ready = true
     local queued = self.queue
     self.queue = {}

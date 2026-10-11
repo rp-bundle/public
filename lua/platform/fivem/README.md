@@ -358,7 +358,9 @@ The bundle targets Node 16, the oldest an FXServer that runs this ships.
   IndexedDB (in memory where the page has none), so an image is fetched
   once per hash, even across restarts. The answer is a `data:` URL, not a
   blob URL, which would belong to this page's origin alone: any resource's
-  page can show it, and ox_lib takes it as an `image` or `icon`.
+  page can show it, and ox_lib takes it as an `image` or `icon`. A page
+  that reloads mid-fetch loses its requests: its next `ready` answers each
+  one `unavailable`, so nothing waits on them.
 - The character screen lists, creates and selects (D5's `rpf.picker`), so a
   fresh install reaches `active` with no script of the owner's. Styling is
   out of scope.
