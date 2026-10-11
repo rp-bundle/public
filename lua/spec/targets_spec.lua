@@ -66,6 +66,18 @@ describe("rpf.targets on the client", function()
     assert.are.equal("too_far", told.spec.text)
   end)
 
+  it("tells the player when the server is never asked for their pick", function()
+    rpf.api.interactions.open()
+    -- A name no request can carry: refused at once, so no answer ever comes.
+    answer("rpf:targets", nearby_reply({ { name = "not namespaced", label = "Bad", type = "acme_npcs.greeter", id = OPTION.id, distance = 1 } }))
+    local asked = #c.asked
+    c.shown[#c.shown].done(1)
+    assert.are.equal(asked, #c.asked, "nothing was sent")
+    local told = c.shown[#c.shown]
+    assert.are.equal("notify", told.kind)
+    assert.are.equal("invalid", told.spec.text)
+  end)
+
   it("says there is nothing to do when nothing is near, and sends nothing", function()
     rpf.api.interactions.open()
     answer("rpf:targets", nearby_reply({}))

@@ -1206,6 +1206,30 @@ describe("the FiveM adapter", function()
       assert.are.same({ "acme_npcs.talk" }, driver.target_calls[before + 1].args[1])
     end)
 
+    it("tells the player when a pick is refused before it is sent, rather than leaving them without an answer", function()
+      local driver, record = load_side("client")
+      driver.resources.ox_target = "started"
+      driver.start()
+      local json = rpf.json
+      driver.from_server(
+        "rpf:target_rules",
+        rpf.handoff.encode("rpf:target_rules", {
+          rules = json.array({ json.object({ name = "not namespaced", label = "Bad", models = json.array({ "prop_atm_01" }), distance = 3 }) }),
+        })
+      )
+      local option
+      for _, call in ipairs(driver.target_calls) do
+        if call.call == "addModel" then
+          option = call.args[2][1]
+        end
+      end
+      driver.net_ids[7001] = 505001
+      local before = #record.to_server
+      option.onSelect({ entity = 7001 })
+      assert.are.equal(before, #record.to_server, "nothing was sent")
+      assert.are.equal("invalid", driver.notices[#driver.notices].description)
+    end)
+
     it("offers the rules through qb-target when that is what runs, and through nothing when neither does", function()
       local driver = load_side("client")
       driver.start()
