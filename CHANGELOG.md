@@ -40,6 +40,16 @@ socket.
   engine's stock weapons or typing one their server added, and the item it
   fires as ammo. The config snapshot carries it as `weapon` on the item,
   and `rpf.config.item(slug).weapon` reads it. Equipping comes next.
+- Things in the world can be owned, shared and locked (#372, the first
+  part). A live world type its server holds names its ownership fields in
+  its `world`: `locked` (a boolean), `owner` (an indexed, nullable `ref`
+  to a character or a player), `co_owners` (a list of the same),
+  `employer` (a job door's), and access by `jobs`, `departments` and
+  `ranks`. A new reference target, `department`, names a department as
+  `{ employer, department }`, typed `employer/department` in the panel.
+  Deleting or purging a character, purging a player and purging an
+  employer take away what they owned or shared, audited per record as
+  `addon.record.disown`.
 - The generic record pages lay themselves out from the manifest (N1,
   #376). A field may set `group` (a heading), `order`, and, on an integer
   or number, `unit` (`money`, `seconds`, `minutes`, `hours`, `metres`,

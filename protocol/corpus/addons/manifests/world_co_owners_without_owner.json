@@ -1,0 +1,82 @@
+{
+  "description": "Co-owners share a thing with its owner, so a type with co-owners has an owner (L2).",
+  "manifest": {
+    "namespace": "acme_doors",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Doors",
+    "types": {
+      "door": {
+        "schema": 1,
+        "authority": "live",
+        "owners": [
+          "server"
+        ],
+        "hold": "server",
+        "fields": {
+          "spot": {
+            "type": "vector3",
+            "required": true
+          },
+          "map": {
+            "type": "string",
+            "max_len": 64,
+            "index": true,
+            "nullable": true
+          },
+          "locked": {
+            "type": "boolean",
+            "default": true
+          },
+          "holder": {
+            "type": "ref",
+            "to": "character",
+            "index": true,
+            "nullable": true
+          },
+          "sharing": {
+            "type": "list",
+            "of": "ref",
+            "to": "character"
+          },
+          "employer": {
+            "type": "ref",
+            "to": "employer",
+            "index": true,
+            "nullable": true
+          },
+          "jobs": {
+            "type": "list",
+            "of": "ref",
+            "to": "job"
+          },
+          "departments": {
+            "type": "list",
+            "of": "ref",
+            "to": "department"
+          },
+          "ranks": {
+            "type": "list",
+            "of": "ref",
+            "to": "job"
+          }
+        },
+        "world": {
+          "kind": "point",
+          "position": "spot",
+          "map": "map",
+          "locked": "locked",
+          "co_owners": "sharing",
+          "employer": "employer",
+          "jobs": "jobs",
+          "departments": "departments",
+          "ranks": "ranks"
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "missing",
+    "path": "types.door.world.owner"
+  }
+}

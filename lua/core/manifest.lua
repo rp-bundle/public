@@ -215,7 +215,16 @@ local COMMON = {
   "unique",
 }
 ---Reference targets that are not a type.
-local TARGETS = { player = true, character = true, employer = true, server = true, item = true, job = true, dialog = true }
+local TARGETS = {
+  player = true,
+  character = true,
+  employer = true,
+  server = true,
+  item = true,
+  job = true,
+  dialog = true,
+  department = true,
+}
 ---Reference targets that are owners, which an action's parameter may not
 ---name (`RefTarget::is_owner`).
 local OWNERS = { player = true, character = true, employer = true, server = true }
@@ -942,7 +951,9 @@ function manifest.is_map_name(text)
 end
 
 ---The roles a type's `world` may give, in the order they are checked, each
----with the field kinds it may name: `manifest::WorldRole`.
+---with the field kinds it may name and, for a reference or a list of them,
+---what it must refer to: `manifest::WorldRole`. The ownership roles (L2)
+---are marked `ownership`.
 local WORLD_ROLES = {
   { name = "position", kinds = set({ "vector3" }) },
   { name = "heading", kinds = set({ "number", "integer" }) },
@@ -951,16 +962,26 @@ local WORLD_ROLES = {
   { name = "visible", kinds = set({ "boolean" }) },
   { name = "radius", kinds = set({ "number", "integer" }) },
   { name = "map", kinds = set({ "string" }) },
-  { name = "dialog", kinds = set({ "ref" }) },
+  { name = "dialog", kinds = set({ "ref" }), to = set({ "dialog" }) },
+  { name = "locked", kinds = set({ "boolean" }), ownership = true },
+  { name = "owner", kinds = set({ "ref" }), to = set({ "character", "player" }), ownership = true },
+  { name = "co_owners", kinds = set({ "list" }), to = set({ "character", "player" }), ownership = true },
+  { name = "employer", kinds = set({ "ref" }), to = set({ "employer" }), ownership = true },
+  { name = "jobs", kinds = set({ "list" }), to = set({ "job" }), ownership = true },
+  { name = "departments", kinds = set({ "list" }), to = set({ "department" }), ownership = true },
+  { name = "ranks", kinds = set({ "list" }), to = set({ "job" }), ownership = true },
 }
 
----A type's `world`, against its checked fields: `manifest::check_world`.
+---A type's `world`, against its checked fields and whether the type is live
+---and held by its server, which ownership needs: `manifest::check_world`.
 ---@param value any The `world`.
 ---@param path string Its path.
 ---@param fields table The type's fields, checked.
+---@param live boolean Whether the type is live.
+---@param held_by_server boolean Whether its server holds its records by policy (`hold = "server"`).
 ---@return table? world The world, marked, or nil.
 ---@return table? refusal Why not.
-local function check_world(value, path, fields)
+local function check_world(value, path, fields, live, held_by_server)
   local allowed = set({ "kind" })
   for _, role in ipairs(WORLD_ROLES) do
     allowed[role.name] = true
@@ -989,7 +1010,12 @@ local function check_world(value, path, fields)
         not role.kinds[field.type]
         or (role.name == "model" and not field.engine)
         or (role.name == "map" and field.index ~= true)
-        or (role.name == "dialog" and field.to ~= "dialog")
+        or (role.to ~= nil and not role.to[field.to])
+        -- A list role lists references.
+        or (field.type == "list" and field.of ~= "ref")
+        -- An owner and an employer are cleared when what they name is
+        -- purged, and found from the index (`Store::purge_owner`).
+        or ((role.name == "owner" or role.name == "employer") and (field.index ~= true or field.nullable ~= true))
       then
         return refuse("world_field", role_path)
       end
@@ -1017,6 +1043,28 @@ local function check_world(value, path, fields)
   end
   if map.kind ~= "zone" and map.radius ~= nil then
     return refuse("conflict", at(path, "radius"))
+  end
+  if map.co_owners ~= nil then
+    if map.owner == nil then
+      return refuse("missing", at(path, "owner"))
+    end
+    -- Who shares a thing is the same kind of owner as who owns it.
+    if fields[map.co_owners].to ~= fields[map.owner].to then
+      return refuse("world_field", at(path, "co_owners"))
+    end
+  end
+  -- Ownership and the lock change in play, and the server locks a door
+  -- whoever is online, so they are fields of a live record the server holds.
+  for _, role in ipairs(WORLD_ROLES) do
+    if role.ownership and map[role.name] ~= nil then
+      if not live then
+        return refuse("authority", at(path, role.name))
+      end
+      if not held_by_server then
+        return refuse("conflict", at(path, role.name))
+      end
+      break
+    end
   end
   return json.object(json.copy(map))
 end
@@ -1174,7 +1222,7 @@ local function check_type(def, path, context)
   end
 
   if map.world ~= nil then
-    local world, refused = check_world(map.world, at(path, "world"), checked)
+    local world, refused = check_world(map.world, at(path, "world"), checked, live, live and map.hold == "server")
     if not world then
       return nil, refused
     end
@@ -1506,6 +1554,9 @@ local function scalar(def, kind, value)
       fits = is_slug(value)
     elseif def.to == "job" then
       fits = json.is_object(value) and size(value) == 2 and is_slug(value.employer) and is_slug(value.job)
+    elseif def.to == "department" then
+      -- A department (L2), like a job, by its employer's slug and its own.
+      fits = json.is_object(value) and size(value) == 2 and is_slug(value.employer) and is_slug(value.department)
     else
       fits = is_uuid(value)
     end

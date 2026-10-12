@@ -1,0 +1,22 @@
+{
+  "description": "A department is named by its employer's slug and its own (L2), as a job is.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "team": {
+      "employer": "lspd",
+      "department": "swat"
+    }
+  },
+  "expect": {
+    "fields": {
+      "label": "Pot",
+      "count": 1,
+      "maybe": null,
+      "team": {
+        "employer": "lspd",
+        "department": "swat"
+      }
+    }
+  }
+}
