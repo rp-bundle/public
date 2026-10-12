@@ -32,6 +32,9 @@ socket.
 
 ### Added
 
+- `rpf.api.ui.menu` takes `text`, up to 1 KiB read above the options and
+  never picked (#371): an NPC's line in a dialog. A read-only first entry
+  of ox_lib's context menu on FiveM, a wrapped label on Gmod.
 - Addons declare **actions** (#371): what a dialog choice staff build in
   the panel can make an addon do. A manifest's new top-level `actions`
   names each with a title, help and parameters (field definitions, minus

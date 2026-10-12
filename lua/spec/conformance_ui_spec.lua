@@ -77,6 +77,19 @@ conformance.run(busted, "UI from the server", {
     end,
   },
   {
+    name = "sends a menu's text with it: what an NPC says above the choices (L1)",
+    run = function(world)
+      local handle = two_players(world)
+      assert.is_true(world.api.ui.menu(handle, {
+        title = "Courier",
+        text = "Looking for work?",
+        options = { { label = "Yes" }, { label = "No" } },
+      }, function() end))
+      local _, request = asked(world, 1)
+      assert.are.same({ "Courier", "Looking for work?" }, { request.spec.title, request.spec.text })
+    end,
+  },
+  {
     name = "takes an answer only from the player it asked, and only one it offered",
     run = function(world)
       local handle = two_players(world)

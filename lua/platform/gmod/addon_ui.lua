@@ -14,6 +14,7 @@
 ---@field ICON number The side of an item's image beside a menu option, in pixels.
 ---@field CANCEL_KEY integer The key that cancels a progress bar: X, as on ox_lib.
 ---@field MAX_SCREEN number The most of the screen's height a window takes; a longer menu or dialog scrolls.
+---@field TEXT_CHARS integer About how many bytes of a menu's text fit one line of the window, to size it before Derma wraps the text.
 ---@field ui rpf.ClientUi What the client platform's `ui` is.
 local addon_ui = {}
 
@@ -21,6 +22,7 @@ addon_ui.WIDTH = 360
 addon_ui.ICON = 16
 addon_ui.CANCEL_KEY = KEY_X
 addon_ui.MAX_SCREEN = 0.8
+addon_ui.TEXT_CHARS = 48
 
 ---How each kind of notification shows: Gmod has its own icons for a hint
 ---and an error.
@@ -120,13 +122,18 @@ end
 ---A menu: one button per option, a disabled option's greyed out, and an
 ---option's item image (P3, #361) a `DImage` at the left of its button, from
 ---the `Material()` path `rpf.items` keeps (`images.lua`), its text moved
----over to make room. Closing the window is closing the menu.
+---over to make room. A menu's `text` (an NPC's line, L1) is a wrapped
+---label above the buttons. Closing the window is closing the menu.
 ---@param spec rpf.ui.MenuSpec The menu.
 ---@param done fun(index: integer?) Called once.
 local function show_menu(spec, done)
   local finish = once(done)
-  local frame, body = window(spec.title, 64 + #spec.options * 34)
+  local lines = spec.text and math.ceil(#spec.text / addon_ui.TEXT_CHARS) + select(2, spec.text:gsub("\n", "")) or 0
+  local frame, body = window(spec.title, 64 + #spec.options * 34 + lines * 18)
   open.menu = frame
+  if spec.text then
+    label(body, spec.text)
+  end
   for i, option in ipairs(spec.options) do
     local b = button(body, option.label, function()
       finish(i)

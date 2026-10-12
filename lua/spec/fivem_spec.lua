@@ -1350,6 +1350,20 @@ describe("the FiveM adapter", function()
       assert.are.same({ nil, "cancelled" }, got[2])
     end)
 
+    it("shows a menu's text as a read-only entry above its options (L1)", function()
+      local driver = load_side("client")
+      driver.start()
+      local got = {}
+      rpf.api.ui.menu({ title = "Courier", text = "Looking for work?", options = { { label = "Yes", value = "yes" }, { label = "No" } } }, function(choice)
+        got[#got + 1] = choice
+      end)
+      local context = driver.contexts[rpf.fivem.ox.MENU_ID]
+      assert.are.same({ description = "Looking for work?", readOnly = true }, context.options[1])
+      assert.are.same({ "Yes", "No" }, { context.options[2].title, context.options[3].title })
+      driver.pick(2)
+      assert.are.same({ "yes" }, got, "the options keep their numbers behind the text")
+    end)
+
     it("draws an option's item image as the context's icon (P3, #361)", function()
       local driver = load_side("client")
       driver.start()

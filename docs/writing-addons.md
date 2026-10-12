@@ -1037,6 +1037,12 @@ rpf.ui.menu(player.handle, {
 end)
 ```
 
+A menu may say something above its options with `text` (up to 1 KiB,
+over several lines if you like), which the player reads and never picks:
+what an NPC says before the player answers, for one. It is a read-only
+entry at the top of ox_lib's context menu on FiveM and a wrapped label on
+Gmod.
+
 An option that names an item (`item`, its slug) is drawn with the item's
 image beside its label, on either engine and from either side: the
 player's client fetches it for itself (below), so the server sends the
