@@ -156,7 +156,7 @@ describe("rpf.actions", function()
     local _, why, message = rpf.actions.run(PLAYER, "acme_delivery.start_route", { route = ROUTE })
     assert.are.equal("refused", why)
     assert.are.equal(rpf.actions.MAX_MESSAGE, #message, "cut to the most, on a character's boundary")
-    assert.truthy(rpf.json.is_utf8(message))
+    assert.truthy(rpf.json.is_utf8(message --[[@as string]]))
     which = 3
     assert.are.same({ false, "failed" }, { rpf.actions.run(PLAYER, "acme_delivery.start_route", { route = ROUTE }) })
     assert.truthy(p.logs[#p.logs].message:find("boom", 1, true))
@@ -197,7 +197,11 @@ describe("rpf.actions", function()
     local refused
     rpf.addons.register(manifest("1.1.0", {}), {
       start = function()
-        refused = { rpf.api.actions.register("acme_delivery.fly", function() end) }
+        refused = {
+          rpf.api.actions.register("acme_delivery.fly", function()
+            return true
+          end),
+        }
       end,
     })
     install(p, manifest("1.1.0", {}))
