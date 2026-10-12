@@ -117,6 +117,8 @@ function acme_tags.spray(rpf, player, payload)
   local tag, why = rpf.records.create(acme_tags.TYPE, {
     text = text,
     spot = spot,
+    -- Only on the map it was sprayed on; none leaves it on every map.
+    map = rpf.world.map(),
     fades_at = rpf.time.now() + acme_tags.DAY,
   }, { owner = { kind = "player", id = player.player_id } })
   if not tag then

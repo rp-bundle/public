@@ -9,7 +9,7 @@ addons](../../../docs/writing-addons.md) is the guide.
 
 | File | What |
 |---|---|
-| `manifest.lua` | The manifest: one live type, `acme_tags.tag`, and the `moderate` permission |
+| `manifest.lua` | The manifest: one live type, `acme_tags.tag`, on the map it was sprayed on (`map`, set with `rpf.world.map()`; 1.1.0 added it, null for an older tag meaning every map), and the `moderate` permission |
 | `server.lua` | Registers the addon; on start, its interactions (`acme_tags.spray`; `acme_tags.mine`, which answers with the player's own tags; `acme_tags.scrub`, which resolves a client's tag id inside the player's scope), and a fade every minute. Its type is `hold = "server"`, so the core holds the tags the portal already has, and takes them back after a restart |
 | `client.lua` | Asks the server to spray, shows the player's own tags in a menu (`rpf.ui.menu`) and scrubs the one picked through `rpf.interactions.request`, and tells the player how it went with `rpf.ui.notify` |
 | `fivem/` | The FiveM resource's manifest and entry points |

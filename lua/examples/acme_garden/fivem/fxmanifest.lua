@@ -12,7 +12,7 @@ game("gta5")
 lua54("yes")
 
 description("acme_garden: an example RPF addon with a timed live type")
-version("1.1.0")
+version("1.2.0")
 
 dependency("rpf")
 

@@ -12,7 +12,7 @@ game("gta5")
 lua54("yes")
 
 description("acme_tags: an example RPF addon")
-version("1.0.0")
+version("1.1.0")
 
 dependency("rpf")
 

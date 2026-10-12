@@ -31,7 +31,7 @@ acme_garden.MODEL = { fivem = "prop_plant_01a", gmod = "models/props/cs_office/p
 
 acme_garden.MANIFEST = {
   namespace = "acme_garden",
-  version = "1.1.0",
+  version = "1.2.0",
   api = 1,
   title = "Garden",
   permissions = { tend = "Water, harvest and remove any plant" },
@@ -40,7 +40,9 @@ acme_garden.MANIFEST = {
       -- Schema 1 had no `water`. Adding it with a default is a compatible
       -- change, so 1.1.0 installs over 1.0.0 without touching a record: an
       -- older plant reads as full until the next tick writes it at schema 2.
-      schema = 2,
+      -- Schema 3 (1.2.0) added `map` the same way: an older plant has none,
+      -- so it stays on every map.
+      schema = 3,
       authority = "live",
       owners = { "player" },
       -- Held by the server while it runs, whether or not its gardener is on,
@@ -51,6 +53,10 @@ acme_garden.MANIFEST = {
       fields = {
         spot = { type = "vector3", required = true, read_only = true },
         bucket = { type = "integer", min = 0, max = 65535, default = 0, read_only = true },
+        -- The map the plant was sown on (`rpf.world.map()`): a garden on one
+        -- map is not planted at the same coordinates on another. Null is
+        -- every map.
+        map = { type = "string", max_len = 64, index = true, nullable = true },
         model = { type = "json", max_bytes = 256, engine = true, default = acme_garden.MODEL, hidden = true },
         stage = { type = "enum", values = { "seed", "sprout", "grown", "withered" }, default = "seed", index = true },
         water = { type = "integer", min = 0, max = 100, default = 100 },
@@ -64,7 +70,7 @@ acme_garden.MANIFEST = {
       actions = { create = false, edit = "tend", delete = "tend" },
       limit = 2000,
       -- Placed in the world as an object while the server holds it (J6).
-      world = { kind = "object", position = "spot", bucket = "bucket", model = "model" },
+      world = { kind = "object", position = "spot", bucket = "bucket", model = "model", map = "map" },
     },
   },
 }

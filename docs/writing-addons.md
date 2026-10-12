@@ -377,6 +377,31 @@ the Addons page shows it as an upgrade adding one field, and installing it
 keeps every note. Nothing is rewritten: a note pinned under 1.0.0 reads
 `colour = "white"` until something writes it, which stores it at schema 2.
 
+Release 1.2.0 puts each note on a map. A Gmod server switches maps, and a
+note pinned on `rp_downtown` would otherwise hang in the air at the same
+coordinates on `rp_evocity`. Add a nullable, indexed string field, and name
+it in `world`:
+
+```lua
+version = "1.2.0",
+-- …
+note = {
+  schema = 3,
+  fields = {
+    -- …
+    map = { type = "string", max_len = 64, index = true, nullable = true },
+  },
+  world = { kind = "object", position = "spot", bucket = "bucket", model = "model", map = "map" },
+},
+```
+
+`pin` sets it from the server, `map = rpf.world.map()` beside the `bucket`
+in the create, never from the payload, so a client cannot pin a note on a
+map it is not on. RPF then places, offers and lets a client aim at a note
+only on its map. Notes pinned under 1.1.0 have no map, which means every
+map: they stay where they were, and only the new notes belong to one. Staff
+who may edit notes set or clear a note's map on its data page.
+
 That works because the change is **compatible**: a field that is optional,
 nullable or defaulted, a wider bound, a new enum value. A **breaking**
 change to a type with records (removing or retyping a field, a new
@@ -624,7 +649,10 @@ maps, and a record placed on `rp_downtown` should not stand in a wall on
 `rp_evocity`. A record whose map is null is on every map, as is every
 record of a type without one, so give a type a `map` whenever its records
 belong to one place. For a record your addon creates in game,
-`rpf.world.map()` is the map it is made on. A model
+`rpf.world.map()` is the map it is made on, which `acme_notes` (step 8),
+`acme_tags` and `acme_garden` set in the create; for one staff place, like
+`acme_shop`'s counters and `acme_property`'s lots and doors, staff name the
+map in the portal. A model
 field marked `engine = true` can hold one model per engine, `{ fivem =
 "a_m_y_business_01", gmod = "models/Humans/Group01/male_02.mdl" }`, so the
 same record works on both. Staff then place them in the portal, and RPF
@@ -1130,8 +1158,8 @@ end)
 [`lua/examples/acme_shop/`](../lua/examples/acme_shop/) is the whole of a
 shop, with nothing in RPF that knows it is one. Staff place counters
 (`acme_shop.counter`, a `config` type whose records are shopkeepers placed
-in the world) and price what each sells (`acme_shop.listing`), both on the
-generic data pages. What is limited has stock (`acme_shop.stock`, a `live`
+in the world, each on the map staff name or on every map) and price what
+each sells (`acme_shop.listing`), both on the generic data pages. What is limited has stock (`acme_shop.stock`, a `live`
 type the server holds). A player aims the `acme_shop.shop` interaction at
 a counter, picks from a menu and says how many, both opened from the
 server with `rpf.ui`, so the menu's values (which listing, at what price)
@@ -1188,7 +1216,9 @@ about. Two choices make it work, and both apply to anything like it:
   moved, and its record is logged as refused rather than written.
 
 Its doors are a `config` type that refers to the property, placed by
-staff. A door's state is the property's `locked` field, which the owner
+staff. A lot and a door each have a `map` field staff fill in, so a lot
+placed for one map is not for sale at the same coordinates on another. A
+door's state is the property's `locked` field, which the owner
 changes through an interaction aimed at the door, and which a server's own
 door script reads with `rpf.addons.call("acme_property.locked", door_id)`.
 

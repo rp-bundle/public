@@ -14,7 +14,7 @@ game("gta5")
 lua54("yes")
 
 description("acme_notes: the RPF addon walkthrough's example")
-version("1.1.0")
+version("1.2.0")
 
 dependency("rpf")
 

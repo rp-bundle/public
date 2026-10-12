@@ -23,13 +23,16 @@ acme_tags.FADE_EVERY = 60000
 
 acme_tags.MANIFEST = {
   namespace = "acme_tags",
-  version = "1.0.0",
+  version = "1.1.0",
   api = 1,
   title = "Tags",
   permissions = { moderate = "Remove any tag" },
   types = {
     tag = {
-      schema = 1,
+      -- Schema 1 had no `map`. Adding it as a nullable field is a compatible
+      -- change: 1.1.0 installs over 1.0.0 with every tag kept, and an older
+      -- tag, which has no map, stays on every map.
+      schema = 2,
       authority = "live",
       owners = { "player" },
       -- Held by the server while it runs (J6), whether or not the player who
@@ -40,14 +43,18 @@ acme_tags.MANIFEST = {
       fields = {
         text = { type = "string", max_len = 24, charset = "printable", required = true },
         spot = { type = "vector3", required = true },
+        -- The map the tag was sprayed on (`rpf.world.map()`), so a wall on
+        -- one map does not carry it on another. Null is every map.
+        map = { type = "string", max_len = 64, index = true, nullable = true },
         fades_at = { type = "timestamp", required = true, index = true },
       },
       list = { "text", "fades_at" },
       actions = { create = false, edit = false, delete = "moderate" },
       limit = 500,
       -- A tag is a spot on a wall (J4): nothing is placed there, but a
-      -- player can aim an interaction at it by where it is.
-      world = { kind = "point", position = "spot" },
+      -- player can aim an interaction at it by where it is, and only on the
+      -- map it was sprayed on.
+      world = { kind = "point", position = "spot", map = "map" },
     },
   },
 }
