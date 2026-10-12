@@ -278,6 +278,28 @@ describe("rpf.dialogs", function()
     assert.are.equal(rpf.dialogs.MESSAGES.conditions, told()[2])
   end)
 
+  it("does not run a choice staff replaced while its conditions were being read", function()
+    job, keys = { name = "courier", employer = "post", grade = 2 }, 1
+    rpf.api.dialogs.open(7, "courier")
+    pick(1)
+    assert.are.same({ "Take it" }, labels())
+    -- The item read yields through a bridge (FiveM), and a push lands
+    -- meanwhile that turns the offer into a goodbye.
+    local reads = 0
+    rpf.facade.count = function()
+      reads = reads + 1
+      if reads == 1 then
+        local edited = courier()
+        edited.nodes[2].choices[1].does = { kind = "end" }
+        configure(p, true, { edited })
+      end
+      return 1
+    end
+    pick(1)
+    assert.are.equal(0, #runs, "the replaced action never runs")
+    assert.are.same({ rpf.dialogs.MESSAGES.changed }, told())
+  end)
+
   it("shows a broken choice and refuses it with a message: disabled, gone, bad parameters", function()
     granted["addon.acme_delivery.dispatch"] = true
     configure(p, true, nil, false)

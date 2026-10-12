@@ -152,6 +152,31 @@ end
 ---Shows a node, or ends the conversation if it cannot be.
 local show
 
+---The choice a conversation offered, as the tree has it now: the node and
+---the choice, only if the player is still in this conversation and the
+---choice is still the one they were shown, encoded the same.
+---@param handle any The player's engine handle.
+---@param conversation rpf.dialogs.Conversation The conversation.
+---@param choice_number any The choice's number in its node.
+---@return rpf.PlayerView? player The player, nil if they are not in this conversation any more.
+---@return table? node The node, nil (with the player) if the choice changed.
+---@return table? choice The choice.
+local function still_offered(handle, conversation, choice_number)
+  local found = rpf.players.get(handle)
+  local player_id = found and found.player_id
+  if not found or not player_id or talking[player_id] ~= conversation then
+    return nil
+  end
+  local dialog = rpf.config.dialog(conversation.slug)
+  local node = dialog and node_of(dialog, conversation.node)
+  local choice = node and type(node.choices) == "table" and node.choices[choice_number]
+  local was = conversation.shown[choice_number]
+  if not node or not choice or not was or json.encode(choice) ~= was then
+    return found, nil, nil
+  end
+  return found, node, choice
+end
+
 ---Reads the player's pick against the tree as it is now, and does it.
 ---@param handle any The player's engine handle.
 ---@param conversation rpf.dialogs.Conversation The conversation the menu belongs to.
@@ -163,23 +188,36 @@ local function picked(handle, conversation, choice_number)
     -- The player left, or is in another conversation: not this one's.
     return
   end
-  local player = found --[[@as rpf.PlayerView]]
   if choice_number == "end" then
     talking[player_id] = nil
     return
   end
-  local dialog = rpf.config.dialog(conversation.slug)
-  local node = dialog and node_of(dialog, conversation.node)
-  local choice = node and type(node.choices) == "table" and node.choices[choice_number]
-  local was = conversation.shown[choice_number]
-  if not node or not choice or not was or json.encode(choice) ~= was then
+  local player, node, choice = still_offered(handle, conversation, choice_number)
+  if not player then
+    return
+  end
+  if not node or not choice then
     talking[player_id] = nil
     tell(handle, dialogs.MESSAGES.changed)
     return
   end
   if not offered(handle, choice) then
+    if talking[player_id] == conversation then
+      talking[player_id] = nil
+      tell(handle, dialogs.MESSAGES.conditions)
+    end
+    return
+  end
+  -- A read through a bridge may yield (FiveM), and the tree, the player or
+  -- the conversation may have moved on meanwhile: everything is read again,
+  -- and only the choice as it still is goes on.
+  player, node, choice = still_offered(handle, conversation, choice_number)
+  if not player then
+    return
+  end
+  if not node or not choice then
     talking[player_id] = nil
-    tell(handle, dialogs.MESSAGES.conditions)
+    tell(handle, dialogs.MESSAGES.changed)
     return
   end
   local rule = conversation.rule
