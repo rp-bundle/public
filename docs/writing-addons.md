@@ -605,10 +605,20 @@ them out, and none changes what a record holds:
 | `unit` | `integer`, `number` | What the number counts, which picks its editor: `money` (an integer only, shown with the server's currency), `seconds`, `minutes` or `hours` (staff may type a duration in a larger unit; you read the number in the unit you named), `metres`, `degrees` or `percent` |
 | `slider` | `integer`, `number` | `true` for a range control. Needs `min` and `max` |
 
-So a price is `{ type = "integer", min = 1, unit = "money" }`, a
-cooldown `{ type = "integer", min = 0, max = 1440, unit = "minutes" }`, and
-a chance `{ type = "number", min = 0, max = 100, unit = "percent", slider =
-true }`. `acme_shop` and `acme_property` lay their types out this way.
+Each kind has a control of its own on the page: a switch for a boolean
+(a nullable one, a three-way choice), a select for an enum, a date and
+time for a timestamp, three numbers in a row for a `vector3`, a picker of
+the server's items for a `ref` to `item`, with the item's image, and a
+picker of its jobs for a `ref` to `job`, by employer and rank. A duration
+is typed in any unit from the field's own up to days and stored in the
+field's; money is shown with the currency staff set on the server's
+settings page (`economy.currency`). So a price is `{ type = "integer", min
+= 1, unit = "money" }`, a cooldown `{ type = "integer", min = 0, max = 1440,
+unit = "minutes" }`, and a chance `{ type = "number", min = 0, max = 100,
+unit = "percent", slider = true }`. `acme_shop` and `acme_property` lay
+their types out this way. The list page shows the fields `list` names,
+with a search box over the indexed string fields and a filter per indexed
+field.
 A key the portal does not know is refused at registration like any other
 (`unknown_key`, naming the field), so a typo never silently loses a label.
 The layout keys are part of `fields`, so adding them moves the type's

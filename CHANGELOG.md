@@ -33,6 +33,17 @@ socket.
 
 ### Added
 
+- The generic record pages lay themselves out from the manifest (N1,
+  #376). A field may set `group` (a heading), `order`, and, on an integer
+  or number, `unit` (`money`, `seconds`, `minutes`, `hours`, `metres`,
+  `degrees`, `percent`) and `slider`; each kind gets the control that fits
+  it: a switch, a slider, a duration typed in the unit staff choose, money
+  with the server's currency, a picker of the server's items with their
+  images, a picker of its jobs by employer and rank, a position in one row.
+  The list page searches the start of any indexed string column. A new
+  server setting, **`economy.currency`** (`config.settings.edit`, `$` by
+  default), is what the panel puts before an amount; game servers read it
+  like any setting. `acme_shop` and `acme_property` 1.2.0 use the keys.
 - Dialog trees (#371): what a server's NPCs say and the choices they
   offer, stored per server (`dialogs`), checked against the actions the
   server's installed addons declare, and pushed whole in the config
