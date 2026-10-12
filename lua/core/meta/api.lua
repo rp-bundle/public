@@ -1011,8 +1011,9 @@ function Interactions.targets() end
 local Dialogs = {}
 
 ---Server only. Opens a dialog tree for a player, from its start node: from
----a phone, a command, or an NPC of your own. Opening another for the same
----player replaces the one they were in.
+---a phone, a command, or an NPC of your own. While the player has a menu
+---open (a conversation or anything else) it is `busy`, and what they have
+---open goes on.
 ---@param player any The player's engine handle.
 ---@param slug string The tree's slug, as staff named it in the panel.
 ---@return boolean? ok True once shown.

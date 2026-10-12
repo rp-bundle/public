@@ -72,8 +72,10 @@ end
 ---@field target rpf.targets.Target? The NPC, when the conversation was opened from it.
 ---@field rule { name: string, rules: rpf.targets.Rules? }? The Talk rule it was opened through, to check the player is still within reach.
 
----The conversation each player is in, by player id. Opening another
----replaces it, and a pick answering an older one is dropped.
+---The conversation each player is in, by player id: the one whose menu is
+---on their screen. A conversation becomes theirs only once its menu is
+---shown, so one that could not open (`busy`) leaves the one on screen
+---working, and a pick answering any other is dropped.
 ---@type table<string, rpf.dialogs.Conversation>
 local talking = {}
 
@@ -155,12 +157,13 @@ local show
 ---@param conversation rpf.dialogs.Conversation The conversation the menu belongs to.
 ---@param choice_number any The option's value: a choice's number in the node, or `"end"`.
 local function picked(handle, conversation, choice_number)
-  local player = rpf.players.get(handle)
-  local player_id = player and player.player_id
-  if not player_id or talking[player_id] ~= conversation then
-    -- The player left, or opened another conversation: not this one's.
+  local found = rpf.players.get(handle)
+  local player_id = found and found.player_id
+  if not found or not player_id or talking[player_id] ~= conversation then
+    -- The player left, or is in another conversation: not this one's.
     return
   end
+  local player = found --[[@as rpf.PlayerView]]
   if choice_number == "end" then
     talking[player_id] = nil
     return
@@ -169,7 +172,7 @@ local function picked(handle, conversation, choice_number)
   local node = dialog and node_of(dialog, conversation.node)
   local choice = node and type(node.choices) == "table" and node.choices[choice_number]
   local was = conversation.shown[choice_number]
-  if not choice or not was or json.encode(choice) ~= was then
+  if not node or not choice or not was or json.encode(choice) ~= was then
     talking[player_id] = nil
     tell(handle, dialogs.MESSAGES.changed)
     return
@@ -234,7 +237,7 @@ show = function(handle, conversation)
   local dialog = rpf.config.dialog(conversation.slug)
   local node = dialog and node_of(dialog, conversation.node)
   if not player or not player.player_id or not node then
-    if player and player.player_id then
+    if player and player.player_id and talking[player.player_id] == conversation then
       talking[player.player_id] = nil
     end
     return nil, "not_found"
@@ -250,25 +253,30 @@ show = function(handle, conversation)
     options[1] = { label = dialogs.GOODBYE, value = "end" }
   end
   conversation.shown = shown
-  talking[player.player_id] = conversation
+  local player_id = player.player_id --[[@as string]]
   local ok, err = rpf.ui.members().menu(handle, {
-    title = dialog.title,
+    title = (dialog --[[@as table]]).title,
     text = node.line,
     options = options,
   }, function(value)
     -- Nil when the player closed it, left, or it timed out: it ends.
     if value == nil then
-      if talking[player.player_id] == conversation then
-        talking[player.player_id] = nil
+      if talking[player_id] == conversation then
+        talking[player_id] = nil
       end
       return
     end
     picked(handle, conversation, value)
   end)
   if not ok then
-    talking[player.player_id] = nil
+    -- The conversation that could not go on ends; one that could not open
+    -- was never theirs, and the one on their screen goes on.
+    if talking[player_id] == conversation then
+      talking[player_id] = nil
+    end
     return nil, err
   end
+  talking[player_id] = conversation
   return true
 end
 
@@ -278,7 +286,8 @@ end
 ---@field rule { name: string, rules: rpf.targets.Rules? }? The interaction it was opened through, whose reach every pick checks again: its rules are filled in once it is registered.
 
 ---Opens a conversation with a player: the tree's start node, as a menu.
----Opening another for the same player replaces the one they were in.
+---While they have a menu open, this conversation's or another's, it is
+---`busy`, and the one on their screen goes on.
 ---@param handle any The player's engine handle.
 ---@param slug any The tree's slug.
 ---@param opts rpf.dialogs.OpenOptions? What it was opened from.

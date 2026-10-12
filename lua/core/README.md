@@ -1578,7 +1578,8 @@ Server only; `rpf.api.dialogs` fronts `open`.
   choice whose conditions hold (`holds`), valued by the choice's number,
   or "Goodbye." for a node with none. `not_found` for a slug the config
   lacks, `not_logged_in`, or what the menu says (`busy`, …). One per
-  player; the newest wins.
+  player, the one whose menu is on their screen: one that could not open
+  leaves it working.
 - **A pick** is read against the tree as it is now: the same choice,
   encoded the same (`changed` otherwise), its conditions still holding,
   the NPC still in reach when opened through Talk (`rpf.targets.admit`

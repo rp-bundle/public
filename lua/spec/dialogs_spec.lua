@@ -305,6 +305,15 @@ describe("rpf.dialogs", function()
     assert.are.same({ "You already have a route." }, told())
   end)
 
+  it("leaves the conversation on screen working when another cannot open", function()
+    rpf.api.dialogs.open(7, "courier")
+    local requests = #p.client_requests
+    assert.are.same({ nil, "busy" }, { rpf.api.dialogs.open(7, "courier") })
+    assert.are.equal(requests, #p.client_requests, "nothing new shown")
+    pick(1)
+    assert.are.equal("Here's a route.", menu().text, "the first goes on")
+  end)
+
   it("refuses a tree it does not have and a player who is not logged in", function()
     assert.are.same({ nil, "not_found" }, { rpf.api.dialogs.open(7, "postman") })
     rpf.players.connected(8)

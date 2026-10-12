@@ -186,14 +186,10 @@ local push_rules
 ---not running too, so a rule accepted now stays deliverable.
 local rules_fit
 
----Registers an interaction, for `register` and `register_reserved`.
----@param name any The name.
----@param handler any The handler.
----@param rules any? The rules.
----@param core boolean True for the core's own, under a name no addon may take.
----@return boolean? ok True once registered.
----@return string? err As `register` says.
----@return table? detail As `register` says.
+---Registers an interaction, for `register` and `register_reserved`: the
+---name, the handler, the rules, and whether it is the core's own, under a
+---name no addon may take. Answers as `register` says.
+---@type fun(name: any, handler: any, rules: any?, core: boolean): boolean?, string?, table?
 local register
 
 ---Registers an addon's interaction. Registering a name again replaces it,
