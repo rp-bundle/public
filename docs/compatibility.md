@@ -317,7 +317,11 @@ receiver takes the default (empty, `false` or `None`).
 | `map` | `hello` | `default` | Added by #369. A core from before it places every world record on whatever map it runs, which is what FiveM's unnamed setup, `default`, means |
 | `types` | `hold` | Empty: claims nothing | Added by J6 to a frame a game server sends, and left out by one that claims nothing, so every hold before it decodes as one that claims nothing |
 | `domains` | `welcome` | Native | Added by K1, and left out when native: a native server's `welcome` is the one it was before K1, which is what every portal enforced then |
-| `items`, `item_bases`, `item_defaults`, `employers`, `employer_departments`, `employer_jobs`, `new_character`, `paying_accounts`, `addons` | `ConfigSnapshot` (`config`) | Empty | Sections added after `settings`, so a snapshot from before one still decodes |
+| `items`, `item_bases`, `item_defaults`, `employers`, `employer_departments`, `employer_jobs`, `new_character`, `paying_accounts`, `addons`, `dialogs` | `ConfigSnapshot` (`config`) | Empty | Sections added after `settings`, so a snapshot from before one still decodes |
+| `choices` | A node of a dialog in `dialogs` | Empty | Omitted for a node that ends the conversation; added by L1 |
+| `conditions` | A dialog choice | Empty | Omitted for a choice anyone may pick |
+| `employer`, `job`, `min_grade`, `on_duty`, `negate` | A dialog choice's condition | `None`, `None`, `None`, `None`, `false` | A job condition names what it tests and leaves the rest out; every condition leaves `negate` out unless it is negated |
+| `params` | A dialog choice's `action` | Empty | Omitted for an action that takes none |
 | `payroll` | An employer in `employers` | `None` | Omitted when the employer pays no salaries; added by D7 |
 | `rank`, `salary` | A job in `employer_jobs` | `0`, `None` | Added by D7; `salary` is omitted for an unpaid job |
 | `job` | A character in `held` and `character_created` | `None` | Omitted when the character has no job, so a frame for one re-encodes as it did before D7 |
