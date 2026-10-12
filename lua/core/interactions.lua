@@ -186,23 +186,62 @@ local push_rules
 ---not running too, so a rule accepted now stays deliverable.
 local rules_fit
 
+---Registers an interaction, for `register` and `register_reserved`: the
+---name, the handler, the rules, and whether it is the core's own, under a
+---name no addon may take. Answers as `register` says.
+---@type fun(name: any, handler: any, rules: any?, core: boolean): boolean?, string?, table?
+local register
+
 ---Registers an addon's interaction. Registering a name again replaces it,
 ---and the one replaced goes at once; one registered while the addon's code
----runs goes when it stops.
+---runs goes when it stops. A name whose part after the namespace starts
+---with `rpf_` is the core's (`reserved`): it registers interactions on an
+---addon's behalf under them, such as an NPC's Talk (L1, `rpf.dialogs`).
 ---@param name any `<namespace>.<name>`, under an addon loaded here.
 ---@param handler any `handler(player, payload, target)`, answering `true` and optionally a table of data for the client, or `false` and a reason for the player. `target` is what the rules resolved (`rpf.targets`), nil without a target rule.
 ---@param rules any? The rules (`rpf.targets.check_rules`): `label`, `target`, `distance`, `cooldown`, `permission`, `check`.
 ---@return boolean? ok True once registered.
----@return string? err `invalid` for a name, handler or rules that are not one, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an addon activation that has ended, `too_large` for a rule that would take every rule with a target past what one `rpf:target_rules` frame carries.
+---@return string? err `invalid` for a name, handler or rules that are not one, `reserved` for a name under `rpf_`, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an addon activation that has ended, `too_large` for a rule that would take every rule with a target past what one `rpf:target_rules` frame carries.
 ---@return table? detail For rules refused, `{ error = "rules", field = <key> }`.
 function interactions.register(name, handler, rules)
+  return register(name, handler, rules, false)
+end
+
+---Registers an interaction the core runs on an addon's behalf, under the
+---addon's namespace and a name starting `rpf_` that the addon itself may
+---not take, so the two never collide. Owned like the addon's own when it
+---runs in the addon's context (`rpf.addons.run`). Not in `rpf.api`.
+---@param name string `<namespace>.rpf_<name>`.
+---@param handler any The handler.
+---@param rules any? The rules.
+---@return boolean? ok True once registered.
+---@return string? err As `register` says, but never `reserved`.
+---@return table? detail As `register` says.
+function interactions.register_reserved(name, handler, rules)
+  return register(name, handler, rules, true)
+end
+
+---Registers an interaction (declared above, for `register` and
+---`register_reserved`): an addon's own under any name but `rpf_`'s, the
+---core's under `rpf_`'s alone.
+---@param name any The name.
+---@param handler any The handler.
+---@param rules any? The rules.
+---@param core boolean True for the core's own.
+---@return boolean? ok True once registered.
+---@return string? err As `register` says.
+---@return table? detail As `register` says.
+register = function(name, handler, rules, core)
   if not rpf.addons then
     return nil, "invalid"
   end
   if not interactions.is_name(name) or not rpf.callable(handler) then
     return nil, "invalid"
   end
-  local namespace = name:match("^([^.]+)%.")
+  local namespace, short = name:match("^([^.]+)%.(.*)$")
+  if (short:sub(1, 4) == "rpf_") ~= core then
+    return nil, core and "invalid" or "reserved"
+  end
   if rpf.addons.state(namespace) == nil then
     return nil, "not_found"
   end
@@ -236,6 +275,15 @@ function interactions.register(name, handler, rules)
   end)
   push_rules()
   return true
+end
+
+---The checked rules an interaction was registered with, for a module that
+---checks a target again later (`rpf.dialogs`, at each pick).
+---@param name string The interaction.
+---@return rpf.targets.Rules? rules Its rules, or nil if nothing is registered by that name or it has none.
+function interactions.rules_of(name)
+  local entry = handlers[name]
+  return entry and entry.rules or nil
 end
 
 ---Whether a player may send another request now, counting it.

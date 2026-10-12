@@ -1,0 +1,14 @@
+{
+  "description": "A dialog tree is named by its slug (L1).",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "talks": "Old Tom"
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "talks"
+    }
+  }
+}

@@ -444,6 +444,15 @@ if actions then
   }, "rpf.actions")
 end
 
+local dialogs = rpf.dialogs
+if dialogs then
+  surface.dialogs = freeze({
+    open = function(player, slug)
+      return dialogs.open(player, slug)
+    end,
+  }, "rpf.dialogs")
+end
+
 local players = rpf.players
 if players then
   surface.players = freeze({

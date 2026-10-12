@@ -94,6 +94,10 @@
         },
         "blob": {
           "type": "json"
+        },
+        "talks": {
+          "type": "ref",
+          "to": "dialog"
         }
       }
     },

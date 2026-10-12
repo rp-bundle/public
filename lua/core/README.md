@@ -53,7 +53,7 @@ rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, 
                  -- inventory.lua, manifest.lua, addons.lua, records.lua, sync.lua, accounts.lua,
                  -- handoff.lua, join.lua, characters.lua, jobs.lua, edits.lua, data.lua,
                  -- holding.lua, ops.lua, bridge.lua, facade.lua, commerce.lua, world.lua,
-                 -- targets.lua, interactions.lua, ui.lua, actions.lua, api.lua
+                 -- targets.lua, interactions.lua, ui.lua, actions.lua, dialogs.lua, api.lua
 rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua,
                  -- picker.lua, targets.lua, interactions.lua, ui.lua, api.lua
 ```
@@ -1401,7 +1401,10 @@ as a request the platform pairs with its answer (`request_server`,
 - **Server.** `register(name, handler)`: `name` is `<namespace>.<name>`
   under a loaded addon, its own when the caller is known (`may_use`), and
   the registration is owned like a timer; registering a name again
-  replaces it and forgets the old one's ownership. `rpf:interact`
+  replaces it and forgets the old one's ownership. A name whose part after
+  the namespace starts `rpf_` is the core's (`reserved`), which
+  `register_reserved` takes for the Talk `rpf.dialogs` offers on an addon's
+  NPCs; `rules_of(name)` gives a registration's checked rules. `rpf:interact`
   (`{ name, payload }`) reaches only a logged-in player
   (`players.on_client_request`, which answers anyone else
   `not_logged_in`), at most `MAX_PER_WINDOW` (20) per `WINDOW_MS` (10 s)
@@ -1564,6 +1567,35 @@ its parameters as data.
   with the handler's message (cut to `MAX_MESSAGE` bytes on a character's
   boundary), or `failed` for a throw or an answer that is neither `true`
   nor `false`, which is logged.
+
+### Dialogs (`rpf.dialogs`, L1)
+
+A conversation with an NPC, from a tree in the config (`rpf.config.dialog`).
+Server only; `rpf.api.dialogs` fronts `open`.
+
+- **`open(handle, slug, opts)`** shows the tree's start node as an
+  `rpf.ui` menu: the title, the node's line as `text`, an option per
+  choice whose conditions hold (`holds`), valued by the choice's number,
+  or "Goodbye." for a node with none. `not_found` for a slug the config
+  lacks, `not_logged_in`, or what the menu says (`busy`, …). One per
+  player, the one whose menu is on their screen: one that could not open
+  leaves it working.
+- **A pick** is read against the tree as it is now: the same choice,
+  encoded the same (`changed` otherwise), its conditions still holding,
+  the NPC still in reach when opened through Talk (`rpf.targets.admit`
+  with the rule's checked rules, `rpf.interactions.rules_of`). Then
+  `goto`, `end`, or `rpf.actions.run`, whose refusals become `MESSAGES`
+  told to the player as a notification, and logged when the choice is
+  broken.
+- **`holds(handle, condition)`**: `job` through `facade.current_job`,
+  `item` through `facade.count`, `permission` through `staff.can`, each
+  negated when `negate`; nil when a read fails or the kind is one this
+  core does not know, which hides the choice.
+- **Talk**: on every `addons.state` to `active`, each of the addon's
+  types whose `world` names a `dialog` gets
+  `interactions.register_reserved("<namespace>.rpf_talk<n>", …)` in the
+  addon's context, aimed at the type, offered where the record's field
+  names a tree the config has.
 
 ### Characters (`rpf.characters`, `rpf.picker`)
 
@@ -1958,6 +1990,7 @@ internal.
 | `ui` | both | `notify`, `menu`, `input`, `progress`; on the server each takes the player first (`rpf.ui` above) |
 | `interactions` | both | `register` on the server, `send` and `request` on the client (`rpf.interactions` above) |
 | `actions` | server | `register` (L1, `rpf.actions` above) |
+| `dialogs` | server | `open` (L1, `rpf.dialogs` above) |
 | `characters`, `money`, `inventory`, `jobs`, `ops` | server | The domain-neutral facade (`rpf.facade` above): `characters.current`; `money.accounts`, `balance`, `debit`, `credit`; `inventory.count`, `give`, `take`; `jobs.current`; each domain's `supports`; `ops.new`, `ops.unknown`, `ops.result` |
 | `commerce` | server | `exchange`, `check` (J5, `rpf.commerce` above) |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |

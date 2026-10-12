@@ -66,6 +66,7 @@ server_scripts({
   "core/interactions.lua",
   "core/ui.lua",
   "core/actions.lua",
+  "core/dialogs.lua",
   "core/api.lua",
   "shared.lua",
   "ox.lua",

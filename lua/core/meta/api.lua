@@ -46,6 +46,7 @@
 ---@field commerce rpf.api.Commerce Exchanges: money and items moved together, with your change to your own records, in one intent (J5). For shops, buy-back counters, crafting and other trades. Server only.
 ---@field world rpf.api.World The game world, through what the engine's adapter supports (J3). Server only.
 ---@field interactions rpf.api.Interactions Requests a player's client makes to an addon: `register` a handler on the server, `send` or `request` on the client (J3, J10).
+---@field dialogs rpf.api.Dialogs Conversations with NPCs, from the trees staff build in the panel (L1): open one for a player. An NPC whose world type names a `dialog` field talks without this. Server only.
 ---@field actions rpf.api.Actions What your addon can be asked to do by a dialog choice staff build in the panel: the handlers of the actions your manifest declares (L1). Server only.
 ---@field capabilities fun(): table<string, boolean> What this engine supports, by name: the game world's `position`, `bucket`, `model`, `entity`, `spawn` and `despawn` (server only), and the UI `notify`, `menu`, `input` and `progress` (both sides). Ask before offering a player something that needs one; a call to one that is missing says `unsupported`.
 ---@field ui rpf.api.Ui Notifications, menus, input dialogs and progress bars that look right on every engine (J10): on the client for the player, on the server for a player you name.
@@ -931,7 +932,7 @@ local Interactions = {}
 ---@param handler fun(player: rpf.PlayerView, payload: table, target: rpf.targets.Target?): boolean, (table|string)? Answers `true` and, optionally, a table of plain data for a `request` (at most 16 KiB encoded, 8 deep), or `false` and a reason the player's client is told. `target` is the resolved target: `{ type, id, record, position, distance }` for a record, `{ ref, model, position, distance }` (with `type` and `id` when RPF placed it) for an entity. Its `distance` is how far the player is, in metres.
 ---@param rules { target: (string|{ type: string?, models: string[]? })?, distance: number?, cooldown: integer?, permission: string?, check: (fun(player: rpf.PlayerView, target: rpf.targets.Target?): boolean, string?)?, label: string? }? The rules.
 ---@return boolean? ok True once registered.
----@return "invalid"|"not_found"|"forbidden"|"inactive"|"too_large"|nil err `invalid` for a bad name, handler or rules, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an activation that has ended, `too_large` when the server's rules with a target would no longer fit what a client reads (64 KiB).
+---@return "invalid"|"reserved"|"not_found"|"forbidden"|"inactive"|"too_large"|nil err `invalid` for a bad name, handler or rules, `reserved` for a name starting `rpf_` after your namespace (the core's, for the Talk it offers on your NPCs), `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `inactive` from code of an activation that has ended, `too_large` when the server's rules with a target would no longer fit what a client reads (64 KiB).
 ---@return { error: "rules", field: string }? detail Which rule was refused.
 function Interactions.register(name, handler, rules) end
 
@@ -983,6 +984,41 @@ function Interactions.nearby(callback) end
 ---label, type, kind, models, distance }`. What a target resource offers.
 ---@return table[] rules A copy.
 function Interactions.targets() end
+
+---Dialogs (L1): conversations with NPCs, from the trees staff build in
+---the panel. Each node is a menu on the player's screen; the server checks
+---every pick against the tree as it is now, and runs a choice's action
+---(below) only if the player may still pick it.
+---
+---You rarely call this. Give a world type a `dialog` field and name it in
+---`world`, and RPF offers Talk on its records and opens the tree the
+---record names:
+---
+---```lua
+---npc = {
+---  schema = 1, authority = "config",
+---  fields = {
+---    spot = { type = "vector3", required = true },
+---    model = { type = "json", engine = true, required = true },
+---    talks = { type = "ref", to = "dialog", nullable = true },
+---  },
+---  world = { kind = "ped", position = "spot", model = "model", dialog = "talks" },
+---},
+---```
+---
+---**Server only.**
+---@class rpf.api.Dialogs
+local Dialogs = {}
+
+---Server only. Opens a dialog tree for a player, from its start node: from
+---a phone, a command, or an NPC of your own. While the player has a menu
+---open (a conversation or anything else) it is `busy`, and what they have
+---open goes on.
+---@param player any The player's engine handle.
+---@param slug string The tree's slug, as staff named it in the panel.
+---@return boolean? ok True once shown.
+---@return "not_found"|"not_logged_in"|"busy"|"unsupported"|"inactive"|"unavailable"|nil err `not_found` for a tree this server does not have, `not_logged_in` for a player who is not, `busy` while they have another menu open, `unsupported` on an engine without menus, `inactive` from code of an activation that has ended.
+function Dialogs.open(player, slug) end
 
 ---Actions (L1): what your addon can be asked to do by a dialog choice.
 ---Staff build an NPC's conversation in the panel, and a choice can run an
