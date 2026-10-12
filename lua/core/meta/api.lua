@@ -46,6 +46,7 @@
 ---@field commerce rpf.api.Commerce Exchanges: money and items moved together, with your change to your own records, in one intent (J5). For shops, buy-back counters, crafting and other trades. Server only.
 ---@field world rpf.api.World The game world, through what the engine's adapter supports (J3). Server only.
 ---@field interactions rpf.api.Interactions Requests a player's client makes to an addon: `register` a handler on the server, `send` or `request` on the client (J3, J10).
+---@field actions rpf.api.Actions What your addon can be asked to do by a dialog choice staff build in the panel: the handlers of the actions your manifest declares (L1). Server only.
 ---@field capabilities fun(): table<string, boolean> What this engine supports, by name: the game world's `position`, `bucket`, `model`, `entity`, `spawn` and `despawn` (server only), and the UI `notify`, `menu`, `input` and `progress` (both sides). Ask before offering a player something that needs one; a call to one that is missing says `unsupported`.
 ---@field ui rpf.api.Ui Notifications, menus, input dialogs and progress bars that look right on every engine (J10): on the client for the player, on the server for a player you name.
 ---@field players rpf.api.Players? The players on this game server. Server only.
@@ -982,6 +983,57 @@ function Interactions.nearby(callback) end
 ---label, type, kind, models, distance }`. What a target resource offers.
 ---@return table[] rules A copy.
 function Interactions.targets() end
+
+---Actions (L1): what your addon can be asked to do by a dialog choice.
+---Staff build an NPC's conversation in the panel, and a choice can run an
+---action an installed addon declared, with parameters staff fill in. The
+---portal never sends code, so this is how a choice makes something happen:
+---declare the action and its parameters in your manifest, and register its
+---handler here while your addon runs.
+---
+---```lua
+----- manifest.lua
+---actions = {
+---  start_route = {
+---    title = "Start a delivery route",
+---    help = "Gives the player a route to drive.",
+---    params = { -- field definitions, as a type's fields are
+---      route = { type = "ref", to = "rpf_delivery.route", required = true },
+---      bonus = { type = "integer", min = 0, max = 1000, default = 0 },
+---    },
+---  },
+---},
+----- server.lua, in your `start` handler
+---rpf.actions.register("rpf_delivery.start_route", function(player, params, context)
+---  if busy(player) then
+---    return false, "You already have a route." -- the player is told this
+---  end
+---  start(player.handle, params.route, params.bonus)
+---  return true
+---end)
+---```
+---
+---**Server only.**
+---@class rpf.api.Actions
+local Actions = {}
+
+---Server only. Registers the handler of an action your manifest declares
+---(`actions.<name>`), under your addon's namespace. One registered while
+---your addon's code runs goes when it stops; registering the name again
+---replaces it.
+---
+---The handler runs only while your addon is active, for the player who
+---picked the choice. `params` is a plain copy, already checked against the
+---declaration with its defaults filled in: staff may have saved the choice
+---under an older release of your manifest, and a choice whose parameters
+---no longer pass is refused before your handler sees it. A `ref` to one of
+---your types is the record's id; read it with `rpf.records.get`, since
+---staff may have deleted the record since.
+---@param name string `<namespace>.<name>`, as declared.
+---@param handler fun(player: rpf.PlayerView, params: table, context: { dialog: string?, node: string?, target: rpf.targets.Target? }): boolean, string? Answers `true`, or `false` and a sentence the player is shown. A throw is logged and the player told it failed.
+---@return boolean? ok True once registered.
+---@return "invalid"|"not_found"|"forbidden"|"not_declared"|"inactive"|nil err `invalid` for a bad name or handler, `not_found` when no addon of that namespace is loaded, `forbidden` for another addon's namespace, `not_declared` when your manifest does not declare the action, `inactive` from code of an activation that has ended.
+function Actions.register(name, handler) end
 
 ---UI an addon shows a player, the same on every engine (J10): over ox_lib
 ---on FiveM, in Derma on Gmod. It holds what an addon for both engines

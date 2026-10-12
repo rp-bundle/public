@@ -1,0 +1,18 @@
+{
+  "description": "An action needs a title, the name staff pick it by.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "actions": {
+      "water": {
+        "help": "Waters every plant."
+      }
+    }
+  },
+  "error": {
+    "error": "missing",
+    "path": "actions.water.title"
+  }
+}

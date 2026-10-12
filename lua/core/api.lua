@@ -435,6 +435,15 @@ if interactions then
   end
 end
 
+local actions = rpf.actions
+if actions then
+  surface.actions = freeze({
+    register = function(name, handler)
+      return actions.register(name, handler)
+    end,
+  }, "rpf.actions")
+end
+
 local players = rpf.players
 if players then
   surface.players = freeze({

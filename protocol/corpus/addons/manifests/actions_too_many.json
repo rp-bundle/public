@@ -1,0 +1,114 @@
+{
+  "description": "At most limits::MAX_ACTIONS_PER_ADDON (32) actions.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "actions": {
+      "a00": {
+        "title": "An action"
+      },
+      "a01": {
+        "title": "An action"
+      },
+      "a02": {
+        "title": "An action"
+      },
+      "a03": {
+        "title": "An action"
+      },
+      "a04": {
+        "title": "An action"
+      },
+      "a05": {
+        "title": "An action"
+      },
+      "a06": {
+        "title": "An action"
+      },
+      "a07": {
+        "title": "An action"
+      },
+      "a08": {
+        "title": "An action"
+      },
+      "a09": {
+        "title": "An action"
+      },
+      "a10": {
+        "title": "An action"
+      },
+      "a11": {
+        "title": "An action"
+      },
+      "a12": {
+        "title": "An action"
+      },
+      "a13": {
+        "title": "An action"
+      },
+      "a14": {
+        "title": "An action"
+      },
+      "a15": {
+        "title": "An action"
+      },
+      "a16": {
+        "title": "An action"
+      },
+      "a17": {
+        "title": "An action"
+      },
+      "a18": {
+        "title": "An action"
+      },
+      "a19": {
+        "title": "An action"
+      },
+      "a20": {
+        "title": "An action"
+      },
+      "a21": {
+        "title": "An action"
+      },
+      "a22": {
+        "title": "An action"
+      },
+      "a23": {
+        "title": "An action"
+      },
+      "a24": {
+        "title": "An action"
+      },
+      "a25": {
+        "title": "An action"
+      },
+      "a26": {
+        "title": "An action"
+      },
+      "a27": {
+        "title": "An action"
+      },
+      "a28": {
+        "title": "An action"
+      },
+      "a29": {
+        "title": "An action"
+      },
+      "a30": {
+        "title": "An action"
+      },
+      "a31": {
+        "title": "An action"
+      },
+      "a32": {
+        "title": "An action"
+      }
+    }
+  },
+  "error": {
+    "error": "too_many",
+    "path": "actions"
+  }
+}

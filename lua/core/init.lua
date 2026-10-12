@@ -48,6 +48,7 @@
 ---@field interactions rpf.interactions Requests a player's client makes to an addon's registered handler (J3).
 ---@field targets rpf.targets What an interaction may be aimed at in the world, and the checks before its handler runs (J4).
 ---@field ui rpf.ui The UI an addon shows a player: notifications, menus, input dialogs and progress bars (J10).
+---@field actions rpf.actions What addons can be asked to do by a dialog choice: their declared actions' handlers, and running one (L1).
 ---@field picker rpf.picker The client side of choosing a character.
 ---@field handoff rpf.handoff The login messages between server and client.
 ---@field join rpf.join The server side of a player's login.
@@ -128,6 +129,7 @@ rpf.files = {
     "targets.lua",
     "interactions.lua",
     "ui.lua",
+    "actions.lua",
     "api.lua",
   },
   client = {
@@ -202,6 +204,7 @@ function rpf.start_server(platform, options)
   rpf.world.start(platform)
   rpf.interactions.serve(platform)
   rpf.ui.serve(platform)
+  rpf.actions.start(platform)
   rpf.config.restore(platform)
   rpf.config.serve(platform, rpf.connection)
   rpf.publish(platform)

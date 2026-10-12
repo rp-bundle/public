@@ -999,6 +999,21 @@ function addons.call(name, ...)
   return answer(name, addons.run({ namespace = export.namespace, origin = addon.origin, run = addon.run }, export.fn, ...))
 end
 
+---An action an addon loaded here declares (L1): its manifest's `actions`
+---entry, as `rpf.manifest.check` normalised it. The manifest the addon
+---registered, which is the installed one whenever the addon runs.
+---@param namespace string The addon.
+---@param name string The action's name within the namespace.
+---@return table? action `title`, `help` and `params`, or nil if the addon is not loaded or does not declare it. Not a copy: read it, never change it.
+function addons.action(namespace, name)
+  local addon = loaded[namespace]
+  local declared_actions = addon and addon.manifest.actions
+  if type(declared_actions) ~= "table" then
+    return nil
+  end
+  return declared_actions[name]
+end
+
 ---An addon's state, and why it is in it.
 ---@param namespace string The addon.
 ---@return string? state Its state, or nil if no addon of that name is loaded.

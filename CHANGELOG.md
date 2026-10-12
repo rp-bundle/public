@@ -32,6 +32,17 @@ socket.
 
 ### Added
 
+- Addons declare **actions** (#371): what a dialog choice staff build in
+  the panel can make an addon do. A manifest's new top-level `actions`
+  names each with a title, help and parameters (field definitions, minus
+  `index`, `unique`, `hidden`, `read_only`, `engine` and owner
+  references), checked by the same rules on both sides and held to the
+  shared corpus. The addon registers each handler with
+  `rpf.api.actions.register(name, handler)`, and the core runs it only
+  while the addon is active, with parameters checked against the
+  declaration. The install view lists the actions a release adds and the
+  ones it stops declaring. `actions` and `dialogs` are reserved
+  namespaces.
 - Placements know which map they belong to (#369). A game server reports
   the map it runs in `Hello`: `game.GetMap()` on Gmod, and on FiveM the
   new `rpf_map` convar, which names one setup of the one map (`default`

@@ -502,7 +502,8 @@ notification with its text, and the dialog `/note` opens.
 
 A manifest is a table that declares, and never computes, what your addon
 adds: its namespace, release, the API major it was written for, the types
-of record it stores, and the permissions staff can grant. The portal checks
+of record it stores, the permissions staff can grant, and the actions a
+dialog choice can run (Actions, below). The portal checks
 it with the same rules the game server does, so a mistake is refused at
 registration with the rule it breaks.
 
@@ -924,6 +925,68 @@ own UI, `rpf.interactions.nearby(callback)` gives the same list, and you
 send a pick with `rpf.interactions.request(name, { target = { id = id } },
 callback)`; an entity is `{ target = { ref = ref } }`, its network id on
 FiveM and its index on Gmod.
+
+## Actions
+
+An action is something your addon can be asked to do by a choice in an
+NPC's dialog, which staff build in the panel (#371): start a delivery
+route, open a locker, hand over a uniform. The portal never sends your
+server code, so a choice cannot say *how*. It names one of your actions
+and fills in its parameters, and your Lua does the rest. Declare each one
+in your manifest, beside `types`:
+
+```lua
+actions = {
+  start_route = {
+    title = "Start a delivery route",   -- what staff pick in the dialog editor
+    help = "Gives the player a route to drive.",
+    params = {                          -- the inputs staff fill in, as a type's fields
+      route = { type = "ref", to = "acme_delivery.route", required = true },
+      bonus = { type = "integer", min = 0, max = 1000, default = 0 },
+    },
+  },
+},
+```
+
+Parameters are field definitions with the same kinds and bounds as a
+type's fields, minus what only a stored record means (`index`, `unique`,
+`hidden`, `read_only`, `engine`), and a parameter may not refer to a
+player, character, employer or server. Then register the handler in
+`start`:
+
+```lua
+start = function()
+  assert(rpf.actions.register("acme_delivery.start_route", function(player, params, context)
+    -- params: a plain copy, checked against your declaration, defaults filled in
+    local route = rpf.records.get("acme_delivery.route", params.route)
+    if not route then
+      return false, "That route is closed." -- the player is shown this
+    end
+    if busy(player) then
+      return false, "You already have a route."
+    end
+    begin(player.handle, route, params.bonus)
+    return true
+  end))
+end,
+```
+
+- **Your handler sees only checked parameters.** Staff may have saved the
+  choice under an older release of your manifest: parameters that no
+  longer pass your declaration are refused before your handler runs. A
+  `ref` to one of your types is the record's id, and staff may have
+  deleted the record since, so read it and refuse if it is gone.
+- **A refusal is a sentence for the player.** Answer `false` and what to
+  tell them. A throw is logged with your namespace and the player told it
+  failed.
+- **Dropping an action breaks its choices, visibly.** A release that stops
+  declaring an action installs, and the install view says which actions
+  it drops. The choices that run it are shown as broken in the panel and
+  refused in game until staff change them, and so are choices while your
+  addon is disabled or not loaded.
+- `register` answers `nil` and why: `not_declared` for an action your
+  manifest does not declare, `forbidden` for another addon's namespace,
+  `invalid`, `not_found` and `inactive` as for interactions.
 
 ## UI
 

@@ -1,0 +1,26 @@
+{
+  "description": "A parameter's default is checked like its value.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "actions": {
+      "water": {
+        "title": "Water",
+        "params": {
+          "litres": {
+            "type": "integer",
+            "min": 1,
+            "max": 5,
+            "default": 9
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "default",
+    "path": "actions.water.params.litres.default"
+  }
+}

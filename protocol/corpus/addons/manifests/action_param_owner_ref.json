@@ -1,0 +1,24 @@
+{
+  "description": "A parameter cannot refer to an owner: staff typing a player's id into a choice would act on that player for whoever picks it.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "actions": {
+      "water": {
+        "title": "Water",
+        "params": {
+          "for": {
+            "type": "ref",
+            "to": "player"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_value",
+    "path": "actions.water.params.for.to"
+  }
+}

@@ -53,7 +53,7 @@ rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, 
                  -- inventory.lua, manifest.lua, addons.lua, records.lua, sync.lua, accounts.lua,
                  -- handoff.lua, join.lua, characters.lua, jobs.lua, edits.lua, data.lua,
                  -- holding.lua, ops.lua, bridge.lua, facade.lua, commerce.lua, world.lua,
-                 -- targets.lua, interactions.lua, ui.lua, api.lua
+                 -- targets.lua, interactions.lua, ui.lua, actions.lua, api.lua
 rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua,
                  -- picker.lua, targets.lua, interactions.lua, ui.lua, api.lua
 ```
@@ -961,6 +961,11 @@ each role names a field of a kind it may be (`world_field` otherwise; a
 `map` must be an indexed string), and the kind decides whether `model` and
 `radius` are needed or refused. `check_fields` then holds the field a
 type's `map` role names to a map's name (`manifest.is_map_name`, #369).
+A manifest's `actions` (L1) come after its types, and each action's
+`params` are checked as a type's fields are, except that a parameter takes
+no `index`, `unique`, `hidden`, `read_only` or `engine` (`unknown_key`) and
+refers to no owner (`unknown_value` at `to`); a choice's parameters are
+checked against them with `check_fields({ fields = params }, given)`.
 `manifest.is_version` and `manifest.is_range` check the shape of a release
 and of a `requires` range; matching one against the other is the portal's,
 at install.
@@ -1532,6 +1537,32 @@ answer is read by; `ui.read` reads an answer against it, on both sides.
   told to close the window by the request's id (`rpf:ui_close`), which it
   does through `platform.ui.close`.
 
+### Actions (`rpf.actions`, L1)
+
+What an addon can be asked to do by a dialog choice staff build in the
+panel (#371). Server only; `rpf.api.actions` fronts `register`. The portal
+never sends code, so a choice names an action an installed addon declared
+in its manifest (`actions`, read through `rpf.addons.action`) and fills in
+its parameters as data.
+
+- **`register(name, handler)`**: under the caller's own namespace
+  (`forbidden` otherwise, as `rpf.addons.may_use` decides), for an action
+  its registered manifest declares (`not_declared`), owned like a timer
+  (`rpf.addons.own`): it goes when the addon stops. Registering the name
+  again replaces it.
+- **`available(name)`**: `true`, or `false` and `not_declared` (no addon
+  loaded here declares it), `inactive` (its addon is loaded and not
+  running) or `not_registered` (it runs and never registered the
+  handler). What a dialog asks before it offers a choice as working.
+- **`run(player, name, params, context)`**: `available`, then the
+  parameters checked against the declaration with its defaults
+  (`invalid` and the rule, since staff may have saved the choice under an
+  older release), then the handler in its addon's context under `pcall`
+  with a plain copy of them. It answers `true`, or `false` and `refused`
+  with the handler's message (cut to `MAX_MESSAGE` bytes on a character's
+  boundary), or `failed` for a throw or an answer that is neither `true`
+  nor `false`, which is logged.
+
 ### Characters (`rpf.characters`, `rpf.picker`)
 
 A logged-in player's characters (D5): list, create, select and switch. Server
@@ -1924,6 +1955,7 @@ internal.
 | `capabilities`, `world` | both, server | `capabilities()` on both sides (the world's on the server, the UI's on both), and `world.position` on the server (`rpf.world` above) |
 | `ui` | both | `notify`, `menu`, `input`, `progress`; on the server each takes the player first (`rpf.ui` above) |
 | `interactions` | both | `register` on the server, `send` and `request` on the client (`rpf.interactions` above) |
+| `actions` | server | `register` (L1, `rpf.actions` above) |
 | `characters`, `money`, `inventory`, `jobs`, `ops` | server | The domain-neutral facade (`rpf.facade` above): `characters.current`; `money.accounts`, `balance`, `debit`, `credit`; `inventory.count`, `give`, `take`; `jobs.current`; each domain's `supports`; `ops.new`, `ops.unknown`, `ops.result` |
 | `commerce` | server | `exchange`, `check` (J5, `rpf.commerce` above) |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |

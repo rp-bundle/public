@@ -31,6 +31,8 @@
 ---@field MAX_RECORD_BYTES integer The largest record's fields, serialised: `limits::MAX_RECORD_BYTES`.
 ---@field MAX_ADDONS_PER_SERVER integer `limits::MAX_ADDONS_PER_SERVER`, which also bounds `requires`.
 ---@field MAX_ADDON_PERMISSIONS integer `limits::MAX_ADDON_PERMISSIONS`.
+---@field MAX_ACTIONS_PER_ADDON integer `limits::MAX_ACTIONS_PER_ADDON`.
+---@field MAX_PARAMS_PER_ACTION integer `limits::MAX_PARAMS_PER_ACTION`.
 ---@field MAX_TYPES_PER_ADDON integer `limits::MAX_TYPES_PER_ADDON`.
 ---@field MAX_FIELDS_PER_TYPE integer `limits::MAX_FIELDS_PER_TYPE`.
 ---@field MAX_INDEXED_FIELDS_PER_TYPE integer `limits::MAX_INDEXED_FIELDS_PER_TYPE`.
@@ -86,6 +88,8 @@ manifest.MAX_MANIFEST_BYTES = 64 * 1024
 manifest.MAX_RECORD_BYTES = 16 * 1024
 manifest.MAX_ADDONS_PER_SERVER = 32
 manifest.MAX_ADDON_PERMISSIONS = 32
+manifest.MAX_ACTIONS_PER_ADDON = 32
+manifest.MAX_PARAMS_PER_ACTION = 16
 manifest.MAX_TYPES_PER_ADDON = 16
 manifest.MAX_FIELDS_PER_TYPE = 64
 manifest.MAX_INDEXED_FIELDS_PER_TYPE = 8
@@ -130,6 +134,8 @@ local RESERVED_NAMESPACES = {
   money = true,
   interactions = true,
   domains = true,
+  actions = true,
+  dialogs = true,
 }
 ---Field names a type may not declare: `manifest::RESERVED_FIELDS`.
 local RESERVED_FIELDS = { id = true, type = true, owner = true, schema = true, revision = true }
@@ -191,6 +197,12 @@ local COMMON = {
 }
 ---Reference targets that are not a type.
 local TARGETS = { player = true, character = true, employer = true, server = true, item = true, job = true }
+---Reference targets that are owners, which an action's parameter may not
+---name (`RefTarget::is_owner`).
+local OWNERS = { player = true, character = true, employer = true, server = true }
+---Keys only a stored record's field may set, which an action's parameter
+---may not: an index, a portal view, an engine's data.
+local RECORD_ONLY = { engine = true, hidden = true, index = true, read_only = true, unique = true }
 
 -- Shapes -----------------------------------------------------------------
 
@@ -632,9 +644,10 @@ end
 ---@param field any The field.
 ---@param path string Its path.
 ---@param context rpf.manifest.Context The manifest around it.
+---@param param boolean? True for an action's parameter, which takes fewer keys and refers to no owner.
 ---@return table? field The field, normalised, or nil.
 ---@return table? refusal Why not.
-local function check_field(field, path, context)
+local function check_field(field, path, context, param)
   if not is_object(field) then
     return refuse("wrong_type", path)
   end
@@ -652,6 +665,11 @@ local function check_field(field, path, context)
   end
 
   local allowed = set(COMMON)
+  if param then
+    for key in pairs(RECORD_ONLY) do
+      allowed[key] = nil
+    end
+  end
   for _, key in ipairs(BOUNDS[kind]) do
     allowed[key] = true
   end
@@ -772,6 +790,9 @@ local function check_field(field, path, context)
     local to = field.to
     if type(to) ~= "string" then
       return refuse("wrong_type", to_path)
+    end
+    if param and OWNERS[to] then
+      return refuse("unknown_value", to_path)
     end
     if not TARGETS[to] then
       local namespace, name = to:match("^([^.]*)%.([^.]*)$")
@@ -1082,6 +1103,55 @@ local function check_type(def, path, context)
   return out
 end
 
+---One action: the order is `manifest::check_action`'s. Its parameters are
+---fields, checked as a type's are but for what only a record's field means.
+---@param value any The action.
+---@param path string Its path.
+---@param context rpf.manifest.Context The manifest around it.
+---@return table? action The action, normalised, or nil.
+---@return table? refusal Why not.
+local function check_action(value, path, context)
+  local map, err = object(value, path, set({ "help", "params", "title" }), { "title" })
+  if not map then
+    return nil, err
+  end
+  local out = json.object()
+  for k, v in pairs(map) do
+    out[k] = v
+  end
+  local ok, refusal = label(map.title, at(path, "title"), MAX_TITLE_BYTES)
+  if not ok then
+    return nil, refusal
+  end
+  if map.help ~= nil then
+    ok, refusal = label(map.help, at(path, "help"), MAX_HELP_BYTES)
+    if not ok then
+      return nil, refusal
+    end
+  end
+  if map.params ~= nil then
+    local params_path = at(path, "params")
+    local params, why = named_map(map.params, params_path, manifest.MAX_PARAMS_PER_ACTION)
+    if not params then
+      return nil, why
+    end
+    local checked = json.object()
+    for _, key in ipairs(sorted_keys(params)) do
+      local param_path = at(params_path, key)
+      if not is_name(key) then
+        return refuse("name", param_path)
+      end
+      local field, refused = check_field(params[key], param_path, context, true)
+      if not field then
+        return nil, refused
+      end
+      checked[key] = field
+    end
+    out.params = checked
+  end
+  return out
+end
+
 ---Checks a manifest and returns it normalised, or names the first rule it
 ---breaks and where: `Manifest::parse`, rule for rule.
 ---
@@ -1099,7 +1169,7 @@ function manifest.check(value)
   if bytes and bytes > manifest.MAX_MANIFEST_BYTES then
     return refuse("too_large", "")
   end
-  local allowed = set({ "api", "namespace", "permissions", "requires", "title", "types", "version" })
+  local allowed = set({ "actions", "api", "namespace", "permissions", "requires", "title", "types", "version" })
   local map, err = object(m, "", allowed, { "namespace", "version", "api", "title" })
   if not map then
     return nil, err
@@ -1183,17 +1253,20 @@ function manifest.check(value)
     out.permissions = json.object(json.copy(entries))
   end
 
+  local names = {}
   if map.types ~= nil then
     local entries, why = named_map(map.types, "types", manifest.MAX_TYPES_PER_ADDON)
     if not entries then
       return nil, why
     end
-    local names = {}
     for key in pairs(entries) do
       names[key] = true
     end
-    ---@type rpf.manifest.Context
-    local context = { namespace = namespace, types = names, requires = requires, permissions = permissions }
+  end
+  ---@type rpf.manifest.Context
+  local context = { namespace = namespace, types = names, requires = requires, permissions = permissions }
+  if map.types ~= nil then
+    local entries = map.types
     local types = json.object()
     for _, key in ipairs(sorted_keys(entries)) do
       local path = at("types", key)
@@ -1207,6 +1280,26 @@ function manifest.check(value)
       types[key] = def
     end
     out.types = types
+  end
+
+  if map.actions ~= nil then
+    local entries, why = named_map(map.actions, "actions", manifest.MAX_ACTIONS_PER_ADDON)
+    if not entries then
+      return nil, why
+    end
+    local actions = json.object()
+    for _, key in ipairs(sorted_keys(entries)) do
+      local path = at("actions", key)
+      if not is_name(key) then
+        return refuse("name", path)
+      end
+      local def, refused = check_action(entries[key], path, context)
+      if not def then
+        return nil, refused
+      end
+      actions[key] = def
+    end
+    out.actions = actions
   end
   return out
 end
