@@ -181,7 +181,9 @@ local open_menu = nil
 ---that it is still the one on show, and counts one replaced as closed. An
 ---option's item image (P3, #361) is its `icon`, beside the title: the
 ---`data:` URL `rpf.items` keeps, which ox_lib takes for an image by its
----`#.png` end (`nui/images.js`).
+---`#.png` end (`nui/images.js`). A menu's `text` (an NPC's line, L1) is a
+---read-only entry above the options, its `description`, since a context
+---menu has no body of its own and an entry's description wraps.
 ---@param spec rpf.ui.MenuSpec The menu.
 ---@param done fun(index: integer?) Called once.
 local function menu(spec, done)
@@ -199,8 +201,11 @@ local function menu(spec, done)
   end
   open_menu = finish
   local options = {}
+  if spec.text then
+    options[1] = { description = spec.text, readOnly = true }
+  end
   for i, option in ipairs(spec.options) do
-    options[i] = {
+    options[#options + 1] = {
       title = option.label,
       description = option.description,
       disabled = option.disabled,

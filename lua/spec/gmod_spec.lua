@@ -1178,6 +1178,22 @@ describe("the Gmod adapter's addon UI (J10)", function()
     assert.are.same({ nil, "cancelled" }, got[2])
   end)
 
+  it("shows a menu's text as a wrapped label above its buttons (L1)", function()
+    local world, api = client()
+    local got = {}
+    api.ui.menu({ title = "Courier", text = "Looking for work?", options = { { label = "Yes", value = "yes" } } }, function(choice)
+      got[#got + 1] = choice
+    end)
+    local said = shown(world, "DLabel")[1]
+    assert.are.equal("Looking for work?", said.text)
+    assert.is_true(said.wrap)
+    local short = shown(world, "DFrame")[1].size[2]
+    button(world, "Yes"):DoClick()
+    assert.are.same({ "yes" }, got)
+    api.ui.menu({ title = "Courier", text = string.rep("word ", 200), options = { { label = "Yes" } } }, function() end)
+    assert.is_true(shown(world, "DFrame")[1].size[2] > short, "a long line makes the window taller")
+  end)
+
   it("keeps a long menu on the screen, its options scrolling", function()
     local world, api = client()
     local options = {}

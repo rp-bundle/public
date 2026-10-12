@@ -33,6 +33,7 @@
 ---@field MAX_OPTIONS integer The most options a menu offers.
 ---@field MAX_FIELDS integer The most fields an input dialog asks for.
 ---@field MAX_LABEL integer The longest title, label, description or placeholder, in bytes.
+---@field MAX_TEXT integer The longest text a menu shows above its options, in bytes: an NPC's line in a dialog (L1).
 ---@field MAX_ITEM integer The longest item slug a menu option names, in bytes: the portal's identifier length.
 ---@field IMAGE_WAIT_MS integer How long a menu whose options name items waits for their images before it is shown without the ones still to come.
 ---@field MAX_NOTICE integer The longest notification text, in bytes.
@@ -57,6 +58,7 @@ ui.NOTICE_KINDS = { "info", "success", "warning", "error" }
 ui.MAX_OPTIONS = 32
 ui.MAX_FIELDS = 12
 ui.MAX_LABEL = 128
+ui.MAX_TEXT = 1024
 ui.MAX_ITEM = 64
 ui.IMAGE_WAIT_MS = 2000
 ui.MAX_NOTICE = 256
@@ -183,15 +185,20 @@ local function notify_spec(opts)
 end
 
 ---Checks a menu's options. Each option's `value` is kept here and never
----shown, so it may be anything; an option with none answers its number. An
+---shown, so it may be anything; an option with none answers its number. A
+---menu may have `text`, shown above its options and read, never picked:
+---what an NPC says before the player answers (L1). An
 ---option may name an item (`item`, a slug), whose image the client finds
 ---for itself when it shows the menu (`with_images`): the spec carries the
 ---slug alone, never an image, from whichever side it came.
 ---@param opts any What the caller passed.
----@return table? spec The plain spec: `title` and `options` (`label`, `description`, `disabled`, `item`).
+---@return table? spec The plain spec: `title`, `text` and `options` (`label`, `description`, `disabled`, `item`).
 ---@return rpf.ui.Kept? kept The values and the options that cannot be picked.
 local function menu_spec(opts)
   if type(opts) ~= "table" or not text(opts.title, ui.MAX_LABEL) or type(opts.options) ~= "table" then
+    return nil
+  end
+  if not optional_text(opts.text, ui.MAX_TEXT) then
     return nil
   end
   local count = #opts.options
@@ -220,7 +227,7 @@ local function menu_spec(opts)
       disabled[i] = true
     end
   end
-  return { title = opts.title, options = options }, { values = values, disabled = disabled }
+  return { title = opts.title, text = opts.text, options = options }, { values = values, disabled = disabled }
 end
 
 ---Checks one input dialog field.

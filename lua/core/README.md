@@ -1505,6 +1505,8 @@ addon's options (bounded text, at most `MAX_OPTIONS` options and
 `MAX_FIELDS` fields, each field `text`, `number`, `checkbox` or `select`
 with its bounds) and gives the plain spec an adapter shows and what an
 answer is read by; `ui.read` reads an answer against it, on both sides.
+A menu may carry `text`, at most `MAX_TEXT` bytes, read above its options
+and never picked (an NPC's line, L1).
 
 - **Client.** The four take the options and a callback, show through
   `platform.ui`, and hand the callback the result once: a menu option's

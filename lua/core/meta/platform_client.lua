@@ -66,6 +66,7 @@ function ToServer.on_server_request(name, handler) end
 ---shown by its label alone.
 ---@class rpf.ui.MenuSpec
 ---@field title string Its title.
+---@field text string? What it says above its options, read and never picked: an NPC's line (L1). Up to `rpf.ui.MAX_TEXT` bytes, and it may run over several lines.
 ---@field options { label: string, description: string?, disabled: boolean?, item: string?, image: string? }[] Its options, in order.
 
 ---An input dialog, checked.

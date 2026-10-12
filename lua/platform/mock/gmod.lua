@@ -1043,6 +1043,9 @@ function gmod.install(side, host, options)
     SetTooltip = function(self, tooltip)
       self.tooltip = tooltip
     end,
+    SetWrap = function(self, wrap)
+      self.wrap = wrap
+    end,
     SetImage = function(self, path)
       self.image = path
     end,

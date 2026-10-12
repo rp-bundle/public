@@ -1127,6 +1127,7 @@ function Ui.progress(opts, callback) end
 ---A menu.
 ---@class rpf.UiMenu
 ---@field title string Its title, at most 128 bytes.
+---@field text string? What it says above its options, read and never picked, at most 1024 bytes and over several lines if you like: what an NPC says before the player answers (L1). A read-only entry at the top of ox_lib's context menu on FiveM, a wrapped label on Gmod.
 ---@field options rpf.UiMenuOption[] Its options, 1 to 32, in order.
 
 ---One menu option.

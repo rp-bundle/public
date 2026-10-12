@@ -118,6 +118,14 @@ describe("rpf.ui", function()
       assert.are.same({ "tag-1", "tag-2", 3 }, kept.values)
     end)
 
+    it("shows a menu's text above its options, over several lines, up to MAX_TEXT bytes (L1)", function()
+      local line = "Looking for work?\nI have a route that needs driving."
+      local spec = rpf.ui.spec("menu", { title = "Courier", text = line, options = { { label = "Yes" }, { label = "No" } } })
+      assert.are.same({ title = "Courier", text = line, options = { { label = "Yes" }, { label = "No" } } }, spec)
+      local longest = string.rep("x", rpf.ui.MAX_TEXT)
+      assert.are.equal(longest, rpf.ui.spec("menu", { title = "x", text = longest, options = { { label = "a" } } }).text)
+    end)
+
     it("keeps the item an option names, as a slug the portal could name, and never an image", function()
       local spec = assert(rpf.ui.spec("menu", { title = "Shop", options = { { label = "Apple", item = "apple", image = "data:image/png;base64,AAAA" } } }))
       assert.are.same({ label = "Apple", item = "apple" }, spec.options[1], "the image is the client's to find")
@@ -151,6 +159,10 @@ describe("rpf.ui", function()
         { "menu", { title = "x", options = {} } },
         { "menu", { title = "x", options = { { label = "" } } } },
         { "menu", { options = { { label = "a" } } } },
+        { "menu", { title = "x", text = string.rep("x", 1025), options = { { label = "a" } } } },
+        { "menu", { title = "x", text = "", options = { { label = "a" } } } },
+        { "menu", { title = "x", text = 5, options = { { label = "a" } } } },
+        { "menu", { title = "x", text = "\255", options = { { label = "a" } } } },
         { "input", { title = "x", fields = { { name = "a b", label = "A" } } } },
         { "input", { title = "x", fields = { { name = "a", label = "A" }, { name = "a", label = "B" } } } },
         { "input", { title = "x", fields = { { name = "a", label = "A", kind = "colour" } } } },
@@ -326,7 +338,7 @@ describe("rpf.ui", function()
       for i = 1, rpf.ui.MAX_OPTIONS do
         options[i] = { label = string.rep("\1", rpf.ui.MAX_LABEL), description = string.rep("\2", rpf.ui.MAX_LABEL) }
       end
-      local spec = assert(rpf.ui.spec("menu", { title = "Big", options = options }))
+      local spec = assert(rpf.ui.spec("menu", { title = "Big", text = string.rep("\1", rpf.ui.MAX_TEXT), options = options }))
       local request = rpf.handoff.encode("rpf:ui", { kind = "menu", spec = rpf.json.object(rpf.json.copy(spec)) })
       assert.is_true(#request > rpf.handoff.MAX_PAYLOAD, "more than an ordinary message")
       c.server_request_handlers["rpf:ui"](request, function() end)
