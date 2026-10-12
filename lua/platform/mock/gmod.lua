@@ -72,6 +72,7 @@ local gmod = {}
 ---@field Think fun(self: rpf.mock.GmodPanel)? Called each frame; a test calls it.
 ---@field fraction number? What `SetFraction` set.
 ---@field tooltip string? What `SetTooltip` set.
+---@field wrap boolean? What `SetWrap` set.
 ---@field image string? What `SetImage` set: a `DImage`'s material path.
 ---@field title string? What `SetTitle` set.
 ---@field size number[]? What `SetSize` set: width and height.
