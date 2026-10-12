@@ -143,13 +143,13 @@ one that goes is deprecated a release ahead, with the replacement named in
 - The resource and addon names (`rpf`, `rpf-ws`), and the folder layout an
   owner installs: the FiveM release's one `[rpf]` folder holding the two
   resources, and the Gmod release's `rpf` addon folder
-  ([Deployment](deployment.md#the-game-server-release)), and the release
+  ([Installing](installing.md)), and the release
   assets' names, which links like the txAdmin recipe's
   `releases/latest/download/rpf-txadmin-recipe.yaml` name.
 - Convars (`rpf_url`, `rpf_api_key`, …) and their Gmod equivalents.
 - Exports and globals other resources call (`exports.rpf:api()`, the
   `rpf` global on Gmod), and the public Lua API behind them, whose majors
-  are the addon `api` ([Addons](architecture/addons.md#versions-and-schema-evolution)).
+  are the addon `api` ([Writing addons](writing-addons.md#versions)).
 - What the resource requires of the server: OneSync, GWSockets, ox_lib
   and its minimum version (J10), the artifact or Node version. A new
   requirement, or a higher minimum, is named in the release's upgrade notes,
@@ -196,7 +196,7 @@ How each moves:
 - **Records outlive releases.** A type's records stay valid through every
   compatible schema change, an older release of the addon keeps fields it
   does not know (writes are patches), and records stay when the addon's
-  files leave the server ([Addons](architecture/addons.md#versions-and-schema-evolution)).
+  files leave the server ([Writing addons](writing-addons.md#8-change-the-schema)).
 
 ## Bridge contract majors
 
@@ -232,10 +232,9 @@ So the first change to the wire after a release, of any kind, compatible or
 not, **bumps `protocol::VERSION`** (and `rpf.protocol.VERSION`), and
 `UPDATE_CORPUS=1 cargo test -p rpf-protocol --test protocol` writes the new
 `v<N+1>/` while the frozen one stays as it was. Changes between two releases
-all land in the one unreleased version; it is frozen when its release is cut
-(`docs/deployment.md`, "Releasing"). The container, ledger and addon corpora
-under `protocol/corpus/` are validation cases, not wire shapes, and are not
-versioned.
+all land in the one unreleased version; it is frozen when its release is
+cut. The container, ledger and addon corpora under `protocol/corpus/` are
+validation cases, not wire shapes, and are not versioned.
 
 A version bump that is a pure addition needs no other code: the portal
 serves the older version with the same handlers, because the older core
@@ -383,8 +382,8 @@ the portal reports them three ways, all from the live connections
   with its `servers` count, then a `version census` line with the total, the
   `oldest_protocol` connected, and the `protocol` and `min_protocol` this
   portal serves. Every deployment has it, with or without a scraper.
-- **The metric** `rpf_game_servers_connected_by_version{protocol,engine,core_version}`
-  ([Deployment](deployment.md#metrics)).
+- **The metric** `rpf_game_servers_connected_by_version{protocol,engine,core_version}`,
+  on the portal's metrics endpoint.
 
 The people who can do something about it see it too. A connected server's
 page in the portal (its **Game server** card) says when it should upgrade
@@ -413,7 +412,7 @@ The portal migrates its database at startup and refuses to serve if that
 fails. sqlx's migrator also refuses a database that has applied a migration
 the binary does not carry, so **an older image never starts against a
 database a newer one has migrated**, additive or not. A rollback across a
-migration is a restore, never the previous tag ([Deployment](deployment.md#startup)).
+migration is a restore, never the previous tag.
 That refusal is kept deliberately: it is what stops an old binary running
 against a schema it was not compiled for.
 

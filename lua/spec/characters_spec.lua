@@ -839,7 +839,7 @@ describe("rpf.characters", function()
     end)
 
     it("allows no more characters than the portal does", function()
-      local limits = support.read("crates/rpf-domain/src/limits.rs")
+      local limits = support.portal_source("crates/rpf-domain/src/limits.rs", pending)
       local max = limits:match("pub const MAX_CHARACTERS_PER_OWNER: usize = (%d+);")
       assert.truthy(max, "MAX_CHARACTERS_PER_OWNER is no longer an integer literal")
       assert.are.equal(tonumber(max), rpf.characters.MAX_CHARACTERS)

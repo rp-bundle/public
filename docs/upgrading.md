@@ -2,8 +2,7 @@
 
 What a server owner changes when moving a game server from one release to
 the next. Each release has a section here, newest first, and the release
-workflow refuses a tag without one
-([Deployment](deployment.md#releasing)). A section says what the owner must
+workflow refuses a tag without one. A section says what the owner must
 change: convars, files, requirements (the artifact, OneSync, GWSockets), and
 whether the protocol changed, which decides how long a server that has not
 upgraded is still served ([Compatibility](compatibility.md)). A release with

@@ -4,8 +4,8 @@ A bridge lets RPF run beside an RP framework a server already has (Qbox,
 DarkRP, …): the **companion** profile. The framework keeps owning
 characters, money, items and jobs; RPF keeps owning player accounts and
 login, moderation, the staff portal and addons. A bridge is the one place
-the two meet. The design, and why it is shaped this way, is
-[`docs/architecture/framework-integration.md`](../../docs/architecture/framework-integration.md).
+the two meet. Installing one is [Installing](../../docs/installing.md),
+"Beside Qbox" and "Beside DarkRP".
 
 Each bridge is a package of its own under `lua/bridges/<framework>/`: a
 resource on FiveM, an addon on Gmod. It is engine-specific, because it calls

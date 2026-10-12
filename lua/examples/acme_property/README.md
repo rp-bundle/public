@@ -3,7 +3,7 @@
 Properties players buy, and doors their owners lock: a gameplay concept RPF
 has never heard of, built only on `rpf.api` and the generic type system.
 It has no Rust, migration, portal route or page, or protocol change of its
-own ([Addons](../../../docs/architecture/addons.md)). It is a conformance
+own ([Writing addons](../../../docs/writing-addons.md)). It is a conformance
 fixture too (`lua/spec/conformance_acme_property_spec.lua`,
 `crates/fake-server/tests/scenarios/acme_property.rs`).
 

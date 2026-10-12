@@ -7,9 +7,9 @@ changes during play needs from RPF, without any Rust, portal page or
 migration of its own. It is a conformance fixture
 (`lua/spec/conformance_acme_garden_spec.lua`,
 `crates/fake-server/tests/scenarios/acme_garden.rs`). [Writing
-addons](../../../docs/writing-addons.md) is the guide, and
-[Addons, "Live records: the lifecycle"](../../../docs/architecture/addons.md#live-records-the-lifecycle-j6)
-the contract.
+addons](../../../docs/writing-addons.md) is the guide, and its
+[Records](../../../docs/writing-addons.md#records) say when a live record
+is held.
 
 | File | What |
 |---|---|

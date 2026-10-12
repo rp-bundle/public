@@ -10,9 +10,9 @@ portal's.
 
 This page is the guide. It starts with what RPF provides and what it
 leaves to you, then walks through building an addon end to end, then
-covers each part in turn. The decisions behind it are in
-[Addons](architecture/addons.md). The complete, typed reference is the
-[Lua API reference](luadoc/docs/index.md), generated from
+covers each part in turn. The complete, typed reference is the
+[Lua API reference](https://sampleeeee.github.io/rpf/latest/reference/) on
+the docs site, generated from
 [`lua/core/meta/api.lua`](../lua/core/meta/api.lua), which your editor reads
 for completion (below). The example addons are in every release's addon
 kit, ready to install, and none is installed for you (below).
@@ -384,8 +384,9 @@ required field with no default, a narrower bound) is refused at install,
 with the first breaking change named. Make it a new type instead
 (`acme_notes.note2`), and move the records over in your own code with
 `list`, `create` and `delete`, a batch at a time. Installing an older
-release never lowers a schema, so rolling back loses nothing
-([Addons, "Versions and schema evolution"](architecture/addons.md#versions-and-schema-evolution)).
+release never lowers a schema, and your writes are patches that keep the
+fields an older release does not know, so rolling back loses nothing
+(Changing a type, below).
 
 ### 9. Retries
 
@@ -506,9 +507,6 @@ local MANIFEST = {
 }
 ```
 
-The field kinds, their bounds, the limits, and which changes to a type are
-compatible are in [Addons, "The manifest"](architecture/addons.md#the-manifest)
-and ["Versions and schema evolution"](architecture/addons.md#versions-and-schema-evolution).
 Two things to know from the start:
 
 - **There is no money field, and no item field that holds items.** A price
@@ -518,6 +516,83 @@ Two things to know from the start:
   or defaulted, and a new release installs over the old one with every
   record kept. A breaking change to a type with records is refused: add a
   new type instead.
+
+### Fields, bounds and limits
+
+| Kind | Value | Bounds you may set |
+|---|---|---|
+| `string` | UTF-8 text, one line | `max_len` (≤ 1 024 bytes, the default), `min_len`, `charset` (`identifier`, `printable`, the default, or `any`) |
+| `text` | UTF-8 text, multi-line | `max_len` (≤ 16 KiB, the default) |
+| `integer` | A whole number | `min`, `max` |
+| `number` | A finite number | `min`, `max` |
+| `boolean` | `true` or `false` | |
+| `enum` | One of `values` | `values` (≤ 64 names) |
+| `timestamp` | Milliseconds since the Unix epoch, a whole number | |
+| `vector3` | `{ x = …, y = …, z = … }` | |
+| `ref` | A record's id, or an owner | `to`: a type (`ns.name`, yours or a `requires` addon's), or `player`, `character`, `employer`, `server`, `item` (a catalog slug) or `job` (`{ employer, job }`) |
+| `list` | An array of one kind: not `text`, `vector3`, `list` or `json` | `of`, and that kind's own bounds; `max_items` (≤ 64, the default) |
+| `json` | A JSON object your code reads, like a stack's item data | `max_bytes` (≤ 4 KiB, the default) |
+
+Every field may also set `required`, `default`, `nullable`, `index`,
+`unique` (an indexed field only), `title`, `help`, `hidden` (not shown in
+the portal) and `read_only` (shown, not editable by staff). A field marked
+`engine = true` holds engine-specific data, such as a model (step 10).
+There are no patterns and no expressions: everything a type says is a
+bound. The rules a manifest is held to:
+
+- **Nothing unknown.** A key the manifest does not define is refused at
+  every level, so a typo fails at registration rather than being ignored.
+- **Names** of types, fields, permissions and enum values are
+  `[a-z][a-z0-9_]*`, at most 32 bytes. The fields `id`, `type`, `owner`,
+  `schema` and `revision` are reserved, and so are the permissions `view`
+  and `edit`, which every addon has. Titles are at most 64 bytes, help and
+  permission descriptions 256.
+- **Versions.** `version` is `MAJOR.MINOR.PATCH`. A `requires` range is
+  `*`, `=X.Y.Z`, `>=X.Y.Z`, or `^`/`~` with one to three parts, read as
+  Cargo reads them.
+- **Settings that go together.** A `live` type lists its `owners` and may
+  set `hold`; a `config` type has neither. `required` and `nullable` never
+  go together, `unique` needs `index`, and `text`, `vector3`, `list` and
+  `json` fields cannot be indexed. A default is checked like a value, and a
+  `ref` has none.
+- **Values.** Lengths are in bytes. Every number is within ±(2^53 − 1),
+  which Lua carries exactly, and a `json` field nests at most 16 deep.
+
+The limits: 32 addons on a server, 16 types an addon, 64 fields a type, 8
+of them indexed, 16 KiB of fields in one record, a type's records capped
+by its `limit` (at most 50 000) and 200 000 records a server across every
+type, a 64 KiB manifest, and 32 permissions an addon besides `view` and
+`edit`. A community's plan may set lower ones.
+
+### Changing a type
+
+Move a type's `schema` on every change to its `fields`; every record keeps
+the schema it was last written at. A new release installs over the old one
+when each change to a type with records is **compatible**, because every
+record already stored is valid under the new definition, so nothing is
+rewritten:
+
+- adding a field that is optional, nullable or has a default;
+- widening a bound, or adding an enum value;
+- adding or dropping `index`, `title`, `help`, `hidden`, `read_only` or
+  `list`, or making a required field optional;
+- changing a default, which only records written before the field existed
+  then read.
+
+Anything else is **breaking**, and refused for a type that has records,
+with the first breaking change named: removing or retyping a field,
+narrowing a bound, removing an enum value, adding a required field with no
+default, adding `unique`, making a field required or taking away a required
+field's default, removing an owner kind, and moving a type between
+`config` and `live`. Different fields under the same `schema` are refused
+whether or not the type has records. Make the change a new type, as step 8
+does.
+
+Installing an older release never lowers a type's schema: the newer
+definition stays, and the portal shows the type as ahead of the loaded
+addon. Your writes are patches, never whole records, so the older code
+keeps the fields it does not know, and upgrading again finds every record
+as it was.
 
 ### Things in the world
 
@@ -557,8 +632,19 @@ keeps a `ped` or `object` record placed for you while your addon runs:
 one entity each, moved, hidden and removed as staff change the record,
 and gone when your addon stops. `rpf.world.placed(type, id)` gives the
 entity's ref, and `rpf.world.entity(ref)` tells you which record an entity
-a client names is. The rules are in
-[Addons, "World definitions"](architecture/addons.md#world-definitions).
+a client names is.
+
+Each role names one of the type's own fields, and two roles never name the
+same one: `position` a `vector3`, `heading` (degrees) and `radius` a
+`number` or `integer`, `bucket` an `integer` (FiveM's routing bucket; a
+record with none is in bucket 0, where every player starts), `model` a
+`string` or `json` field marked `engine = true`, `visible` a `boolean` (a
+record with none is always shown) and `map` an indexed `string`. A map name
+is 1 to 64 bytes of printable ASCII with no space, compared exactly. A
+change to `world` moves no record, so it installs like a change to `list`,
+with one exception: naming a field the type already had as its `map` is
+breaking, because its records may hold values that are no map's name. Add
+a new field for the map instead.
 
 ## Registering, installing, running
 
@@ -631,8 +717,7 @@ a plain copy: a field with no value is absent.
 
   If staff disable your addon, RPF releases all of its records with their
   final state. A record nobody holds is still stored, and staff can still
-  edit it in the portal. The details are in [Addons, "Live records: the
-  lifecycle"](architecture/addons.md#live-records-the-lifecycle-j6).
+  edit it in the portal.
 
 | Call | Does |
 |---|---|

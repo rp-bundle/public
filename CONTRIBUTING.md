@@ -27,5 +27,6 @@ Before you open one:
 - Every module, function, class and table field carries LuaLS annotations
   with a description.
 - Run the specs under both Luas from `lua/`: `busted` (with LuaJIT 2.1 and
-  Lua 5.4). A few of them cross-check the portal's own sources and run only
-  in the private repository.
+  Lua 5.4). They pass in a checkout of this repository. The few that
+  cross-check a bound against the portal's own sources, which are not
+  here, show as pending, and run when a maintainer applies your change.

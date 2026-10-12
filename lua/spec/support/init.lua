@@ -32,6 +32,30 @@ function support.read(relative)
   return contents
 end
 
+---Reads one of the portal's own sources, which a spec cross-checks a
+---constant or a rule against, or marks the spec pending in a checkout with
+---no `crates/` at all: the public repository, which publishes the framework
+---but not the portal (`dev/public-mirror.paths`). Only `crates/` missing
+---altogether counts, so here a source that moved still fails the spec
+---rather than letting the cross-check pass by skipping.
+---@param relative string Relative to the repository root, under `crates/`.
+---@param pending fun(message: string) The running spec's own `pending`, which busted gives only to the spec itself.
+---@return string contents The file's contents.
+function support.portal_source(relative, pending)
+  assert(relative:match("^crates/"), "portal_source reads only the portal's sources, under crates/")
+  -- Opening a directory succeeds on Linux and is refused on Windows, but only
+  -- a path that is not there at all is ENOENT (2) on either.
+  local crates, _, code = io.open(support.path("crates"), "rb")
+  if crates then
+    crates:close()
+  end
+  if code ~= 2 then
+    return support.read(relative)
+  end
+  pending("cross-checks " .. relative .. ", which only the private repository holds")
+  error("pending did not end the spec")
+end
+
 ---A path under the conformance corpus of the protocol version the loaded
 ---core speaks, `protocol/corpus/v<N>/`, which is the one the Rust tests
 ---regenerate. Older versions' corpora are frozen, and held to the current
