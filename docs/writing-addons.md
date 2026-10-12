@@ -603,7 +603,7 @@ them out, and none changes what a record holds:
 | `group` | any field | A heading the field is shown under, at most 64 bytes. Fields with no group come first, then each group in the order of its first field |
 | `order` | any field | Where the field goes, 0 to 1000: lowest first, then by name. Fields with no order come last |
 | `unit` | `integer`, `number` | What the number counts, which picks its editor: `money` (an integer only, shown with the server's currency), `seconds`, `minutes` or `hours` (staff may type a duration in a larger unit; you read the number in the unit you named), `metres`, `degrees` or `percent` |
-| `slider` | `integer`, `number` | `true` for a range control. Needs `min` and `max` |
+| `slider` | `integer`, `number` | `true` for a range control. Needs `min` and `max`, and a field that is not `nullable`: a slider cannot be blank |
 
 Each kind has a control of its own on the page: a switch for a boolean
 (a nullable one, a three-way choice), a select for an enum, a date and

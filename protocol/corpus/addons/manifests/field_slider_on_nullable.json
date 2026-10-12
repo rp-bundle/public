@@ -1,0 +1,28 @@
+{
+  "description": "A slider cannot be blank, so a nullable field has none (N1).",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "integer",
+            "min": 0,
+            "max": 10,
+            "nullable": true,
+            "slider": true
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "conflict",
+    "path": "types.plant.fields.x.slider"
+  }
+}

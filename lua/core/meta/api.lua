@@ -1266,7 +1266,7 @@ function Ui.progress(opts, callback) end
 ---@field min number? The least a number may be.
 ---@field max number? The most a number may be.
 ---@field unit "money"|"seconds"|"minutes"|"hours"|"metres"|"degrees"|"percent"? What an integer or number counts, which decides its editor in the portal; `money` on an integer only (N1).
----@field slider boolean? Edit an integer or number with a slider; needs `min` and `max` (N1).
+---@field slider boolean? Edit an integer or number with a slider; needs `min` and `max`, and never `nullable` (N1).
 ---@field values string[]? An enum's values.
 ---@field to string? What a `ref` names: a type, or `player`, `character`, `employer`, `server`, `item`, `job`.
 ---@field of string? A list's item kind.
