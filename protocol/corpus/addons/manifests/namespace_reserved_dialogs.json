@@ -1,0 +1,13 @@
+{
+  "description": "dialogs is the core's: its dialog trees and their events (L1).",
+  "manifest": {
+    "namespace": "dialogs",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden"
+  },
+  "error": {
+    "error": "reserved",
+    "path": "namespace"
+  }
+}

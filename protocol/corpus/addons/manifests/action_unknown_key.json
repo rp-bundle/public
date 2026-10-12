@@ -1,0 +1,19 @@
+{
+  "description": "An action declares a title, help and params, and nothing else: its code is Lua, never in the manifest.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "actions": {
+      "water": {
+        "title": "Water",
+        "run": "water()"
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_key",
+    "path": "actions.water.run"
+  }
+}

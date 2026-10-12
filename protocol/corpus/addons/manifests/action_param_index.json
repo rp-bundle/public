@@ -1,0 +1,24 @@
+{
+  "description": "A parameter is a value typed into a choice, not a stored field: it cannot be indexed.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "actions": {
+      "water": {
+        "title": "Water",
+        "params": {
+          "litres": {
+            "type": "integer",
+            "index": true
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_key",
+    "path": "actions.water.params.litres.index"
+  }
+}

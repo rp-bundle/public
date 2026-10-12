@@ -1,0 +1,24 @@
+{
+  "description": "A parameter referring to the addon's own type names one it declares.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "actions": {
+      "plant": {
+        "title": "Plant",
+        "params": {
+          "species": {
+            "type": "ref",
+            "to": "acme_garden.species"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_type",
+    "path": "actions.plant.params.species.to"
+  }
+}

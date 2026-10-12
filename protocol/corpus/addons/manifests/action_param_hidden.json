@@ -1,0 +1,24 @@
+{
+  "description": "A parameter cannot be hidden from the staff who fill it in.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "actions": {
+      "water": {
+        "title": "Water",
+        "params": {
+          "litres": {
+            "type": "integer",
+            "hidden": true
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_key",
+    "path": "actions.water.params.litres.hidden"
+  }
+}

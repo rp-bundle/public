@@ -1,0 +1,63 @@
+{
+  "description": "An addon declares the actions a dialog choice can run (L1), each with a title and parameters checked as fields are: a reference to its own type, an item, a job, a list and a default.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "species": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "label": {
+            "type": "string",
+            "max_len": 48,
+            "required": true
+          }
+        }
+      }
+    },
+    "actions": {
+      "plant": {
+        "title": "Plant a seed",
+        "help": "Gives the player a seed of a species to plant.",
+        "params": {
+          "species": {
+            "type": "ref",
+            "to": "acme_garden.species",
+            "required": true
+          },
+          "seed": {
+            "type": "ref",
+            "to": "item"
+          },
+          "gardener": {
+            "type": "ref",
+            "to": "job",
+            "nullable": true
+          },
+          "count": {
+            "type": "integer",
+            "min": 1,
+            "max": 10,
+            "default": 1
+          },
+          "tags": {
+            "type": "list",
+            "of": "string",
+            "max_len": 16,
+            "max_items": 4
+          },
+          "spot": {
+            "type": "vector3"
+          }
+        }
+      },
+      "water": {
+        "title": "Water the garden"
+      }
+    }
+  },
+  "error": null
+}

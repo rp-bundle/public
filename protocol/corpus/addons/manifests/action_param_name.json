@@ -1,0 +1,23 @@
+{
+  "description": "A parameter's name is an identifier.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "actions": {
+      "water": {
+        "title": "Water",
+        "params": {
+          "Litres": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "name",
+    "path": "actions.water.params.Litres"
+  }
+}

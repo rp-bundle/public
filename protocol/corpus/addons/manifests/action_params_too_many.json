@@ -1,0 +1,71 @@
+{
+  "description": "At most limits::MAX_PARAMS_PER_ACTION (16) parameters.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "actions": {
+      "water": {
+        "title": "Water",
+        "params": {
+          "p00": {
+            "type": "boolean"
+          },
+          "p01": {
+            "type": "boolean"
+          },
+          "p02": {
+            "type": "boolean"
+          },
+          "p03": {
+            "type": "boolean"
+          },
+          "p04": {
+            "type": "boolean"
+          },
+          "p05": {
+            "type": "boolean"
+          },
+          "p06": {
+            "type": "boolean"
+          },
+          "p07": {
+            "type": "boolean"
+          },
+          "p08": {
+            "type": "boolean"
+          },
+          "p09": {
+            "type": "boolean"
+          },
+          "p10": {
+            "type": "boolean"
+          },
+          "p11": {
+            "type": "boolean"
+          },
+          "p12": {
+            "type": "boolean"
+          },
+          "p13": {
+            "type": "boolean"
+          },
+          "p14": {
+            "type": "boolean"
+          },
+          "p15": {
+            "type": "boolean"
+          },
+          "p16": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "too_many",
+    "path": "actions.water.params"
+  }
+}

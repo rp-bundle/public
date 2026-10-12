@@ -1,0 +1,21 @@
+{
+  "description": "types are checked before actions.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": 1
+    },
+    "actions": {
+      "water": {
+        "title": ""
+      }
+    }
+  },
+  "error": {
+    "error": "wrong_type",
+    "path": "types.plant"
+  }
+}
