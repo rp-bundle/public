@@ -590,6 +590,30 @@ by its `limit` (at most 50 000) and 200 000 records a server across every
 type, a 64 KiB manifest, and 32 permissions an addon besides `view` and
 `edit`. A community's plan may set lower ones.
 
+### Laying out the portal's pages
+
+The portal builds a list and a record page for every type from its
+definition, so its pages are how staff set your addon up. Four keys lay
+them out, and none changes what a record holds:
+
+| Key | On | What it does |
+|---|---|---|
+| `title` | any field | The label, in place of the field's name |
+| `help` | any field | A sentence under the control |
+| `group` | any field | A heading the field is shown under, at most 64 bytes. Fields with no group come first, then each group in the order of its first field |
+| `order` | any field | Where the field goes, 0 to 1000: lowest first, then by name. Fields with no order come last |
+| `unit` | `integer`, `number` | What the number counts, which picks its editor: `money` (an integer only, shown with the server's currency), `seconds`, `minutes` or `hours` (staff may type a duration in a larger unit; you read the number in the unit you named), `metres`, `degrees` or `percent` |
+| `slider` | `integer`, `number` | `true` for a range control. Needs `min` and `max` |
+
+So a price is `{ type = "integer", min = 1, unit = "money" }`, a
+cooldown `{ type = "integer", min = 0, max = 1440, unit = "minutes" }`, and
+a chance `{ type = "number", min = 0, max = 100, unit = "percent", slider =
+true }`. `acme_shop` and `acme_property` lay their types out this way.
+A key the portal does not know is refused at registration like any other
+(`unknown_key`, naming the field), so a typo never silently loses a label.
+The layout keys are part of `fields`, so adding them moves the type's
+`schema`; they install over existing records as a compatible change.
+
 ### Changing a type
 
 Move a type's `schema` on every change to its `fields`; every record keeps
@@ -600,8 +624,9 @@ rewritten:
 
 - adding a field that is optional, nullable or has a default;
 - widening a bound, or adding an enum value;
-- adding or dropping `index`, `title`, `help`, `hidden`, `read_only` or
-  `list`, or making a required field optional;
+- adding or dropping `index`, `title`, `help`, `group`, `order`, `unit`,
+  `slider`, `hidden`, `read_only` or `list`, or making a required field
+  optional;
 - changing a default, which only records written before the field existed
   then read.
 

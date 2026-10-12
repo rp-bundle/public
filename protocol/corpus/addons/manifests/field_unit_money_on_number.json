@@ -1,0 +1,25 @@
+{
+  "description": "Money is an integer, as every amount is: a number cannot count it (N1).",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "number",
+            "unit": "money"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "conflict",
+    "path": "types.plant.fields.x.unit"
+  }
+}

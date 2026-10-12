@@ -1,0 +1,26 @@
+{
+  "description": "The layout keys are checked before the kind's bounds: a bad order is named before a bad min (N1).",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "integer",
+            "order": -1,
+            "min": "low"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "bound",
+    "path": "types.plant.fields.x.order"
+  }
+}

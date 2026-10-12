@@ -1,0 +1,27 @@
+{
+  "description": "A slider is a flag (N1).",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "number",
+            "min": 0,
+            "max": 1,
+            "slider": "yes"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "wrong_type",
+    "path": "types.plant.fields.x.slider"
+  }
+}

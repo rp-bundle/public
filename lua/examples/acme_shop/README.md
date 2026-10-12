@@ -9,7 +9,7 @@ is the guide.
 
 | File | What |
 |---|---|
-| `manifest.lua` | The manifest: `acme_shop.counter` (a shopkeeper staff place, on a `map` they name or on every map; 1.1.0 added it), `acme_shop.listing` (what a counter sells, at what price, and whether it buys it back), `acme_shop.stock` (how many a stocked listing has left), and the `restock` permission |
+| `manifest.lua` | The manifest: `acme_shop.counter` (a shopkeeper staff place, on a `map` they name or on every map; 1.1.0 added it), `acme_shop.listing` (what a counter sells, at what price, and whether it buys it back), `acme_shop.stock` (how many a stocked listing has left), and the `restock` permission. 1.2.0 lays the portal's pages out with `order`, `group`, `unit` and `slider` (N1): the prices are money, the facing a dial |
 | `server.lua` | Registers the addon; on start, the `acme_shop.shop` interaction aimed at a counter, which opens the counter's menu and a quantity dialog from the server (`rpf.ui`). Its stock type is `hold = "server"`, so the core holds the stock, takes back what a restart gave up, and takes stock staff add within a minute |
 | `fivem/` | The FiveM resource's manifest and entry point |
 | `gmod/autorun.lua` | The Gmod entry point |
