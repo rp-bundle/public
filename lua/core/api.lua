@@ -359,6 +359,10 @@ if bridge then
   }, "rpf.bridge")
 end
 
+if rpf.players and rpf.placement then
+  surface.placement = freeze({ open = function(player) return rpf.placement.open(player) end }, "rpf.placement")
+end
+
 local world = rpf.world
 local ui = rpf.ui
 ---What this engine supports: the game world's capabilities on the server,

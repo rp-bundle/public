@@ -24,6 +24,20 @@ local images = include("rpf/platform/gmod/images.lua") --[[@as rpf.gmod.Images]]
 
 local core = load.core("client")
 
+---A non-physical model visible only to this staff player's client.
+---@param spec table The server's model and transform.
+---@return fun()? clear Explicitly removes the client entity.
+function client.placement_preview(spec)
+  local entity = ClientsideModel(spec.model, RENDERGROUP_TRANSLUCENT)
+  if not IsValid(entity) then return nil end
+  local at = spec.position
+  entity:SetPos(Vector(at.x, at.y, at.z))
+  entity:SetAngles(Angle(0, spec.heading, 0))
+  entity:SetRenderMode(RENDERMODE_TRANSALPHA)
+  entity:SetColor(Color(255, 255, 255, 150))
+  return function() if IsValid(entity) then entity:Remove() end end
+end
+
 ---The player client's platform: every member of `rpf.ClientPlatform`.
 ---@type rpf.ClientPlatform
 local platform = {
@@ -42,6 +56,8 @@ local platform = {
   log = shared.log,
   expose = shared.expose,
 }
+
+platform.ui.preview = client.placement_preview
 
 core.publish(platform)
 

@@ -126,5 +126,35 @@
     "change": "delete_job",
     "employer": "lspd",
     "slug": "officer"
+  },
+  {
+    "change": "create_world_record",
+    "type_name": "acme_props.prop",
+    "fields": {
+      "spot": {
+        "x": 1,
+        "y": 2,
+        "z": 3
+      }
+    }
+  },
+  {
+    "change": "update_world_record",
+    "type_name": "acme_props.prop",
+    "record_id": "00000000-0000-0000-0000-000000000001",
+    "base_revision": 1,
+    "patch": {
+      "spot": {
+        "x": 4,
+        "y": 5,
+        "z": 6
+      }
+    }
+  },
+  {
+    "change": "delete_world_record",
+    "type_name": "acme_props.prop",
+    "record_id": "00000000-0000-0000-0000-000000000001",
+    "base_revision": 2
   }
 ]

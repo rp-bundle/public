@@ -265,7 +265,10 @@ function mock.server(host, seed)
   ---@field placement string? The record id the core tagged it with.
 
   p.capabilities = {
-    position = function(player)
+    heading = function(player)
+        return 0
+      end,
+      position = function(player)
       return p.positions[player]
     end,
     bucket = function(player)

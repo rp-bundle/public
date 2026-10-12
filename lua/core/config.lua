@@ -593,8 +593,30 @@ function config.edit(handle, base_version, changes)
   if count ~= #changes then
     return false, "invalid_changes"
   end
+  changes = rpf.json.copy(changes)
   for _, change in ipairs(changes) do
     local flags = type(change) == "table" and config.EDIT_FLAGS[change.change] or nil
+    if not flags and type(change) == "table" then
+      local action = ({ create_world_record = "create", update_world_record = "edit", delete_world_record = "delete" })[change.change]
+      local def = action and rpf.addons and rpf.addons.definition(change.type_name)
+      if def and def.authority == "config" and def.world then
+        -- Opaque fields keep an object root, including an empty move patch.
+        for _, key in ipairs({ "fields", "patch" }) do
+          if change[key] ~= nil then
+            if type(change[key]) ~= "table" then return false, "invalid_changes" end
+            change[key] = rpf.json.object(change[key])
+          end
+        end
+        local grant = def.actions and def.actions[action]
+        if grant == nil then grant = "edit" end
+        if type(grant) == "string" then
+          local namespace = string.match(change.type_name, "^([^.]+)%.")
+          flags = { "addon." .. namespace .. "." .. grant }
+        else
+          return false, "forbidden"
+        end
+      end
+    end
     if not flags then
       return false, "invalid_changes"
     end

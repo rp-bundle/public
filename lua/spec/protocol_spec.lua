@@ -321,7 +321,10 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
     end
     assert.is_true(seen.setting)
     assert.is_true(seen.delete_job)
-    assert.are.equal(16, #changes)
+    assert.is_true(seen.create_world_record)
+    assert.is_true(seen.update_world_record)
+    assert.is_true(seen.delete_world_record)
+    assert.are.equal(19, #changes)
 
     -- An unknown kind of change, and a set setting with no value, are refused.
     local unknown = assert(json.decode(corpus("server_to_portal").config_changed))

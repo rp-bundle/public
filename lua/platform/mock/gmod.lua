@@ -844,6 +844,9 @@ function gmod.install(side, host, options)
   end
   ---Where the player stands: `pos`, which the harness sets, as a Vector.
   ---@return table pos `{ x, y, z }`.
+  function Player:GetAimVector()
+    return { Angle = function() return { y = 0 } end }
+  end
   function Player:GetPos()
     return self.pos or { x = 0, y = 0, z = 0 }
   end
@@ -862,6 +865,8 @@ function gmod.install(side, host, options)
   ---@field spawned boolean Whether `Spawn` ran.
   ---@field valid boolean False once removed.
   ---@field nw table<string, string> Its networked strings.
+  ---@field color table? The preview color.
+  ---@field render_mode number? Its render mode.
   local EntityMeta = {}
   EntityMeta.__index = EntityMeta
   function EntityMeta:IsValid()
@@ -879,6 +884,8 @@ function gmod.install(side, host, options)
   function EntityMeta:GetPos()
     return self.pos or { x = 0, y = 0, z = 0 }
   end
+  function EntityMeta:SetColor(color) self.color = color end
+  function EntityMeta:SetRenderMode(mode) self.render_mode = mode end
   function EntityMeta:SetAngles(angles)
     self.angles = angles
   end
@@ -922,6 +929,13 @@ function gmod.install(side, host, options)
       return out
     end,
   }
+  _G.RENDERGROUP_TRANSLUCENT = 8
+  _G.RENDERMODE_TRANSALPHA = 1
+  _G.ClientsideModel = function(model)
+    local entity = _G.ents.Create("client_model")
+    entity:SetModel(model)
+    return entity
+  end
   _G.Entity = function(index)
     return world.entities[index] or setmetatable({ index = index, valid = false, nw = {} }, EntityMeta)
   end

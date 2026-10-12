@@ -420,6 +420,7 @@ function fivem.server(env, host, seed, convars)
   env.GetPlayerPed = function(player)
     return p.positions[tonumber(player)] and tonumber(player) or 0
   end
+  env.GetEntityHeading = function() return 0 end
   env.GetEntityCoords = function(ped)
     local entity = driver.entities and driver.entities[ped]
     local at = entity and entity.position or p.positions[ped]
@@ -855,6 +856,8 @@ function fivem.client(env, host, seed, convars)
   ---@field next_due fun(): number? When the next timer is due.
   ---@field peds table<integer, { invincible: boolean?, blocking: boolean?, frozen: boolean? }> Peds this client has streamed in, by handle, with what the adapter set on them.
   ---@field commands table<string, function> Commands registered with `RegisterCommand`, by name.
+  ---@field previews table<integer, table> Temporary, non-networked model previews.
+  ---@field model_loaded boolean Whether a preview model finished streaming.
   ---@field key_mappings { command: string, description: string, mapper: string, key: string }[] Every `RegisterKeyMapping`, in order.
   ---@field resources table<string, string> Each resource's state as `GetResourceState` reports it on the client; anything unlisted is `missing`.
   ---@field target_calls { resource: string, call: string, args: table }[] Every call into a target resource's exports (ox_target, qb-target), in order.
@@ -944,6 +947,32 @@ function fivem.client(env, host, seed, convars)
   env.lib.callback, driver.callbacks = fake_callback(env, function(_, name, text)
     host.to_server(name, text)
   end)
+  -- Client-only previews never acquire a network id or a server record.
+  driver.previews = {}
+  driver.model_loaded = true
+  local preview_seq = 20000
+  env.GetHashKey = function(name) return name end
+  env.IsModelInCdimage = function() return true end
+  env.IsModelValid = function() return true end
+  env.RequestModel = function() end
+  env.HasModelLoaded = function() return driver.model_loaded end
+  env.SetModelAsNoLongerNeeded = function() end
+  env.Wait = function(delay)
+    local running = coroutine.running()
+    p.after(delay, function() assert(coroutine.resume(running)) end)
+    coroutine.yield()
+  end
+  local function preview(model, x, y, z, heading, networked)
+    preview_seq = preview_seq + 1
+    driver.previews[preview_seq] = { model = model, position = { x = x, y = y, z = z }, heading = heading, networked = networked }
+    return preview_seq
+  end
+  env.CreatePed = function(_, model, x, y, z, heading, networked) return preview(model, x, y, z, heading, networked) end
+  env.CreateObjectNoOffset = function(model, x, y, z, networked) return preview(model, x, y, z, 0, networked) end
+  env.SetEntityHeading = function(ref, value) driver.previews[ref].heading = value end
+  env.SetEntityCollision = function(ref, value) driver.previews[ref].collision = value end
+  env.SetEntityAlpha = function(ref, value) driver.previews[ref].alpha = value end
+  env.DeleteEntity = function(ref) driver.previews[ref] = nil end
   env.CreateThread = thread
   driver.notices, driver.contexts = {}, {}
   env.lib.notify = function(data)
@@ -1056,7 +1085,9 @@ function fivem.client(env, host, seed, convars)
     return 1
   end
   env.FreezeEntityPosition = function(entity, frozen)
-    if driver.peds[entity] then
+    if driver.previews[entity] then
+      driver.previews[entity].frozen = frozen
+    elseif driver.peds[entity] then
       driver.peds[entity].frozen = frozen
     else
       driver.frozen = frozen

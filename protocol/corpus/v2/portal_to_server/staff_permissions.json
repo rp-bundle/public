@@ -8,7 +8,11 @@
       "permissions": [
         "player.kick",
         "player.warn"
-      ]
+      ],
+      "addon_permissions": [
+        "addon.acme_props.edit"
+      ],
+      "all_addon_permissions": true
     }
   ]
 }

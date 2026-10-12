@@ -46,6 +46,7 @@ function ToServer.on_server_request(name, handler) end
 ---data only, and calls `done` once, later, with what the player did. Only
 ---`rpf.ui` calls them: they never see an addon's options as given.
 ---@class rpf.ClientUi
+---@field preview (fun(spec: table): (fun())?)? A local placement model and its disposer, where supported.
 ---@field notify (fun(spec: rpf.ui.NoticeSpec, done: fun()))|false Shows a notification. `done` may be ignored.
 ---@field menu (fun(spec: rpf.ui.MenuSpec, done: fun(index: integer?)))|false Shows a menu: `done` with the chosen option's number, or nil when the player closed it.
 ---@field input (fun(spec: rpf.ui.InputSpec, done: fun(values: table?)))|false Shows an input dialog: `done` with the values by field number (text, a number, a boolean, a select's option number, nil for one left empty), or nil when cancelled.

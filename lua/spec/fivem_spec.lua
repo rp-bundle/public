@@ -1107,6 +1107,27 @@ describe("the FiveM adapter", function()
       return driver, record
     end
 
+    it("previews a model only on this client and cancels pending loads", function()
+      local driver, record = started_client()
+      local message = rpf.json.encode({ model = "crate", kind = "object", position = { x = 1, y = 2, z = 3 }, heading = 45 })
+      driver.from_server("rpf:placement_preview", message)
+      local ref, entity = next(driver.previews)
+      assert(ref)
+      assert(entity)
+      assert.is_false(entity.networked)
+      assert.is_false(entity.collision)
+      assert.are.equal(45, entity.heading)
+      driver.from_server("rpf:placement_preview", "{}")
+      assert.is_nil(next(driver.previews))
+      driver.model_loaded = false
+      driver.from_server("rpf:placement_preview", message)
+      driver.from_server("rpf:placement_preview", "{}")
+      driver.model_loaded = true
+      record.time = record.time + 20
+      driver.run_due()
+      assert.is_nil(next(driver.previews), "cancelled while streaming")
+    end)
+
     ---The server hands the client a nonce.
     ---@param driver table The driver.
     local function nonce(driver)

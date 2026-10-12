@@ -185,6 +185,18 @@ local function build(list)
       end
       set[name] = true
     end
+    if entry.addon_permissions ~= nil then
+      if type(entry.addon_permissions) ~= "table" then return nil, "invalid addon permissions" end
+      local count = 0
+      for _ in pairs(entry.addon_permissions) do count = count + 1 end
+      if count ~= #entry.addon_permissions then return nil, "addon permission list has holes" end
+      for _, flag in ipairs(entry.addon_permissions) do
+        if type(flag) ~= "string" or not flag:match("^addon%.[a-z][a-z0-9_]*%.[a-z][a-z0-9_]*$") then return nil, "invalid addon flag" end
+        set[flag] = true
+      end
+    end
+    if entry.all_addon_permissions ~= nil and type(entry.all_addon_permissions) ~= "boolean" then return nil, "invalid owner grant" end
+    if entry.all_addon_permissions == true then set["addon.*"] = true end
     built[entry.player_id] = set
   end
   return built, nil
@@ -254,7 +266,7 @@ function staff.can(handle, permission)
   end
   local player = logged_in(handle)
   local set = player and grants[player.player_id --[[@as string]]]
-  return set ~= nil and set[permission] == true
+  return set ~= nil and (set[permission] == true or (set["addon.*"] == true and permission:match("^addon%.[a-z][a-z0-9_]*%.[a-z][a-z0-9_]*$") ~= nil))
 end
 
 ---What a player may do here.

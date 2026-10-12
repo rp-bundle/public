@@ -2051,3 +2051,11 @@ The suite tests the core against a fake platform it drives by hand
 `docs/testing.md`) runs the same core on the mock platform against the real portal,
 over a real socket, under both Luas; `spec/mock_spec.lua` holds the mock to
 the platform interfaces.
+
+Linked staff can run `rpfplace` to place, move or remove installed world
+config records. A server script can open the same menu with
+`rpf.api.placement.open(player)`. It uses `rpf.api.ui`, takes transforms and
+map from the server adapter, and submits through `config.edit` to the
+portal's compare-and-set writer. Nothing changes locally before a config
+push. FiveM and Gmod clients show a temporary model before confirmation;
+point and zone types use confirmation without a model.

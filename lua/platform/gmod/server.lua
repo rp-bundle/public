@@ -249,7 +249,10 @@ local platform = {
   -- are named by their index, and placed as `prop_dynamic`s
   -- (`server.spawn`).
   capabilities = {
-    position = function(player)
+    heading = function(player)
+        return IsValid(player) and player:GetAimVector():Angle().y or nil
+      end,
+      position = function(player)
       if not IsValid(player) then
         return nil
       end

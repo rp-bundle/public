@@ -125,7 +125,7 @@ describe("rpf.api", function()
         assert.are.same(keys(meta[class]), names, class)
       end
     end
-    assert.are.same({ "actions", "addons", "auth", "bridge", "characters", "commerce", "config", "dialogs", "events", "interactions", "inventory", "items", "jobs", "money", "ops", "players", "records", "staff", "time", "ui", "world" }, sorted((function()
+    assert.are.same({ "actions", "addons", "auth", "bridge", "characters", "commerce", "config", "dialogs", "events", "interactions", "inventory", "items", "jobs", "money", "ops", "placement", "players", "records", "staff", "time", "ui", "world" }, sorted((function()
       local out = {}
       for part in pairs(parts) do
         if part ~= "" then

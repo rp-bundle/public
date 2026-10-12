@@ -114,6 +114,40 @@ function client.asked(name, text, handler)
   end)
 end
 
+---A local, non-networked preview, loaded with a bounded wait. Its disposer
+---also cancels a pending load, so a cancelled menu cannot leave a ghost.
+---@param spec table Server-built model and transform.
+---@return fun() clear Removes or cancels the preview.
+function client.placement_preview(spec)
+  local cancelled, entity = false, nil
+  local model = GetHashKey(spec.model)
+  CreateThread(function()
+    if not IsModelInCdimage(model) or not IsModelValid(model) then return end
+    RequestModel(model)
+    local until_ms = GetGameTimer() + 5000
+    while not cancelled and not HasModelLoaded(model) and GetGameTimer() < until_ms do Wait(10) end
+    if not cancelled and HasModelLoaded(model) then
+      local at = spec.position
+      if spec.kind == "ped" then
+        entity = CreatePed(0, model, at.x, at.y, at.z, spec.heading, false, false)
+      else
+        entity = CreateObjectNoOffset(model, at.x, at.y, at.z, false, false, false)
+      end
+      if entity and entity ~= 0 then
+        SetEntityHeading(entity, spec.heading)
+        SetEntityCollision(entity, false, false)
+        FreezeEntityPosition(entity, true)
+        SetEntityAlpha(entity, 150, false)
+      end
+    end
+    SetModelAsNoLongerNeeded(model)
+  end)
+  return function()
+    cancelled = true
+    if entity and entity ~= 0 then DeleteEntity(entity); entity = nil end
+  end
+end
+
 ---Builds the client platform (`rpf.ClientPlatform`).
 ---@param screens rpf.fivem.Screens The screens, which carry HTTP to the page.
 ---@return rpf.ClientPlatform platform The platform, complete.
@@ -160,6 +194,7 @@ function client.platform(screens)
     RegisterNetEvent(name, function(text) client.asked(name, text, handler) end)
   end
 
+  p.ui.preview = client.placement_preview
   return p
 end
 

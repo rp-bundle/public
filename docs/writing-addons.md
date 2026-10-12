@@ -1433,3 +1433,17 @@ move and what each side does when they disagree.
       exchange.
 - [ ] The addon runs on both engines (its UI through `rpf.ui`), or says
       which it needs.
+
+### Let staff place a world config record
+
+Give a config type its `world` roles (position, and optionally heading,
+model, bucket and map), and the normal staff action grants. Linked staff
+can then use `rpfplace`; a staff menu in your server script can call
+`rpf.api.placement.open(player)`. The built-in menu picks installed types,
+asks for required fields, and confirms a create, move or removal. World
+coordinates and facing come from the server, and its map fills a declared
+map field. A model preview is temporary and visible only to that staff
+player. The portal validates the record and permissions, then pushes its
+new config. If config changed while staff were deciding, they see a
+refusal and redo the placement against the current config. Use the panel
+for editing other fields; its record page shows who placed it and when.

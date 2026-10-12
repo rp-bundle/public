@@ -318,10 +318,10 @@ describe("rpf.staff", function()
       assert(p.command_handlers[rpf.staff.COMMAND], "the core registered the command")(handle, { ... })
     end
 
-    it("registers the one command the portal's page names", function()
+    it("registers the link command alongside placement", function()
       local p = server()
       assert.are.equal("rpflink", rpf.staff.COMMAND)
-      assert.are.same({ rpflink = true }, (function()
+      assert.are.same({ rpflink = true, rpfplace = true }, (function()
         local names = {}
         for name in pairs(p.command_handlers) do
           names[name] = true
