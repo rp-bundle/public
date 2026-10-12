@@ -379,6 +379,30 @@ conformance.run(busted, "Interactions with targets", {
     end,
   },
   {
+    name = "lists nothing for a type whose records cannot be read, logging it once however often it is asked",
+    run = function(world)
+      ready(world)
+      local data = world.core.data
+      local list = data.list
+      data.list = function()
+        return nil, "inactive"
+      end
+      local first = ask(world, "rpf:targets", world.core.json.object({}))
+      local second = ask(world, "rpf:targets", world.core.json.object({}))
+      data.list = list
+      assert.are.same({}, first.options)
+      assert.are.same({}, second.options)
+      local count = 0
+      for _, line in ipairs(world.logs) do
+        if line.level == "error" and line.message:find("could not read the records of acme_npcs.greeter (inactive)", 1, true) then
+          count = count + 1
+        end
+      end
+      assert.are.equal(1, count)
+      assert.are.same({ "acme_npcs.talk 0000000a", "acme_npcs.rest 0000000e" }, listed(ask(world, "rpf:targets", world.core.json.object({}))), "listed again once they can")
+    end,
+  },
+  {
     name = "leaves out an option whose check throws or answers anything but true, and lists the rest",
     run = function(world)
       ready(world, {

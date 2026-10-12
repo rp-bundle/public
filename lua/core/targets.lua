@@ -638,7 +638,7 @@ function targets.options(entries, player)
     local rules = entry.rules
     local where = rules and rules.type and rpf.addons.running(entry.namespace) and world_of(rules.type) or nil
     if rules and where and offered(name, rules, player) then
-      local records = rpf.data.list(rules.type --[[@as string]], {}) or {}
+      local records = rpf.world.listed(rules.type --[[@as string]])
       for _, record in ipairs(records) do
         local spot = placed_at(where, record.fields, bucket)
         local d = spot and distance(at, spot)

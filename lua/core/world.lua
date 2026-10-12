@@ -108,6 +108,11 @@ local failed = {}
 ---once.
 ---@type table<string, true>
 local refused = {}
+---Types whose records `rpf.data.list` refused, by type, with the reason, so
+---the refusal is logged once until the type is read again or the reason
+---changes.
+---@type table<string, string>
+local unlisted = {}
 ---Whether the core stopped placing (`clear`), so nothing is placed again.
 local stopped = false
 ---Whether the over-the-limit and cannot-place notices have been logged.
@@ -495,7 +500,7 @@ local function wanted()
       if type(where) == "table" and world.KINDS[where.kind] then
         -- A config type's records from the config; a live type's, the ones
         -- held here (J6), as copies with every default filled in.
-        local found = live and (rpf.data.list(type_name, {}) or {}) or rpf.addons.config_records(type_name)
+        local found = live and world.listed(type_name) or rpf.addons.config_records(type_name)
         for _, record in ipairs(found) do
           local spec = type(record.id) == "string" and out[record.id] == nil and spec_of(type_name, where, record) or nil
           if spec then
@@ -507,6 +512,28 @@ local function wanted()
     end
   end
   return out, order
+end
+
+---The records of a type that something is placed or offered for, read the
+---way an addon would (`rpf.data.list`): a live type's held records, or a
+---config type's. A refusal (`inactive`, `not_found`, `invalid`) is logged once
+---per type until it reads again or the reason changes, and the type counts as
+---having none, so a server whose world went empty says why rather than
+---looking as if it had no records. Placements and the nearby listing share
+---it, so one fault is one line.
+---@param type_name string The type.
+---@return table[] records Copies, in order; none if the read was refused.
+function world.listed(type_name)
+  local found, err = rpf.data.list(type_name, {})
+  if found then
+    unlisted[type_name] = nil
+    return found
+  end
+  if unlisted[type_name] ~= err then
+    unlisted[type_name] = err
+    log("error", "rpf: could not read the records of " .. type_name .. " (" .. tostring(err) .. "); treating it as having none")
+  end
+  return {}
 end
 
 ---Despawns a placement and forgets it.
@@ -692,7 +719,7 @@ end
 function world.start(p)
   platform = p
   declared = p.capabilities
-  placed, failed, refused, stopped, due = {}, {}, {}, false, false
+  placed, failed, refused, unlisted, stopped, due = {}, {}, {}, {}, false, false
   warned = { limit = false, unsupported = false }
   if rpf.manifest.is_map_name(p.map) then
     current_map = p.map

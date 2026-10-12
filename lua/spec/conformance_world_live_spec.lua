@@ -152,4 +152,31 @@ conformance.run(busted, "Live world placements", {
       assert.are.equal(12, #world.entities(), "no doubles")
     end,
   },
+  {
+    name = "logs once a type whose held records cannot be read, places nothing for it meanwhile, and places it again once they can",
+    run = function(world)
+      installed(world)
+      local planter = assert(world.api.records.create(PLANTER, { spot = { x = 1, y = 2, z = 3 }, model = MODELS }, OWNER))
+      world:advance(SETTLE_MS)
+      assert.are.same({ planter.id }, placed_ids(world))
+      local data = world.core.data
+      local list = data.list
+      data.list = function()
+        return nil, "inactive"
+      end
+      world:advance(world.core.world.CHECK_MS + SETTLE_MS)
+      world:advance(world.core.world.CHECK_MS + SETTLE_MS)
+      data.list = list
+      assert.are.same({}, placed_ids(world), "nothing placed for a type it cannot read")
+      local count = 0
+      for _, line in ipairs(world.logs) do
+        if line.level == "error" and line.message:find("could not read the records of " .. PLANTER .. " (inactive)", 1, true) then
+          count = count + 1
+        end
+      end
+      assert.are.equal(1, count, "said once, however often it was reconciled")
+      world:advance(world.core.world.CHECK_MS + SETTLE_MS)
+      assert.are.same({ planter.id }, placed_ids(world), "placed again")
+    end,
+  },
 })
