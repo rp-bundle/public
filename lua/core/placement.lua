@@ -83,7 +83,7 @@ end
 ---Confirm one server-built change, showing a temporary client model first.
 ---@param handle any The player.
 ---@param player_id string The account that opened the edit.
----@param version number The config version first seen.
+---@param version number The config version the change is made against.
 ---@param name string The type.
 ---@param def table Its definition.
 ---@param change table The E6 change.
@@ -156,7 +156,8 @@ local function required_fields(handle, def, fields, done)
 end
 
 ---Open the installed world config types the linked staff member may view
----and change. Each asynchronous edit keeps its original config version.
+---and change. Each edit names the config version its records were read
+---from, which the portal compares and sets (E6).
 ---@param handle any The engine player handle.
 ---@return boolean? opened True if a menu was offered.
 ---@return string? err `not_found`, `unavailable` or `forbidden`.
@@ -184,7 +185,10 @@ function placement.open(handle)
       if allowed(handle, name, def, action) then actions[#actions + 1] = { label = ({ create = "Create here", edit = "Move here", delete = "Remove" })[action], value = action } end
     end
     choose(handle, name, actions, function(action)
-      local base = version
+      -- The version the records below are read from, which is what staff
+      -- decide against: one read when the menu opened would lose to any
+      -- change made while they picked a type.
+      local base = rpf.config.version()
       if not base then return end
       if action == "create" then
         local fields = {}

@@ -16,7 +16,7 @@ local function manifest()
 end
 
 describe("staff placement", function()
-  local p
+  local p, snapshot
   ---Answer the latest menu without client-supplied coordinates.
   ---@param index integer The offered choice number.
   local function menu(index)
@@ -44,10 +44,10 @@ describe("staff placement", function()
     local entry = { namespace = "acme_props", version = "1.0.0", enabled = true, manifest = m, hash = "sha256:props", types = rpf.json.object({}),
       records = rpf.json.array({ { id = ID, type = "acme_props.prop", revision = 2, fields = { name = "Crate", spot = { x = 1, y = 2, z = 3 }, map = "gm_construct", model = "crate" } } }),
     }
-    local snapshot = assert(rpf.json.decode(assert(rpf.json.encode({ addons = rpf.json.array({ entry }) }))))
+    snapshot = assert(rpf.json.decode(assert(rpf.json.encode({ addons = rpf.json.array({ entry }) }))))
     assert(rpf.config.apply(p, 5, "h5", snapshot))
   end)
-  it("creates only after confirmation with server transform and the first config version", function()
+  it("creates only after confirmation with server transform and the config version", function()
     assert(rpf.api.placement.open(7)); menu(1); menu(1)
     assert.are.equal("input", rpf.json.decode(p.client_requests[#p.client_requests].payload).kind)
     p.client_requests[#p.client_requests].callback(rpf.handoff.encode("rpf:ui_answer", { ok = true, values = { "New crate" } }))
@@ -75,6 +75,23 @@ describe("staff placement", function()
     assert.are.equal(0, #edits())
     p.deliver(support.portal_frame("staff_permissions", { staff = {} }))
     assert.are.same({ nil, "forbidden" }, { rpf.api.placement.open(7) })
+  end)
+  it("names the version its records were read from, not the one it opened at", function()
+    assert(rpf.api.placement.open(7)); menu(1)
+    assert(rpf.config.apply(p, 6, "h6", snapshot))
+    menu(2); menu(1); menu(1)
+    assert.are.equal(6, assert(edits()[1], rpf.json.encode(p.to_clients)).base_version)
+  end)
+  it("offers the guild owner's grant of every addon flag without listing it", function()
+    p.deliver(support.portal_frame("staff_permissions", { staff = {
+      { player_id = PLAYER, permissions = {}, all_addon_permissions = true },
+    } }))
+    assert.is_true(rpf.api.staff.can(7, "addon.acme_props.edit"))
+    assert.is_false(rpf.api.staff.can(7, "addon.*"))
+    assert.is_false(rpf.api.staff.can(7, "player.kick"))
+    assert.are.same({}, rpf.api.staff.permissions(7))
+    assert(rpf.api.placement.open(7)); menu(1); menu(3); menu(1); menu(1)
+    assert.are.equal("delete_world_record", assert(edits()[1], rpf.json.encode(p.to_clients)).changes[1].change)
   end)
   it("never sends a forged record menu answer", function()
     assert(rpf.api.placement.open(7)); menu(1); menu(2); menu(99)
