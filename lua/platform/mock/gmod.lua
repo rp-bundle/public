@@ -842,11 +842,13 @@ function gmod.install(side, host, options)
   function Player:UnLock()
     self.locked = false
   end
-  ---Where the player stands: `pos`, which the harness sets, as a Vector.
-  ---@return table pos `{ x, y, z }`.
+  ---Where the player aims: always due east, yaw 0, as placement reads it.
+  ---@return table aim A vector whose `Angle()` has the yaw `y`.
   function Player:GetAimVector()
     return { Angle = function() return { y = 0 } end }
   end
+  ---Where the player stands: `pos`, which the harness sets, as a Vector.
+  ---@return table pos `{ x, y, z }`.
   function Player:GetPos()
     return self.pos or { x = 0, y = 0, z = 0 }
   end
