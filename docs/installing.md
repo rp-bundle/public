@@ -535,6 +535,11 @@ its plan's frame rate. A burst after a reconnect is expected; a steady
 stream means an addon is sending in a loop, or the plan is too small for
 the server. The plan card on the same page shows the rate.
 
+**Problem: `Frame refused (join_rate_limited)`**: players joined faster
+than the portal lets one server start joins, which has nothing to do with
+the plan's frame rate. The framework backs off and the players get in; a
+steady stream means a script is starting joins in a loop.
+
 **Problem: `Command timed out`**: staff sent a command from the panel (a
 kick, a balance change) and the game server did not answer in time. The
 panel says the outcome is unknown; check in game before retrying. A
