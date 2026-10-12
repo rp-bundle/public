@@ -602,6 +602,7 @@ them out, and none changes what a record holds:
 | `help` | any field | A sentence under the control |
 | `group` | any field | A heading the field is shown under, at most 64 bytes. Fields with no group come first, then each group in the order of its first field |
 | `order` | any field | Where the field goes, 0 to 1000: lowest first, then by name. Fields with no order come last |
+| `display` | the type | The field that names a record: a `string` with `index = true` that is not `hidden`. Wherever another record refers to one of this type, staff pick and see it by this field; without it, the first such field of `list`, then of the layout; with none, the start of the record's id |
 | `unit` | `integer`, `number` | What the number counts, which picks its editor: `money` (an integer only, shown with the server's currency), `seconds`, `minutes` or `hours` (staff may type a duration in a larger unit; you read the number in the unit you named), `metres`, `degrees` or `percent` |
 | `slider` | `integer`, `number` | `true` for a range control. Needs `min` and `max`, and a field that is not `nullable`: a slider cannot be blank |
 
@@ -623,6 +624,23 @@ A key the portal does not know is refused at registration like any other
 (`unknown_key`, naming the field), so a typo never silently loses a label.
 The layout keys are part of `fields`, so adding them moves the type's
 `schema`; they install over existing records as a compatible change.
+`display` is not: it names a field, like `list`, so setting it moves
+nothing, but the field it names must already be indexed.
+
+**References are picked by name.** A `ref` to one of your types (or a
+`requires` addon's) is a `<select>` of that type's records by their
+`display`, in name order, with a search when there are more than a page
+of them; staff never type an id. So give every type another type refers to
+a `display`: `acme_shop.counter` names its counters by `name`, which is
+what a listing's picker lists, and `acme_property.property` likewise, so a
+door's picker lists properties. A type with no string to show is picked by
+the start of its id, which works but tells staff little. The record page
+shows every reference by name, marks one whose record is gone as
+"missing" (an owner's purge can leave one; your code reads it as a
+reference that does not resolve), and lists under "Used by" the records
+that refer to it, so staff see what a delete would break before the portal
+refuses it. Nothing here reaches your code: a record holds the id, as it
+always did.
 
 ### Changing a type
 

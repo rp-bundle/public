@@ -1,0 +1,29 @@
+{
+  "description": "A type's display names a field the type declares (N2).",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "name": {
+            "type": "string",
+            "index": true
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "display": "colour"
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_field",
+    "path": "types.plant.display"
+  }
+}

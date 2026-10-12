@@ -1266,6 +1266,7 @@ function Ui.progress(opts, callback) end
 ---@field title string? Shown to staff.
 ---@field fields table<string, rpf.AddonField> Its fields, by name: at least one, at most 64.
 ---@field list string[]? The fields the portal's list shows.
+---@field display string? The field that names a record in the portal (N2): what a reference to it shows and a picker searches. A shown, indexed `string`; without it, the first such field of `list`, then of the layout.
 ---@field actions table<string, string|false>? `view`, `create`, `edit`, `delete`, each the flag staff need, or false to offer none.
 ---@field limit integer? The most records of it on a server, at most 50000.
 ---@field world rpf.AddonWorld? Which of its fields place its records in the game world (J4).

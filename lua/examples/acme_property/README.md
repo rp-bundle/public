@@ -9,7 +9,7 @@ fixture too (`lua/spec/conformance_acme_property_spec.lua`,
 
 | File | What |
 |---|---|
-| `manifest.lua` | The manifest: `acme_property.property`, a live zone the server holds, and `acme_property.door`, a config point that refers to its property; both have a `map` staff fill in, blank for every map (1.1.0 added it); the `manage` permission. 1.2.0 lays the portal's pages out with `order`, `group` and `unit` (N1): the lot, the sale and the owner under their own headings, the price as money, the size in metres |
+| `manifest.lua` | The manifest: `acme_property.property`, a live zone the server holds, and `acme_property.door`, a config point that refers to its property; both have a `map` staff fill in, blank for every map (1.1.0 added it); the `manage` permission. 1.2.0 lays the portal's pages out with `order`, `group` and `unit` (N1): the lot, the sale and the owner under their own headings, the price as money, the size in metres. 1.3.0 names a property by its `name` and a door by its `label` (`display`, N2), so a door's picker lists properties by name |
 | `server.lua` | Registers the addon; on start, its interactions, `acme_property.buy` (aimed at the lot) and `acme_property.door` (aimed at a door), and the export `acme_property.locked` |
 | `fivem/` | The FiveM resource's manifest and entry point |
 | `gmod/autorun.lua` | The Gmod entry point, on the server alone |

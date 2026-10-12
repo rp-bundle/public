@@ -29,7 +29,7 @@ acme_shop.MAX_STOCK = 1000000
 
 acme_shop.MANIFEST = {
   namespace = "acme_shop",
-  version = "1.2.0",
+  version = "1.3.0",
   api = 1,
   title = "Shops",
   permissions = { restock = "Stock shops: create, change and remove stock" },
@@ -44,11 +44,13 @@ acme_shop.MANIFEST = {
       -- gathers where the counter stands and what it looks like under two
       -- headings; `unit` and `slider` give the heading a dial. None of it
       -- changes what a record holds, so it installs over 1.1.0 as well.
-      schema = 3,
+      -- Schema 4 (1.3.0) indexes the name, so `display` can name a counter
+      -- by it (N2): a listing's picker lists counters by name.
+      schema = 4,
       authority = "config",
       title = "Counter",
       fields = {
-        name = { type = "string", max_len = 48, required = true, title = "Name", order = 1 },
+        name = { type = "string", max_len = 48, required = true, index = true, title = "Name", order = 1 },
         shown = { type = "boolean", default = true, title = "Open", order = 2 },
         account = {
           type = "string",
@@ -95,6 +97,7 @@ acme_shop.MANIFEST = {
         },
       },
       list = { "name", "account", "shown" },
+      display = "name",
       world = { kind = "ped", position = "spot", heading = "heading", model = "model", visible = "shown", map = "map" },
     },
     -- What a counter sells, and at what price: staff's, like every price.

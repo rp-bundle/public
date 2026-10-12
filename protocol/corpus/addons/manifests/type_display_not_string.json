@@ -1,0 +1,29 @@
+{
+  "description": "Only a string field can name a record (N2).",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "name": {
+            "type": "string",
+            "index": true
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "display": "size"
+      }
+    }
+  },
+  "error": {
+    "error": "display_field",
+    "path": "types.plant.display"
+  }
+}

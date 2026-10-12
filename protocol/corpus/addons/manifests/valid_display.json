@@ -1,0 +1,30 @@
+{
+  "description": "A type names the field that names its records (N2): a shown, indexed string.",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "name": {
+            "type": "string",
+            "index": true
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "display": "name",
+        "list": [
+          "name",
+          "size"
+        ]
+      }
+    }
+  },
+  "error": null
+}

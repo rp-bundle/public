@@ -1,0 +1,27 @@
+{
+  "description": "A hidden field never names a record on a page (N2).",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "name": {
+            "type": "string",
+            "index": true,
+            "hidden": true
+          }
+        },
+        "display": "name"
+      }
+    }
+  },
+  "error": {
+    "error": "display_field",
+    "path": "types.plant.display"
+  }
+}

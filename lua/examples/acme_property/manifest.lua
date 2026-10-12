@@ -27,7 +27,7 @@ acme_property.DOOR = "acme_property.door"
 
 acme_property.MANIFEST = {
   namespace = "acme_property",
-  version = "1.2.0",
+  version = "1.3.0",
   api = 1,
   title = "Properties",
   permissions = { manage = "Create, change and remove properties and their doors, and assign their owners" },
@@ -42,8 +42,10 @@ acme_property.MANIFEST = {
       -- change: 1.1.0 installs over 1.0.0 with every property kept, and an
       -- older property, which has no map, stays on every map. Schema 3
       -- (1.2.0) lays the page out (N1): the lot, the sale and the doors under
-      -- their own headings, the price as `money`, the size in metres.
-      schema = 3,
+      -- their own headings, the price as `money`, the size in metres. Schema 4
+      -- (1.3.0) indexes the name, so `display` can name a property by it
+      -- (N2): a door's picker lists properties by name.
+      schema = 4,
       authority = "live",
       -- The server's, not the buyer's: a record's owner never changes, and
       -- a property outlives whoever bought it. Who owns it in play is
@@ -52,7 +54,7 @@ acme_property.MANIFEST = {
       hold = "server",
       title = "Property",
       fields = {
-        name = { type = "string", max_len = 48, required = true, title = "Name", order = 1 },
+        name = { type = "string", max_len = 48, required = true, index = true, title = "Name", order = 1 },
         spot = { type = "vector3", required = true, title = "Middle of the lot", group = "Lot", order = 1 },
         radius = {
           type = "number",
@@ -104,6 +106,7 @@ acme_property.MANIFEST = {
         locked = { type = "boolean", default = true, title = "Doors locked", group = "Owner", order = 3 },
       },
       list = { "name", "price", "for_sale", "holder" },
+      display = "name",
       actions = { create = "manage", edit = "manage", delete = "manage" },
       limit = 1000,
       world = { kind = "zone", position = "spot", radius = "radius", bucket = "bucket", map = "map" },
@@ -113,13 +116,14 @@ acme_property.MANIFEST = {
     -- `config`; its state is the property's `locked`.
     door = {
       -- Schema 1 had no `map`; see the property. Schema 3 (1.2.0) orders the
-      -- page and puts the placement under one heading (N1).
-      schema = 3,
+      -- page and puts the placement under one heading (N1). Schema 4 (1.3.0)
+      -- indexes the label, so `display` can name a door by it (N2).
+      schema = 4,
       authority = "config",
       title = "Door",
       fields = {
         property = { type = "ref", to = "acme_property.property", required = true, index = true, title = "Property", order = 1 },
-        label = { type = "string", max_len = 48, default = "Front door", title = "Label", order = 2 },
+        label = { type = "string", max_len = 48, default = "Front door", index = true, title = "Label", order = 2 },
         spot = { type = "vector3", required = true, title = "Where it is", group = "Place", order = 1 },
         map = {
           type = "string",
@@ -134,6 +138,7 @@ acme_property.MANIFEST = {
         bucket = { type = "integer", min = 0, max = 65535, default = 0, title = "Routing bucket", group = "Place", order = 3 },
       },
       list = { "label", "property" },
+      display = "label",
       actions = { create = "manage", edit = "manage", delete = "manage" },
       world = { kind = "point", position = "spot", bucket = "bucket", map = "map" },
     },

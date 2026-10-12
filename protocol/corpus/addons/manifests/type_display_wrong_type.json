@@ -1,0 +1,29 @@
+{
+  "description": "A type's display is a string naming one of its fields (N2).",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "name": {
+            "type": "string",
+            "index": true
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "display": 3
+      }
+    }
+  },
+  "error": {
+    "error": "wrong_type",
+    "path": "types.plant.display"
+  }
+}

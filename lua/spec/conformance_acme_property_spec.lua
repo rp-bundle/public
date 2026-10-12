@@ -552,8 +552,8 @@ conformance.run(busted, "the acme_property example", {
       world:settle()
       local example = load_example(world, function(loaded)
         local manifest = loaded.MANIFEST
-        manifest.version = "1.2.0"
-        manifest.types.property.schema = 3
+        manifest.version = "1.4.0"
+        manifest.types.property.schema = 5
         manifest.types.property.fields.garden = { type = "boolean", default = false, title = "Has a garden" }
       end)
       install(world, example)

@@ -67,6 +67,7 @@ manifest.MANIFEST_RULES = {
   "default",
   "requires_self",
   "world_field",
+  "display_field",
 }
 
 manifest.FIELD_RULES = {
@@ -1076,7 +1077,8 @@ end
 ---@return table? type The type, normalised, or nil.
 ---@return table? refusal Why not.
 local function check_type(def, path, context)
-  local allowed = set({ "actions", "authority", "fields", "hold", "limit", "list", "owners", "schema", "title", "world" })
+  local allowed =
+    set({ "actions", "authority", "display", "fields", "hold", "limit", "list", "owners", "schema", "title", "world" })
   local map, err = object(def, path, allowed, { "schema", "authority", "fields" })
   if not map then
     return nil, err
@@ -1191,6 +1193,22 @@ local function check_type(def, path, context)
       end
     end
     out.list = columns
+  end
+
+  -- `display` (N2) after `list`: it names one of the checked fields, and only
+  -- a shown, indexed string can name a record (`TypeDef::can_display`).
+  if map.display ~= nil then
+    local display_path = at(path, "display")
+    if type(map.display) ~= "string" then
+      return refuse("wrong_type", display_path)
+    end
+    local field = checked[map.display]
+    if field == nil then
+      return refuse("unknown_field", display_path)
+    end
+    if field.type ~= "string" or field.index ~= true or field.hidden == true then
+      return refuse("display_field", display_path)
+    end
   end
 
   if map.actions ~= nil then

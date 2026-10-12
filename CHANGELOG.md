@@ -50,6 +50,15 @@ socket.
   Deleting or purging a character, purging a player and purging an
   employer take away what they owned or shared, audited per record as
   `addon.record.disown`.
+- References between records are picked and shown by name (N2, #377). A
+  type may set `display`, the shown, indexed string field that names its
+  records (`display_field` when it is not one); without it the portal
+  takes the first such field of `list`, then of the layout. A `ref` to a
+  type is a picker of the target type's records by name, searchable past a
+  page of them, a reference whose record is gone is marked missing yet
+  stays selectable, and a record's page lists what refers to it under
+  "Used by". `acme_shop` 1.3.0 and `acme_property` 1.3.0 name their
+  counters, properties and doors.
 - The generic record pages lay themselves out from the manifest (N1,
   #180). A field may set `group` (a heading), `order`, and, on an integer
   or number, `unit` (`money`, `seconds`, `minutes`, `hours`, `metres`,

@@ -1,0 +1,25 @@
+{
+  "description": "The display field is indexed, so a picker searches it through the index keys (N2).",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "display": "name"
+      }
+    }
+  },
+  "error": {
+    "error": "display_field",
+    "path": "types.plant.display"
+  }
+}

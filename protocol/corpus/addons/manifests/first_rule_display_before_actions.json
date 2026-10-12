@@ -1,0 +1,32 @@
+{
+  "description": "A type's display is checked after its list and before its actions (N2).",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "name": {
+            "type": "string",
+            "index": true
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "display": "colour",
+        "actions": {
+          "edit": "prune"
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_field",
+    "path": "types.plant.display"
+  }
+}
