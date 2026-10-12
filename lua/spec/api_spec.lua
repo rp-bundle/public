@@ -235,7 +235,7 @@ describe("rpf.api", function()
       for key in pairs(rpf.api) do
         seen[key] = true
       end
-      assert.are.same(sorted({ "VERSION", "engine", "events", "players", "staff", "config", "addons", "records", "time", "characters", "money", "inventory", "jobs", "ops", "commerce", "bridge", "world", "interactions", "actions", "dialogs", "capabilities", "ui" }), keys(seen))
+      assert.are.same(sorted({ "VERSION", "engine", "events", "players", "staff", "config", "addons", "records", "time", "characters", "money", "inventory", "jobs", "ops", "commerce", "bridge", "world", "interactions", "actions", "dialogs", "capabilities", "ui", "placement" }), keys(seen))
     end)
 
     it("refuses a script emitting a core event, and passes a script's own events", function()

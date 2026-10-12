@@ -29,7 +29,7 @@ local core = load.core("client")
 ---@return fun()? clear Explicitly removes the client entity.
 function client.placement_preview(spec)
   local entity = ClientsideModel(spec.model, RENDERGROUP_TRANSLUCENT)
-  if not IsValid(entity) then return nil end
+  if not entity or not IsValid(entity) then return nil end
   local at = spec.position
   entity:SetPos(Vector(at.x, at.y, at.z))
   entity:SetAngles(Angle(0, spec.heading, 0))
