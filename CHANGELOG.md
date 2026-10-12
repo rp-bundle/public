@@ -50,6 +50,16 @@ socket.
   snapshot's new `dialogs` section, which the core reads as
   `rpf.config.dialog(slug)`. Writes are audited `dialog.create`,
   `dialog.edit` and `dialog.delete`.
+- A server's page in the panel shows its health first (#390): whether the
+  game server is connected and how many players are on, whether it should
+  upgrade, whether it runs the current config, the week's problems in
+  plain words (refused frames, commands that timed out, configs not
+  applied, refused addons, unknown operations) each linked to the
+  installing guide, every connection and disconnect of the week with its
+  reason, the most players online each day, and, for staff who manage the
+  server, what the community uses of its plan. The history is kept a week
+  (`RPF_WS_PLAYER_SAMPLE_SECS` sets how often players are counted, five
+  minutes by default).
 - `rpf.api.ui.menu` takes `text`, up to 1 KiB read above the options and
   never picked (#371): an NPC's line in a dialog. A read-only first entry
   of ox_lib's context menu on FiveM, a wrapped label on Gmod.

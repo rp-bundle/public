@@ -494,6 +494,62 @@ for good on this. Restart it once the other is gone.
 **`rpf: the portal is restarting; reconnecting … ms after it closes`**: a
 portal deploy. Nothing to do.
 
+### What the panel's health section says
+
+The server's page in the panel shows the last week first: whether the game
+server is connected, every time it dropped and why, how many players were
+on, and the problems the portal met on its connection. Each problem is one
+of these.
+
+**Disconnected: `closed by the game server`**: the framework or the host
+closed the socket: a restart, a map change, a stopped resource. One at a
+time is normal. Many in a row with no restart on your side means the
+host's websocket is failing; read the `disconnected (…)` lines on the
+server (above).
+
+**Disconnected: `replaced by a newer connection from the same game server`**:
+the framework reconnected and the portal dropped the old socket for the
+new one. Normal after a `disconnected (…); reconnecting` line.
+
+**Disconnected: `its API key was revoked`** or **`closed by the portal: the
+community was suspended or the server deleted`**: the portal ended it on
+purpose. Issue a new key, or contact support about the suspension.
+
+**Disconnected: `nothing heard for … seconds`**: the server stopped
+answering the portal's pings: it hung, or its connection died without
+closing. The framework reconnects when it can.
+
+**Disconnected: `… malformed frames in a row`** or **`the game server kept
+sending past its frame rate`**: the framework sent what the portal could
+not read, or sent too fast. A released core does neither; a modified one,
+or another resource writing to the socket, does. Reinstall the release.
+
+**Problem: `Frame refused (malformed)`, `(expired)`, `(not_found)`, …**: the
+portal refused a frame and said why in the detail. `expired` means the
+host's clock is far off, or a frame was retried days later; `not_found`
+and `forbidden` mean the server asked about a record or a player that is
+not its own. `retry` is the portal's own fault, and the framework resends.
+
+**Problem: `Frame refused (rate_limited)`**: the server sends faster than
+its plan's frame rate. A burst after a reconnect is expected; a steady
+stream means an addon is sending in a loop, or the plan is too small for
+the server. The plan card on the same page shows the rate.
+
+**Problem: `Frame refused (join_rate_limited)`**: players joined faster
+than the portal lets one server start joins, which has nothing to do with
+the plan's frame rate. The framework backs off and the players get in; a
+steady stream means a script is starting joins in a loop.
+
+**Problem: `Command timed out`**: staff sent a command from the panel (a
+kick, a balance change) and the game server did not answer in time. The
+panel says the outcome is unknown; check in game before retrying. A
+server that times out often is overloaded or its websocket is stalling.
+
+**Problem: `Config not applied`**: the framework refused the config the
+portal sent, for the reason in the detail (a snapshot over its size limit
+is the common one). The server keeps the config it had; fix what the
+reason names in the panel.
+
 ## Decisions
 
 ### A txAdmin recipe: shipped
