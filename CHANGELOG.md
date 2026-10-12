@@ -27,12 +27,19 @@ item's `image` hash in the config snapshot (P3), and the profile (K1) in
 `hello` (optional: a core that leaves it out runs native) and `welcome`,
 the `report_unknown_ops` notice (#274), the map the game server runs
 in `hello` (#369; `default` when left out), and the config snapshot's
-`dialogs` (#371; empty when left out). A
+`dialogs` (#371; empty when left out), and an item's `weapon` (L3, #373;
+left out for an item that is not one). A
 message newer than a connection's protocol is refused `malformed` at the
 socket.
 
 ### Added
 
+- An item can be a weapon (L3, #373): on the items page, staff name the
+  engine weapon it gives on FiveM (a GTA weapon such as `WEAPON_PISTOL`)
+  and on Gmod (a SWEP class such as `weapon_pistol`), picking from each
+  engine's stock weapons or typing one their server added, and the item it
+  fires as ammo. The config snapshot carries it as `weapon` on the item,
+  and `rpf.config.item(slug).weapon` reads it. Equipping comes next.
 - The generic record pages lay themselves out from the manifest (N1,
   #376). A field may set `group` (a heading), `order`, and, on an integer
   or number, `unit` (`money`, `seconds`, `minutes`, `hours`, `metres`,

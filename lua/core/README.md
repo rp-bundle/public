@@ -483,6 +483,10 @@ the base as staff wrote it, for a script that treats every `weapon` alike.
 `item_defaults()` is what an item the config does not define behaves as, the
 same fallback the portal applies when it validates contents.
 
+An item that is a weapon has `weapon` (L3): `{ fivem?, gmod?, ammo? }`, the
+engine weapon it gives on each engine it is one on, as staff wrote it, and
+the slug of the item it fires. An item that is not one has no `weapon`.
+
 An item staff gave an image has `image`, the image's content hash (P3): the
 SHA-256 of the stored PNG, 64 lowercase hex digits. Never a URL, and the core
 fetches nothing: a player's client fetches the image from the portal

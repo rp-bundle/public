@@ -1613,6 +1613,16 @@ function Config.edit(handle, base_version, changes) end
 ---@field size rpf.ConfigSize Footprint in a grid container, before rotation.
 ---@field stack_limit number The most that may sit in one stack.
 ---@field image string? The item's image by content hash (P3): the SHA-256 of the image, 64 lowercase hex digits, nil if staff uploaded none. A player's client draws it through `rpf.items.image`, which keeps what it fetched under this hash, which changes exactly when the image does.
+---@field weapon rpf.ConfigItemWeapon? The engine weapon equipping it gives (L3), nil if it is not a weapon.
+
+---What makes an item a weapon (L3): the engine weapon it gives on each
+---engine, as staff wrote it, and the item it fires. A weapon names at least
+---one engine's; the other is nil on an item that is a weapon on one engine
+---only.
+---@class rpf.ConfigItemWeapon
+---@field fivem string? The GTA weapon's name on FiveM, such as `WEAPON_PISTOL`.
+---@field gmod string? The weapon's class on Gmod, such as `weapon_pistol`.
+---@field ammo string? The slug of the item it fires, nil if it takes none. May be the weapon itself (a throwable), or an item the catalog has stopped defining, which counts as none carried.
 
 ---An item base as the config snapshot carries it (E3): what staff wrote,
 ---with the fields it leaves to the defaults absent.

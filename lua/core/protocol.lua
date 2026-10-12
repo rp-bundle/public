@@ -562,8 +562,17 @@ local ITEM_BASE = object({
   { "stack_limit", optional(U32) },
 })
 
+---`ItemWeapon`: the engine weapon an item gives on each engine, and the
+---item it fires (L3). Either engine's may be left out.
+local ITEM_WEAPON = object({
+  { "fivem", optional(STRING) },
+  { "gmod", optional(STRING) },
+  { "ammo", optional(STRING) },
+})
+
 ---`ItemSpec`: an item as staff define it (E3), before its base and the
----defaults fill what it leaves out.
+---defaults fill what it leaves out; `weapon` (L3) is left out for an item
+---that is not one.
 local ITEM_SPEC = object({
   { "slug", STRING },
   { "name", STRING },
@@ -571,6 +580,7 @@ local ITEM_SPEC = object({
   { "weight", optional(I32) },
   { "size", optional(IVECTOR) },
   { "stack_limit", optional(U32) },
+  { "weapon", optional(ITEM_WEAPON) },
 })
 
 ---`EmployerDef`: a server-run employer (E4); its payroll (D7) names one of

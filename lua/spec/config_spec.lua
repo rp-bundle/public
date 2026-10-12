@@ -72,7 +72,13 @@ describe("rpf.config", function()
       size = { x = 2, y = 1 },
       stack_limit = 1,
       image = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      weapon = { fivem = "WEAPON_PISTOL", gmod = "weapon_pistol", ammo = "pistol_ammo" },
     }, rpf.config.item("pistol"))
+    -- A weapon (L3) names what it gives on each engine it is one on, and
+    -- an item that is not one has no `weapon`.
+    assert.are.same({ fivem = "WEAPON_KNIFE" }, rpf.config.item("knife").weapon)
+    assert.are.same({ gmod = "weapon_stunstick" }, rpf.config.item("stunstick").weapon)
+    assert.is_nil(rpf.config.item("water_bottle").weapon)
     assert.is_nil(rpf.config.item("water_bottle").base)
     assert.is_nil(rpf.config.item("water_bottle").image)
     assert.are.equal(10, rpf.config.item("water_bottle").stack_limit)

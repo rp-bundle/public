@@ -26,7 +26,7 @@ Two numbers are involved, and only one decides compatibility.
 | Protocol | First release | Served by portal releases | Status |
 |---|---|---|---|
 | 1 | 0.1.0 | 0.1.0 only | Dropped before 0.2.0: no released game-side build ever spoke it, since 0.1.0 had no FiveM or Gmod adapter, and the repository owner confirmed nobody runs it (2026-10-09) |
-| 2 | Unreleased | The next release and later | Current, unreleased, and the oldest served: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), the `domain_external` reject code (K1), the `referenced` reject code (a deletion refused because another record refers to it), in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`), an item's `image` hash in the config snapshot (P3), the profile (K1) in `hello` and `welcome`, and the `report_unknown_ops` notice (#274) |
+| 2 | Unreleased | The next release and later | Current, unreleased, and the oldest served: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), the `domain_external` reject code (K1), the `referenced` reject code (a deletion refused because another record refers to it), in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`), an item's `image` hash in the config snapshot (P3), an item's `weapon` (L3), the profile (K1) in `hello` and `welcome`, and the `report_unknown_ops` notice (#274) |
 
 A row is added when a release ships a new protocol version, and a version's
 last portal release is filled in when one drops it. `CHANGELOG.md` names the
@@ -329,6 +329,8 @@ receiver takes the default (empty, `false` or `None`).
 | `employment` | A character's `StateChange` and `RecordReport` (`state_changed`, `resync`, `release`) | `None`: says nothing of the job | A field added by D7 to frames a game server sends, which a core from before it leaves out; `{"job": null}` is what clears a job |
 | `base` | An item in `items` | `None` | Omitted when the item has no base |
 | `image` | An item in `items` | `None` | Omitted when the item has no image; added by P3, and ignored by an older core, which keeps the snapshot whole |
+| `weapon` | An item in `items` | `None` | Omitted when the item is not a weapon; added by L3 |
+| `fivem`, `gmod`, `ammo` | An item's `weapon`, in `items` and in an in-game config change | `None` | A weapon names its weapon on one engine or both, and takes ammo or not |
 | `weight`, `size`, `stack_limit` | An item base in `item_bases` | `None` | Omitted when the base leaves it to the item or the defaults |
 | `description` | An employer, department or job | Empty | Free text, possibly empty |
 | `department` | A job in `employer_jobs` | `None` | Omitted when the job has none |
@@ -337,6 +339,7 @@ receiver takes the default (empty, `false` or `None`).
 | `rotated` | A grid placement in container contents | `false` | Upright is the common case |
 | `weight`, `size`, `stack_limit` | An item base in an in-game config change (`config_changes`) | `None` | Left out when the base leaves it to its items and the defaults, as in the snapshot |
 | `base`, `weight`, `size`, `stack_limit` | An item in an in-game config change | `None` | Left out when the item takes it from its base |
+| `weapon` | An item in an in-game config change | `None` | Left out when the item is not a weapon (L3) |
 | `description`, `payroll` | An employer in an in-game config change | Empty, `None` | Free text, possibly empty; no payroll for an employer that pays none |
 | `description` | A department in an in-game config change | Empty | Free text, possibly empty |
 | `department`, `description`, `rank`, `salary` | A job in an in-game config change | `None`, empty, `0`, `None` | As for a job in the snapshot |
