@@ -316,6 +316,7 @@ receiver takes the default (empty, `false` or `None`).
 | `domains` | `hello` | Native | Added by K1. A core from before it runs only the native profile, so an absent field means native, never `null`, which is a core with no profile fixed yet |
 | `map` | `hello` | `default` | Added by #369. A core from before it places every world record on whatever map it runs, which is what FiveM's unnamed setup, `default`, means |
 | `types` | `hold` | Empty: claims nothing | Added by J6 to a frame a game server sends, and left out by one that claims nothing, so every hold before it decodes as one that claims nothing |
+| `addon_permissions`, `all_addon_permissions` | A `StaffGrant` in `staff_permissions` | Empty, `false` | Added by L4 so linked staff can use installed addon action grants in game. Older captures keep their core flags; the owner grant includes future addon flags |
 | `domains` | `welcome` | Native | Added by K1, and left out when native: a native server's `welcome` is the one it was before K1, which is what every portal enforced then |
 | `items`, `item_bases`, `item_defaults`, `employers`, `employer_departments`, `employer_jobs`, `new_character`, `paying_accounts`, `addons`, `dialogs` | `ConfigSnapshot` (`config`) | Empty | Sections added after `settings`, so a snapshot from before one still decodes |
 | `choices` | A node of a dialog in `dialogs` | Empty | Omitted for a node that ends the conversation; added by L1 |
@@ -344,8 +345,9 @@ Container contents travel both ways (a hold hands them to a game server, a
 state report brings them back); `employment` and an in-game config change's
 definitions (E6, new in protocol 2, so no older core sends one) are only
 ever sent by a game server, and a character's `job` only by the portal;
-`domains` is the handshake's, one in each direction; everything else in
-the table is in the config snapshot, which only the portal sends. `OPTIONAL` in the protocol
+`domains` is the handshake's, one in each direction; addon staff grants are
+only sent by the portal; everything else in the table is in the config
+snapshot, which only the portal sends. `OPTIONAL` in the protocol
 tests is the same list as far as the corpus shows it: a snapshot base's
 `stack_limit`, `data` and `rotated` are absent from every sample, so the
 test cannot see them, and this table is where they are recorded.
