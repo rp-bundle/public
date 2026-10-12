@@ -1,6 +1,6 @@
 # The Qbox bridge
 
-K3 (#93). RPF beside [Qbox](https://github.com/Qbox-project/qbx_core) on
+K3 (#82). RPF beside [Qbox](https://github.com/Qbox-project/qbx_core) on
 FiveM, in the companion profile: qbx_core keeps owning characters, money
 and jobs, ox_inventory keeps owning items, and RPF keeps player accounts and
 login, moderation, the staff portal and addons. This directory is the
@@ -30,7 +30,7 @@ as `[rpf]/rpf-qbox`, and installing it is
 These are the versions the fake (`lua/spec/support/qbox_fake.lua`) was
 written from, reading their source. `tested_with` names qbx_core's only,
 because the contract has one framework version. The layer-5 smoke on a real
-Qbox server is #93's checklist.
+Qbox server is #82's checklist.
 
 ## What it provides and supports
 

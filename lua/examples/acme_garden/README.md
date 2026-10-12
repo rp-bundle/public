@@ -2,7 +2,7 @@
 
 An example RPF addon with a timed live type: players sow plants that grow
 while the server runs, need watering, and are harvested once grown or wither
-if left dry. It is J6's sample (#83), and shows what a type whose state
+if left dry. It is J6's sample (#74), and shows what a type whose state
 changes during play needs from RPF, without any Rust, portal page or
 migration of its own. It is a conformance fixture
 (`lua/spec/conformance_acme_garden_spec.lua`,

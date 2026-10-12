@@ -11,13 +11,13 @@ service and is not in this repository.
 ## Installing
 
 Download a release from this repository's
-[Releases](https://github.com/Sampleeeee/rpf/releases): the FiveM resources,
+[Releases](https://github.com/rp-bundle/public/releases): the FiveM resources,
 the Garry's Mod addon, a txAdmin recipe and the addon kit, with their
 SHA-256 checksums. [Installing](docs/installing.md) takes a server from a
 stock install to one connected to the portal.
 
 Each release's documentation, kept as it was for that release, is at
-<https://sampleeeee.github.io/rpf/>: installing, upgrading, compatibility,
+<https://rp-bundle.github.io/public/>: installing, upgrading, compatibility,
 writing addons and the Lua API reference.
 
 ## Writing addons

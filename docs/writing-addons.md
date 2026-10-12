@@ -11,7 +11,7 @@ portal's.
 This page is the guide. It starts with what RPF provides and what it
 leaves to you, then walks through building an addon end to end, then
 covers each part in turn. The complete, typed reference is the
-[Lua API reference](https://sampleeeee.github.io/rpf/latest/reference/) on
+[Lua API reference](https://rp-bundle.github.io/public/latest/reference/) on
 the docs site, generated from
 [`lua/core/meta/api.lua`](../lua/core/meta/api.lua), which your editor reads
 for completion (below). The example addons are in every release's addon
@@ -986,7 +986,7 @@ FiveM and its index on Gmod.
 ## Actions
 
 An action is something your addon can be asked to do by a choice in an
-NPC's dialog, which staff build in the panel (#371): start a delivery
+NPC's dialog, which staff build in the panel (#175): start a delivery
 route, open a locker, hand over a uniform. The portal never sends your
 server code, so a choice cannot say *how*. It names one of your actions
 and fills in its parameters, and your Lua does the rest. Declare each one

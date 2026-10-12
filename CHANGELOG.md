@@ -25,23 +25,23 @@ editing (E6: `config_changed`, `config_change_applied` and
 record refers to), an
 item's `image` hash in the config snapshot (P3), and the profile (K1) in
 `hello` (optional: a core that leaves it out runs native) and `welcome`,
-the `report_unknown_ops` notice (#274), the map the game server runs
-in `hello` (#369; `default` when left out), and the config snapshot's
-`dialogs` (#371; empty when left out), and an item's `weapon` (L3, #373;
+the `report_unknown_ops` notice (#143), the map the game server runs
+in `hello` (#173; `default` when left out), and the config snapshot's
+`dialogs` (#175; empty when left out), and an item's `weapon` (L3, #177;
 left out for an item that is not one). A
 message newer than a connection's protocol is refused `malformed` at the
 socket.
 
 ### Added
 
-- An item can be a weapon (L3, #373): on the items page, staff name the
+- An item can be a weapon (L3, #177): on the items page, staff name the
   engine weapon it gives on FiveM (a GTA weapon such as `WEAPON_PISTOL`)
   and on Gmod (a SWEP class such as `weapon_pistol`), picking from each
   engine's stock weapons or typing one their server added, and the item it
   fires as ammo. The config snapshot carries it as `weapon` on the item,
   and `rpf.config.item(slug).weapon` reads it. Equipping comes next.
 - The generic record pages lay themselves out from the manifest (N1,
-  #376). A field may set `group` (a heading), `order`, and, on an integer
+  #180). A field may set `group` (a heading), `order`, and, on an integer
   or number, `unit` (`money`, `seconds`, `minutes`, `hours`, `metres`,
   `degrees`, `percent`) and `slider`; each kind gets the control that fits
   it: a switch, a slider, a duration typed in the unit staff choose, money
@@ -51,7 +51,7 @@ socket.
   server setting, **`economy.currency`** (`config.settings.edit`, `$` by
   default), is what the panel puts before an amount; game servers read it
   like any setting. `acme_shop` and `acme_property` 1.2.0 use the keys.
-- The dialog editor (#371): the server's **Dialogs** page lists its trees
+- The dialog editor (#175): the server's **Dialogs** page lists its trees
   and builds them, node by node, with no script needed: lines, choices,
   where each goes, conditions, and the action a choice runs with its
   parameters, picked from the installed addons' declarations. A choice
@@ -59,7 +59,7 @@ socket.
   **`config.dialogs.edit`**, gates the editing; every staff member of the
   server sees the trees. An NPC type's record form picks its tree from a
   list.
-- NPCs talk (#371): a world type names a `dialog` field (a `ref` to
+- NPCs talk (#175): a world type names a `dialog` field (a `ref` to
   `dialog`) in its `world`, and the core offers Talk on its records and
   runs the tree they name on the server, a menu per node, every pick
   checked again against the tree as it is now, its conditions and the
@@ -67,13 +67,13 @@ socket.
   refused with a message. `rpf.api.dialogs.open(player, slug)` opens a
   tree from an addon's code. Interaction names under `rpf_` are the
   core's (`reserved`).
-- Dialog trees (#371): what a server's NPCs say and the choices they
+- Dialog trees (#175): what a server's NPCs say and the choices they
   offer, stored per server (`dialogs`), checked against the actions the
   server's installed addons declare, and pushed whole in the config
   snapshot's new `dialogs` section, which the core reads as
   `rpf.config.dialog(slug)`. Writes are audited `dialog.create`,
   `dialog.edit` and `dialog.delete`.
-- A server's page in the panel shows its health first (#390): whether the
+- A server's page in the panel shows its health first (#194): whether the
   game server is connected and how many players are on, whether it should
   upgrade, whether it runs the current config, the week's problems in
   plain words (refused frames, commands that timed out, configs not
@@ -84,9 +84,9 @@ socket.
   (`RPF_WS_PLAYER_SAMPLE_SECS` sets how often players are counted, five
   minutes by default).
 - `rpf.api.ui.menu` takes `text`, up to 1 KiB read above the options and
-  never picked (#371): an NPC's line in a dialog. A read-only first entry
+  never picked (#175): an NPC's line in a dialog. A read-only first entry
   of ox_lib's context menu on FiveM, a wrapped label on Gmod.
-- Addons declare **actions** (#371): what a dialog choice staff build in
+- Addons declare **actions** (#175): what a dialog choice staff build in
   the panel can make an addon do. A manifest's new top-level `actions`
   names each with a title, help and parameters (field definitions, minus
   `index`, `unique`, `hidden`, `read_only`, `engine` and owner
@@ -97,7 +97,7 @@ socket.
   declaration. The install view lists the actions a release adds and the
   ones it stops declaring. `actions` and `dialogs` are reserved
   namespaces.
-- Placements know which map they belong to (#369). A game server reports
+- Placements know which map they belong to (#173). A game server reports
   the map it runs in `Hello`: `game.GetMap()` on Gmod, and on FiveM the
   new `rpf_map` convar, which names one setup of the one map (`default`
   unset). A world type may name a `map` field (an indexed string) in its
@@ -107,12 +107,12 @@ socket.
   placement's page shows its map, a type's records filter by map (those
   on it and those on every map), and the map field suggests the maps the
   server reported and its records use, while taking any name typed. The
-  worked examples show the pattern (#412): `acme_notes`, `acme_tags` and
+  worked examples show the pattern (#211): `acme_notes`, `acme_tags` and
   `acme_garden` set `map` with `rpf.world.map()` in the records they
   create, and the counters, lots and doors staff place in `acme_shop` and
   `acme_property` have a `map` field staff fill in. Each is a compatible
   minor version, and an older record, with no map, stays on every map.
-- Item images on the player's client (#243). `rpf.api.items.image(slug,
+- Item images on the player's client (#132). `rpf.api.items.image(slug,
   callback)` hands an addon an item's image ready to draw: a `data:` URL on
   FiveM, for an `<img>` in any resource's page or ox_lib's `image`, and a
   path for `Material()` on Gmod. The client reads the server's catalog
@@ -120,7 +120,7 @@ socket.
   each image under its content hash, checked, on disk (IndexedDB on FiveM,
   `data/rpf/images/` on Gmod), so an unchanged image is fetched once. A
   client platform now has an `item_image` member.
-- Item images in `rpf.api.ui` menus (P3 follow-up, #361). A menu option
+- Item images in `rpf.api.ui` menus (P3 follow-up, #169). A menu option
   names an item with `item = "apple"`, on the client or from the server,
   and is drawn with the item's image beside its label on either engine
   (ox_lib's `icon` on FiveM, a `DImage` on Gmod). The spec carries the
@@ -130,7 +130,7 @@ socket.
   an option's `item` and `image`; an adapter outside this repository that
   ignores them draws the label as before.
 
-- Distances in metres on every engine (J8 follow-up, #318). An
+- Distances in metres on every engine (J8 follow-up, #157). An
   interaction's `distance`, a zone's `radius` field and the `distance` a
   resolved target or a nearby option reports are metres on FiveM and Gmod
   alike, converted by the engine's scale (FiveM 1, Gmod about 39.37 to the
@@ -144,7 +144,7 @@ socket.
   changes. A Gmod server that stored a zone radius in game units (the
   `acme_property` example) must enter it in metres.
 - A built-in command to enter a staff link code in game (F9 follow-up,
-  #198): `/rpflink <code>` in chat or `rpflink <code>` in the console, on
+  #115): `/rpflink <code>` in chat or `rpflink <code>` in the console, on
   FiveM and Garry's Mod. The platform gains a required member,
   `on_command(name, handler)`, which both adapters implement (FiveM's
   `RegisterCommand`; Gmod's `concommand.Add` and a `PlayerSay` line that is
@@ -152,13 +152,13 @@ socket.
   words typed are never logged or repeated. The portal's in-game account page
   names the command.
 - The Lua framework is published from its own public repository,
-  [Sampleeeee/rpf](https://github.com/Sampleeeee/rpf) (H4 follow-up, #189):
+  [rp-bundle/public](https://github.com/rp-bundle/public) (H4 follow-up, #111):
   its source with its history, its releases, and each release's docs site,
-  now at <https://sampleeeee.github.io/rpf/>. Download releases from there:
+  now at <https://rp-bundle.github.io/public/>. Download releases from there:
   the txAdmin recipe's address and the portal's **Update available** link
   point at it. Report a vulnerability, in the framework or the portal,
   through that repository's *Security* tab.
-- The Lua framework is licensed MIT (H4 follow-up, #190). `lua/LICENSE`
+- The Lua framework is licensed MIT (H4 follow-up, #112). `lua/LICENSE`
   covers everything a game server runs: the core, both adapters, the `rpf-ws`
   shim, the NUI pages, the bridges and the examples, and every FiveM
   resource, the Gmod addon and the addon kit carries it. The portal is closed
@@ -166,23 +166,23 @@ socket.
   `"license": "MIT"`. `rpf-ws` now ships `THIRD-PARTY-NOTICES`, the licence
   text of what the shim bundles (`ws`, MIT), in place of `LICENSE.ws`. The
   first release tag is no longer refused for want of a licence.
-- Account deletion on the login screens (H6, #229): a "Delete my account"
+- Account deletion on the login screens (H6, #128): a "Delete my account"
   button beside "Log in" opens a form in the FiveM NUI page and the Gmod
   Derma UI that asks for the username and password and a ticked box, says
   it cannot be undone and that bans, warnings and game records stay, and
   ends on a screen telling the player to reconnect. On FiveM the password
   is sealed and goes to the portal without reaching Lua.
-- Account deletion for a player who is logged in (H6, #322): the same form
+- Account deletion for a player who is logged in (H6, #160): the same form
   opens with the console command `rpf_delete_account` on Gmod and the client
   command of that name on FiveM (F8 or chat), with the same text,
   confirmation and sealed password. Back returns to the game, or to the
   character screen.
 - A player linked to a staff account can delete their own account (H6,
-  #331): it is no longer refused `account_linked`. The link goes with the
+  #162): it is no longer refused `account_linked`. The link goes with the
   account, the staff account stays, and the portal pushes the guild's servers
   their staff lists, so the link's in-game permissions go at once, as when
   staff delete the account.
-- Unknown facade operations in the portal (K2 follow-up, #274): the core
+- Unknown facade operations in the portal (K2 follow-up, #143): the core
   reports every operation its journal could not vouch for
   (`report_unknown_ops`), as it arises and after each `Welcome` until the
   portal has it, and staff holding the new `ops.view` see them on the
@@ -195,14 +195,14 @@ socket.
   once; rows go 180 days after the portal first received them
   (`retention::UNKNOWN_OP_RETENTION`). The migration
   `20261011080758_unknown_ops` adds the table.
-- A removed addon is purged after 14 days (J6, #302): staff removing an
+- A removed addon is purged after 14 days (J6, #150): staff removing an
   addon can restore it by installing the namespace again for
   `retention::ADDON_REMOVAL_RETENTION`; after that the retention sweep
   deletes its records, types and installation, and installing it again (or
   a declaration with `addons.auto_install` on) starts fresh with no records.
   The migration `20261011085242_addon_removal_purge` adds two partial
   indexes the sweep reads.
-- The property example (J8, #85): `lua/examples/acme_property/`,
+- The property example (J8, #76): `lua/examples/acme_property/`,
   properties players buy and doors their owners lock, built on the public
   API and the generic types with no Rust, route, page, protocol variant or
   migration of its own. Staff create each property on the data page (a
@@ -213,13 +213,13 @@ socket.
   `acme_property.locked` whether a door is locked. Staff reassign a
   property by editing `holder` in the portal. It ships in the addon kit
   with the other examples.
-- The addon walkthrough (J7, #84): `docs/writing-addons.md` now begins with
+- The addon walkthrough (J7, #75): `docs/writing-addons.md` now begins with
   what RPF provides and what only the examples supply, then builds a new
   example, `acme_notes`, step by step. The steps are the type, registering
   and installing, records, interactions, the permission in the portal and
   in game, a staff edit, a schema upgrade, retries and per-engine values.
   `acme_notes` ships in the addon kit with the other examples.
-- The addon kit (J7, #84): each release gains `rpf-addon-kit-<version>.zip`,
+- The addon kit (J7, #75): each release gains `rpf-addon-kit-<version>.zip`,
   for addon authors and for nobody's server by default. It holds the API's
   annotations for the language server (`meta/`) and the example addons
   (`acme_tags`, `acme_shop`, `acme_garden`) ready to install, as FiveM
@@ -228,7 +228,7 @@ socket.
   the manifest it proposes. On FiveM, an ox_lib that runs but whose loader
   gave RPF nothing now says so at start, instead of asking for ox_lib to be
   installed.
-- Hold policies for live addon records (J6, #83): a live type's `hold =
+- Hold policies for live addon records (J6, #74): a live type's `hold =
   "server"` records are held by the server while it runs, claimed from the
   portal with a new optional `types` field on `hold` (a page at a time,
   after every reconnect and every minute), and its `hold = "owner"`
@@ -245,7 +245,7 @@ socket.
   portal shows each live type's hold policy on the addon page and the
   record page. The `acme_shop` example's stock is `hold = "server"` too,
   rather than held by the addon on a timer.
-- The commerce example (J5, #82): `lua/examples/acme_shop/`, counters that
+- The commerce example (J5, #73): `lua/examples/acme_shop/`, counters that
   sell items and buy them back, built only on `rpf.api`. Staff place
   counters and price listings as config records and stock what is limited
   as a live record; a player picks from a menu the server opens, and one
@@ -254,7 +254,7 @@ socket.
   `rpf.api.ops.result(op_id)` says how an op id already went, so an addon
   answers a repeated order as it was answered. The conformance harness can
   now drop the portal's connection (`World:disconnect`).
-- Exchanges (J5, #82): `rpf.api.commerce.exchange(player, deal, op_id,
+- Exchanges (J5, #73): `rpf.api.commerce.exchange(player, deal, op_id,
   apply)` moves money and items together, with an addon's change to its own
   records, as one journaled intent, once per op id; `check(player, deal)`
   makes the same checks without moving anything. A deal is `{ account,
@@ -267,7 +267,7 @@ socket.
   journal's detail for staff now carries what a deal moved (`paid`, `take`,
   `give`). No wire change.
 
-- World definitions on addon types (J4, #81): a type may declare `world =
+- World definitions on addon types (J4, #72): a type may declare `world =
   { kind, position, heading, bucket, model, visible, radius }`, naming its
   own fields by the part each plays, with `kind` one of `ped`, `object`,
   `point` and `zone`. The portal and the core check it with the same rules
@@ -275,7 +275,7 @@ socket.
   is compatible, and the generic record page shows a world-backed record's
   placement. No migration, route or protocol change: a world-backed type is
   still only fields.
-- Placements (J4, #81): the core places the visible ped and object records
+- Placements (J4, #72): the core places the visible ped and object records
   of running addons' world-backed config types, one entity each, through
   new adapter capabilities (`bucket`, `model`, `entity`, `spawn`,
   `despawn`), and keeps them in step with the config. On FiveM they are
@@ -285,7 +285,7 @@ socket.
   `prop_dynamic`s. `rpf.api.world` gains `bucket`, `model`, `entity` and
   `placed`. The `zone` capability, never supported, is gone: a zone is a
   record's radius, and the core does the arithmetic.
-- Interactions with targets (J4, #81): `rpf.api.interactions.register`
+- Interactions with targets (J4, #72): `rpf.api.interactions.register`
   takes rules (`target`, `distance`, `cooldown`, `permission`, `check`,
   `label`), and the server checks the target the client names (a record of
   a world-backed type, or an entity of given models) for the player being
@@ -298,7 +298,7 @@ socket.
   gains `open`, `nearby` and `targets`. The `acme_tags` example reads a tag
   you stand at.
 
-- Bridges to existing RP frameworks, the DarkRP pilot (K4, #94):
+- Bridges to existing RP frameworks, the DarkRP pilot (K4, #83):
   `rpf_darkrp`, an addon in the Gmod zip that only a DarkRP server keeps,
   runs RPF beside DarkRP in the companion profile. A player's character is
   their DarkRP data, under their SteamID64, in play once they have logged
@@ -321,7 +321,7 @@ socket.
   server. Other addons' own commands and net messages are theirs to gate,
   and an addon whose hook answers before the bridge's decides that hook,
   since Garry's Mod gives hooks no order.
-- Bridges to existing RP frameworks, the Qbox pilot (K3, #93): `rpf-qbox`, a
+- Bridges to existing RP frameworks, the Qbox pilot (K3, #82): `rpf-qbox`, a
   resource in the FiveM zip that only a Qbox server ensures, runs RPF beside
   qbx_core and ox_inventory in the companion profile. It is the character
   selection after the RPF login, logs out at once a character qbx_core's own
@@ -329,7 +329,7 @@ socket.
   `crypto`), items and job to qbx_core's and ox_inventory's exports. It was
   tested with qbx_core 1.24.0, ox_inventory 2.48.0 and ox_lib 3.40.0.
   Installing it is in [Installing](docs/installing.md#beside-qbox).
-- Bridges to existing RP frameworks, part 3 (K2, #92): the shared bridge
+- Bridges to existing RP frameworks, part 3 (K2, #81): the shared bridge
   conformance suite (`lua/spec/support/bridge_conformance.lua`) every
   bridge runs against a fake of its framework, on the mock platform and the
   real FiveM and Gmod adapters: the lifecycle and RPF's login gate, every
@@ -340,7 +340,7 @@ socket.
   for staff with nothing compensated. A mock bridge over a fake framework
   passes it, as K3's Qbox and K4's DarkRP bridges will.
 
-- Bridges to existing RP frameworks, part 2 (K2, #92): the bridge
+- Bridges to existing RP frameworks, part 2 (K2, #81): the bridge
   contract, 1.0. A bridge registers through `rpf.api.bridge.register`,
   declaring the domains its framework owns (`provides`) and the facade
   calls it implements (`supports`); the core refuses one of another
@@ -362,7 +362,7 @@ socket.
   `unavailable` is no longer kept in the journal, so the same op id may be
   sent again once the provider is back.
 
-- Bridges to existing RP frameworks, part 1 (K2, #92): an addon pays for a
+- Bridges to existing RP frameworks, part 1 (K2, #81): an addon pays for a
   change to its own records in one intent. Each facade command
   (`rpf.api.money.debit`, `credit`, `rpf.api.inventory.give`, `take`)
   takes an optional `apply` after its op id, run only once the command
@@ -375,7 +375,7 @@ socket.
   for a staff tool in game. The journal never runs an op id twice when a
   crash lost its index: an id it does not know is looked up by its own
   storage key first.
-- Authority per domain, part 1 (K1, #91). A server's **profile** says who
+- Authority per domain, part 1 (K1, #80). A server's **profile** says who
   owns characters, money, inventory and jobs on it: RPF (native, the
   default) or the game server's own RP framework (companion). Staff save it
   as the `domains` setting, inherited like any other; only the two uniform
@@ -396,14 +396,14 @@ socket.
   external domain's characters, containers and accounts, offers no edit of
   them, marks the item catalog and the jobs "not applied", and lists the
   archived records behind an explicit, read-only Archived filter (part 4).
-- Release docs (H7, #56). Every release publishes its own docs site on
+- Release docs (H7, #60). Every release publishes its own docs site on
   GitHub Pages, from its tag: installing, upgrading from the release before
   (`docs/upgrading.md`, which a tag now requires), compatibility, the
   changelog and the Lua API reference, one directory per release that no
   later tag rebuilds, with `latest` and per-line aliases and a version
   switcher on every page. The Release's notes link it. CI builds the site
   strictly on every pull request, so a broken link fails there.
-- A browsable Lua API reference (J9, #191): a page for `rpf.Api` and each of
+- A browsable Lua API reference (J9, #113): a page for `rpf.Api` and each of
   its tables and types, with what every call takes and returns, which side
   it runs on, examples on the calls an addon reaches for first, linked
   types and search, generated from the annotations so it cannot drift from
@@ -411,7 +411,7 @@ socket.
   It is in each release's docs site, and `dev/luadoc` builds it to open from
   disk. The annotations now list the `inactive` refusals `events.on`,
   `events.once`, the timers and `addons.provide` already returned.
-- Setup (H7, #56). [Installing](docs/installing.md) takes an owner from a
+- Setup (H7, #60). [Installing](docs/installing.md) takes an owner from a
   stock server to a connected one on FiveM and Garry's Mod, with a
   troubleshooting section keyed by the console lines. Each release also
   publishes `rpf-txadmin-recipe.yaml`, which txAdmin's deployer turns into a
@@ -423,7 +423,7 @@ socket.
   `rpf-ws` not started, and a refused start no longer takes player events;
   the Gmod adapter does the same for a malformed convar and for a GWSockets
   module that is installed but will not load.
-- Game-server releases (H7, #56). A version tag now also publishes a
+- Game-server releases (H7, #60). A version tag now also publishes a
   GitHub Release with `rpf-fivem-<version>.zip` (one `[rpf]` folder holding
   the `rpf` and `rpf-ws` resources, for `resources/`), `rpf-gmod-<version>.zip`
   (the `rpf` addon, for `garrysmod/addons/`) and their `SHA256SUMS`, with
@@ -431,14 +431,14 @@ socket.
   serve it. A tag whose version, changelog section, compatibility row,
   frozen corpus or licence is missing is refused before anything is
   published.
-- The portal tells staff when a game server should upgrade (H7, #56). A
+- The portal tells staff when a game server should upgrade (H7, #60). A
   connected server's **Game server** card says **Update available** when
   its core is an older release than the portal's, linking the release to
   install, and **Upgrade needed**, with the date, when the protocol it
   speaks has been announced as going (`rpf_protocol::SUNSETS`, empty
   until a release deprecates one)
   ([Compatibility](docs/compatibility.md#seeing-who-is-behind)).
-- Item images and object storage (P3, #49). Staff with `config.items.edit`
+- Item images and object storage (P3, #53). Staff with `config.items.edit`
   upload a PNG, JPEG or WebP of at most 256 KiB for an item on its items
   page; the portal re-encodes it as a PNG of its pixels alone, at most 256
   pixels a side, and stores it in S3-compatible object storage. The config
@@ -449,7 +449,7 @@ socket.
   plan's new storage allowance (50 MiB standard), which the operator's
   console sets. Uploads and removals are audited as
   `config.item_image.set` and `config.item_image.delete`.
-- In-game config editing (E6, #48). A linked staff member changes their
+- In-game config editing (E6, #52). A linked staff member changes their
   server's settings, items, item bases, employers, departments and jobs in
   game with `rpf.api.config.edit(handle, base_version, changes)`, with the
   flags the portal's config pages need, checked by the portal when the edit
@@ -460,7 +460,7 @@ socket.
   applied in no part, the staff member is told to redo it, and the server's
   settings page lists it under "Discarded in-game changes". Audited with the
   server and the player as the actor and the staff account linked.
-- The platform operator (H5, #54). Platform admins, made only with
+- The platform operator (H5, #58). Platform admins, made only with
   `rpf-portal platform-admin grant <account>` and separate from every guild
   role, get a console at `/platform` to suspend a guild (its game servers
   are disconnected and refused `suspended`, its players cannot register or
@@ -470,7 +470,7 @@ socket.
   few hours, announced on every page of the guild, and hand a guild to a
   new owner who has lost every sign-in factor. Everything an operator does
   is in the guild's own audit log with their reason.
-- Removing staff (F9 follow-up, #197). Staff holding `member.remove` get a
+- Removing staff (F9 follow-up, #114). Staff holding `member.remove` get a
   Staff page for the guild and for each server they hold it on, listing who
   holds a role there and removing them: from the guild (every role they
   hold) or from one server (only that server's roles). The change reaches
@@ -480,7 +480,7 @@ socket.
   again every `suspended_retry_ms` (five minutes) plus jitter, so a server
   comes back on its own once its community's suspension is lifted.
 
-- The FiveM adapter (D2, #17): the `rpf` resource (the Lua core, the adapter
+- The FiveM adapter (D2, #21): the `rpf` resource (the Lua core, the adapter
   and its login and character screens) and the `rpf-ws` resource (the
   portal websocket in FiveM's JS runtime, `ws` bundled in, no
   `npm install`), assembled by `dev/fivem-resources` and configured with the
@@ -489,7 +489,7 @@ socket.
   Lua, and the server holds a player in a routing bucket of their own until
   they are `active` (OneSync)
   ([the adapter's README](lua/platform/fivem/README.md)).
-- The portal stops in order on `SIGTERM` (H1, #50): readiness answers
+- The portal stops in order on `SIGTERM` (H1, #54): readiness answers
   `503 draining` and new websocket upgrades are refused at once; after
   `RPF_SHUTDOWN_NOTICE_SECS` every connected game server is sent
   `restarting` with `RPF_SHUTDOWN_RETRY_AFTER_MS` and closed; the process
@@ -500,7 +500,7 @@ socket.
 - The Lua core honours `restarting`: the reconnect after an announced close
   waits `retry_after_ms` plus jitter, capped by `max_retry_after_ms`, without
   advancing the backoff.
-- Jobs in game (D7, #40): `rpf.jobs` in the Lua core gives a new character
+- Jobs in game (D7, #44): `rpf.jobs` in the Lua core gives a new character
   the server's default job, sets and clears jobs, puts characters on and off
   duty, checks ranks, and pays a job's salary each pay period on duty from
   its employer's payroll account. A character's job is live state, reported
@@ -512,7 +512,7 @@ socket.
 - `rpf_ws_handshake_seconds`, the time from a game server's `Hello` to its
   `Welcome`, and a reconnect-storm load test in the fake game server that
   reads it, so the delay is chosen from data.
-- The Garry's Mod adapter (D8, #47): the core on a real Gmod server over
+- The Garry's Mod adapter (D8, #51): the core on a real Gmod server over
   GWSockets, which it requires (it says so in one line and starts nothing
   without it), configured by the `rpf_ws_url` and `rpf_api_key` convars.
   Players are reported as `steam:<SteamID64>`, held still until they are
@@ -520,7 +520,7 @@ socket.
   screens; the password goes from the client to the portal, never over
   `net`. See `lua/platform/README.md`.
 
-- In-game staff (F9, #41): staff link their player account in a guild with
+- In-game staff (F9, #45): staff link their player account in a guild with
   a short-lived code from their new in-game account page
   (`/guilds/:slug/link`), typed in game through `rpf.api.staff.link`, and
   then hold their portal permissions there, as `rpf.api.staff.can(player,
@@ -530,7 +530,7 @@ socket.
   limited per player and per guild and lock a guild's codes out. Scripts
   report in-game staff actions with `rpf.api.staff.record`, and the audit
   log names the staff account each was taken under.
-- Staff email and account recovery (H3, #52). Rauthy's deployment config
+- Staff email and account recovery (H3, #56). Rauthy's deployment config
   (`deploy/rauthy/config.toml`): open signup verified by mail, every mail
   carrying the product's name, TLS-only SMTP. The dashboard asks every
   staff member to keep a second passkey and links to their Rauthy account
@@ -538,13 +538,13 @@ socket.
   when Rauthy says it is verified, so an operator naming an account by
   address finds only someone who proved they hold it. Support
   follows a written owner-recovery procedure, with its identity checks.
-- Sign out everywhere else (H3 follow-up, #222). The dashboard shows how
+- Sign out everywhere else (H3 follow-up, #125). The dashboard shows how
   many other browsers are signed in to a staff member's account and ends
   all of them in one click, keeping the one it is pressed in; the way to cut
   a session off after taking an account back at Rauthy, which does not end
   the portal's own sessions. Each guild the account is staff in logs it as
   `staff.sessions.end`, with how many sessions ended.
-- The addon API, part 1 (J3, #80). `rpf.api.addons` registers a Lua addon
+- The addon API, part 1 (J3, #71). `rpf.api.addons` registers a Lua addon
   with its manifest and `start`, `stop` and `state` handlers, reports its
   state, serves addon API majors as a range (`API_MIN` to `API`), and lets
   addons share functions by namespaced name (`provide`, `call`).
@@ -556,7 +556,7 @@ socket.
   reference. Nothing in `rpf.api` throws any more: `events.emit` of a core
   name, or of another addon's namespace, returns `nil` and a reason rather
   than raising ([Writing addons](docs/writing-addons.md)).
-- Backups, restore drills and the restore runbook (H2, #51). Postgres
+- Backups, restore drills and the restore runbook (H2, #55). Postgres
   archives every WAL segment to an S3-compatible bucket with WAL-G,
   encrypted before it leaves, and a `backup` service takes a base backup a
   day and keeps four weeks: an RPO of five minutes, an RTO of four hours,
@@ -565,7 +565,7 @@ socket.
   `deploy/restore-drill` restores the newest backup to a scratch instance,
   migrates it and starts Rauthy on it, weekly in `restore-drill.yml`; the
   restore runbook is written down and rehearsed.
-- `rpf-portal restore reapply` (H2, #256): after a restore to an earlier
+- `rpf-portal restore reapply` (H2, #139): after a restore to an earlier
   moment, it compares the restored database with the copy kept from before
   it, erases again the player accounts erased since, cancels again the
   deletions their owners cancelled since, lists the deletions requested
@@ -574,7 +574,7 @@ socket.
   it changes in each guild's log. It is the restore runbook's step 7, and
   needs, for the images, a key that may read, list the bucket and its
   versions, and delete a version.
-- The addon API, part 2 (J3, #80). `rpf.api.records` reads, finds, holds
+- The addon API, part 2 (J3, #71). `rpf.api.records` reads, finds, holds
   and writes addons' records: `get` and `list` locally, `query` through the
   portal, `hold` and `release` on demand, `create`, `update` (a patch, with
   an optional `revision` and fields to `clear`), `delete`, and `batch`, all
@@ -583,7 +583,7 @@ socket.
   announce every change to a held addon record, staff edits included. An
   addon's calls close when it stops, and the records it held for the
   server are released.
-- The addon API, part 3 (J3, #80): the domain-neutral facade, so an addon
+- The addon API, part 3 (J3, #71): the domain-neutral facade, so an addon
   reaches a player's character, money, items and job the same way whoever
   owns them. `rpf.api.characters.current`, `money.accounts`, `balance`,
   `debit` and `credit`, `inventory.count`, `give` and `take`,
@@ -594,7 +594,7 @@ socket.
   **`economy.addon_account`** (`config.accounts.edit`, unset by default),
   names the paying account addons charge into and pay out of; until staff
   set it, addons cannot move money.
-- The addon API, part 4 (J3, #80). `rpf.api.interactions`: an addon
+- The addon API, part 4 (J3, #71). `rpf.api.interactions`: an addon
   registers a handler by namespaced name, and a player's client sends a
   request to it (`rpf:interact`), answered as `interactions.result`; nothing
   else a client sends reaches addon code. `rpf.api.capabilities()` and
@@ -603,7 +603,7 @@ socket.
   and [Writing addons](docs/writing-addons.md) is the author's guide on the
   docs site. [Compatibility](docs/compatibility.md#addon-api-majors) says
   how addon API majors, game servers and the portal move.
-- Interactions that answer (J10, #239, part 1). On the client,
+- Interactions that answer (J10, #131, part 1). On the client,
   `rpf.api.interactions.request(name, payload, callback)` hands the
   handler's answer, and now a table of data, to a callback, with a timeout;
   every request is answered, `unknown`, `too_many` and `not_logged_in`
@@ -614,7 +614,7 @@ socket.
   **A FiveM server needs ox_lib 3.40.0 or newer**, ensured before `rpf`
   ([Installing](docs/installing.md#fivem)); the txAdmin recipe installs it.
   It is LGPL-3.0 and never part of the release's zip.
-- Portable UI for addons (J10, #239, part 2). `rpf.api.ui` has `notify`,
+- Portable UI for addons (J10, #131, part 2). `rpf.api.ui` has `notify`,
   `menu`, `input` (text, number, checkbox and select fields) and
   `progress`, the same call on both engines: built on ox_lib on FiveM and
   in Derma on Garry's Mod. On the client they show what the player's own
@@ -639,7 +639,7 @@ socket.
 
 - The interaction menu and the target resources offered an interaction
   the addon's own `check` would refuse, such as a sold lot (J8 follow-up,
-  #317). The server now runs `check` as it lists, the same way the
+  #156). The server now runs `check` as it lists, the same way the
   request runs it: at most 32 per listing, nearest first, and none after
   2 seconds. A check now also runs whenever a player nearby opens the menu
   or aims at the target, so it must be quick and only read. On FiveM,
@@ -650,7 +650,7 @@ socket.
 - A composite operation's `apply` that yielded could lose sight of what it
   wrote when another one ran meanwhile, so the journal could record it done
   before its change reached the outbox (`rpf.records.watch`).
-- A deleted player account is kicked from the game (J8 follow-up, #319).
+- A deleted player account is kicked from the game (J8 follow-up, #158).
   Deleting an account, by staff or by the player from another server's
   login screen, kicks it from every server of the guild it is logged in on
   with "This account has been deleted.", through the `kick` command every
@@ -663,7 +663,7 @@ socket.
 
 ### Database
 
-- `20261012055417_dialogs` is additive: the `dialogs` table (#371).
+- `20261012055417_dialogs` is additive: the `dialogs` table (#175).
 - `20261010083508_domain_authority` is additive: `servers.effective_domains`,
   defaulted to native, and a nullable `archived_at` on characters, accounts
   and containers.
@@ -678,7 +678,7 @@ socket.
 
 ### Deployment
 
-- Staging (H2, #51): a second deployment of `deploy/compose.yml`, with its
+- Staging (H2, #55): a second deployment of `deploy/compose.yml`, with its
   own hosts, Rauthy, keys and backup prefix, follows `main` on a host of
   its own. `deploy/staging/update`, on a systemd timer, builds each new
   commit there, deploys it and checks it through the public hostnames, and
@@ -718,9 +718,9 @@ socket.
 
 ## [0.1.0] - 2026-10-06
 
-Milestone 1 (#35): a game server can connect, authenticate, be configured and
+Milestone 1 (#39): a game server can connect, authenticate, be configured and
 be moderated, players can log in to their accounts, and a fake game server
-proves all of it. Real FiveM and Garry's Mod adapters are Milestone 2 (#57).
+proves all of it. Real FiveM and Garry's Mod adapters are Milestone 2 (#61).
 
 **Protocol:** speaks protocol 1, and serves protocol 1 only. Its corpus,
 `protocol/corpus/v1/`, is frozen from this release on.
@@ -779,7 +779,7 @@ proves all of it. Real FiveM and Garry's Mod adapters are Milestone 2 (#57).
 - Forward compatibility: the portal serves every protocol version from
   `MIN_VERSION` to `VERSION`, refuses others with an upgrade message, freezes
   each released version's corpus, and logs which versions connected servers
-  run (#32).
+  run (#36).
 
 #### Lua core
 
@@ -819,5 +819,5 @@ applies them all to an empty database. Five rewrite or drop data
 release for them to matter to. The review is in
 [Compatibility](docs/compatibility.md#the-database).
 
-[Unreleased]: https://github.com/Sampleeeee/rpf/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/Sampleeeee/rpf/releases/tag/v0.1.0
+[Unreleased]: https://github.com/rp-bundle/public/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/rp-bundle/public/releases/tag/v0.1.0

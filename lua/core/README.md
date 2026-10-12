@@ -107,7 +107,7 @@ step.
 | Part | Member | What it does |
 |---|---|---|
 | Engine | `engine` | `"fivem"`, `"gmod"` or `"mock"`. Reported in `Hello`, never branched on |
-| | `map` | The map this process runs (#369): `game.GetMap()` on Gmod, the owner's `rpf_map` convar on FiveM (`default` unset). A non-empty string, reported in `Hello` and fixed until the core stops; one that is no map's name is logged and reported as `default` (`rpf.world.map`) |
+| | `map` | The map this process runs (#173): `game.GetMap()` on Gmod, the owner's `rpf_map` convar on FiveM (`default` unset). A non-empty string, reported in `Hello` and fixed until the core stops; one that is no map's name is logged and reported as `default` (`rpf.world.map`) |
 | Transport | `connect(url, handlers)` | Opens the websocket. `handlers` has `open()`, `message(text)` and `close(reason)`. One connection at a time |
 | | `disconnect()` | Closes the open connection or abandons the attempt. Its `close` is still called, and the core ignores it |
 | | `send(text) -> boolean` | Sends one text frame. `false` when there is no open connection or the engine's call failed (the platform logs why). A `Hello` that returns `false` is a failed attempt, retried after a backoff |
@@ -128,7 +128,7 @@ step.
 | | `on_client(name, handler)` | `handler(player, payload)`. The platform supplies the sender, and the payload is hostile input |
 | | `on_client_request(name, handler)` | `handler(player, payload, respond)`: a client's request (`request_server`), answered by calling `respond(reply)` once. The platform pairs the two (ox_lib's `lib.callback` on FiveM, numbered `net` messages on Gmod) and supplies the sender; the core always answers (J10) |
 | | `request_client(player, name, payload, callback)` | The other direction: asks one player's client and hands `callback` the answer, or nil, taking it only from that player, and forgetting a request when the player leaves (numbered events on both engines: ox_lib's callbacks never let an unanswered one go). The core keeps the timeout and reads the answer as hostile input (J10) |
-| Commands | `on_command(name, handler)` | `handler(player, args)`: a player ran the command `name`, typed in chat (`/name words`) or in the console, `args` the words after it as strings. Called for a connected player, never for the server console. The words are hostile input and often a credential: the platform never logs or repeats them, and keeps the line out of the chat others read. The core registers one, `rpflink` (F9, #198) |
+| Commands | `on_command(name, handler)` | `handler(player, args)`: a player ran the command `name`, typed in chat (`/name words`) or in the console, `args` the words after it as strings. Called for a connected player, never for the server console. The words are hostile input and often a credential: the platform never logs or repeats them, and keeps the line out of the chat others read. The core registers one, `rpflink` (F9, #115) |
 | Log | `log(level, message)` | `"debug"`, `"info"`, `"warn"` or `"error"`. The core never logs a secret |
 | Api | `expose(api)` | Publishes the public API table: through the resource's export table on FiveM, where each resource has its own Lua state, and through the `rpf` global on Gmod, where every addon shares one. Only `rpf.api` is published, never the rest of `rpf` |
 
@@ -512,7 +512,7 @@ and an employer that pays salaries its `payroll`, the name of one of the
 server's `paying_accounts`. They are fields of the entries `config.job` and
 `config.employer` already return, so nothing indexes them separately.
 
-`paying_accounts` (#169) names the accounts this server pays out of, each
+`paying_accounts` (#106) names the accounts this server pays out of, each
 `{ id, name }`, found by name with `config.paying_account(name)`: the
 sources `rpf.accounts.pay` draws on. Only which accounts; their balances are
 live state and arrive with the hold `rpf.accounts` takes of them (below).
@@ -618,7 +618,7 @@ nothing. Two kinds of caller move players, through
 separate functions that share one transition check:
 
 - **The login gate** (`connecting → authenticating → registered`) is RPF's
-  own, on every server whatever framework runs the characters (#75). Only
+  own, on every server whatever framework runs the characters (#67). Only
   `rpf.join` drives it, through `players.authenticating` and
   `players.register`. One account is one player: registering an account that
   is already playing here is refused.
@@ -756,7 +756,7 @@ anything not held, so a module keeps ids and reads through it every time.
   on this server) are held for their session (`sync.hold_session`, announced
   with `records.session(player_id, err, serial)`), and released when they leave.
   The server's paying accounts are held by `rpf.accounts` after every
-  `Welcome` (#169, below), and live addon records by their type's policy
+  `Welcome` (#106, below), and live addon records by their type's policy
   (`rpf.holding`, J6, below).
   Anything else is held with `rpf.sync.hold({ owners = …, records = …, types = … })`:
   `owners` holds every live record an owner has here (not transitively: a
@@ -965,7 +965,7 @@ A type's `world` (J4) is checked last, against the type's checked fields:
 each role names a field of a kind it may be (`world_field` otherwise; a
 `map` must be an indexed string), and the kind decides whether `model` and
 `radius` are needed or refused. `check_fields` then holds the field a
-type's `map` role names to a map's name (`manifest.is_map_name`, #369).
+type's `map` role names to a map's name (`manifest.is_map_name`, #173).
 A manifest's `actions` (L1) come after its types, and each action's
 `params` are checked as a type's fields are, except that a parameter takes
 no `index`, `unique`, `hidden`, `read_only` or `engine` (`unknown_key`) and
@@ -1179,7 +1179,7 @@ installation rather than by whether the addon's code is loaded:
 ### The domain-neutral facade (`rpf.facade`, `rpf.ops`, J3)
 
 How an addon reaches a player's character, money, items and job whoever
-owns them (`docs/architecture/framework-integration.md`, decided in #75).
+owns them (`docs/architecture/framework-integration.md`, decided in #67).
 `rpf.facade` is the native provider: each call goes to RPF's own module.
 For a domain the server's framework owns (K1), each call goes to the
 bridge instead (`rpf.bridge`, K2, below), behind the same calls. Server
@@ -1232,7 +1232,7 @@ never a framework's key), and an `unknown` one is logged at `error` with
 it, announced as `domains.op_unknown`, and listed by `ops.unknown()` until
 it ages out. A durability check that throws is logged once and tried again.
 
-**Every `unknown` reaches the portal** (#274). `ops.report()` sends each
+**Every `unknown` reaches the portal** (#143). `ops.report()` sends each
 one the portal has not answered in `report_unknown_ops` frames of
 `MAX_PER_REPORT` (32, `limits::MAX_UNKNOWN_OPS_PER_REPORT`): on the next
 tick after one arises, and after every `Welcome` (chained on the
@@ -1367,7 +1367,7 @@ unsupported, and every call into one runs under `pcall`, a throw logged.
   type, id }`) is set only when the adapter's tag names a record the core
   placed as exactly that entity, so a forged tag names nothing.
 - **`placed(type, id)`**: the ref of a record's entity.
-- **`map()`**: the map this server runs (#369), the platform's `map` as
+- **`map()`**: the map this server runs (#173), the platform's `map` as
   `start` checked it: one that is no map's name (`manifest.is_map_name`)
   is logged and is `DEFAULT_MAP`, so the server still connects rather
   than have its `Hello` refused. `unsupported` before the core starts.
@@ -1479,7 +1479,7 @@ on both sides, before `rpf.interactions`.
   `offers(entries, player, ref, names)` says which of the named rules are
   offered on an entity (`admit` without the cooldown taken, then the
   check); `listed(entries)` is what a target resource needs. **Offered**
-  includes the addon's own `check` (#317), run as a request runs it (the
+  includes the addon's own `check` (#156), run as a request runs it (the
   addon's context, `pcall`, a copy of the player and the target, only
   `true` passes, a throw logged), so a menu never lists what the addon
   will refuse. Checks may yield, so one listing runs at most `MAX_CHECKS`
@@ -1523,7 +1523,7 @@ and never picked (an NPC's line, L1).
   kind is open at a time (`busy`); `unsupported` where the adapter has
   none. It answers the server's `rpf:ui` requests the same way, with what
   the player did, raw. A menu option that names an item (`item`, a slug
-  `[a-z][a-z0-9_]*` of at most `MAX_ITEM` bytes; P3, #361) is shown with
+  `[a-z][a-z0-9_]*` of at most `MAX_ITEM` bytes; P3, #169) is shown with
   the item's image: before the adapter sees the spec, `with_images` asks
   `rpf.items.image` for each distinct slug and puts what came under the
   option as `image`, at once when every image is kept, else once all have
@@ -1550,7 +1550,7 @@ and never picked (an NPC's line, L1).
 ### Actions (`rpf.actions`, L1)
 
 What an addon can be asked to do by a dialog choice staff build in the
-panel (#371). Server only; `rpf.api.actions` fronts `register`. The portal
+panel (#175). Server only; `rpf.api.actions` fronts `register`. The portal
 never sends code, so a choice names an action an installed addon declared
 in its manifest (`actions`, read through `rpf.addons.action`) and fills in
 its parameters as data.
@@ -1705,7 +1705,7 @@ reaching the module only through `players.on_client`):
 | Message | Direction | Fields |
 |---|---|---|
 | `rpf:characters_request` | client → server | none: send the list again (and retry a failed load) |
-| `rpf:characters` | server → client | `characters` (each `id`, `first_name`, `last_name`, `gender`), `selected`, `truncated` (set when the list was cut short to fit `MAX_LIST_PAYLOAD`, keeping the character in play: only a portal that bounds neither names nor characters per player can make one that long, #168) |
+| `rpf:characters` | server → client | `characters` (each `id`, `first_name`, `last_name`, `gender`), `selected`, `truncated` (set when the list was cut short to fit `MAX_LIST_PAYLOAD`, keeping the character in play: only a portal that bounds neither names nor characters per player can make one that long, #105) |
 | `rpf:character_create` | client → server | `first_name`, `last_name`, `gender` (a string: `"male"`, `"female"`, or the server's own option) |
 | `rpf:character_select` | client → server | `id` |
 | `rpf:character_deselect` | client → server | none |
@@ -1742,7 +1742,7 @@ next report.
 | `hold_paying()` | Holds every paying account the config lists that is not held or being asked for; run after each `Welcome`, on a config that changes `paying_accounts`, and when one is lost |
 | `fold(account_id, ledger)` | The fold itself |
 
-**The paying accounts are held for the server (#169).** Staff open them in
+**The paying accounts are held for the server (#106).** Staff open them in
 the portal, and the config lists them (`config.paying_account(name)`).
 `accounts.start`, run by `rpf.start_server` after `rpf.sync`, holds every
 one after each `Welcome`, chained after the declaration so the hold waits for
@@ -1927,7 +1927,7 @@ On the client, each token is kept by its own rule:
   rotates the remember token.
 - **API token**: memory only, refreshed before `api_token_expires_at` (clamped
   to 10 minutes, because the client's clock may be wrong). Always issued since P2; a grant without one (an older portal) is accepted with a warning and just never refreshed.
-  A refresh never stops silently (#363). An expiry that cannot be read, an
+  A refresh never stops silently (#171). An expiry that cannot be read, an
   outage or `5xx`, and an answer that is not the portal's (a `200` that is
   not a JSON object or has no token, a redirect) each log a warning and try
   again after `retry_ms` (30 s), keeping the token in hand, which is still
@@ -1935,7 +1935,7 @@ On the client, each token is kept by its own rule:
   forgotten and `auth.failed` is emitted with `during = "refresh"`.
 
 `auth.logout()` forgets the saved login at once, then asks the server for a
-fresh nonce for this connection and posts `{ nonce, remember_token }` (#70),
+fresh nonce for this connection and posts `{ nonce, remember_token }` (#62),
 so a token read out of shared client storage cannot log its owner out. It
 cancels a login whose portal request is still in flight, but not a ticket
 already handed to the server, which may have redeemed it: that result is
@@ -2041,7 +2041,7 @@ owners' language servers: add `lua/core/meta/` to `workspace.library` and
 annotate the table your script holds `---@type rpf.Api`. It also reserves, for
 Milestone 2, `rpf.bridge` and the facade's `domain_external` refusal
 (`rpf.api.Refusal`), so nothing assumes RPF always owns characters, money,
-inventory and jobs (#75). Nothing in it names a framework or treats an engine
+inventory and jobs (#67). Nothing in it names a framework or treats an engine
 handle as a portable id. `spec/api_spec.lua` holds it to exactly the members
 `api.lua` builds.
 

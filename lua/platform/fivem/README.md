@@ -1,6 +1,6 @@
 # The FiveM adapter
 
-D2 (#17). The core (`lua/core/`) on FiveM: a thin adapter over FiveM's
+D2 (#21). The core (`lua/core/`) on FiveM: a thin adapter over FiveM's
 natives, a websocket shim in FiveM's JS runtime, and the in-game login and
 character screens. What any adapter must do is in
 [`../README.md`](../README.md); this is how FiveM does it.
@@ -23,7 +23,7 @@ it.
 ## ox_lib
 
 `rpf` is built on [ox_lib](https://github.com/overextended/ox_lib) (J10,
-#239): `dependency "ox_lib"`, and `shared_script "@ox_lib/init.lua"`, which
+#131): `dependency "ox_lib"`, and `shared_script "@ox_lib/init.lua"`, which
 puts `lib` in the resource's Lua state on both sides before any script of
 its own. Most FiveM servers run it already (Qbox requires it), and it has
 the callbacks, notify, menus, input dialogs and progress bars an addon
@@ -91,7 +91,7 @@ does not start it again, so follow it with `ensure rpf`. Optional:
 `set rpf_portal_url "https://portal.example"` when the portal's HTTP address
 is not the websocket's host, `set rpf_debug "true"` for the core's debug
 lines, and `set rpf_map "<name>"` to name the map setup this server runs
-(#369): FiveM has one map, so this is the name staff give the records of
+(#173): FiveM has one map, so this is the name staff give the records of
 one setup (an event's, say), and the core places only those and the ones on
 every map. `default` when unset. It is read as the resource starts, so
 change it with `restart rpf`.
@@ -139,7 +139,7 @@ arrives as a function reference, which the core calls like a function.
 | `to_client` / `on_client`, `to_server` / `on_server` | `TriggerClientEvent` / `RegisterNetEvent`, `TriggerServerEvent` / `RegisterNetEvent`, with the sender from FiveM's `source` and anything but a string payload dropped | `server.lua`, `client.lua` |
 | `request_server` / `on_client_request` | ox_lib's `lib.callback` / `lib.callback.register`, with no client-side rate limit (the core keeps its own); the server waits on the callback's thread (`Citizen.Await`) for the core's answer, which always comes, and answers a payload that is not a string with nothing | `ox.lua` |
 | `request_client` / `on_server_request` | The other direction: a net event under the request's name, `<number>\n<payload>`, answered under the same number and taken only from the player asked (`server.ask`, `client.asked`); forgotten when the player leaves or after `ANSWER_TTL`. Not `lib.callback`, which keeps every request nobody answers for good. A client keeps at most `MAX_UNANSWERED` of its own requests with ox_lib at once | `server.lua`, `client.lua` |
-| `ui` (client) | `lib.notify`; a context menu (`lib.registerContext`, `lib.showContext`), counted as closed when another resource's replaces it, and told it closed only once ox_lib has finished closing it, an option's item image its `icon` (#361); `lib.inputDialog`, a select's options by number, text bounds checked in bytes; `lib.progressBar`; `close` with `lib.hideContext`, `lib.closeInputDialog` and `lib.cancelProgress`. The server's `capabilities` declares all four | `ox.lua` |
+| `ui` (client) | `lib.notify`; a context menu (`lib.registerContext`, `lib.showContext`), counted as closed when another resource's replaces it, and told it closed only once ox_lib has finished closing it, an option's item image its `icon` (#169); `lib.inputDialog`, a select's options by number, text bounds checked in bytes; `lib.progressBar`; `close` with `lib.hideContext`, `lib.closeInputDialog` and `lib.cancelProgress`. The server's `capabilities` declares all four | `ox.lua` |
 | `log` | `print`, as `[rpf] <level>: <message>` | `shared.lua` |
 | `expose` | The `api` export, a plain copy of `rpf.api` (read-only views do not survive FiveM's msgpack), with `events` subscriptions named by id | `shared.lua` |
 
@@ -156,7 +156,7 @@ most:
 | `playerJoining` | `players.connected(source)` |
 | `playerDropped` | `players.dropped(source, reason)` |
 | `chatMessage` (the `chat` resource) | Cancelled for a held player (`lock.lua`) |
-| `/rpflink <code>` (`RegisterCommand`, not restricted) | `on_command`'s handler with the player's `source` (F9, #198); the server console (`source` 0) runs nothing. See below |
+| `/rpflink <code>` (`RegisterCommand`, not restricted) | `on_command`'s handler with the player's `source` (F9, #115); the server console (`source` 0) runs nothing. See below |
 | `rpf-ws:open`, `rpf-ws:message`, `rpf-ws:close` | The transport, which calls the core's socket handlers |
 | `onClientResourceStart` (this resource) | Starts the screens and the client core |
 | `onClientResourceStop` (this resource) | Releases the input lock, which would otherwise leave the ped frozen |
@@ -227,7 +227,7 @@ run of it made (layer 5).
 
 ## The link command
 
-`on_command` (F9, #198) is `RegisterCommand(name, handler, false)`: not
+`on_command` (F9, #115) is `RegisterCommand(name, handler, false)`: not
 restricted, because FiveM would otherwise want an ace permission for every
 player who runs it, and the handler is what checks who they are. The core
 registers one, `rpflink`, which a staff member types the code from the
@@ -325,7 +325,7 @@ The bundle targets Node 16, the oldest an FXServer that runs this ships.
   before `fetch` (`nui/seal.js`). So it goes from the form to the portal
   without crossing into Lua or any event. That is a mitigation, not a
   guarantee: the server owner ships this page.
-- **Nothing waits without an answer** (#362). The page's `fetch` to the
+- **Nothing waits without an answer** (#170). The page's `fetch` to the
   portal gives up after 30 s, and `ui.lua` answers any request the page has
   not answered status 0 after 45 s, or at once if the page reloads (it says
   `ready` again), and refuses the page's answer after that; a request that
@@ -346,7 +346,7 @@ The bundle targets Node 16, the oldest an FXServer that runs this ships.
   player to reconnect, with input still held. A player who is logged in, and
   so never sees the login screen, opens the same form with the client
   command `rpf_delete_account` (`RegisterCommand`, not restricted; F8 or
-  `/rpf_delete_account` in chat) (#322): `ui.lua`'s `open_delete` does
+  `/rpf_delete_account` in chat) (#160): `ui.lua`'s `open_delete` does
   nothing unless the core is `authenticated`, locks input while the form is
   up, and the page's Back sends `close_delete`, which puts back the screen
   and lock that were up (the character screen for a player still choosing,
@@ -358,7 +358,7 @@ The bundle targets Node 16, the oldest an FXServer that runs this ships.
   named `rpf`.
 - The portal allows the page's origin, `https://cfx-nui-<resource>`, for the
   player endpoints (P1, P2).
-- **Item images** (P3, #243, `rpf.items.image`) are fetched by this page
+- **Item images** (P3, #132, `rpf.items.image`) are fetched by this page
   too (`nui/images.js`), because the image route needs the API token in a
   header, which an `<img>` cannot send. The token goes in the NUI message
   to this resource's own page and from there to the portal in a header,
@@ -438,7 +438,7 @@ point the convars at a portal with a server and an API key, and add
   them (an `ip:` without its address), to compare with what the portal
   stored.
 
-Run for #186 on FXServer 35245 under OneSync, against a local portal:
+Run for #110 on FXServer 35245 under OneSync, against a local portal:
 
 - Both resources load on the artifact's Node, and the core connects and
   takes its config. The Linux artifact ships only Node 22 (22.22.0): a
@@ -458,13 +458,13 @@ Run for #186 on FXServer 35245 under OneSync, against a local portal:
   ending on the reconnect screen, silent resume on a second join, the character screen reaching
   `active` on a fresh install, and the identifiers the portal stores (the
   account `license:` and the allowlisted kinds verbatim, with no `ip:`).
-  It needs the game, and waits on the repository owner (#186).
-- Item images on a real client (#243) are still to run: CEF dropping
+  It needs the game, and waits on the repository owner (#110).
+- Item images on a real client (#132) are still to run: CEF dropping
   `Authorization` on the portal's redirect (the user-content domain's log
   shows no bearer token), the user-content domain's CORS answer, IndexedDB
   keeping an image across a restart of the game, and a `data:` URL drawn
   in another resource's page and as ox_lib's `image`.
-- ox_lib on a real server (J10, #239) is still to run: `rpf` refusing to
+- ox_lib on a real server (J10, #131) is still to run: `rpf` refusing to
   start beside an ox_lib older than 3.40.0 with the `ox.problem` line, and
   an interaction's request and answer crossing `lib.callback` from a real
   client (`/spray`, and `/tags`, which lists the player's tags as data and

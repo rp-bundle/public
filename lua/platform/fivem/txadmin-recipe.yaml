@@ -2,7 +2,7 @@
 # from txAdmin's deployer in one step. dev/release-addon fills in @VERSION@
 # and publishes the result as the release's rpf-txadmin-recipe.yaml, so a
 # recipe always installs the release it came with; the release named
-# "latest" is what https://github.com/Sampleeeee/rpf/releases/latest/download/rpf-txadmin-recipe.yaml
+# "latest" is what https://github.com/rp-bundle/public/releases/latest/download/rpf-txadmin-recipe.yaml
 # serves. docs/installing.md says how to use it, and why it exists.
 #
 # The base is txAdmin's own "FiveM Basic Server" recipe
@@ -45,7 +45,7 @@ tasks:
 
   # The release: one [rpf] folder holding the rpf and rpf-ws resources.
   - action: download_file
-    url: https://github.com/Sampleeeee/rpf/releases/download/v@VERSION@/rpf-fivem-@VERSION@.zip
+    url: https://github.com/rp-bundle/public/releases/download/v@VERSION@/rpf-fivem-@VERSION@.zip
     path: ./tmp/rpf-fivem.zip
   - action: unzip
     src: ./tmp/rpf-fivem.zip

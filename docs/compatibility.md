@@ -26,7 +26,7 @@ Two numbers are involved, and only one decides compatibility.
 | Protocol | First release | Served by portal releases | Status |
 |---|---|---|---|
 | 1 | 0.1.0 | 0.1.0 only | Dropped before 0.2.0: no released game-side build ever spoke it, since 0.1.0 had no FiveM or Gmod adapter, and the repository owner confirmed nobody runs it (2026-10-09) |
-| 2 | Unreleased | The next release and later | Current, unreleased, and the oldest served: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), the `domain_external` reject code (K1), the `referenced` reject code (a deletion refused because another record refers to it), in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`), an item's `image` hash in the config snapshot (P3), an item's `weapon` (L3), the profile (K1) in `hello` and `welcome`, and the `report_unknown_ops` notice (#274) |
+| 2 | Unreleased | The next release and later | Current, unreleased, and the oldest served: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), the `domain_external` reject code (K1), the `referenced` reject code (a deletion refused because another record refers to it), in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`), an item's `image` hash in the config snapshot (P3), an item's `weapon` (L3), the profile (K1) in `hello` and `welcome`, and the `report_unknown_ops` notice (#143) |
 
 A row is added when a release ships a new protocol version, and a version's
 last portal release is filled in when one drops it. `CHANGELOG.md` names the
@@ -314,7 +314,7 @@ receiver takes the default (empty, `false` or `None`).
 | Field | Where | Default | Why optional |
 |---|---|---|---|
 | `domains` | `hello` | Native | Added by K1. A core from before it runs only the native profile, so an absent field means native, never `null`, which is a core with no profile fixed yet |
-| `map` | `hello` | `default` | Added by #369. A core from before it places every world record on whatever map it runs, which is what FiveM's unnamed setup, `default`, means |
+| `map` | `hello` | `default` | Added by #173. A core from before it places every world record on whatever map it runs, which is what FiveM's unnamed setup, `default`, means |
 | `types` | `hold` | Empty: claims nothing | Added by J6 to a frame a game server sends, and left out by one that claims nothing, so every hold before it decodes as one that claims nothing |
 | `addon_permissions`, `all_addon_permissions` | A `StaffGrant` in `staff_permissions` | Empty, `false` | Added by L4 so linked staff can use installed addon action grants in game. Older captures keep their core flags; the owner grant includes future addon flags |
 | `domains` | `welcome` | Native | Added by K1, and left out when native: a native server's `welcome` is the one it was before K1, which is what every portal enforced then |

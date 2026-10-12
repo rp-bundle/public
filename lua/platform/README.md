@@ -39,7 +39,7 @@ function.
      the caller.
    - `random_hex` from the best source the engine has.
    - `map` is the map this process runs, a non-empty string reported in
-     `Hello` (#369): Gmod's `game.GetMap()`, FiveM's `rpf_map` convar
+     `Hello` (#173): Gmod's `game.GetMap()`, FiveM's `rpf_map` convar
      (`default` when unset or empty, since FiveM has one map and the name
      is a setup's). Read once as the adapter starts: a map change is a new
      process. The core decides which world records are placed and
@@ -87,7 +87,7 @@ function.
    - `on_command(name, handler)` registers a command a player runs, in chat
      or the console as the engine offers, and calls `handler(player, args)`
      with the engine-supplied player and the words after the name (F9,
-     #198). It runs for a connected player only: the server console and RCON
+     #115). It runs for a connected player only: the server console and RCON
      run nothing, since a handler acts for a player. The words are hostile
      input and often a credential (the link code), so the adapter **never
      logs or repeats them, and keeps the line out of the chat other players
@@ -111,7 +111,7 @@ function.
    engine's own toolkit where it has one, taking a spec `rpf.ui` checked
    and calling `done` once with what the player did; and `close(kind)`
    takes away a window whose addon stopped. A menu option with an `image`
-   (P3, #361: what this platform's `item_image` answered for the item the
+   (P3, #169: what this platform's `item_image` answered for the item the
    option names) is drawn with it beside the label.
 3. **The engine events**, two lines each: a player handed over calls
    `core.players.connected(handle)`, a player gone calls
@@ -150,7 +150,7 @@ function.
 | `random.lua` | `random_hex`: SHA-256 in counter mode over an entropy pool |
 | `lock.lua` | The input lock |
 | `ui.lua` | The Derma login form and character screen |
-| `addon_ui.lua` | The UI addons show (J10): Gmod's notifications, and a Derma menu (an option's item image a `DImage` beside its button, #361), input dialog and progress bar |
+| `addon_ui.lua` | The UI addons show (J10): Gmod's notifications, and a Derma menu (an option's item image a `DImage` beside its button, #169), input dialog and progress bar |
 | `images.lua` | Item images (P3, `item_image`): fetched with `HTTP`, checked with `util.SHA256`, kept under `data/rpf/images/<hash>.png` (at most 512, the oldest written dropped), answered as the path `Material()` takes |
 | `dev.lua` | Development-only console commands for the smoke test; not shipped |
 | `meta/gwsockets.lua` | Annotations for GWSockets, which ships none |
@@ -167,7 +167,7 @@ the bridge to DarkRP, which only a DarkRP server installs
 ([`lua/bridges/darkrp/`](../bridges/darkrp/README.md)); installing it is
 [Installing](../../docs/installing.md#install). GWSockets is required: put `gmsv_gwsockets_<platform>.dll` from
 <https://github.com/FredyH/GWSockets> into `garrysmod/lua/bin/`. Gmod has no
-websocket of its own and there is no fallback (#57), so without it the
+websocket of its own and there is no fallback (#61), so without it the
 adapter logs one line saying so and starts nothing; one that is installed
 but will not load (a build for another platform) is refused the same way,
 naming the build to install. Then, in `server.cfg`:
@@ -234,16 +234,16 @@ for the clients' `HTTP`.
   Another addon's `PlayerSay` hook may see the line first, so the console is
   the way to type a credential on a server with chat loggers. The client's
   `ui.lua` adds two console commands for a logged-in player: `rpf_characters`
-  (the character screen) and `rpf_delete_account` (H6, #322: the login
+  (the character screen) and `rpf_delete_account` (H6, #160: the login
   screen's delete form, whose Back returns to the game or the character
   screen). All four UI kinds are supported
   (`addon_ui.lua`): a progress bar is X to cancel, as on ox_lib, an
   input dialog will not submit a required field left empty or a value out
   of its bounds, and a menu option that names an item gets a `DImage` of
-  it at the left of its button, from the path `images.lua` keeps (#361).
+  it at the left of its button, from the path `images.lua` keeps (#169).
   Drawn on fake Derma only so far: a real Gmod client is
   still to show them (layer 5).
-- *Item images* (P3, #243, `images.lua`): `HTTP` with the token in a
+- *Item images* (P3, #132, `images.lua`): `HTTP` with the token in a
   header, the bytes checked with `util.SHA256`, written under `data/` by
   hash, and answered as `data/rpf/images/<hash>.png` once `Material()`
   loads it, so an addon draws one with `surface.SetMaterial(Material(src))`

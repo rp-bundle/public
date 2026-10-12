@@ -1,6 +1,6 @@
 # The DarkRP bridge
 
-K4 (#94). RPF beside [DarkRP](https://github.com/FPtje/DarkRP) on Gmod, in
+K4 (#83). RPF beside [DarkRP](https://github.com/FPtje/DarkRP) on Gmod, in
 the companion profile: DarkRP keeps owning money and jobs, RPF owns no
 characters or items beside it, and RPF keeps player accounts and login,
 moderation, the staff portal and addons. This directory is the `rpf_darkrp`
@@ -25,7 +25,7 @@ the server runs. It ships in the release's Gmod zip as `rpf_darkrp/`, beside
 | DarkRP | 2.7.0, master at `5abcf7a` (`tested_with = { "2.7" }`: RPF logs a warning for another) |
 
 That is the source the fake (`lua/spec/support/darkrp_fake.lua`) was
-written from. The layer-5 smoke on a real DarkRP server is #94's
+written from. The layer-5 smoke on a real DarkRP server is #83's
 checklist; record the version it ran on there, and here.
 
 ## What it provides and supports

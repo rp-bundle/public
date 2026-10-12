@@ -11,8 +11,8 @@ Each bridge is a package of its own under `lua/bridges/<framework>/`: a
 resource on FiveM, an addon on Gmod. It is engine-specific, because it calls
 its framework's exports or hooks, and it ships free and open source with the
 rest of the game side. No framework name, id or setting appears in Rust, the
-protocol, the schema or the portal. The pilots are K3 (#93), Qbox, built
-in [`qbox/`](qbox/README.md), and K4 (#94), DarkRP, built in
+protocol, the schema or the portal. The pilots are K3 (#82), Qbox, built
+in [`qbox/`](qbox/README.md), and K4 (#83), DarkRP, built in
 [`darkrp/`](darkrp/README.md).
 
 ## The contract
