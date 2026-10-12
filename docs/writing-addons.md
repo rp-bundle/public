@@ -629,8 +629,9 @@ nothing, but the field it names must already be indexed.
 
 **References are picked by name.** A `ref` to one of your types (or a
 `requires` addon's) is a `<select>` of that type's records by their
-`display`, in name order, with a search when there are more than a page
-of them; staff never type an id. So give every type another type refers to
+`display`, in name order, with a search by the start of a name or an id
+when there are more than a page of them; staff never type an id into the
+field. So give every type another type refers to
 a `display`: `acme_shop.counter` names its counters by `name`, which is
 what a listing's picker lists, and `acme_property.property` likewise, so a
 door's picker lists properties. A type with no string to show is picked by
