@@ -160,7 +160,7 @@ describe("rpf.inventory", function()
   end)
 
   it("mirrors the portal's default catalog bounds and fallbacks", function()
-    local source = support.read("crates/rpf-domain/src/inventory.rs")
+    local source = support.portal_source("crates/rpf-domain/src/inventory.rs", pending)
     local default = assert(source:match("impl Default for ItemCatalog {(.-)\n}"))
     assert.is_truthy(default:find("default_weight: " .. inventory.DEFAULTS.weight .. ",", 1, true))
     assert.is_truthy(default:find(

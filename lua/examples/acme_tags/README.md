@@ -1,8 +1,9 @@
 # acme_tags
 
 An example RPF addon: players spray tags on walls, which fade after a day.
-It is the worked example of [Addons](../../../docs/architecture/addons.md#a-worked-example),
-runnable, and a conformance fixture (`lua/spec/conformance_acme_tags_spec.lua`,
+It is the manifest [Writing addons](../../../docs/writing-addons.md#the-manifest)
+shows, runnable, and a conformance fixture
+(`lua/spec/conformance_acme_tags_spec.lua`,
 `crates/fake-server/tests/scenarios/acme_tags.rs`). [Writing
 addons](../../../docs/writing-addons.md) is the guide.
 

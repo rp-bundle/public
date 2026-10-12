@@ -5,8 +5,7 @@ the companion profile: DarkRP keeps owning money and jobs, RPF owns no
 characters or items beside it, and RPF keeps player accounts and login,
 moderation, the staff portal and addons. This directory is the `rpf_darkrp`
 addon. The contract it implements is [`../README.md`](../README.md), and
-why it is shaped this way is
-[`docs/architecture/framework-integration.md`](../../../docs/architecture/framework-integration.md).
+installing it is [Installing](../../../docs/installing.md#beside-darkrp).
 
 DarkRP is the opposite shape to Qbox: it has no characters and no
 persistent item inventory, and it is the gamemode, so it never stops while

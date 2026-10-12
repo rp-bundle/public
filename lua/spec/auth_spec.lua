@@ -154,7 +154,7 @@ describe("rpf.auth", function()
 
   it("carries P1's password-reuse warning word for word", function()
     support.load_core("client")
-    local rust = support.read("crates/rpf-backend/src/player_auth/mod.rs")
+    local rust = support.portal_source("crates/rpf-backend/src/player_auth/mod.rs", pending)
     local warning = rust:match('pub const PASSWORD_REUSE_WARNING: &str = "(.-)";')
     warning = warning:gsub("\\\n%s*", "")
     assert.are.equal(warning, rpf.auth.PASSWORD_REUSE_WARNING)

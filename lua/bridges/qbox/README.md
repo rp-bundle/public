@@ -5,8 +5,7 @@ FiveM, in the companion profile: qbx_core keeps owning characters, money
 and jobs, ox_inventory keeps owning items, and RPF keeps player accounts and
 login, moderation, the staff portal and addons. This directory is the
 `rpf-qbox` resource. The contract it implements is
-[`../README.md`](../README.md), and why it is shaped this way is
-[`docs/architecture/framework-integration.md`](../../../docs/architecture/framework-integration.md).
+[`../README.md`](../README.md).
 
 It targets **qbx_core's own exports**, not its QBCore compatibility layer.
 Passing here says nothing about QBCore. It ships in the release's FiveM zip

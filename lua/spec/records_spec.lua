@@ -194,14 +194,14 @@ describe("rpf.records", function()
     end)
 
     it("bounds names as the portal does", function()
-      local limits = support.read("crates/rpf-domain/src/limits.rs")
+      local limits = support.portal_source("crates/rpf-domain/src/limits.rs", pending)
       local max = limits:match("pub const MAX_CHARACTER_NAME_BYTES: usize = (%d+);")
       assert.truthy(max, "MAX_CHARACTER_NAME_BYTES is no longer an integer literal")
       assert.are.equal(tonumber(max), rpf.records.MAX_NAME_BYTES)
     end)
 
     it("trims the whitespace the portal trims", function()
-      local src = support.read("crates/rpf-domain/src/characters.rs")
+      local src = support.portal_source("crates/rpf-domain/src/characters.rs", pending)
       local body = src:match("pub const NAME_WHITESPACE: &%[u32%] = &%[(.-)%];")
       assert.truthy(body, "NAME_WHITESPACE is no longer a literal list")
       local portal = {}

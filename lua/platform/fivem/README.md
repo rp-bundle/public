@@ -15,7 +15,7 @@ character screens. What any adapter must do is in
 `dev/fivem-resources [out]` assembles both (default `target/fivem/`), and CI
 uploads them as the `fivem-resources` artifact. A release ships them as
 `rpf-fivem-<version>.zip`, both inside one `[rpf]` folder
-(`dev/release-addon`, [Deployment](../../../docs/deployment.md#the-game-server-release)). A server owner needs no
+([Installing](../../../docs/installing.md#by-hand)). A server owner needs no
 `npm install`: the shim is one bundled file. `rpf` declares
 `dependency "rpf-ws"`, so FiveM starts the shim first and stops `rpf` with
 it.
@@ -169,7 +169,7 @@ core says it is ready, which is after `playerJoining` anyway.
 ## Placements
 
 The core places the ped and object records of world-backed config types
-(`docs/architecture/addons.md`, "World definitions"), and the adapter does
+([Writing addons](../../../docs/writing-addons.md#things-in-the-world)), and the adapter does
 it the OneSync way, from the server:
 
 - **Server-authoritative.** `server.spawn` creates the entity on the server
@@ -368,7 +368,7 @@ The bundle targets Node 16, the oldest an FXServer that runs this ships.
   it would fail the user-content domain's CORS preflight, and every image
   would be `unavailable`: that is the first thing a real client checks.
   The user-content domain must answer with
-  `Access-Control-Allow-Origin: *` ([Deployment](../../../docs/deployment.md#the-user-content-domain)).
+  `Access-Control-Allow-Origin: *`.
   The bytes are checked against the hash before they are kept, in
   IndexedDB (in memory where the page has none), so an image is fetched
   once per hash, even across restarts. The answer is a `data:` URL, not a

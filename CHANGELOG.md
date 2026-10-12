@@ -11,8 +11,7 @@ served.
 
 A change that a game server or a deployment must act on goes under its
 release here: a protocol version deprecated or dropped, a migration that is a
-one-way door, a new environment variable. How to cut a release is in
-[Deployment](docs/deployment.md#releasing).
+one-way door, a new environment variable.
 
 ## [Unreleased]
 
@@ -333,8 +332,7 @@ socket.
   changelog and the Lua API reference, one directory per release that no
   later tag rebuilds, with `latest` and per-line aliases and a version
   switcher on every page. The Release's notes link it. CI builds the site
-  strictly on every pull request, so a broken link fails there
-  ([Deployment](docs/deployment.md#the-docs-site)).
+  strictly on every pull request, so a broken link fails there.
 - A browsable Lua API reference (J9, #191): a page for `rpf.Api` and each of
   its tables and types, with what every call takes and returns, which side
   it runs on, examples on the calls an addon reaches for first, linked
@@ -362,7 +360,7 @@ socket.
   notes naming the protocol the release speaks and the portal releases that
   serve it. A tag whose version, changelog section, compatibility row,
   frozen corpus or licence is missing is refused before anything is
-  published ([Deployment](docs/deployment.md#the-game-server-release)).
+  published.
 - The portal tells staff when a game server should upgrade (H7, #56). A
   connected server's **Game server** card says **Update available** when
   its core is an older release than the portal's, linking the release to
@@ -401,15 +399,13 @@ socket.
   limits; billing stays off-platform), open read-only support access for a
   few hours, announced on every page of the guild, and hand a guild to a
   new owner who has lost every sign-in factor. Everything an operator does
-  is in the guild's own audit log with their reason
-  ([Deployment](docs/deployment.md#the-platform-operator)).
+  is in the guild's own audit log with their reason.
 - Removing staff (F9 follow-up, #197). Staff holding `member.remove` get a
   Staff page for the guild and for each server they hold it on, listing who
   holds a role there and removing them: from the guild (every role they
   hold) or from one server (only that server's roles). The change reaches
-  their linked player in game at once, and is audited as `member.remove`
-  ([Staff](docs/architecture/staff-auth.md#removing-staff)). A removed staff
-  member keeps their player link.
+  their linked player in game at once, and is audited as `member.remove`. A
+  removed staff member keeps their player link.
 - The Lua core waits out a `suspended` refusal of its `Hello`: it tries
   again every `suspended_retry_ms` (five minutes) plus jitter, so a server
   comes back on its own once its community's suspension is lifted.
@@ -430,8 +426,7 @@ socket.
   exits once its connections are done or after `RPF_SHUTDOWN_GRACE_SECS`.
   Started beside a ready replacement, a deploy no longer leaves game
   servers without a portal to reconnect to, and their reconnects are spread
-  over the delay plus jitter instead of landing together
-  ([Deployment](docs/deployment.md#deploys)).
+  over the delay plus jitter instead of landing together.
 - The Lua core honours `restarting`: the reconnect after an announced close
   waits `retry_after_ms` plus jitter, capped by `max_retry_after_ms`, without
   advancing the backoff.
@@ -464,17 +459,15 @@ socket.
   Codes are 40 bits, single use and live five minutes, and wrong guesses are
   limited per player and per guild and lock a guild's codes out. Scripts
   report in-game staff actions with `rpf.api.staff.record`, and the audit
-  log names the staff account each was taken under
-  ([Players](docs/architecture/players.md#staff-links)).
+  log names the staff account each was taken under.
 - Staff email and account recovery (H3, #52). Rauthy's deployment config
   (`deploy/rauthy/config.toml`): open signup verified by mail, every mail
   carrying the product's name, TLS-only SMTP. The dashboard asks every
   staff member to keep a second passkey and links to their Rauthy account
   page (`/auth/account`). The portal keeps a staff member's address only
   when Rauthy says it is verified, so an operator naming an account by
-  address finds only someone who proved they hold it. Support's
-  owner-recovery procedure and its identity checks are in
-  [Operations](docs/operations.md#staff-account-recovery).
+  address finds only someone who proved they hold it. Support
+  follows a written owner-recovery procedure, with its identity checks.
 - Sign out everywhere else (H3 follow-up, #222). The dashboard shows how
   many other browsers are signed in to a staff member's account and ends
   all of them in one click, keeping the one it is pressed in; the way to cut
@@ -492,17 +485,16 @@ socket.
   unloaded with it, and a handler may be another resource's function
   reference. Nothing in `rpf.api` throws any more: `events.emit` of a core
   name, or of another addon's namespace, returns `nil` and a reason rather
-  than raising ([Addons](docs/architecture/addons.md#the-lua-api)).
+  than raising ([Writing addons](docs/writing-addons.md)).
 - Backups, restore drills and the restore runbook (H2, #51). Postgres
   archives every WAL segment to an S3-compatible bucket with WAL-G,
   encrypted before it leaves, and a `backup` service takes a base backup a
   day and keeps four weeks: an RPO of five minutes, an RTO of four hours,
-  and deleted data gone from every backup within 35 days
-  ([Deployment](docs/deployment.md#backups)). Rauthy keeps its data in the
-  same cluster, so one restore brings both back to the same moment.
+  and deleted data gone from every backup within 35 days. Rauthy keeps its
+  data in the same cluster, so one restore brings both back to the same moment.
   `deploy/restore-drill` restores the newest backup to a scratch instance,
   migrates it and starts Rauthy on it, weekly in `restore-drill.yml`; the
-  runbook, rehearsed, is in [Operations](docs/operations.md#restoring-the-database).
+  restore runbook is written down and rehearsed.
 - `rpf-portal restore reapply` (H2, #256): after a restore to an earlier
   moment, it compares the restored database with the copy kept from before
   it, erases again the player accounts erased since, cancels again the
@@ -511,7 +503,7 @@ socket.
   the portal deleted since from the images bucket's versions, auditing what
   it changes in each guild's log. It is the restore runbook's step 7, and
   needs, for the images, a key that may read, list the bucket and its
-  versions, and delete a version ([Deployment](docs/deployment.md#backups)).
+  versions, and delete a version.
 - The addon API, part 2 (J3, #80). `rpf.api.records` reads, finds, holds
   and writes addons' records: `get` and `list` locally, `query` through the
   portal, `hold` and `release` on demand, `create`, `update` (a patch, with
@@ -620,17 +612,15 @@ socket.
   its own. `deploy/staging/update`, on a systemd timer, builds each new
   commit there, deploys it and checks it through the public hostnames, and
   a weekly timer runs the restore drill against staging's backups. A
-  release is tagged only from a commit staging has run
-  ([Deployment](docs/deployment.md#staging)). `deploy/compose.yml` takes
-  the hosts, TLS and listening address of a real deployment
-  (`RPF_PORTAL_HOST`, `PORTAL_BASE_URL`, `RPF_TLS`, `RPF_HTTPS_BIND`) and
+  release is tagged only from a commit staging has run.
+  `deploy/compose.yml` takes the hosts, TLS and listening address of a real
+  deployment (`RPF_PORTAL_HOST`, `PORTAL_BASE_URL`, `RPF_TLS`, `RPF_HTTPS_BIND`) and
   passes the `RPF_STORAGE_*` variables through.
 - The database runs the image built from `deploy/postgres/` (the official
   Postgres 17 with WAL-G), with the `backup` service beside it, and needs a
   backup bucket at another provider: the `RPF_BACKUP_*` variables, a
   writer's and a reader's key, an encryption key kept apart from the
-  bucket, and the bucket's access log turned on
-  ([Deployment](docs/deployment.md#backups)). Optional
+  bucket, and the bucket's access log turned on. Optional
   `RPF_ALERT_WEBHOOK_URL` receives backup and drill failures.
 - Rauthy keeps its data in Postgres, in a `rauthy` database and role the
   database's image creates on its first start (`RPF_RAUTHY_DB_PASSWORD`),
@@ -642,8 +632,7 @@ socket.
   `RPF_STORAGE_*` variables (unset, images are off), an S3-compatible
   bucket, and a separate registrable domain in front of it that passes the
   `Host` through and adds `X-Content-Type-Options: nosniff` and a
-  sandboxing `Content-Security-Policy` to every response
-  ([Deployment](docs/deployment.md#the-user-content-domain)). The portal
+  sandboxing `Content-Security-Policy` to every response. The portal
   refuses to start with a user-content URL on its own site.
 - New optional environment variables `RPF_SHUTDOWN_NOTICE_SECS`,
   `RPF_SHUTDOWN_RETRY_AFTER_MS` and `RPF_SHUTDOWN_GRACE_SECS`; the defaults
@@ -651,9 +640,8 @@ socket.
   exceed the first plus the third, or it ends the drain early.
 - Rauthy needs a mail provider: the `SMTP_*` variables and the sending
   domain's SPF, DKIM and DMARC records, and it exits at startup without
-  one ([Deployment](docs/deployment.md#the-identity-provider)). The
-  portal's client gets its client URI, `${PORTAL_BASE_URL}`. A staff
-  member's address is cleared at their next sign-in unless Rauthy marks it
+  one. The portal's client gets its client URI, `${PORTAL_BASE_URL}`. A
+  staff member's address is cleared at their next sign-in unless Rauthy marks it
   verified, which it does for every account that signed up or used its
   setup mail.
 

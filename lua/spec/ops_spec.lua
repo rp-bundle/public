@@ -468,7 +468,7 @@ describe("rpf.ops", function()
     end)
 
     it("keeps its bounds equal to the portal's", function()
-      local limits = support.read("crates/rpf-domain/src/limits.rs")
+      local limits = support.portal_source("crates/rpf-domain/src/limits.rs", pending)
       for name, ours in pairs({
         MAX_UNKNOWN_OPS_PER_REPORT = rpf.ops.MAX_PER_REPORT,
         MAX_UNKNOWN_OP_TEXT_BYTES = rpf.ops.MAX_TEXT_BYTES,

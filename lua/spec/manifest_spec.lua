@@ -30,9 +30,10 @@ end
 ---The variants of a Rust enum, as they serialise.
 ---@param file string The source file, relative to the repository root.
 ---@param name string The enum.
+---@param pending fun(message: string) The running spec's `pending`, for a checkout with no portal sources (`support.portal_source`).
 ---@return table<string, true> rules The variants, snake_case.
-local function rules_in_source(file, name)
-  local source = support.read(file)
+local function rules_in_source(file, name, pending)
+  local source = support.portal_source(file, pending)
   local body = assert(source:match("pub enum " .. name .. " {(.-)\n}"), name)
   local rules = {}
   for variant in body:gmatch("\n\t(%u%w*)") do
@@ -84,7 +85,7 @@ describe("rpf.manifest.check against protocol/corpus/addons/manifests", function
   end)
 
   it("names exactly the portal's rules, read from ManifestRule, and has a case for each", function()
-    local rules = rules_in_source("crates/rpf-domain/src/addons/manifest.rs", "ManifestRule")
+    local rules = rules_in_source("crates/rpf-domain/src/addons/manifest.rs", "ManifestRule", pending)
     assert.are.same(rules, set(rpf.manifest.MANIFEST_RULES))
     local covered = {}
     for _, case in pairs(cases("manifests")) do
@@ -144,7 +145,7 @@ describe("rpf.manifest.check against protocol/corpus/addons/manifests", function
   end)
 
   it("mirrors the portal's limits", function()
-    local limits = support.read("crates/rpf-domain/src/limits.rs")
+    local limits = support.portal_source("crates/rpf-domain/src/limits.rs", pending)
     for _, name in ipairs({
       "MAX_MANIFEST_BYTES",
       "MAX_RECORD_BYTES",
@@ -191,7 +192,7 @@ describe("rpf.manifest.check_fields against protocol/corpus/addons/records", fun
   end)
 
   it("names exactly the portal's rules, read from FieldRule, and has a case for each", function()
-    local rules = rules_in_source("crates/rpf-domain/src/addons/records.rs", "FieldRule")
+    local rules = rules_in_source("crates/rpf-domain/src/addons/records.rs", "FieldRule", pending)
     assert.are.same(rules, set(rpf.manifest.FIELD_RULES))
     local covered = {}
     for _, case in pairs(cases("records")) do

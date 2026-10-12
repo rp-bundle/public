@@ -87,7 +87,7 @@ describe("rpf.inventory.validate against protocol/corpus/containers", function()
   end)
 
   it("names exactly the portal's rules, read from ContentsError", function()
-    local source = support.read("crates/rpf-domain/src/inventory.rs")
+    local source = support.portal_source("crates/rpf-domain/src/inventory.rs", pending)
     local body = assert(source:match("pub enum ContentsError {(.-)\n}"))
     local rules = { malformed = true, unknown_flag = true }
     for variant in body:gmatch("\n\t(%u%w*)") do
