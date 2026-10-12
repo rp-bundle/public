@@ -202,7 +202,7 @@ function placement.open(handle)
       end
       local records = {}
       for _, record in ipairs(rpf.addons.config_records(name)) do
-        if rpf.world.on_map(name, record.fields) then
+        if rpf.world.on_map(def.world, record.fields) then
           local label = record.id
           for _, key in ipairs({ "name", "title" }) do
             local field = def.fields[key]
