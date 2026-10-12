@@ -387,23 +387,29 @@ local function plain(value)
   return out
 end
 
----A model as a stable string, for `key_of`: a JSON object's entries sorted.
----@param model any The model.
+---A model as a string no other model shares, for `key_of`. Every scalar
+---carries its type and a string its length, so no value can pass for part of
+---another: `"a;gmod=b"` is one string, not two entries, and the number 123
+---(which FiveM reads as a hash) is not the string `"123"` (a name it hashes).
+---A table's entries are sorted by their own text, so the key does not depend
+---on the order `pairs` gives.
+---@param model any The model, as `plain` leaves it.
 ---@return string text Its text.
 local function model_key(model)
-  if type(model) ~= "table" then
-    return tostring(model)
+  local kind = type(model)
+  if kind == "string" then
+    return "s" .. #model .. ":" .. model
+  elseif kind == "number" then
+    return string.format("n%.17g", model)
+  elseif kind ~= "table" then
+    return kind:sub(1, 1) .. tostring(model)
   end
-  local keys = {}
-  for key in pairs(model) do
-    keys[#keys + 1] = tostring(key)
-  end
-  table.sort(keys)
   local parts = {}
-  for i, key in ipairs(keys) do
-    parts[i] = key .. "=" .. model_key(model[key])
+  for key, item in pairs(model) do
+    parts[#parts + 1] = model_key(key) .. "=" .. model_key(item)
   end
-  return "{" .. table.concat(parts, ";") .. "}"
+  table.sort(parts)
+  return "{" .. #parts .. ":" .. table.concat(parts, ";") .. "}"
 end
 
 ---What an adapter is asked to place.
