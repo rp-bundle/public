@@ -284,6 +284,20 @@ local function with_nonce(fn, during)
   platform.after(options.nonce_wait_ms, function()
     if waiting and waiting.generation == mine and waiting.fn == fn then
       waiting = nil
+      if during == "logout" then
+        -- Revocation has not reached the portal. A ticket handed to the
+        -- server may still succeed, so this must not clear its pending
+        -- account or change the login state as `fail` would.
+        log("warn", "could not obtain a nonce for logout; the saved login was forgotten here, but may not be revoked")
+        ---@type rpf.AuthFailure
+        local failure = {
+          code = "invalid_nonce",
+          message = "Your saved login was forgotten on this device, but the server didn't provide a nonce to cancel it. Change your password to be sure nobody can use it.",
+          during = "logout",
+        }
+        events.emit("auth.failed", failure)
+        return
+      end
       fail({
         code = "invalid_nonce",
         message = "This login has expired. Reconnect to the server and try again.",
@@ -614,7 +628,8 @@ end
 ---token is forgotten here at once either way. The portal answers `204`
 ---whatever it did, so any other answer means the token may not be revoked:
 ---that is logged and reported as `auth.failed` with `during = "logout"`,
----because the token may still be valid at the portal.
+---because the token may still be valid at the portal. A nonce that never
+---arrives is reported the same way, without cancelling a pending ticket.
 function auth.logout()
   local token = saved_token() or unsaved_token
   save_token(nil)
@@ -786,14 +801,19 @@ local function announce_ready()
   end)
 end
 
----The server's answer to the ticket.
+---The server's answer to the ticket. An unreadable answer ends the pending
+---attempt instead of leaving the login blocked, but cannot say whether the
+---server redeemed it, so the player is told to reconnect.
 ---@param payload string The payload.
 local function on_result(payload)
-  local fields = handoff.decode(handoff.RESULT, payload)
-  if not fields or state ~= "redeeming" or not pending then
+  local fields, err = handoff.decode(handoff.RESULT, payload)
+  if not fields then
+    log("warn", "dropped a malformed join result from the server: " .. tostring(err))
+  end
+  if state ~= "redeeming" or not pending then
     return
   end
-  if fields.ok then
+  if fields and fields.ok then
     account = pending
     pending = nil
     state = "authenticated"
@@ -804,7 +824,8 @@ local function on_result(payload)
     drop_session()
     fail({
       code = "ticket_refused",
-      message = fields.reason or "The server could not log you in. Please try again.",
+      message = fields and (fields.reason or "The server could not log you in. Please try again.")
+        or "The server's login reply could not be read. Reconnect to the server and try again.",
       during = "redeem",
     })
     events.emit("auth.required", { warning = auth.PASSWORD_REUSE_WARNING })
