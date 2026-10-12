@@ -1,0 +1,26 @@
+{
+  "description": "An integer's unit is checked before its slider (N1).",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "integer",
+            "unit": "leagues",
+            "slider": true
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_value",
+    "path": "types.plant.fields.x.unit"
+  }
+}

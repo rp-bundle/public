@@ -1,0 +1,25 @@
+{
+  "description": "An order is 0 to 1000 (N1).",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean",
+            "order": 1001
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "bound",
+    "path": "types.plant.fields.x.order"
+  }
+}

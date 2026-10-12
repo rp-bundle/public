@@ -1,0 +1,64 @@
+{
+  "description": "The layout keys (N1): a group and an order on any field, a unit and a slider on an integer or a number, and a slider needs both bounds.",
+  "manifest": {
+    "namespace": "acme_shop",
+    "version": "1.2.0",
+    "api": 1,
+    "title": "Shops",
+    "types": {
+      "listing": {
+        "schema": 2,
+        "authority": "config",
+        "fields": {
+          "item": {
+            "type": "ref",
+            "to": "item",
+            "required": true,
+            "order": 1
+          },
+          "price": {
+            "type": "integer",
+            "min": 1,
+            "max": 1000000,
+            "required": true,
+            "unit": "money",
+            "order": 2,
+            "group": "Money"
+          },
+          "discount": {
+            "type": "number",
+            "min": 0,
+            "max": 100,
+            "default": 0,
+            "unit": "percent",
+            "slider": true,
+            "group": "Money",
+            "order": 3
+          },
+          "restock_minutes": {
+            "type": "integer",
+            "min": 1,
+            "max": 10080,
+            "default": 60,
+            "unit": "minutes",
+            "group": "Stock"
+          },
+          "heading": {
+            "type": "number",
+            "min": 0,
+            "max": 360,
+            "default": 0,
+            "unit": "degrees",
+            "slider": false
+          },
+          "notes": {
+            "type": "text",
+            "group": "Notes",
+            "order": 1000
+          }
+        }
+      }
+    }
+  },
+  "error": null
+}

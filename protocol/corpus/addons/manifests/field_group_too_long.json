@@ -1,0 +1,25 @@
+{
+  "description": "A group heading is at most 64 bytes, like a title (N1).",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "boolean",
+            "group": "ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "bound",
+    "path": "types.plant.fields.x.group"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "description": "A list of numbers has no unit or slider: they edit one number (N1).",
+  "manifest": {
+    "namespace": "acme_garden",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Garden",
+    "types": {
+      "plant": {
+        "schema": 1,
+        "authority": "config",
+        "fields": {
+          "x": {
+            "type": "list",
+            "of": "integer",
+            "unit": "minutes"
+          }
+        }
+      }
+    }
+  },
+  "error": {
+    "error": "unknown_key",
+    "path": "types.plant.fields.x.unit"
+  }
+}

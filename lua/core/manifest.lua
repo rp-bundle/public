@@ -103,6 +103,7 @@ local MAX_HELP_BYTES = 256
 local MAX_API = 1000
 local MAX_SCHEMA = 2147483647
 local MAX_LIST_COLUMNS = 8
+local MAX_ORDER = 1000
 local MAX_STRING_BYTES = 1024
 local MAX_TEXT_BYTES = 16 * 1024
 local MAX_ENUM_VALUES = 64
@@ -181,14 +182,32 @@ local BOUNDS = {
   timestamp = {},
   vector3 = {},
 }
+---The editor keys a field of each kind may set (N1): `FieldKind::editors`.
+---A field's own, never a list's items'.
+local EDITORS = {
+  integer = { "slider", "unit" },
+  number = { "slider", "unit" },
+}
+---What an integer or number may count: `manifest::Unit`.
+local UNITS = {
+  money = true,
+  seconds = true,
+  minutes = true,
+  hours = true,
+  metres = true,
+  degrees = true,
+  percent = true,
+}
 ---Keys every field may set.
 local COMMON = {
   "default",
   "engine",
+  "group",
   "help",
   "hidden",
   "index",
   "nullable",
+  "order",
   "read_only",
   "required",
   "title",
@@ -612,6 +631,40 @@ end
 
 local check_value
 
+---An integer's or number's editor keys (N1), after its bounds:
+---`manifest::editors`. `unit` is one of `UNITS`, with `money` only on an
+---integer (`conflict` at `unit`); `slider` is a flag that needs both `min`
+---and `max` (`conflict` at `slider`). `kind` is the field's own: a list of
+---numbers has neither key, refused as unknown before this.
+---@param field table The field.
+---@param path string Its path.
+---@param kind string The field's own kind.
+---@param bounded boolean Whether it has both `min` and `max`.
+---@return true? ok True, or nil.
+---@return table? refusal Why not.
+local function editors(field, path, kind, bounded)
+  if field.unit ~= nil then
+    local unit_path = at(path, "unit")
+    local ok, refusal = one_of(field.unit, unit_path, UNITS)
+    if not ok then
+      return nil, refusal
+    end
+    if field.unit == "money" and kind ~= "integer" then
+      return refuse("conflict", unit_path)
+    end
+  end
+  if field.slider ~= nil then
+    local slider_path = at(path, "slider")
+    if type(field.slider) ~= "boolean" then
+      return refuse("wrong_type", slider_path)
+    end
+    if field.slider == true and not bounded then
+      return refuse("conflict", slider_path)
+    end
+  end
+  return true
+end
+
 ---What a type's fields need to know about the manifest around them.
 ---@class rpf.manifest.Context
 ---@field namespace string The manifest's namespace.
@@ -673,6 +726,9 @@ local function check_field(field, path, context, param)
   for _, key in ipairs(BOUNDS[kind]) do
     allowed[key] = true
   end
+  for _, key in ipairs(EDITORS[kind] or {}) do
+    allowed[key] = true
+  end
   if kind == "list" then
     for _, key in ipairs(BOUNDS[item_kind]) do
       allowed[key] = true
@@ -706,6 +762,19 @@ local function check_field(field, path, context, param)
     if not ok then
       return nil, refusal
     end
+  end
+  if field.group ~= nil then
+    local ok, refusal = label(field.group, at(path, "group"), MAX_TITLE_BYTES)
+    if not ok then
+      return nil, refusal
+    end
+  end
+  if field.order ~= nil then
+    local n, refusal = bounded(field.order, at(path, "order"), 0, MAX_ORDER)
+    if not n then
+      return nil, refusal
+    end
+    out.order = n
   end
 
   if item_kind == "string" then
@@ -750,6 +819,10 @@ local function check_field(field, path, context, param)
     if bounds.min and bounds.max and bounds.min > bounds.max then
       return refuse("bound", at(path, "min"))
     end
+    local ok, refusal = editors(field, path, kind, bounds.min ~= nil and bounds.max ~= nil)
+    if not ok then
+      return nil, refusal
+    end
   elseif item_kind == "number" then
     local bounds = {}
     for _, key in ipairs({ "min", "max" }) do
@@ -763,6 +836,10 @@ local function check_field(field, path, context, param)
     end
     if bounds.min and bounds.max and bounds.min > bounds.max then
       return refuse("bound", at(path, "min"))
+    end
+    local ok, refusal = editors(field, path, kind, bounds.min ~= nil and bounds.max ~= nil)
+    if not ok then
+      return nil, refusal
     end
   elseif item_kind == "enum" then
     local values, refusal = list(field.values, at(path, "values"), MAX_ENUM_VALUES)

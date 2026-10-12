@@ -29,7 +29,7 @@ acme_shop.MAX_STOCK = 1000000
 
 acme_shop.MANIFEST = {
   namespace = "acme_shop",
-  version = "1.1.0",
+  version = "1.2.0",
   api = 1,
   title = "Shops",
   permissions = { restock = "Stock shops: create, change and remove stock" },
@@ -39,27 +39,17 @@ acme_shop.MANIFEST = {
     counter = {
       -- Schema 1 had no `map`. Adding it as a nullable field is a compatible
       -- change: 1.1.0 installs over 1.0.0 with every counter kept, and an
-      -- older counter, which has no map, stays on every map.
-      schema = 2,
+      -- older counter, which has no map, stays on every map. Schema 3 (1.2.0)
+      -- lays the page out (N1): `order` puts the name first and `group`
+      -- gathers where the counter stands and what it looks like under two
+      -- headings; `unit` and `slider` give the heading a dial. None of it
+      -- changes what a record holds, so it installs over 1.1.0 as well.
+      schema = 3,
       authority = "config",
       title = "Counter",
       fields = {
-        name = { type = "string", max_len = 48, required = true, title = "Name" },
-        spot = { type = "vector3", required = true, title = "Where it stands" },
-        heading = { type = "number", min = 0, max = 360, default = 0, title = "Facing" },
-        model = {
-          type = "json",
-          max_bytes = 256,
-          engine = true,
-          required = true,
-          title = "Shopkeeper",
-          help = 'One model per engine: { "fivem": "mp_m_shopkeep_01", "gmod": "models/Humans/Group01/male_02.mdl" }',
-        },
-        shown = { type = "boolean", default = true, title = "Open" },
-        -- Staff say which map a counter stands on: a shopkeeper placed for
-        -- `rp_downtown` is not spawned at the same coordinates on
-        -- `rp_evocity`. Blank is every map.
-        map = { type = "string", max_len = 64, index = true, nullable = true, title = "Map", help = "The map it stands on; blank for every map" },
+        name = { type = "string", max_len = 48, required = true, title = "Name", order = 1 },
+        shown = { type = "boolean", default = true, title = "Open", order = 2 },
         account = {
           type = "string",
           max_len = 32,
@@ -67,6 +57,41 @@ acme_shop.MANIFEST = {
           default = "wallet",
           title = "Paid from",
           help = "The player's account purchases come out of and buy-backs go into",
+          order = 3,
+        },
+        spot = { type = "vector3", required = true, title = "Where it stands", group = "Place", order = 1 },
+        heading = {
+          type = "number",
+          min = 0,
+          max = 360,
+          default = 0,
+          unit = "degrees",
+          slider = true,
+          title = "Facing",
+          group = "Place",
+          order = 2,
+        },
+        -- Staff say which map a counter stands on: a shopkeeper placed for
+        -- `rp_downtown` is not spawned at the same coordinates on
+        -- `rp_evocity`. Blank is every map.
+        map = {
+          type = "string",
+          max_len = 64,
+          index = true,
+          nullable = true,
+          title = "Map",
+          help = "The map it stands on; blank for every map",
+          group = "Place",
+          order = 3,
+        },
+        model = {
+          type = "json",
+          max_bytes = 256,
+          engine = true,
+          required = true,
+          title = "Shopkeeper",
+          help = 'One model per engine: { "fivem": "mp_m_shopkeep_01", "gmod": "models/Humans/Group01/male_02.mdl" }',
+          group = "Appearance",
         },
       },
       list = { "name", "account", "shown" },
@@ -74,27 +99,35 @@ acme_shop.MANIFEST = {
     },
     -- What a counter sells, and at what price: staff's, like every price.
     listing = {
-      schema = 1,
+      -- Schema 2 (1.2.0) lays the page out (N1): the prices are `money`, so
+      -- the portal shows them with the server's currency, and the two sit
+      -- under one heading.
+      schema = 2,
       authority = "config",
       title = "Listing",
       fields = {
-        counter = { type = "ref", to = "acme_shop.counter", required = true, index = true, title = "Counter" },
-        item = { type = "ref", to = "item", required = true, title = "Item" },
-        price = { type = "integer", min = 1, max = 1000000, required = true, title = "Price" },
+        counter = { type = "ref", to = "acme_shop.counter", required = true, index = true, title = "Counter", order = 1 },
+        item = { type = "ref", to = "item", required = true, title = "Item", order = 2 },
+        price = { type = "integer", min = 1, max = 1000000, required = true, unit = "money", title = "Price", group = "Prices", order = 1 },
         buyback = {
           type = "integer",
           min = 0,
           max = 1000000,
           default = 0,
+          unit = "money",
           title = "Buys back at",
           help = "What the counter pays for one; 0 buys none back",
+          group = "Prices",
+          order = 2,
         },
-        most = { type = "integer", min = 1, max = 100, default = 10, title = "Most per sale" },
+        most = { type = "integer", min = 1, max = 100, default = 10, slider = true, title = "Most per sale", group = "Stock", order = 1 },
         stocked = {
           type = "boolean",
           default = false,
           title = "Limited stock",
           help = "Sold only while its stock record has some left; unlimited otherwise",
+          group = "Stock",
+          order = 2,
         },
       },
       list = { "counter", "item", "price", "buyback", "stocked" },
