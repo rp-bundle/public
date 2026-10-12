@@ -180,6 +180,70 @@
           }
         ]
       }
+    ],
+    "dialogs": [
+      {
+        "slug": "gardener",
+        "title": "Old Tom",
+        "start": "hello",
+        "nodes": [
+          {
+            "key": "hello",
+            "line": "Fine day for it.\nAfter some seeds?",
+            "choices": [
+              {
+                "label": "What grows here?",
+                "conditions": [],
+                "does": {
+                  "kind": "goto",
+                  "node": "plants"
+                }
+              },
+              {
+                "label": "Plant one for me",
+                "conditions": [
+                  {
+                    "kind": "job",
+                    "employer": "parks",
+                    "job": "gardener",
+                    "min_grade": 1,
+                    "on_duty": true
+                  },
+                  {
+                    "kind": "item",
+                    "item": "seed_bag",
+                    "count": 1
+                  },
+                  {
+                    "kind": "permission",
+                    "permission": "addon.acme_garden.tend",
+                    "negate": true
+                  }
+                ],
+                "does": {
+                  "kind": "action",
+                  "action": "acme_garden.plant",
+                  "params": {
+                    "species": "fern"
+                  }
+                }
+              },
+              {
+                "label": "Goodbye",
+                "conditions": [],
+                "does": {
+                  "kind": "end"
+                }
+              }
+            ]
+          },
+          {
+            "key": "plants",
+            "line": "Ferns, mostly.",
+            "choices": []
+          }
+        ]
+      }
     ]
   }
 }

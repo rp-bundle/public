@@ -162,6 +162,30 @@ describe("rpf.config", function()
     assert.are.equal("0000000c-0000-4000-8000-00000000000c", rpf.config.paying_account("treasury").id)
   end)
 
+  -- The corpus assertion for L1's section: a server's dialog trees, by
+  -- slug, whole, with every kind of choice and condition.
+  it("reads the dialogs of the corpus snapshot", function()
+    local frame = assert(rpf.json.decode(support.read(support.corpus("portal_to_server/config.json"))))
+    assert.is_true((rpf.config.apply(p, frame.version, frame.hash, frame.snapshot)))
+
+    local dialog = assert(rpf.config.dialog("gardener"))
+    assert.are.same({ "Old Tom", "hello", 2 }, { dialog.title, dialog.start, #dialog.nodes })
+    local choices = dialog.nodes[1].choices
+    assert.are.same({ "goto", "action", "end" }, { choices[1].does.kind, choices[2].does.kind, choices[3].does.kind })
+    assert.are.same({ "acme_garden.plant", "fern" }, { choices[2].does.action, choices[2].does.params.species })
+    assert.are.same({ "job", "item", "permission" }, {
+      choices[2].conditions[1].kind,
+      choices[2].conditions[2].kind,
+      choices[2].conditions[3].kind,
+    })
+    assert.is_true(choices[2].conditions[3].negate)
+    assert.is_nil(rpf.config.dialog("nobody"))
+
+    -- A copy: editing one changes nothing.
+    rpf.config.dialog("gardener").title = "x"
+    assert.are.equal("Old Tom", rpf.config.dialog("gardener").title)
+  end)
+
   it("has no paying accounts from a portal older than #169", function()
     assert.is_true((rpf.config.apply(p, 3, "h3", snapshot(FIRST))))
     assert.are.same({}, rpf.config.paying_accounts())
