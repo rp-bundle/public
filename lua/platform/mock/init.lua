@@ -250,6 +250,9 @@ function mock.server(host, seed)
   p.buckets = {}
   p.entities = {}
   p.entity_seq = 0
+  p.weapons = {}
+  p.unknown_weapons = {}
+  p.bodiless = {}
   -- Positions in the mock are metres, as FiveM's are.
   p.units_per_metre = 1
   -- The map the host says this process runs (#369), fixed until it stops.
@@ -306,6 +309,30 @@ function mock.server(host, seed)
     end,
     despawn = function(ref)
       p.entities[ref] = nil
+    end,
+    -- Weapons (L3): an item's FiveM name is its weapon here, as positions
+    -- are FiveM's metres, known unless the harness lists it in
+    -- `unknown_weapons`; a player's weapons are a set the harness reads, and
+    -- `bodiless` players have none to be given (dead, or not yet spawned).
+    weapon = function(spec)
+      local name = spec.fivem
+      if type(name) ~= "string" then
+        return nil
+      end
+      return name, not p.unknown_weapons[name]
+    end,
+    give_weapon = function(player, name)
+      if p.bodiless[player] then
+        return false
+      end
+      p.weapons[player] = p.weapons[player] or {}
+      p.weapons[player][name] = true
+      return true
+    end,
+    strip_weapon = function(player, name)
+      if p.weapons[player] then
+        p.weapons[player][name] = nil
+      end
     end,
     notify = true,
     menu = true,

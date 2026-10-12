@@ -65,7 +65,17 @@ function.
      that no client can write (a client may be able to rewrite an
      entity's tag); and it
      calls `rpf.world.clear()` as it stops, where it can stop without its
-     state ending. Beside them, `notify`, `menu`, `input` and
+     state ending. For weapons (L3, `rpf.weapons`): `weapon(spec)` reading
+     its own engine's name from an item's catalog `weapon` (nil when the
+     item is no weapon here) and whether the engine knows it (`true`,
+     `false`, or nil where the server cannot tell, as on FiveM);
+     `give_weapon(player, name)` giving it without ammo, answering `false`
+     when the player has no body to give it to; and
+     `strip_weapon(player, name)`. The adapter also says when a player
+     respawned, which empties their hands: `rpf.weapons.spawned(player)`
+     on the server where the server sees it (Gmod's `PlayerSpawn`), or
+     `rpf.weapons.respawned()` on the client where only the client does
+     (FiveM's `playerSpawned`). Beside them, `notify`, `menu`, `input` and
      `progress`, each `true` or `false`: whether this engine's clients show
      an addon's UI (J10, `rpf.ui`). Never leave one out: say unsupported on
      purpose.

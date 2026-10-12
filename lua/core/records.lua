@@ -29,6 +29,7 @@
 ---released with `release` when the module that held it is done.
 ---
 ---Events, each with copies: `records.held(views)` when records arrive,
+---`records.contents(id)` when a held container's contents change here,
 ---`records.released(refs)` when this server lets them go, and
 ---`records.lost(refs, reason)` when the portal says this server does not hold
 ---them (they were force-released by staff, or purged), which a module answers
@@ -37,6 +38,7 @@
 ---@field KINDS table<rpf.RecordKind, true> The kinds of record a server can hold.
 ---@field MAX_DESCRIPTION_BYTES integer The longest description a transfer may carry, the portal's `limits::MAX_TRANSACTION_DESCRIPTION_BYTES`. Bounded so that a report's worth of ledger entries always fits one frame, and an account's backlog can always be reported.
 ---@field MAX_NAME_BYTES integer The longest first or last name, after trimming, or server-specific gender a character may have, the portal's `limits::MAX_CHARACTER_NAME_BYTES`. The portal refuses a longer one on every write of a character, so one changed here would be a report it refuses.
+---@field MAX_EQUIPPED integer The most weapons a character may have equipped at once (L3), the portal's `limits::MAX_EQUIPPED_WEAPONS`, which refuses a longer list on every report.
 ---@field entries table<string, rpf.records.Entry> Every held record by `records.key`. Internal: `rpf.sync` reads it to build reports, and nothing else may.
 local records = {}
 
@@ -87,6 +89,7 @@ local events = rpf.events
 records.KINDS = { character = true, account = true, container = true, addon_record = true }
 records.MAX_DESCRIPTION_BYTES = 256
 records.MAX_NAME_BYTES = 64
+records.MAX_EQUIPPED = 16
 
 records.entries = {}
 
@@ -529,6 +532,70 @@ function records.set_job(id, ref)
   return true
 end
 
+---Replaces a held character's equipped weapons (L3) and marks them for the
+---next report. Only the shape is checked here: a list of at most
+---`MAX_EQUIPPED` item slugs, none twice. Which items are weapons, and
+---whether the character carries them, is `rpf.weapons`'s rule, which is the
+---only caller, because an item removed from config a moment ago must still
+---be taken off.
+---
+---The same list again changes nothing and marks nothing, so a no-op is never
+---reported.
+---@param id string The character's uuid.
+---@param slugs string[] The items equipped, in the order they were.
+---@return boolean? ok True if they are the character's weapons now.
+---@return string? err `"not_held"`, `"domain_external"`, or `"invalid"` for a list that breaks the shape. Nothing changes on an error.
+function records.set_weapons(id, slugs)
+  local refused = external("characters")
+  if refused then
+    return nil, refused
+  end
+  local entry = records.entries[records.key("character", id)]
+  if not entry then
+    return nil, "not_held"
+  end
+  if type(slugs) ~= "table" or #slugs > records.MAX_EQUIPPED then
+    return nil, "invalid"
+  end
+  local new, seen = json.array({}), {}
+  for i, slug in ipairs(slugs) do
+    if type(slug) ~= "string" or not slug:match("^[a-z][a-z0-9_]*$") or #slug > 64 or seen[slug] then
+      return nil, "invalid"
+    end
+    seen[slug] = true
+    new[i] = slug
+  end
+  local old = records.weapons_of(entry)
+  if #old == #new then
+    local same = true
+    for i = 1, #new do
+      same = same and old[i] == new[i]
+    end
+    if same then
+      return true
+    end
+  end
+  entry.data.weapons = new
+  entry.changed.weapons = true
+  touched(entry)
+  return true
+end
+
+---A held character's equipped weapons (L3), as a fresh JSON array: what the
+---portal handed over, or set since, and empty for none.
+---@param entry rpf.records.Entry The character.
+---@return string[] slugs The items equipped.
+function records.weapons_of(entry)
+  local out = json.array({})
+  local weapons = entry.data.weapons
+  if type(weapons) == "table" then
+    for i, slug in ipairs(weapons) do
+      out[i] = slug
+    end
+  end
+  return out
+end
+
 ---Replaces what a held container holds. Whole contents, never a diff, which
 ---is also what is reported. They are validated first, against the
 ---container's flags and the config's item catalog, by `rpf.inventory`'s port
@@ -558,6 +625,7 @@ function records.set_contents(id, contents)
   entry.data.contents = json.copy(contents)
   entry.changed.contents = true
   touched(entry)
+  events.emit("records.contents", id)
   return true
 end
 

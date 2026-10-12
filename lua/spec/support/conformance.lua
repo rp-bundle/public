@@ -76,6 +76,9 @@ conformance.UNITS_PER_METRE = { mock = 1, fivem = 1, gmod = 39.37 }
 ---@field delete_entity fun(ref: integer) Deletes an entity behind the core's back, as another script would.
 ---@field set_bucket (fun(n: integer, bucket: integer))? Moves a player to a routing bucket, where the engine has them.
 ---@field stop fun()? Stops the framework's own resource, where there are resources.
+---@field holds fun(n: integer, weapon: rpf.ConfigItemWeapon): boolean Whether the engine has a player holding an item's weapon (L3), by this engine's entry of it.
+---@field unspawn fun(n: integer) Takes a player's body away (dead, or not spawned yet), so the engine can give them nothing.
+---@field respawn fun(n: integer) The player spawns again with empty hands, and the engine says so as it does: Gmod's `PlayerSpawn`, FiveM's client.
 local World = {}
 
 ---An entity the core placed, as a case reads it off any engine.
@@ -275,6 +278,10 @@ function World:answer(frame)
         owned.revision = change.revision or owned.revision + 1
         if change.contents then
           owned.data.contents = change.contents
+        end
+        -- A character's equipped weapons (L3): `null` is unchanged.
+        if type(change.weapons) == "table" then
+          owned.data.weapons = json.copy(change.weapons)
         end
         revisions[#revisions + 1] = { kind = owned.kind, id = change.id, revision = owned.revision }
       elseif record and change.kind == "addon_record" then
@@ -588,6 +595,18 @@ local function boot_mock(opts)
   world.set_bucket = function(n, bucket)
     p.buckets[n] = bucket
   end
+  world.holds = function(n, weapon)
+    return p.weapons[n] ~= nil and p.weapons[n][weapon.fivem] == true
+  end
+  world.unspawn = function(n)
+    p.bodiless[n] = true
+    p.weapons[n] = nil
+  end
+  world.respawn = function(n)
+    p.bodiless[n] = nil
+    p.weapons[n] = nil
+    p.from_client(n, core.handoff.SPAWNED, core.handoff.encode(core.handoff.SPAWNED))
+  end
   world.finish = function()
     rawset(_G, "rpf", nil)
   end
@@ -666,6 +685,22 @@ local function boot_fivem(opts)
   end
   world.set_bucket = driver.set_bucket
   world.stop = driver.stop
+  -- A player's ped is their id while they stand somewhere (`place`).
+  world.holds = function(n, weapon)
+    local held = driver.weapons[n]
+    return held ~= nil and held[GetHashKey(weapon.fivem)] ~= nil
+  end
+  local stood = {}
+  world.unspawn = function(n)
+    stood[n] = driver.positions[n]
+    driver.positions[n] = nil
+    driver.weapons[n] = nil
+  end
+  world.respawn = function(n)
+    driver.positions[n] = driver.positions[n] or stood[n] or { x = 0, y = 0, z = 0 }
+    driver.weapons[n] = nil
+    driver.from_client(n, core.handoff.SPAWNED, core.handoff.encode(core.handoff.SPAWNED))
+  end
   world.finish = function()
     for key in pairs(_G) do
       if not before[key] then
@@ -737,6 +772,19 @@ local function boot_gmod(opts)
   end
   world.from_client = function(n, name, payload)
     fake:from_client(n, name, payload)
+  end
+  world.holds = function(n, weapon)
+    return fake.players[n]:HasWeapon(weapon.gmod)
+  end
+  world.unspawn = function(n)
+    fake.players[n].dead = true
+    fake.players[n].weapons = nil
+  end
+  world.respawn = function(n)
+    local ply = fake.players[n]
+    ply.dead, ply.weapons = false, nil
+    fake:run_hook("PlayerSpawn", ply, false)
+    fake:run_due()
   end
   world.finish = function()
     fake:uninstall()

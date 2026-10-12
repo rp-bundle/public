@@ -214,6 +214,59 @@ function server.entity(ref)
   }
 end
 
+---An item's weapon on Gmod (L3): the catalog's `gmod` class, and whether
+---the engine knows it. Gmod lists the HL2 weapons it gives players
+---(`list.Get("Weapon")`, from `game_hl2.lua`) and every spawnable SWEP
+---there, and `weapons.GetStored` has every SWEP an addon registered,
+---spawnable or not (a gamemode's keys or lockpick), so a class neither
+---knows is one `Give` would make nothing of.
+---@param spec rpf.ConfigItemWeapon The catalog's entry.
+---@return string? name The class, or nil when the item is no weapon on Gmod.
+---@return boolean? known Whether the engine has it.
+function server.weapon(spec)
+  local name = spec.gmod
+  if type(name) ~= "string" or name == "" then
+    return nil
+  end
+  return name, list.Get("Weapon")[name] ~= nil or weapons.GetStored(name) ~= nil
+end
+
+---Gives a player a weapon, without ammo (`Give`'s `bNoAmmo`). A player who
+---is dead has no hands to give it to: the core gives it again when they
+---spawn. Whether they have it after is the answer, since `Give` answers
+---NULL both for a weapon they already had and for one a hook refused.
+---@param player Player The player.
+---@param name string The class.
+---@return boolean given True if they have it now.
+function server.give_weapon(player, name)
+  if not IsValid(player) or not player:Alive() then
+    return false
+  end
+  player:Give(name, true)
+  return player:HasWeapon(name)
+end
+
+---Takes a weapon from a player. One they do not have is left alone.
+---@param player Player The player.
+---@param name string The class.
+function server.strip_weapon(player, name)
+  if IsValid(player) then
+    player:StripWeapon(name)
+  end
+end
+
+---Gives a player who spawned what their character has equipped, on the
+---next tick, once the gamemode's own loadout (which may strip weapons) has
+---run.
+---@param player Player The player.
+function server.spawned(player)
+  timer.Simple(0, function()
+    if IsValid(player) then
+      core.weapons.spawned(player)
+    end
+  end)
+end
+
 ---Removes every entity a previous start placed and did not remove (a Lua
 ---refresh starts the adapter again on the same map), recognised by its tag,
 ---before the core places anything.
@@ -276,6 +329,16 @@ local platform = {
     end,
     despawn = function(ref)
       server.despawn(ref)
+    end,
+    -- Weapons (L3): SWEP classes, given and taken on the server.
+    weapon = function(spec)
+      return server.weapon(spec)
+    end,
+    give_weapon = function(player, name)
+      return server.give_weapon(player, name)
+    end,
+    strip_weapon = function(player, name)
+      server.strip_weapon(player, name)
     end,
     -- The UI addons show (J10), which the client builds in Derma
     -- (`addon_ui.lua`).
@@ -365,6 +428,9 @@ local function start()
   end)
   hook.Add("PlayerSpawn", "rpf.lock", function(player)
     lock.respawned(player)
+  end)
+  hook.Add("PlayerSpawn", "rpf.weapons", function(player)
+    server.spawned(player)
   end)
   for _, name in ipairs(lock.HOOKS) do
     hook.Add(name, "rpf.lock", lock.refuse)

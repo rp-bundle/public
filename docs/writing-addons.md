@@ -1324,6 +1324,32 @@ local ok, status, why = rpf.money.debit(player, "bank", 500, "Gold badge", op, f
 end)
 ```
 
+### Weapons
+
+An item staff made a weapon in the panel (the engine weapon it gives on
+FiveM and on Gmod) is equipped with `rpf.inventory.equip`. The engine gives
+the character that weapon now, and again after every respawn, reconnect
+and restart, until you take it off or the character stops carrying the
+item: dropping it, giving it away or selling it takes the weapon back by
+itself.
+
+```lua
+local ok, _, why = rpf.inventory.equip(player, "pistol")
+if not ok then
+  -- "no_item": they carry none; "not_a_weapon": the item gives no weapon
+  -- on this engine; "unknown_weapon": the engine has no such weapon
+  rpf.ui.notify(player, { text = "You can't draw that (" .. why .. ")." })
+end
+rpf.inventory.unequip(player, "pistol")
+local equipped = rpf.inventory.equipped(player) -- { "pistol", ... }
+```
+
+Equipping is not a payment, so it takes no op id: equipping twice is
+equipping once. At most 16 items are equipped at once. Ask
+`rpf.inventory.supports("equip")` first: an engine without the weapon
+capabilities, or a companion server whose bridge does not offer it, says
+no. A weapon comes without ammo for now.
+
 ### Selling, buying back, trading: exchanges
 
 `rpf.commerce.exchange` moves money and items together, and your change to

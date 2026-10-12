@@ -416,8 +416,9 @@ local EMPLOYMENT = object({
   { "job", nullable(JOB_REF) },
 })
 
----A character as the portal hands it over. `job` (D7) is left out for none
----(see `optional`).
+---A character as the portal hands it over. `job` (D7) is left out for none,
+---and `weapons` (L3), the slugs of the items whose weapons it has equipped,
+---when it has none (see `optional`).
 local CHARACTER = object({
   { "id", UUID },
   { "server_id", UUID },
@@ -426,6 +427,7 @@ local CHARACTER = object({
   { "last_name", STRING },
   { "gender", GENDER },
   { "job", optional(JOB_REF) },
+  { "weapons", optional(array_of(STRING)) },
 })
 
 ---`IVector2`: a grid cell or a footprint.
@@ -799,7 +801,8 @@ local TRANSACTION = object({
 
 ---`RecordReport`: a record's whole state as its holder has it, in a
 ---`resync` or a `release`. This core always sends a character's
----`employment`; the portal defaults it for a core from before D7.
+---`employment` and `weapons` (L3, `[]` for none); the portal keeps what it
+---has for a core from before either.
 local RECORD_REPORT = tagged("kind", {
   character = {
     { "id", UUID },
@@ -808,6 +811,7 @@ local RECORD_REPORT = tagged("kind", {
     { "last_name", STRING },
     { "gender", GENDER },
     { "employment", nullable(EMPLOYMENT) },
+    { "weapons", nullable(array_of(STRING)) },
   },
   account = {
     { "id", UUID },
@@ -828,7 +832,7 @@ local RECORD_REPORT = tagged("kind", {
 
 ---`StateChange`: what changed in one record since `base_revision`. A
 ---character field left null is unchanged, `employment` included: no job is
----`{ job = null }`.
+---`{ job = null }`, and no weapon equipped `weapons = []` (L3).
 local STATE_CHANGE = tagged("kind", {
   character = {
     { "id", UUID },
@@ -837,6 +841,7 @@ local STATE_CHANGE = tagged("kind", {
     { "last_name", nullable(STRING) },
     { "gender", nullable(GENDER) },
     { "employment", nullable(EMPLOYMENT) },
+    { "weapons", nullable(array_of(STRING)) },
   },
   account = {
     { "id", UUID },

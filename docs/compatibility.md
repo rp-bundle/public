@@ -26,7 +26,7 @@ Two numbers are involved, and only one decides compatibility.
 | Protocol | First release | Served by portal releases | Status |
 |---|---|---|---|
 | 1 | 0.1.0 | 0.1.0 only | Dropped before 0.2.0: no released game-side build ever spoke it, since 0.1.0 had no FiveM or Gmod adapter, and the repository owner confirmed nobody runs it (2026-10-09) |
-| 2 | Unreleased | The next release and later | Current, unreleased, and the oldest served: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), the `domain_external` reject code (K1), the `referenced` reject code (a deletion refused because another record refers to it), in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`), an item's `image` hash in the config snapshot (P3), an item's `weapon` (L3), the profile (K1) in `hello` and `welcome`, and the `report_unknown_ops` notice (#143) |
+| 2 | Unreleased | The next release and later | Current, unreleased, and the oldest served: adds `Restarting` (H1), a character's job (D7), in-game staff (F9: `link_player`, `staff_action`, `player_linked`, `staff_permissions`), the `suspended` reject code (H5), the `domain_external` reject code (K1), the `referenced` reject code (a deletion refused because another record refers to it), in-game config editing (E6: `config_changed`, `config_change_applied`, `config_change_discarded`, and `config_changes.json`), an item's `image` hash in the config snapshot (P3), an item's `weapon` and a character's equipped `weapons` (L3), the profile (K1) in `hello` and `welcome`, and the `report_unknown_ops` notice (#143) |
 
 A row is added when a release ships a new protocol version, and a version's
 last portal release is filled in when one drops it. `CHANGELOG.md` names the
@@ -328,6 +328,8 @@ receiver takes the default (empty, `false` or `None`).
 | `rank`, `salary` | A job in `employer_jobs` | `0`, `None` | Added by D7; `salary` is omitted for an unpaid job |
 | `job` | A character in `held` and `character_created` | `None` | Omitted when the character has no job, so a frame for one re-encodes as it did before D7 |
 | `employment` | A character's `StateChange` and `RecordReport` (`state_changed`, `resync`, `release`) | `None`: says nothing of the job | A field added by D7 to frames a game server sends, which a core from before it leaves out; `{"job": null}` is what clears a job |
+| `weapons` | A character in `held` and `character_created` | Empty | Omitted when the character has no weapon equipped (L3), so a frame for one re-encodes as it did before |
+| `weapons` | A character's `StateChange` and `RecordReport` | `None`: says nothing of its weapons | A field added by L3 to frames a game server sends; `[]` is what says none are equipped |
 | `base` | An item in `items` | `None` | Omitted when the item has no base |
 | `image` | An item in `items` | `None` | Omitted when the item has no image; added by P3, and ignored by an older core, which keeps the snapshot whole |
 | `weapon` | An item in `items` | `None` | Omitted when the item is not a weapon; added by L3 |

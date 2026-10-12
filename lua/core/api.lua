@@ -323,6 +323,15 @@ if facade then
     use = function(player, stack, op_id)
       return facade.use(player, stack, op_id)
     end,
+    equip = function(player, item)
+      return rpf.weapons.equip(player, item)
+    end,
+    unequip = function(player, item)
+      return rpf.weapons.unequip(player, item)
+    end,
+    equipped = function(player)
+      return rpf.weapons.equipped(player)
+    end,
     supports = function(call)
       return facade.supports("inventory", call)
     end,
@@ -394,6 +403,11 @@ local ui = rpf.ui
 ---@return table<string, boolean> supported By name.
 surface.capabilities = function()
   local out = world and world.capabilities() or {}
+  if rpf.weapons and rpf.weapons.capabilities and rpf.records then
+    for name, supported in pairs(rpf.weapons.capabilities()) do
+      out[name] = supported
+    end
+  end
   if ui then
     for name, supported in pairs(ui.capabilities()) do
       out[name] = supported

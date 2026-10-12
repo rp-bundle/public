@@ -12,7 +12,8 @@
       "gender": "female",
       "employment": {
         "job": null
-      }
+      },
+      "weapons": []
     },
     {
       "kind": "account",

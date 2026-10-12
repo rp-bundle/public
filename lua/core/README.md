@@ -1926,6 +1926,33 @@ Events, reserved: `jobs.changed(character_id, job, previous)` (each
 `jobs.paid(character_id, amount, client_id)`, `client_id` being the ledger
 entry's.
 
+### Weapons (`rpf.weapons`, L3)
+
+Items that equip as the engine's weapons. **What is equipped is part of
+the character**, a held record: the slugs of the items, set through
+`records.set_weapons` and reported with the character as `weapons` (`[]` for
+none, never null). Nothing here keeps a copy of the list. **What the engine
+was given is memory only**, per player and connection, so a weapon is taken
+back exactly as it was given.
+
+| Call | What |
+|---|---|
+| `equip(handle, item)` / `unequip(handle, item)` | What `rpf.api.inventory.equip` and `unequip` call: `true`, or `nil, "refused", reason` (`unsupported`, `not_logged_in`, `no_character`, `not_a_weapon`, `unknown_weapon`, `no_item`, `too_many`) |
+| `equipped(handle)` | The slugs, or nil and why |
+| `spawned(handle)` | The adapter says a player respawned, which empties their hands: what is equipped is given again. Only a player `active` with a character in play gets anything |
+| `respawned()` | The client half: tells the server about a respawn only the client saw (FiveM), with `handoff.SPAWNED` |
+| `supported()`, `capabilities()` | Whether the adapter declares `weapon`, `give_weapon` and `strip_weapon`, which `rpf.capabilities()` reports |
+
+It brings each player in play in line with their character whenever their
+character goes into play, their containers change (`records.contents`),
+records come or go, or a config arrives: an equipped item the character
+carries no unit of, in any held container and whatever its data, comes off
+the list and its weapon is taken back; the weapons of the rest are given
+where they are missing. A weapon the engine does not know is logged once and
+not given; an item that stops being a weapon in config stays equipped and is
+given again if it comes back. Putting a character away takes back what it
+was given. On a companion server equipping is the bridge's (#177, next).
+
 ### The login (`rpf.join`, `rpf.handoff`, `rpf.auth`)
 
 The in-game leg of P1 and C6. The client logs in to the portal directly, so

@@ -169,6 +169,12 @@ function support.fake_platform(opts)
 
   p.positions = {}
   p.units_per_metre = 1
+  -- Weapons (L3), as the mock platform has them: an item's FiveM name, known
+  -- unless listed in `unknown_weapons`; each player's weapons a set; a
+  -- `bodiless` player has nothing to be given to.
+  p.weapons = {}
+  p.unknown_weapons = {}
+  p.bodiless = {}
   p.capabilities = {
     position = function(player)
       return p.positions[player]
@@ -178,6 +184,26 @@ function support.fake_platform(opts)
     entity = false,
     spawn = false,
     despawn = false,
+    weapon = function(spec)
+      local name = spec.fivem
+      if type(name) ~= "string" then
+        return nil
+      end
+      return name, not p.unknown_weapons[name]
+    end,
+    give_weapon = function(player, name)
+      if p.bodiless[player] then
+        return false
+      end
+      p.weapons[player] = p.weapons[player] or {}
+      p.weapons[player][name] = true
+      return true
+    end,
+    strip_weapon = function(player, name)
+      if p.weapons[player] then
+        p.weapons[player][name] = nil
+      end
+    end,
     notify = true,
     menu = true,
     input = true,

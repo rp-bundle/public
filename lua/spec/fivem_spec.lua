@@ -201,7 +201,7 @@ describe("the FiveM adapter", function()
       for _, file in ipairs(rpf.files.server) do
         expected[#expected + 1] = "core/" .. file
       end
-      for _, file in ipairs({ "shared.lua", "ox.lua", "ws.lua", "lock.lua", "server.lua" }) do
+      for _, file in ipairs({ "shared.lua", "ox.lua", "ws.lua", "lock.lua", "weapons.lua", "server.lua" }) do
         expected[#expected + 1] = file
       end
       assert.are.same(expected, scripts)

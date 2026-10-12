@@ -169,6 +169,8 @@ local GLOBALS = {
   "Angle",
   "Material",
   "game",
+  "list",
+  "weapons",
 }
 
 ---The Gmod adapter's part framing (`lua/platform/gmod/messages.lua`): part
@@ -622,6 +624,28 @@ function gmod.install(side, host, options)
     end
     return math.floor(host.now() / 1000)
   end)
+  -- The weapons Gmod has (L3): the HL2 ones `game_hl2.lua` lists, in
+  -- `list.Get("Weapon")`, and SWEPs an addon registered, in
+  -- `weapons.GetStored`. The harness adds to `known_weapons` (the list)
+  -- and `stored_weapons`.
+  world.known_weapons = { weapon_pistol = true, weapon_crowbar = true, weapon_357 = true }
+  world.stored_weapons = {}
+  _G.list = {
+    Get = function(name)
+      local out = {}
+      if name == "Weapon" then
+        for class in pairs(world.known_weapons) do
+          out[class] = { ClassName = class }
+        end
+      end
+      return out
+    end,
+  }
+  _G.weapons = {
+    GetStored = function(class)
+      return world.stored_weapons[class] and { ClassName = class } or nil
+    end,
+  }
   _G.timer = {
     Simple = function(delay, fn)
       world.seq = world.seq + 1
@@ -851,6 +875,31 @@ function gmod.install(side, host, options)
   ---@return table pos `{ x, y, z }`.
   function Player:GetPos()
     return self.pos or { x = 0, y = 0, z = 0 }
+  end
+  -- Weapons (L3): `Give` makes a weapon only of a class the engine has
+  -- (`known_weapons` or `stored_weapons`) for a player who is alive, as
+  -- Gmod does, and answers NULL for one they already hold.
+  function Player:Alive()
+    return not self.dead
+  end
+  function Player:Give(class, no_ammo)
+    self.weapons = self.weapons or {}
+    self.gave_ammo = self.gave_ammo or {}
+    local exists = world.known_weapons[class] or world.stored_weapons[class]
+    if self.dead or not exists or self.weapons[class] then
+      return nil
+    end
+    self.weapons[class] = true
+    self.gave_ammo[class] = not no_ammo
+    return { class = class }
+  end
+  function Player:HasWeapon(class)
+    return self.weapons ~= nil and self.weapons[class] == true
+  end
+  function Player:StripWeapon(class)
+    if self.weapons then
+      self.weapons[class] = nil
+    end
   end
   world.player_meta = Player
 

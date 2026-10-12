@@ -69,11 +69,13 @@ server_scripts({
   "core/actions.lua",
   "core/dialogs.lua",
   "core/ownership.lua",
+  "core/weapons.lua",
   "core/api.lua",
   "shared.lua",
   "ox.lua",
   "ws.lua",
   "lock.lua",
+  "weapons.lua",
   "server.lua",
 })
 
@@ -91,6 +93,7 @@ client_scripts({
   "core/interactions.lua",
   "core/ui.lua",
   "core/placement.lua",
+  "core/weapons.lua",
   "core/api.lua",
   "shared.lua",
   "ox.lua",

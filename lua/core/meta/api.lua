@@ -753,9 +753,46 @@ function Inventory.usable(item) end
 ---@return string? message For `declined`, the handler's sentence for the player, if it gave one. A repeat of the op id answers `declined` without it.
 function Inventory.use(player, stack, op_id) end
 
+---Equips an item the player's character carries (L3): the weapon the
+---catalog names for this engine is given now, and again after every
+---respawn, reconnect and restart, until the item is taken off or the
+---character stops carrying any of it (dropped, given away, sold), which
+---takes the weapon back. Equipping one already equipped answers `true`.
+---Ammo is not given yet.
+---
+---```lua
+---local ok, _, reason = rpf.api.inventory.equip(player, "pistol")
+---if not ok then
+---  rpf.api.ui.notify(player, { text = "You can't draw that: " .. reason })
+---end
+---```
+---@param player any The engine's handle.
+---@param item string The item's slug.
+---@return boolean? ok True once equipped.
+---@return "refused"? status Why not: nothing changed.
+---@return string? reason `unsupported` (this engine cannot, or the server's framework owns its characters or items), `not_logged_in`, `no_character`, `not_a_weapon` (the catalog names no weapon for this engine), `unknown_weapon` (the engine does not know the one it names), `no_item` (the character carries none), `too_many` (16 already).
+function Inventory.equip(player, item) end
+
+---Takes an item off: its weapon is taken back. Taking off one not equipped
+---answers `true`.
+---@param player any The engine's handle.
+---@param item string The item's slug.
+---@return boolean? ok True once it is not equipped.
+---@return "refused"? status Why not.
+---@return string? reason `unsupported`, `not_logged_in`, `no_character`.
+function Inventory.unequip(player, item) end
+
+---The items a player's character has equipped, in the order they were.
+---@param player any The engine's handle.
+---@return string[]? items The slugs.
+---@return rpf.FacadeRead? err Why not.
+function Inventory.equipped(player) end
+
 ---Whether a call works on this server: `containers`, `move`, `discard`,
----`hand` and `use` only where RPF owns items, not through a bridge.
----@param call string `count`, `give`, `take`, `containers`, `move`, `discard`, `hand` or `use`.
+---`hand` and `use` only where RPF owns items, not through a bridge, and
+---`equip`, `unequip` and `equipped` only where RPF owns items and
+---characters and the engine can give weapons.
+---@param call string `count`, `give`, `take`, `containers`, `move`, `discard`, `hand`, `use`, `equip`, `unequip` or `equipped`.
 ---@return boolean supported True if it does.
 function Inventory.supports(call) end
 
