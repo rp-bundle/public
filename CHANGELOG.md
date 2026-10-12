@@ -25,13 +25,20 @@ editing (E6: `config_changed`, `config_change_applied` and
 record refers to), an
 item's `image` hash in the config snapshot (P3), and the profile (K1) in
 `hello` (optional: a core that leaves it out runs native) and `welcome`,
-the `report_unknown_ops` notice (#274), and the map the game server runs
-in `hello` (#369; `default` when left out). A
+the `report_unknown_ops` notice (#274), the map the game server runs
+in `hello` (#369; `default` when left out), and the config snapshot's
+`dialogs` (#371; empty when left out). A
 message newer than a connection's protocol is refused `malformed` at the
 socket.
 
 ### Added
 
+- Dialog trees (#371): what a server's NPCs say and the choices they
+  offer, stored per server (`dialogs`), checked against the actions the
+  server's installed addons declare, and pushed whole in the config
+  snapshot's new `dialogs` section, which the core reads as
+  `rpf.config.dialog(slug)`. Writes are audited `dialog.create`,
+  `dialog.edit` and `dialog.delete`.
 - `rpf.api.ui.menu` takes `text`, up to 1 KiB read above the options and
   never picked (#371): an NPC's line in a dialog. A read-only first entry
   of ox_lib's context menu on FiveM, a wrapped label on Gmod.
@@ -612,6 +619,7 @@ socket.
 
 ### Database
 
+- `20261012055417_dialogs` is additive: the `dialogs` table (#371).
 - `20261010083508_domain_authority` is additive: `servers.effective_domains`,
   defaulted to native, and a nullable `archived_at` on characters, accounts
   and containers.

@@ -23,8 +23,8 @@
 ---**The snapshot's shape is `protocol::ConfigSnapshot`.** `settings` is an
 ---object keyed by setting name, every key present. `items`, `item_bases`
 ---(E3) and `employers` (E4) are arrays of objects keyed by `slug`, and
----`paying_accounts` (#169) one keyed by `name`, and `addons` (J2) one keyed
----by `namespace`;
+---`paying_accounts` (#169) one keyed by `name`, `addons` (J2) one keyed
+---by `namespace`, and `dialogs` (L1) one keyed by `slug`;
 ---`employer_departments` and `employer_jobs` (E4) are arrays of objects
 ---keyed by `employer` and `slug` together, because their slugs are unique
 ---only within their employer; and `item_defaults` is one object. There is
@@ -136,6 +136,7 @@ config.SECTIONS = {
   employer_jobs = { kind = "list", key = "slug", within = "employer" },
   paying_accounts = { kind = "list", key = "name" },
   addons = { kind = "list", key = "namespace" },
+  dialogs = { kind = "list", key = "slug" },
 }
 
 ---The index key of an entry named within a parent: both names, joined by a
@@ -772,6 +773,17 @@ function config.addon_namespaces()
   end
   table.sort(out)
   return out
+end
+
+---A dialog tree on this server (L1, #371), by slug, as staff built it in
+---the panel: `slug`, `title`, `start`, and `nodes`, each with its `key`,
+---`line` and `choices` (`label`, `conditions`, `does`). `rpf.dialogs` runs
+---it; nothing here checks it beyond its slug, since the portal checked it
+---whole before it was stored.
+---@param slug string The dialog's slug.
+---@return table? dialog A copy, or nil if the config has none by that slug.
+function config.dialog(slug)
+  return lookup("dialogs", slug)
 end
 
 ---A setting's effective value, by key.
