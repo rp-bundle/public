@@ -10,7 +10,7 @@ conformance fixture too (`lua/spec/conformance_acme_notes_spec.lua`,
 
 | File | What |
 |---|---|
-| `manifest.lua` | The manifest: one live type, `acme_notes.note`, placed in the world as an object with a model per engine, and the `moderate` permission. Schema 2: 1.1.0 added `colour` with a default |
+| `manifest.lua` | The manifest: one live type, `acme_notes.note`, placed in the world as an object with a model per engine, and the `moderate` permission. On the map it was pinned on (`map`, set with `rpf.world.map()`). Schema 3: 1.1.0 added `colour` with a default, and 1.2.0 `map`, null (every map) for an older note |
 | `server.lua` | Registers the addon; on start, its interactions: `acme_notes.pin` (no target: the note goes where the player stands), `acme_notes.read` and `acme_notes.take_down` (aimed at a note, within two metres), and `acme_notes.remove`, for linked staff holding `addon.acme_notes.moderate`. A take-down names the revision it read, and on `stale` reads the note again and checks again |
 | `client.lua` | Asks the server to pin a note, from the command line or an `rpf.ui.input` dialog, and tells the player how it went |
 | `fivem/` | The FiveM resource's manifest and entry points |

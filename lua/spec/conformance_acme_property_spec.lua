@@ -12,7 +12,9 @@
 -- property; the owner then locks and unlocks its doors. The cases are the
 -- issue's: a purchase, the refusals that move nothing, a retry under the
 -- same op id, the bank out of reach, staff assigning the property in the
--- portal, disabling and enabling the addon, an upgrade, and a restart.
+-- portal, disabling and enabling the addon, an upgrade, and a restart. A lot
+-- and its doors are on the map staff put them on, or on every map when they
+-- named none (#369).
 
 local conformance = require("spec.support.conformance")
 local support = require("spec.support")
@@ -46,6 +48,18 @@ local function load_example(world, edit)
   end
   assert(property.start_server(world.api))
   return property
+end
+
+---Release 1.0.0: schema 1, before lots and doors could be on a map.
+---@param property acme_property The example's table.
+local function release_one(property)
+  local m = property.MANIFEST
+  m.version = "1.0.0"
+  for _, def in pairs(m.types) do
+    def.schema = 1
+    def.fields.map = nil
+    def.world.map = nil
+  end
 end
 
 ---Where the door is: five metres east of the middle of the lot, on it.
@@ -155,11 +169,12 @@ end
 ---the middle of the lot.
 ---@param world spec.ConformanceWorld The world.
 ---@param fields table? As for `seed`.
+---@param edit fun(property: acme_property)? As for `load_example`.
 ---@return acme_property example The example.
 ---@return any handle Jane's engine handle.
-local function on_the_lot(world, fields)
+local function on_the_lot(world, fields, edit)
   seed(world, fields)
-  local example = load_example(world)
+  local example = load_example(world, edit)
   world:connect()
   install(world, example)
   assert.are.equal("active", (world.api.addons.state("acme_property")))
@@ -537,8 +552,8 @@ conformance.run(busted, "the acme_property example", {
       world:settle()
       local example = load_example(world, function(loaded)
         local manifest = loaded.MANIFEST
-        manifest.version = "1.1.0"
-        manifest.types.property.schema = 2
+        manifest.version = "1.2.0"
+        manifest.types.property.schema = 3
         manifest.types.property.fields.garden = { type = "boolean", default = false, title = "Has a garden" }
       end)
       install(world, example)
@@ -548,6 +563,40 @@ conformance.run(busted, "the acme_property example", {
       local spot = door_spot(world)
       world.place(1, { x = spot.x, y = spot.y + world:units(1), z = spot.z })
       assert.is_true(assert(aim(world, "acme_property.door", DOOR)).ok, "and its doors are hers")
+    end,
+  },
+  {
+    name = "offers a lot only on the map staff put it on, and on every map when they named none",
+    run = function(world)
+      local here = assert(world.api.world.map())
+      on_the_lot(world, { map = "rp_elsewhere" })
+      local refused = assert(aim(world, "acme_property.buy", PROPERTY))
+      assert.are.same({ false, "not_found" }, { refused.ok, refused.reason }, "the lot of another map")
+      assert.is_nil(menu_offers(world)["acme_property.buy"], "and the menu does not offer it")
+      assert.are.equal("applied", staff_edit(world, { map = here }), "staff move it to this map")
+      assert.is_true(menu_offers(world)["acme_property.buy"], "offered there")
+      assert.are.equal("applied", staff_edit(world, { map = world.core.json.null }), "or to every map")
+      assert.is_true(menu_offers(world)["acme_property.buy"], "offered on every map")
+      assert.is_true(assert(aim(world, "acme_property.buy", PROPERTY)).ok)
+    end,
+  },
+  {
+    name = "keeps every property and door through the upgrade that added map, which an older lot is on every map for",
+    run = function(world)
+      on_the_lot(world, nil, release_one)
+      buy(world)
+      world:settle()
+      local before = assert(world.api.records.get("acme_property.property", PROPERTY))
+      assert.is_nil(before.fields.map, "release 1.0.0 has no map")
+      -- Release 1.1.0 replaces the code, and staff install it.
+      local example = load_example(world)
+      install(world, example)
+      assert.are.equal("active", (world.api.addons.state("acme_property")))
+      local property = assert(world.api.records.get("acme_property.property", PROPERTY))
+      assert.are.same({ PLAYER, false }, { property.fields.holder, property.fields.map or false }, "kept, and on no map")
+      local spot = door_spot(world)
+      world.place(1, { x = spot.x, y = spot.y + world:units(1), z = spot.z })
+      assert.is_true(assert(aim(world, "acme_property.door", DOOR)).ok, "and its doors are hers, on every map")
     end,
   },
   {

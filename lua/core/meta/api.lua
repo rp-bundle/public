@@ -1178,6 +1178,19 @@ function Ui.progress(opts, callback) end
 ---@field list string[]? The fields the portal's list shows.
 ---@field actions table<string, string|false>? `view`, `create`, `edit`, `delete`, each the flag staff need, or false to offer none.
 ---@field limit integer? The most records of it on a server, at most 50000.
+---@field world rpf.AddonWorld? Which of its fields place its records in the game world (J4).
+
+---Which of a type's fields say where its records are in the game world, by
+---the part each plays. Every value names a field of the type.
+---@class rpf.AddonWorld
+---@field kind "ped"|"object"|"point"|"zone" What is placed: a ped or object by the game server, a point nothing, a zone a sphere.
+---@field position string A `vector3` field: where it is.
+---@field heading string? A number field: which way it faces, in degrees.
+---@field radius string? A number field a zone needs: its size, in metres.
+---@field bucket string? An integer field: the routing bucket, 0 where unnamed.
+---@field model string? An `engine = true` string or json field a ped or object needs: its model.
+---@field visible string? A boolean field: false hides the record from the world.
+---@field map string? An indexed, nullable string field: the map it is on, null for every map (#369).
 
 ---One field of a type: its kind and its bounds.
 ---@class rpf.AddonField

@@ -29,7 +29,7 @@ acme_shop.MAX_STOCK = 1000000
 
 acme_shop.MANIFEST = {
   namespace = "acme_shop",
-  version = "1.0.0",
+  version = "1.1.0",
   api = 1,
   title = "Shops",
   permissions = { restock = "Stock shops: create, change and remove stock" },
@@ -37,7 +37,10 @@ acme_shop.MANIFEST = {
     -- A shopkeeper staff place in the portal (J4): the server spawns one
     -- for each counter shown, and a player aims the shop at it.
     counter = {
-      schema = 1,
+      -- Schema 1 had no `map`. Adding it as a nullable field is a compatible
+      -- change: 1.1.0 installs over 1.0.0 with every counter kept, and an
+      -- older counter, which has no map, stays on every map.
+      schema = 2,
       authority = "config",
       title = "Counter",
       fields = {
@@ -53,6 +56,10 @@ acme_shop.MANIFEST = {
           help = 'One model per engine: { "fivem": "mp_m_shopkeep_01", "gmod": "models/Humans/Group01/male_02.mdl" }',
         },
         shown = { type = "boolean", default = true, title = "Open" },
+        -- Staff say which map a counter stands on: a shopkeeper placed for
+        -- `rp_downtown` is not spawned at the same coordinates on
+        -- `rp_evocity`. Blank is every map.
+        map = { type = "string", max_len = 64, index = true, nullable = true, title = "Map", help = "The map it stands on; blank for every map" },
         account = {
           type = "string",
           max_len = 32,
@@ -63,7 +70,7 @@ acme_shop.MANIFEST = {
         },
       },
       list = { "name", "account", "shown" },
-      world = { kind = "ped", position = "spot", heading = "heading", model = "model", visible = "shown" },
+      world = { kind = "ped", position = "spot", heading = "heading", model = "model", visible = "shown", map = "map" },
     },
     -- What a counter sells, and at what price: staff's, like every price.
     listing = {

@@ -13,7 +13,7 @@ is held.
 
 | File | What |
 |---|---|
-| `manifest.lua` | The manifest: one live type, `acme_garden.plant`, held by the server (`hold = "server"`) and placed in the world as an object (`world`), at schema 2; and the `tend` permission |
+| `manifest.lua` | The manifest: one live type, `acme_garden.plant`, held by the server (`hold = "server"`) and placed in the world as an object (`world`), on the map it was sown on (`map`, set with `rpf.world.map()`), at schema 3; and the `tend` permission |
 | `server.lua` | Registers the addon; on start, `acme_garden.sow`, and `water`, `harvest` and `uproot` aimed at a plant; and a tick every minute that grows each plant by the time it kept in its own fields |
 | `client.lua` | Asks the server to sow, and tells the player how it went |
 | `fivem/` | The FiveM resource's manifest and entry points |
@@ -46,7 +46,8 @@ is held.
 - **Schema upgrade.** Release 1.0.0 had no `water`. 1.1.0 adds it with a
   default, which is a compatible change, so staff install it over 1.0.0 and
   every plant keeps its record, reading as full until its next tick writes
-  it at schema 2.
+  it at schema 2. 1.2.0 adds `map` the same way: an older plant has none,
+  so it stays on every map.
 
 Every release's addon kit (`rpf-addon-kit-<version>.zip`, on the release
 page) has it laid out already: `fivem/[rpf-examples]/acme_garden` is the FiveM

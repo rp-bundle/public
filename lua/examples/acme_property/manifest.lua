@@ -27,7 +27,7 @@ acme_property.DOOR = "acme_property.door"
 
 acme_property.MANIFEST = {
   namespace = "acme_property",
-  version = "1.0.0",
+  version = "1.1.0",
   api = 1,
   title = "Properties",
   permissions = { manage = "Create, change and remove properties and their doors, and assign their owners" },
@@ -38,7 +38,10 @@ acme_property.MANIFEST = {
     -- `live`, held by the server whether or not its owner is on (J6), and a
     -- staff edit of it goes to the server as a command while it holds it.
     property = {
-      schema = 1,
+      -- Schema 1 had no `map`. Adding it as a nullable field is a compatible
+      -- change: 1.1.0 installs over 1.0.0 with every property kept, and an
+      -- older property, which has no map, stays on every map.
+      schema = 2,
       authority = "live",
       -- The server's, not the buyer's: a record's owner never changes, and
       -- a property outlives whoever bought it. Who owns it in play is
@@ -58,6 +61,9 @@ acme_property.MANIFEST = {
           help = "How far from the middle the lot reaches, in metres",
         },
         bucket = { type = "integer", min = 0, max = 65535, default = 0, title = "Routing bucket" },
+        -- Staff say which map a lot is on: a lot on `rp_downtown` is not for
+        -- sale at the same coordinates on `rp_evocity`. Blank is every map.
+        map = { type = "string", max_len = 64, index = true, nullable = true, title = "Map", help = "The map the lot is on; blank for every map" },
         price = { type = "integer", min = 1, max = 1000000000, required = true, title = "Price" },
         account = {
           type = "string",
@@ -82,13 +88,14 @@ acme_property.MANIFEST = {
       list = { "name", "price", "for_sale", "holder" },
       actions = { create = "manage", edit = "manage", delete = "manage" },
       limit = 1000,
-      world = { kind = "zone", position = "spot", radius = "radius", bucket = "bucket" },
+      world = { kind = "zone", position = "spot", radius = "radius", bucket = "bucket", map = "map" },
     },
     -- A door of a property: a point staff place (nothing is spawned), which
     -- the owner locks and unlocks. Staff's, like every placement, so
     -- `config`; its state is the property's `locked`.
     door = {
-      schema = 1,
+      -- Schema 1 had no `map`; see the property.
+      schema = 2,
       authority = "config",
       title = "Door",
       fields = {
@@ -96,10 +103,11 @@ acme_property.MANIFEST = {
         label = { type = "string", max_len = 48, default = "Front door", title = "Label" },
         spot = { type = "vector3", required = true, title = "Where it is" },
         bucket = { type = "integer", min = 0, max = 65535, default = 0, title = "Routing bucket" },
+        map = { type = "string", max_len = 64, index = true, nullable = true, title = "Map", help = "The map the door is on; blank for every map" },
       },
       list = { "label", "property" },
       actions = { create = "manage", edit = "manage", delete = "manage" },
-      world = { kind = "point", position = "spot", bucket = "bucket" },
+      world = { kind = "point", position = "spot", bucket = "bucket", map = "map" },
     },
   },
 }

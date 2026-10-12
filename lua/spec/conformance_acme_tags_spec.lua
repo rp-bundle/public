@@ -10,7 +10,9 @@
 -- client calls, keeps its records across a restart, and fades them on a
 -- timer, through the public API alone. Its `mine` and `scrub` interactions
 -- answer with data and resolve a client's id inside the player's scope
--- (J10), which a hostile client probes here on every engine.
+-- (J10), which a hostile client probes here on every engine. A tag is on the
+-- map it was sprayed on (#369), and the upgrade that added that keeps every
+-- older tag, which stays on every map.
 
 local conformance = require("spec.support.conformance")
 local support = require("spec.support")
@@ -25,19 +27,46 @@ local OLD_TAG = "0000000c-0000-4000-8000-00000000000c"
 ---Loads the example's server half as an engine entry point does, and
 ---starts it on the world's API.
 ---@param world spec.ConformanceWorld The world.
-local function load_example(world)
+---@param edit fun(tags: acme_tags)? Changes before it starts, such as an older release's manifest.
+local function load_example(world, edit)
   rawset(_G, "acme_tags", nil)
   dofile(support.path("lua/examples/acme_tags/manifest.lua"))
   dofile(support.path("lua/examples/acme_tags/server.lua"))
-  assert(rawget(_G, "acme_tags").start_server(world.api))
+  local tags = rawget(_G, "acme_tags")
+  if edit then
+    edit(tags)
+  end
+  assert(tags.start_server(world.api))
+end
+
+---Release 1.0.0: schema 1, before tags were on a map.
+---@param tags acme_tags The example's table.
+local function release_one(tags)
+  local m = tags.MANIFEST
+  m.version = "1.0.0"
+  m.types.tag.schema = 1
+  m.types.tag.fields.map = nil
+  m.types.tag.world.map = nil
+  -- 1.0.0's code knew nothing of maps either: its tags carry none.
+  local spray = tags.spray
+  tags.spray = function(rpf, player, payload)
+    local records = setmetatable({
+      create = function(type_, fields, opts)
+        fields.map = nil
+        return rpf.records.create(type_, fields, opts)
+      end,
+    }, { __index = rpf.records })
+    return spray(setmetatable({ records = records }, { __index = rpf }), player, payload)
+  end
 end
 
 ---Connects, starts the example, has staff install it, and logs a player in
 ---standing at a wall.
 ---@param world spec.ConformanceWorld The world.
+---@param edit fun(tags: acme_tags)? As for `load_example`.
 ---@return integer player The harness's number for the player.
-local function sprayable(world)
-  load_example(world)
+local function sprayable(world, edit)
+  load_example(world, edit)
   world:connect()
   world:install({ conformance.installed(world.core, rawget(_G, "acme_tags").MANIFEST) })
   world:pump()
@@ -126,8 +155,56 @@ conformance.run(busted, "the acme_tags example", {
       assert.are.equal("hello", tags[1].fields.text)
       assert.are.same({ x = 10, y = 20, z = 30 }, tags[1].fields.spot)
       assert.are.same({ kind = "player", id = PLAYER }, tags[1].owner)
+      assert.are.equal(world.api.world.map(), tags[1].fields.map, "on the map it was sprayed on")
       world:settle()
       assert.are.equal("hello", world.portal.records[tags[1].id].fields.text)
+    end,
+  },
+  {
+    name = "reads a tag on its map or on every map, and refuses one of another map as it refuses a missing one (#369)",
+    run = function(world)
+      local player = sprayable(world)
+      world:activate(world.core.players.by_player_id(PLAYER).handle)
+      local function tag(text, map)
+        return assert(world.api.records.create("acme_tags.tag", {
+          text = text,
+          spot = { x = 10, y = 20, z = 30 },
+          map = map,
+          fades_at = world.api.time.now() + 60000,
+        }, { owner = { kind = "player", id = PLAYER } }))
+      end
+      local here = tag("here", world.api.world.map())
+      local everywhere = tag("everywhere", nil)
+      local elsewhere = tag("elsewhere", "rp_elsewhere")
+      for _, case in ipairs({ { here, true }, { everywhere, true }, { elsewhere, false } }) do
+        local read = assert(interact(world, player, "acme_tags.read", { target = { id = case[1].id } }))
+        if case[2] then
+          assert.is_true(read.ok, case[1].fields.text .. ": " .. tostring(read.reason))
+        else
+          assert.are.same({ false, "not_found" }, { read.ok, read.reason }, case[1].fields.text)
+        end
+      end
+    end,
+  },
+  {
+    name = "keeps its tags through the upgrade that added map, which an older tag is on every map for",
+    run = function(world)
+      local player = sprayable(world, release_one)
+      assert.is_true(assert(interact(world, player, "acme_tags.spray", { text = "from 1.0.0" })).ok)
+      local old = world.api.records.list("acme_tags.tag")[1]
+      assert.is_nil(old.fields.map, "release 1.0.0 has no map")
+      -- Release 1.1.0 replaces the code, and staff install it.
+      load_example(world)
+      world:install({ conformance.installed(world.core, rawget(_G, "acme_tags").MANIFEST) })
+      world:pump()
+      assert.are.equal("active", (world.api.addons.state("acme_tags")))
+      local upgraded = assert(world.api.records.get("acme_tags.tag", old.id), "still held across the reload")
+      assert.is_nil(upgraded.fields.map, "none: it stays on every map")
+      assert.are.equal("from 1.0.0", upgraded.fields.text)
+      world:activate(world.core.players.by_player_id(PLAYER).handle)
+      local read = assert(interact(world, player, "acme_tags.read", { target = { id = old.id } }))
+      assert.is_true(read.ok, tostring(read.reason))
+      assert.is_true(assert(interact(world, player, "acme_tags.spray", { text = "from 1.1.0" })).ok)
     end,
   },
   {

@@ -12,7 +12,8 @@
 -- the issue's: a purchase, too little money or room, the bought units being
 -- ordinary items, a buy-back, a price changed in config, a deleted item or a
 -- closed counter, a retry with the same op id, the portal going away and
--- coming back, and a restart in the middle of a sale.
+-- coming back, and a restart in the middle of a sale. A counter stands on the
+-- map staff put it on, or on every map when they named none (#369).
 
 local conformance = require("spec.support.conformance")
 local support = require("spec.support")
@@ -111,6 +112,7 @@ end
 ---@class spec.ShopSetup
 ---@field price integer? The water's price; 5 unless given.
 ---@field shown boolean? Whether the counter is open; true unless given.
+---@field map string? The map the counter stands on; every map unless given.
 ---@field revision integer? The records' revision; 1 unless given.
 ---@field water_item string? What the water listing sells; `water` unless given.
 ---@field extra integer? How many more bread listings the counter has, each at 2 and bought back at 1: more than one menu holds.
@@ -140,6 +142,7 @@ local function config(world, shop, setup)
       spot = json.object(SPOT),
       model = json.object({ fivem = "mp_m_shopkeep_01", gmod = "models/humans/group01/male_02.mdl", mock = "mock_shopkeeper" }),
       shown = setup.shown ~= false,
+      map = setup.map,
     }),
     record(WATER, "listing", {
       counter = COUNTER,
@@ -410,6 +413,33 @@ conformance.run(busted, "the acme_shop example", {
       -- through the facade like any other.
       assert.is_true(world.api.inventory.take(handle, "water", 1, world.api.ops.new()))
       assert.are.equal(4, world.api.inventory.count(handle, "water"))
+    end,
+  },
+  {
+    name = "stands the shopkeeper only on the map staff put the counter on, and refuses the counter of another",
+    run = function(world)
+      local shop = at_the_counter(world)
+      local here = assert(world.api.world.map())
+      assert.are.equal(1, #world.entities(), "a counter with no map stands on every map")
+      install(world, shop, { map = "rp_elsewhere", revision = 2 })
+      assert.are.equal(0, #world.entities(), "not on another map's counter")
+      local refused = assert(aim(world))
+      assert.are.same({ false, "not_found" }, { refused.ok, refused.reason }, "nor can a client aim the shop at it")
+      install(world, shop, { map = here, revision = 3 })
+      assert.are.equal(1, #world.entities(), "on this one")
+      assert.is_true(assert(aim(world)).ok)
+    end,
+  },
+  {
+    name = "keeps a counter placed before maps existed on every map, from the stored config after a map change",
+    run = function(world)
+      at_the_counter(world)
+      assert.are.equal(1, #world.entities())
+      world:restart(nil, "rp_elsewhere")
+      load_example(world)
+      world:advance(100)
+      assert.are.equal("rp_elsewhere", (world.api.world.map()))
+      assert.are.equal(1, #world.entities(), "no map: the shopkeeper stands on the new map too")
     end,
   },
   {

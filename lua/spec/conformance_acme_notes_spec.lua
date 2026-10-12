@@ -11,7 +11,8 @@
 -- payload is not a note, read from within reach in the engine's own units,
 -- taken down by its author only, removed by linked staff holding the
 -- addon's permission, a stale delete read again and retried, and every note
--- kept across the upgrade that added `colour`.
+-- kept across the upgrades that added `colour` and `map`, and shown only on
+-- the map they were pinned on.
 
 local conformance = require("spec.support.conformance")
 local support = require("spec.support")
@@ -47,9 +48,32 @@ local function load_example(world, edit)
   return notes
 end
 
+---Release 1.1.0, the walkthrough's second: schema 2, before notes were on a
+---map.
+---@param notes acme_notes The example's table.
+local function release_two(notes)
+  local m = notes.MANIFEST
+  m.version = "1.1.0"
+  m.types.note.schema = 2
+  m.types.note.fields.map = nil
+  m.types.note.world.map = nil
+  -- 1.1.0's code knew nothing of maps either: its notes carry none.
+  local pin = notes.pin
+  notes.pin = function(rpf, player, payload)
+    local records = setmetatable({
+      create = function(type_, fields, opts)
+        fields.map = nil
+        return rpf.records.create(type_, fields, opts)
+      end,
+    }, { __index = rpf.records })
+    return pin(setmetatable({ records = records }, { __index = rpf }), player, payload)
+  end
+end
+
 ---Release 1.0.0, the walkthrough's first: schema 1, before notes had a colour.
 ---@param notes acme_notes The example's table.
 local function release_one(notes)
+  release_two(notes)
   local m = notes.MANIFEST
   m.version = "1.0.0"
   m.types.note.schema = 1
@@ -220,6 +244,51 @@ conformance.run(busted, "the acme_notes example", {
       -- note no longer resolves, so the rules refuse it before the handler.
       local again = at(world, 1, "acme_notes.take_down", own.id)
       assert.are.same({ false, "not_found" }, { again.ok, again.reason })
+    end,
+  },
+  {
+    name = "pins a note on the map the server runs, and places and offers it only there",
+    run = function(world)
+      ready(world)
+      local here = assert(world.api.world.map())
+      local note = pinned(world)
+      assert.are.equal(here, note.fields.map, "the map is set in game, never by the client")
+      -- A note of another map, as a server running on it left it.
+      local other = assert(world.api.records.create(TYPE, {
+        text = "from elsewhere",
+        spot = { x = 10, y = 20, z = 30 },
+        map = "rp_elsewhere",
+        pinned_at = world.api.time.now(),
+      }, { owner = { kind = "player", id = PLAYER } }))
+      world:advance(SETTLE_MS)
+      assert.is_truthy(world.api.world.placed(TYPE, note.id), "placed on its map")
+      assert.is_nil(world.api.world.placed(TYPE, other.id), "not placed on another")
+      local menu = offered(world, 1)
+      assert.is_true(menu["acme_notes.read " .. note.id])
+      assert.is_nil(menu["acme_notes.read " .. other.id], "not offered either")
+      local read = at(world, 1, "acme_notes.read", other.id)
+      assert.are.same({ false, "not_found" }, { read.ok, read.reason }, "nor can a client name it")
+    end,
+  },
+  {
+    name = "keeps its notes through the upgrade that added map, which an older note is on every map for",
+    run = function(world)
+      ready(world, release_two)
+      local note = pinned(world, { text = "from 1.1.0" })
+      assert.is_nil(note.fields.map, "release 1.1.0 has no map")
+      -- Release 1.2.0 replaces the code, and staff install it.
+      local notes = load_example(world)
+      world:install({ conformance.installed(world.core, notes.MANIFEST) })
+      world:pump()
+      assert.are.equal("active", (world.api.addons.state("acme_notes")))
+      local upgraded = assert(world.api.records.get(TYPE, note.id), "still held across the reload")
+      assert.is_nil(upgraded.fields.map, "none: it stays on every map")
+      assert.are.equal("from 1.1.0", upgraded.fields.text)
+      world:advance(SETTLE_MS)
+      assert.is_truthy(world.api.world.placed(TYPE, note.id), "and still placed")
+      assert.is_true(offered(world, 1)["acme_notes.read " .. note.id])
+      local newer = pinned(world, { text = "from 1.2.0" })
+      assert.are.equal(world.api.world.map(), newer.fields.map, "a new one is on the map it is pinned on")
     end,
   },
   {

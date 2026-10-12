@@ -22,7 +22,7 @@ acme_notes.MODEL = { fivem = "prop_notepad_01", gmod = "models/props_c17/paper01
 
 acme_notes.MANIFEST = {
   namespace = "acme_notes",
-  version = "1.1.0",
+  version = "1.2.0",
   api = 1,
   title = "Notes",
   -- Becomes `addon.acme_notes.moderate`, which staff grant to a role.
@@ -31,8 +31,9 @@ acme_notes.MANIFEST = {
     note = {
       -- Schema 1 had no `colour`. Adding it with a default is a compatible
       -- change: 1.1.0 installs over 1.0.0 with every note kept, and an older
-      -- note reads as white.
-      schema = 2,
+      -- note reads as white. Schema 3 (1.2.0) added `map` the same way: an
+      -- older note has none, so it stays on every map.
+      schema = 3,
       authority = "live",
       owners = { "player" },
       -- Held by the server while it runs, whoever pinned it, so every note
@@ -44,6 +45,10 @@ acme_notes.MANIFEST = {
         colour = { type = "enum", values = { "white", "yellow", "pink" }, default = "white" },
         spot = { type = "vector3", required = true, read_only = true },
         bucket = { type = "integer", min = 0, max = 65535, default = 0, read_only = true },
+        -- The map the note was pinned on (`rpf.world.map()`), so a server
+        -- that switches maps does not show it at the same coordinates on
+        -- another. Null is every map; staff may clear it on the data page.
+        map = { type = "string", max_len = 64, index = true, nullable = true },
         -- One model per engine: the record is the same on both.
         model = { type = "json", max_bytes = 256, engine = true, default = acme_notes.MODEL, hidden = true },
         pinned_at = { type = "timestamp", required = true, read_only = true, index = true },
@@ -53,7 +58,7 @@ acme_notes.MANIFEST = {
       -- notes are made only in game.
       actions = { create = false, edit = "moderate", delete = "moderate" },
       limit = 1000,
-      world = { kind = "object", position = "spot", bucket = "bucket", model = "model" },
+      world = { kind = "object", position = "spot", bucket = "bucket", model = "model", map = "map" },
     },
   },
 }

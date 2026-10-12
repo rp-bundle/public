@@ -97,6 +97,8 @@ function acme_garden.sow(rpf, player)
   local plant, why = rpf.records.create(acme_garden.TYPE, {
     spot = spot,
     bucket = rpf.world.bucket(player.handle) or 0,
+    -- Only on the map it was sown on; none leaves it on every map.
+    map = rpf.world.map(),
     planted_at = now,
     ticked_at = now,
   }, { owner = { kind = "player", id = player.player_id } })

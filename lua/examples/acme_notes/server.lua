@@ -44,6 +44,9 @@ function acme_notes.pin(rpf, player, payload)
     colour = payload.colour,
     spot = spot,
     bucket = rpf.world.bucket(player.handle) or 0,
+    -- Only on the map it was pinned on; none (the core is not running) would
+    -- leave the note on every map.
+    map = rpf.world.map(),
     pinned_at = rpf.time.now(),
   }, { owner = { kind = "player", id = player.player_id } })
   if not note then

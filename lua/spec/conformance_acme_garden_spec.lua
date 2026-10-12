@@ -9,8 +9,9 @@
 -- where the player stands and placed in the world, grows through its stages
 -- on time it keeps in its own fields, is watered, harvested and pulled up
 -- through interactions aimed at it, comes back after a restart having
--- caught up no more than its bound, and keeps its records across a schema
--- upgrade, through the public API alone.
+-- caught up no more than its bound, is on the map it was sown on (#369), and
+-- keeps its records across the schema upgrades, through the public API
+-- alone.
 
 local conformance = require("spec.support.conformance")
 local support = require("spec.support")
@@ -46,9 +47,31 @@ local function load_example(world, edit)
   return garden
 end
 
+---Release 1.1.0: schema 2, before plants were on a map.
+---@param garden acme_garden The example's table.
+local function release_two(garden)
+  local m = garden.MANIFEST
+  m.version = "1.1.0"
+  m.types.plant.schema = 2
+  m.types.plant.fields.map = nil
+  m.types.plant.world.map = nil
+  -- 1.1.0's code knew nothing of maps either: its plants carry none.
+  local sow = garden.sow
+  garden.sow = function(rpf, player)
+    local records = setmetatable({
+      create = function(type_, fields, opts)
+        fields.map = nil
+        return rpf.records.create(type_, fields, opts)
+      end,
+    }, { __index = rpf.records })
+    return sow(setmetatable({ records = records }, { __index = rpf }), player)
+  end
+end
+
 ---Release 1.0.0: schema 1, before plants needed water.
 ---@param garden acme_garden The example's table.
 local function release_one(garden)
+  release_two(garden)
   local m = garden.MANIFEST
   m.version = "1.0.0"
   m.types.plant.schema = 1
@@ -241,6 +264,44 @@ conformance.run(busted, "the acme_garden example", {
       assert.are.equal("sprout", caught.stage)
       world:advance(SETTLE_MS)
       assert.is_truthy(world.api.world.placed(TYPE, plant.id), "placed again")
+    end,
+  },
+  {
+    name = "sows a plant on the map the server runs, and places it only there",
+    run = function(world)
+      gardening(world)
+      local here = assert(world.api.world.map())
+      local plant = sown(world)
+      assert.are.equal(here, plant.fields.map, "the map is set in game")
+      local other = assert(world.api.records.create(TYPE, {
+        spot = { x = 10, y = 20, z = 30 },
+        map = "rp_elsewhere",
+        planted_at = world.api.time.now(),
+        ticked_at = world.api.time.now(),
+      }, { owner = { kind = "player", id = PLAYER } }))
+      world:advance(SETTLE_MS)
+      assert.is_truthy(world.api.world.placed(TYPE, plant.id), "placed on its map")
+      assert.is_nil(world.api.world.placed(TYPE, other.id), "not placed on another")
+      local water = at(world, 1, "acme_garden.water", other.id)
+      assert.are.same({ false, "not_found" }, { water.ok, water.reason }, "nor can a client tend it")
+    end,
+  },
+  {
+    name = "keeps its plants through the upgrade that added map, which an older plant is on every map for",
+    run = function(world)
+      gardening(world, release_two)
+      local plant = sown(world)
+      assert.is_nil(plant.fields.map, "release 1.1.0 has no map")
+      -- Release 1.2.0 replaces the code, and staff install it.
+      local garden = load_example(world)
+      world:install({ conformance.installed(world.core, garden.MANIFEST) })
+      world:pump()
+      assert.are.equal("active", (world.api.addons.state("acme_garden")))
+      local upgraded = assert(plant_now(world, plant.id), "still held across the reload")
+      assert.is_nil(upgraded.fields.map, "none: it stays on every map")
+      world:advance(SETTLE_MS)
+      assert.is_truthy(world.api.world.placed(TYPE, plant.id), "and still placed")
+      assert.is_true(at(world, 1, "acme_garden.water", plant.id).ok, "and tended")
     end,
   },
   {
