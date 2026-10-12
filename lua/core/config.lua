@@ -120,6 +120,15 @@ config.EDIT_FLAGS = {
   delete_job = JOBS_FLAGS,
 }
 
+---A placement's change (L4), by the type action whose addon flag it needs:
+---the flag the installed type's `actions` names, `edit` when it names none,
+---and nobody when it names `false`.
+local WORLD_ACTIONS = {
+  create_world_record = "create",
+  update_world_record = "edit",
+  delete_world_record = "delete",
+}
+
 ---How one snapshot section is indexed for lookups.
 ---@class rpf.config.Section
 ---@field kind "map"|"list" `map`: an object, looked up by key. `list`: an array of objects, looked up by the `key` field of each.
@@ -563,8 +572,10 @@ end
 ---`config.changed`.
 ---
 ---Sent only for a logged-in player holding a permission that may make each
----kind of change (`EDIT_FLAGS`). The portal checks the exact permission, and
----every value, as its own pages do, and refuses the whole edit otherwise.
+---kind of change (`EDIT_FLAGS`, or for a world config record the installed
+---type's action flag, `WORLD_ACTIONS`). The portal checks the exact
+---permission, and every value, as its own pages do, and refuses the whole
+---edit otherwise.
 ---The outcome comes later: the staff member is told, and
 ---`config.edit_applied`, `config.edit_discarded` or `config.edit_refused` is
 ---announced. While the portal is unreachable the edit waits in the outbox,
@@ -593,8 +604,47 @@ function config.edit(handle, base_version, changes)
   if count ~= #changes then
     return false, "invalid_changes"
   end
-  for _, change in ipairs(changes) do
+  -- What is sent: the caller's own tables, except that a placement's opaque
+  -- `fields` or `patch` goes as a marked object (an empty move patch is
+  -- `{}`, not `[]`), copied one level deep so the caller's table is left as
+  -- it was. A cycle deeper down is the encode check's refusal below.
+  local sent = {}
+  for i, change in ipairs(changes) do
+    sent[i] = change
     local flags = type(change) == "table" and config.EDIT_FLAGS[change.change] or nil
+    local action = type(change) == "table" and WORLD_ACTIONS[change.change] or nil
+    if action then
+      local name = change.type_name
+      local namespace = type(name) == "string" and name:match("^([a-z][a-z0-9_]*)%.") or nil
+      local def = namespace and rpf.addons and rpf.addons.definition(name)
+      if def and def.authority == "config" and def.world then
+        local copy = {}
+        for key, value in pairs(change) do
+          copy[key] = value
+        end
+        for _, key in ipairs({ "fields", "patch" }) do
+          if copy[key] ~= nil then
+            if type(copy[key]) ~= "table" then
+              return false, "invalid_changes"
+            end
+            local object = rpf.json.object()
+            for field, value in pairs(copy[key]) do
+              object[field] = value
+            end
+            copy[key] = object
+          end
+        end
+        sent[i] = copy
+        local grant = def.actions and def.actions[action]
+        if grant == nil then
+          grant = "edit"
+        end
+        if type(grant) ~= "string" then
+          return false, "forbidden"
+        end
+        flags = { "addon." .. namespace .. "." .. grant }
+      end
+    end
     if not flags then
       return false, "invalid_changes"
     end
@@ -603,7 +653,7 @@ function config.edit(handle, base_version, changes)
     end
   end
   local player_id = player.player_id --[[@as string]]
-  local fields = { player_id = player_id, base_version = base_version, changes = changes }
+  local fields = { player_id = player_id, base_version = base_version, changes = sent }
   -- Checked as the connection will encode it, so a change of the wrong shape
   -- is the caller's refusal here rather than an error from `send`.
   local _, shape_err = rpf.protocol.encode(rpf.protocol.SERVER_TO_PORTAL, {
@@ -612,7 +662,7 @@ function config.edit(handle, base_version, changes)
     type = "config_changed",
     player_id = player_id,
     base_version = base_version,
-    changes = changes,
+    changes = sent,
   })
   if shape_err then
     return false, "invalid_changes"

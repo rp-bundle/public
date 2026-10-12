@@ -84,6 +84,14 @@ local connection = nil
 ---The pattern a player id must match: a hyphenated uuid.
 local UUID = "^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$"
 
+---An addon permission's shape, `addon.<namespace>.<name>` (J8).
+local ADDON_FLAG = "^addon%.[a-z][a-z0-9_]*%.[a-z][a-z0-9_]*$"
+
+---The guild owner's grant of every addon flag, including ones installed
+---later, held in a grant's set under a key no flag can have (it fails
+---`ADDON_FLAG`), and never listed by `staff.permissions`.
+local ALL_ADDONS = "addon.*"
+
 ---Logs through the platform with the module's prefix. Never a link code.
 ---@param level string The level.
 ---@param message string The message.
@@ -185,6 +193,34 @@ local function build(list)
       end
       set[name] = true
     end
+    -- Addon flags (J8) join the core names in one set, so `can` asks one
+    -- question of either. Both fields are defaulted on the wire.
+    local addon = entry.addon_permissions
+    if addon ~= nil then
+      if type(addon) ~= "table" then
+        return nil, "entry " .. i .. " has no addon permission list"
+      end
+      local flags = 0
+      for _ in pairs(addon) do
+        flags = flags + 1
+      end
+      if flags ~= #addon then
+        return nil, "entry " .. i .. " has holes in its addon permissions"
+      end
+      for _, flag in ipairs(addon) do
+        if type(flag) ~= "string" or not flag:match(ADDON_FLAG) then
+          return nil, "entry " .. i .. " has an addon permission that is not an addon flag"
+        end
+        set[flag] = true
+      end
+    end
+    local every = entry.all_addon_permissions
+    if every ~= nil and type(every) ~= "boolean" then
+      return nil, "entry " .. i .. " has an owner grant that is not a boolean"
+    end
+    if every then
+      set[ALL_ADDONS] = true
+    end
     built[entry.player_id] = set
   end
   return built, nil
@@ -244,7 +280,8 @@ local function on_dropping(player)
 end
 
 ---Whether a player may do something here: logged in, not leaving, and the
----last push from the portal gave them exactly that permission.
+---last push from the portal gave them exactly that permission, or, for an
+---`addon.*` flag, the guild owner's grant of every addon flag.
 ---@param handle any The engine's handle.
 ---@param permission any The permission, by its portal name (`player.kick`).
 ---@return boolean allowed False for anyone else, and for anything that is not a permission name.
@@ -254,10 +291,14 @@ function staff.can(handle, permission)
   end
   local player = logged_in(handle)
   local set = player and grants[player.player_id --[[@as string]]]
-  return set ~= nil and set[permission] == true
+  if set == nil or permission == ALL_ADDONS then
+    return false
+  end
+  return set[permission] == true or (set[ALL_ADDONS] == true and permission:match(ADDON_FLAG) ~= nil)
 end
 
----What a player may do here.
+---What a player may do here. The guild owner's grant of every addon flag
+---is not a name, so it is not listed: ask `staff.can` about the flag.
 ---@param handle any The engine's handle.
 ---@return string[] permissions A sorted copy, empty for a player with no grant, and for one not logged in.
 function staff.permissions(handle)
@@ -265,7 +306,14 @@ function staff.permissions(handle)
   if not player then
     return {}
   end
-  return sorted(grants[player.player_id --[[@as string]]])
+  local names = sorted(grants[player.player_id --[[@as string]]])
+  for i, name in ipairs(names) do
+    if name == ALL_ADDONS then
+      table.remove(names, i)
+      break
+    end
+  end
+  return names
 end
 
 ---Tells the player how their link went and announces it. The player is

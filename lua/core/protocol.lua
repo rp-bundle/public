@@ -606,6 +606,9 @@ local JOB_DEF = object({
 ---the portal's config forms submits it, tagged by `change`. The portal checks
 ---each as its own form would, so this only holds them to their shape.
 local CONFIG_CHANGE = tagged("change", {
+  create_world_record = { { "type_name", STRING }, { "fields", OPAQUE_OBJECT } },
+  update_world_record = { { "type_name", STRING }, { "record_id", UUID }, { "base_revision", U64 }, { "patch", OPAQUE_OBJECT } },
+  delete_world_record = { { "type_name", STRING }, { "record_id", UUID }, { "base_revision", U64 } },
   setting = { { "key", STRING }, { "value", INHERITABLE } },
   create_item_base = { { "base", ITEM_BASE } },
   update_item_base = { { "base", ITEM_BASE } },
@@ -686,6 +689,8 @@ local UNKNOWN_OP = object({
 ---`addon.*` ones), and a name this core does not know is still one a script
 ---may ask `rpf.staff.can` about, so it is kept rather than refused.
 local STAFF_GRANT = object({
+  { "addon_permissions", optional(array_of(STRING)) },
+  { "all_addon_permissions", optional(BOOLEAN) },
   { "player_id", UUID },
   { "permissions", array_of(STRING) },
 })

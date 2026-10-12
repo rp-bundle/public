@@ -249,6 +249,14 @@ local platform = {
   -- are named by their index, and placed as `prop_dynamic`s
   -- (`server.spawn`).
   capabilities = {
+    -- Yaw only, in degrees: the aim vector's angle, which also holds in a
+    -- vehicle (placement, L4).
+    heading = function(player)
+      if not IsValid(player) then
+        return nil
+      end
+      return player:GetAimVector():Angle().y
+    end,
     position = function(player)
       if not IsValid(player) then
         return nil

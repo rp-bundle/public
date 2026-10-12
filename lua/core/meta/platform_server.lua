@@ -160,6 +160,7 @@ function Commands.on_command(name, handler) end
 ---not supported is `false`, never missing, so an adapter says so on
 ---purpose.
 ---@class rpf.Capabilities
+---@field heading (fun(player: rpf.PlayerHandle): number?)|false? Server-trusted facing in degrees for placement.
 ---@field position (fun(player: rpf.PlayerHandle): { x: number, y: number, z: number }?)|false A player's position in the world, in the engine's units, or nil while they have none (not spawned).
 ---@field bucket (fun(player: rpf.PlayerHandle): integer?)|false A player's routing bucket (J4): the world they are in, where the engine has more than one. `false` on an engine with one world, where every player is in bucket 0.
 ---@field model (fun(name: string): (number|string)?)|false The engine's id for a model name, as `entity` reports a model (a hash on FiveM, a lowercased path on Gmod), so a target rule written with names can be compared with an entity.

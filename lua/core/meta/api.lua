@@ -47,6 +47,7 @@
 ---@field world rpf.api.World The game world, through what the engine's adapter supports (J3). Server only.
 ---@field interactions rpf.api.Interactions Requests a player's client makes to an addon: `register` a handler on the server, `send` or `request` on the client (J3, J10).
 ---@field dialogs rpf.api.Dialogs Conversations with NPCs, from the trees staff build in the panel (L1): open one for a player. An NPC whose world type names a `dialog` field talks without this. Server only.
+---@field placement rpf.api.Placement Staff placement menu (L4). Server only.
 ---@field actions rpf.api.Actions What your addon can be asked to do by a dialog choice staff build in the panel: the handlers of the actions your manifest declares (L1). Server only.
 ---@field capabilities fun(): table<string, boolean> What this engine supports, by name: the game world's `position`, `bucket`, `model`, `entity`, `spawn` and `despawn` (server only), and the UI `notify`, `menu`, `input` and `progress` (both sides). Ask before offering a player something that needs one; a call to one that is missing says `unsupported`.
 ---@field ui rpf.api.Ui Notifications, menus, input dialogs and progress bars that look right on every engine (J10): on the client for the player, on the server for a player you name.
@@ -2029,3 +2030,14 @@ function Bridge.available() end
 ---@field name string? The bridge.
 ---@field state "active"|"unavailable"|"available"|"withdrawn" What changed.
 ---@field reason string? Why, where there is a reason.
+
+---Linked staff's world config placement menu; uses the portable UI and E6.
+---@class rpf.api.Placement
+local Placement = {}
+
+---Offers installed world types the player may change. Position and facing
+---come from the server; the portal rechecks permissions and config version.
+---@param player rpf.PlayerHandle The joined, linked staff player.
+---@return boolean? opened True if offered.
+---@return string? err Why unavailable or refused.
+function Placement.open(player) end

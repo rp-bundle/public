@@ -75,6 +75,10 @@ function server.platform(shim, transport)
     -- OneSync knows on the server, and entities are placed and inspected on
     -- the server, by their network id (`server.spawn`, `server.entity`).
     capabilities = {
+      heading = function(player)
+        local ped = GetPlayerPed(player)
+        return ped and ped ~= 0 and GetEntityHeading(ped) or nil
+      end,
       position = function(player)
         local ped = GetPlayerPed(player)
         if not ped or ped == 0 then

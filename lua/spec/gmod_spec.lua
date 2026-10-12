@@ -1153,6 +1153,23 @@ describe("the Gmod adapter's addon UI (J10)", function()
     return world, rawget(_G, "rpf"), record
   end
 
+  it("previews a local model and explicitly removes it when confirmation ends", function()
+    local world = client()
+    -- The real adapter supplies the disposer, not a garbage-collected handle.
+    local module = world.include("rpf/platform/gmod/client.lua")
+    local clear = module.placement_preview({ model = "models/crate.mdl", position = { x = 1, y = 2, z = 3 }, heading = 45 })
+    local _, entity = next(world.entities)
+    assert(entity)
+    assert(entity.angles)
+    assert(entity.color)
+    assert.are.equal("client_model", entity.class)
+    assert.are.equal(45, entity.angles.y)
+    assert.are.equal(150, entity.color.a)
+    assert.is_false(entity.spawned)
+    clear()
+    assert.is_nil(next(world.entities))
+  end)
+
   it("shows a notification in Gmod's own, by kind", function()
     local world, api = client()
     assert.is_true(api.ui.notify({ text = "Sprayed.", title = "Tags", kind = "error", duration_ms = 3000 }))

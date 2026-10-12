@@ -686,8 +686,9 @@ push is the whole list, so `rpf.staff` replaces what it held, and a player
 left out may do nothing. Grants are kept by `player_id` whoever they name,
 since a push may arrive before the `player_authenticated` of a player it
 lists, and take effect once that player registers. Permission names this
-core does not know are kept as they are (the portal adds flags, and addons
-will add `addon.*` ones). A push that does not decode is dropped by the
+core does not know are kept as they are (the portal adds flags). A grant's
+addon flags (`addon_permissions`, J8) join its core names, so a linked
+member of an addon-only role is listed too (L4). A push that does not decode is dropped by the
 connection; one that decodes but names a player twice is logged and
 refused; either way the grants stay as they were. Grants outlive a dropped
 connection to the portal, so staff can still moderate through an outage,
@@ -696,8 +697,8 @@ memory only, so a restart has none until the portal pushes again.
 
 | Call | What |
 |---|---|
-| `can(handle, permission)` | True only for a player logged in here (`registered` or later, not `dropping`) whose last grant holds exactly that name |
-| `permissions(handle)` | Their names, sorted, as a copy; empty for anyone else |
+| `can(handle, permission)` | True only for a player logged in here (`registered` or later, not `dropping`) whose last grant holds exactly that name, or, for an `addon.<namespace>.<name>` flag, the guild owner's grant of every addon flag (`all_addon_permissions`, which covers addons installed later) |
+| `permissions(handle)` | Their names, sorted, as a copy; empty for anyone else. The owner's grant of every addon flag is not a name and is not listed |
 | `link(handle, code)` | Sends `link_player` with the code as typed. Refused, with nothing sent, as `not_logged_in`, `invalid_code` (not a non-empty UTF-8 string of at most `MAX_CODE_BYTES`, 32) or `busy` (one link per player in flight, since each wrong code counts against the player, the guild and every live code) |
 | `record(handle, permission, action, target)` | Sends `staff_action` for the guild's audit log. Refused, with nothing sent, as `forbidden` unless `can(handle, permission)`, `invalid_action` unless `action` is `[a-z][a-z0-9_]*` of at most 64 bytes, `invalid_target` for a `target` that is not a logged-in player. `target_player_id` goes as `null` for no target |
 
@@ -1596,6 +1597,25 @@ Server only; `rpf.api.dialogs` fronts `open`.
   `interactions.register_reserved("<namespace>.rpf_talk<n>", …)` in the
   addon's context, aimed at the type, offered where the record's field
   names a tree the config has.
+
+### Placement (`rpf.placement`, L4)
+
+Linked staff run `rpfplace` to place, move or remove an installed world
+config record where they stand; a server script opens the same menu with
+`rpf.api.placement.open(player)`. It is built on `rpf.ui`, so its choices
+(types, records and their revisions) stay on the server, and it offers
+only the types and actions the staff member's pushed addon grants allow
+(`rpf.staff.can`). Position, facing, bucket and map come from the server
+adapter (`capabilities.heading` beside `position`), never from the client;
+other required fields are asked for. A confirmed change goes through
+`rpf.config.edit` as `create_world_record`, `update_world_record` or
+`delete_world_record`, named against the config version the menu read its
+records from, and the portal applies it with its own writer under E6's
+compare-and-set: nothing changes here before the config push. Before
+confirming, the staff member's client shows a temporary model where the
+engine can (`ui.preview`, which returns its disposer), removed on
+confirmation, cancellation or after a minute; point and zone types confirm
+without one.
 
 ### Characters (`rpf.characters`, `rpf.picker`)
 

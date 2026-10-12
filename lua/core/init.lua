@@ -49,6 +49,7 @@
 ---@field targets rpf.targets What an interaction may be aimed at in the world, and the checks before its handler runs (J4).
 ---@field ui rpf.ui The UI an addon shows a player: notifications, menus, input dialogs and progress bars (J10).
 ---@field dialogs rpf.dialogs Conversations with NPCs, run on the server from the trees staff build in the panel (L1).
+---@field placement rpf.placement Linked staff world-record placement and the temporary client preview.
 ---@field actions rpf.actions What addons can be asked to do by a dialog choice: their declared actions' handlers, and running one (L1).
 ---@field picker rpf.picker The client side of choosing a character.
 ---@field handoff rpf.handoff The login messages between server and client.
@@ -130,6 +131,7 @@ rpf.files = {
     "targets.lua",
     "interactions.lua",
     "ui.lua",
+    "placement.lua",
     "actions.lua",
     "dialogs.lua",
     "api.lua",
@@ -146,6 +148,7 @@ rpf.files = {
     "targets.lua",
     "interactions.lua",
     "ui.lua",
+    "placement.lua",
     "api.lua",
   },
 }
@@ -206,6 +209,7 @@ function rpf.start_server(platform, options)
   rpf.world.start(platform)
   rpf.interactions.serve(platform)
   rpf.ui.serve(platform)
+  rpf.placement.start(platform)
   rpf.actions.start(platform)
   rpf.dialogs.start(platform)
   rpf.config.restore(platform)
@@ -266,6 +270,7 @@ function rpf.start_client(platform, options)
   rpf.picker.start(platform)
   rpf.interactions.start_client(platform)
   rpf.ui.start_client(platform)
+  rpf.placement.start_client(platform)
   return platform
 end
 
