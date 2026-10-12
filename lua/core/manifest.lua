@@ -634,8 +634,9 @@ local check_value
 ---An integer's or number's editor keys (N1), after its bounds:
 ---`manifest::editors`. `unit` is one of `UNITS`, with `money` only on an
 ---integer (`conflict` at `unit`); `slider` is a flag that needs both `min`
----and `max` (`conflict` at `slider`). `kind` is the field's own: a list of
----numbers has neither key, refused as unknown before this.
+---and `max` and a field that is never null, since a slider cannot be blank
+---(`conflict` at `slider`). `kind` is the field's own: a list of numbers
+---has neither key, refused as unknown before this.
 ---@param field table The field.
 ---@param path string Its path.
 ---@param kind string The field's own kind.
@@ -658,7 +659,7 @@ local function editors(field, path, kind, bounded)
     if type(field.slider) ~= "boolean" then
       return refuse("wrong_type", slider_path)
     end
-    if field.slider == true and not bounded then
+    if field.slider == true and (not bounded or field.nullable == true) then
       return refuse("conflict", slider_path)
     end
   end
