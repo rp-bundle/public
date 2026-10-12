@@ -48,8 +48,13 @@
   {
     "change": "update_item",
     "item": {
-      "slug": "water_bottle",
-      "name": "Water bottle"
+      "slug": "pistol",
+      "name": "Pistol",
+      "weapon": {
+        "fivem": "WEAPON_PISTOL",
+        "gmod": "weapon_pistol",
+        "ammo": "pistol_ammo"
+      }
     }
   },
   {

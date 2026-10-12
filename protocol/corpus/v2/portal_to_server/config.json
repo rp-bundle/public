@@ -34,7 +34,50 @@
           "y": 1
         },
         "stack_limit": 1,
-        "image": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+        "image": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        "weapon": {
+          "fivem": "WEAPON_PISTOL",
+          "gmod": "weapon_pistol",
+          "ammo": "pistol_ammo"
+        }
+      },
+      {
+        "slug": "knife",
+        "name": "Knife",
+        "base": "weapon",
+        "weight": 3,
+        "size": {
+          "x": 1,
+          "y": 1
+        },
+        "stack_limit": 1,
+        "weapon": {
+          "fivem": "WEAPON_KNIFE"
+        }
+      },
+      {
+        "slug": "pistol_ammo",
+        "name": "Pistol ammo",
+        "weight": 1,
+        "size": {
+          "x": 1,
+          "y": 1
+        },
+        "stack_limit": 250
+      },
+      {
+        "slug": "stunstick",
+        "name": "Stun stick",
+        "base": "weapon",
+        "weight": 5,
+        "size": {
+          "x": 2,
+          "y": 1
+        },
+        "stack_limit": 1,
+        "weapon": {
+          "gmod": "weapon_stunstick"
+        }
       },
       {
         "slug": "water_bottle",
