@@ -719,8 +719,9 @@ talks = { type = "ref", to = "dialog", nullable = true },
 world = { kind = "ped", position = "spot", model = "model", dialog = "talks" },
 ```
 
-Staff build trees in the panel and pick one for each record (a slug the
-server has, or nothing). You write no code for the conversation: while
+Staff build trees on the server's **Dialogs** page in the panel (with
+`config.dialogs.edit`), and pick one for each record in its form, from the
+server's trees, or none. You write no code for the conversation: while
 your addon runs, RPF offers **Talk** on every record whose field names a
 tree, through the interaction menu and ox_target alike, and runs the tree
 on the server. Each node is a menu with the NPC's line above the choices

@@ -44,6 +44,14 @@ socket.
   server setting, **`economy.currency`** (`config.settings.edit`, `$` by
   default), is what the panel puts before an amount; game servers read it
   like any setting. `acme_shop` and `acme_property` 1.2.0 use the keys.
+- The dialog editor (#371): the server's **Dialogs** page lists its trees
+  and builds them, node by node, with no script needed: lines, choices,
+  where each goes, conditions, and the action a choice runs with its
+  parameters, picked from the installed addons' declarations. A choice
+  whose action cannot run is marked broken with why. A new flag,
+  **`config.dialogs.edit`**, gates the editing; every staff member of the
+  server sees the trees. An NPC type's record form picks its tree from a
+  list.
 - NPCs talk (#371): a world type names a `dialog` field (a `ref` to
   `dialog`) in its `world`, and the core offers Talk on its records and
   runs the tree they name on the server, a menu per node, every pick
