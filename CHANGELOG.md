@@ -44,6 +44,14 @@ socket.
   server setting, **`economy.currency`** (`config.settings.edit`, `$` by
   default), is what the panel puts before an amount; game servers read it
   like any setting. `acme_shop` and `acme_property` 1.2.0 use the keys.
+- NPCs talk (#371): a world type names a `dialog` field (a `ref` to
+  `dialog`) in its `world`, and the core offers Talk on its records and
+  runs the tree they name on the server, a menu per node, every pick
+  checked again against the tree as it is now, its conditions and the
+  player's reach. A choice whose action is unavailable is shown and
+  refused with a message. `rpf.api.dialogs.open(player, slug)` opens a
+  tree from an addon's code. Interaction names under `rpf_` are the
+  core's (`reserved`).
 - Dialog trees (#371): what a server's NPCs say and the choices they
   offer, stored per server (`dialogs`), checked against the actions the
   server's installed addons declare, and pushed whole in the config

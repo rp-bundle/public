@@ -215,7 +215,7 @@ local COMMON = {
   "unique",
 }
 ---Reference targets that are not a type.
-local TARGETS = { player = true, character = true, employer = true, server = true, item = true, job = true }
+local TARGETS = { player = true, character = true, employer = true, server = true, item = true, job = true, dialog = true }
 ---Reference targets that are owners, which an action's parameter may not
 ---name (`RefTarget::is_owner`).
 local OWNERS = { player = true, character = true, employer = true, server = true }
@@ -951,6 +951,7 @@ local WORLD_ROLES = {
   { name = "visible", kinds = set({ "boolean" }) },
   { name = "radius", kinds = set({ "number", "integer" }) },
   { name = "map", kinds = set({ "string" }) },
+  { name = "dialog", kinds = set({ "ref" }) },
 }
 
 ---A type's `world`, against its checked fields: `manifest::check_world`.
@@ -988,6 +989,7 @@ local function check_world(value, path, fields)
         not role.kinds[field.type]
         or (role.name == "model" and not field.engine)
         or (role.name == "map" and field.index ~= true)
+        or (role.name == "dialog" and field.to ~= "dialog")
       then
         return refuse("world_field", role_path)
       end
@@ -1500,7 +1502,7 @@ local function scalar(def, kind, value)
     return vector
   elseif kind == "ref" then
     local fits
-    if def.to == "item" then
+    if def.to == "item" or def.to == "dialog" then
       fits = is_slug(value)
     elseif def.to == "job" then
       fits = json.is_object(value) and size(value) == 2 and is_slug(value.employer) and is_slug(value.job)

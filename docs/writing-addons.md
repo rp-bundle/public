@@ -710,6 +710,27 @@ with one exception: naming a field the type already had as its `map` is
 breaking, because its records may hold values that are no map's name. Add
 a new field for the map instead.
 
+**NPCs that talk.** Give the type a field that names a dialog tree, a
+`ref` to `dialog`, and name it as the world's `dialog`:
+
+```lua
+talks = { type = "ref", to = "dialog", nullable = true },
+-- ...
+world = { kind = "ped", position = "spot", model = "model", dialog = "talks" },
+```
+
+Staff build trees in the panel and pick one for each record (a slug the
+server has, or nothing). You write no code for the conversation: while
+your addon runs, RPF offers **Talk** on every record whose field names a
+tree, through the interaction menu and ox_target alike, and runs the tree
+on the server. Each node is a menu with the NPC's line above the choices
+the player may pick (their conditions hold); every pick is checked again
+before it goes anywhere, and a choice that runs one of your
+[actions](#actions) runs it then. RPF registers that Talk under your
+namespace with a name starting `rpf_`, which is why your own interaction
+names may not start with it (`reserved`). To open a tree from anywhere
+else, a phone or a command, call `rpf.dialogs.open(player.handle, slug)`.
+
 ## Registering, installing, running
 
 ```lua
@@ -1019,6 +1040,9 @@ end,
   it drops. The choices that run it are shown as broken in the panel and
   refused in game until staff change them, and so are choices while your
   addon is disabled or not loaded.
+- **In a dialog**, `context` is `{ dialog, node, target }`: the tree's slug,
+  the node the choice was on, and the NPC the player was talking to (a
+  resolved target, as an interaction's), when it was opened from one.
 - `register` answers `nil` and why: `not_declared` for an action your
   manifest does not declare, `forbidden` for another addon's namespace,
   `invalid`, `not_found` and `inactive` as for interactions.

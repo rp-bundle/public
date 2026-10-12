@@ -50,6 +50,11 @@
             "max_len": 64,
             "index": true,
             "nullable": true
+          },
+          "talks": {
+            "type": "ref",
+            "to": "dialog",
+            "nullable": true
           }
         },
         "world": {
@@ -59,7 +64,8 @@
           "bucket": "bucket",
           "model": "model",
           "visible": "shown",
-          "map": "map"
+          "map": "map",
+          "dialog": "talks"
         }
       }
     }

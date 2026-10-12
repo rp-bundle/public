@@ -125,7 +125,7 @@ describe("rpf.api", function()
         assert.are.same(keys(meta[class]), names, class)
       end
     end
-    assert.are.same({ "actions", "addons", "auth", "bridge", "characters", "commerce", "config", "events", "interactions", "inventory", "items", "jobs", "money", "ops", "players", "records", "staff", "time", "ui", "world" }, sorted((function()
+    assert.are.same({ "actions", "addons", "auth", "bridge", "characters", "commerce", "config", "dialogs", "events", "interactions", "inventory", "items", "jobs", "money", "ops", "players", "records", "staff", "time", "ui", "world" }, sorted((function()
       local out = {}
       for part in pairs(parts) do
         if part ~= "" then
@@ -235,7 +235,7 @@ describe("rpf.api", function()
       for key in pairs(rpf.api) do
         seen[key] = true
       end
-      assert.are.same(sorted({ "VERSION", "engine", "events", "players", "staff", "config", "addons", "records", "time", "characters", "money", "inventory", "jobs", "ops", "commerce", "bridge", "world", "interactions", "actions", "capabilities", "ui" }), keys(seen))
+      assert.are.same(sorted({ "VERSION", "engine", "events", "players", "staff", "config", "addons", "records", "time", "characters", "money", "inventory", "jobs", "ops", "commerce", "bridge", "world", "interactions", "actions", "dialogs", "capabilities", "ui" }), keys(seen))
     end)
 
     it("refuses a script emitting a core event, and passes a script's own events", function()
