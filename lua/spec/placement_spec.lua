@@ -2,6 +2,7 @@
 local support = require("spec.support")
 local PLAYER = "00000002-0000-4000-8000-000000000002"
 local ID = "00000003-0000-4000-8000-000000000003"
+local OTHER = "00000004-0000-4000-8000-000000000004"
 
 ---An installed world config type with a name staff must provide.
 ---@return table manifest The manifest.
@@ -42,7 +43,11 @@ describe("staff placement", function()
     assert(rpf.addons.register(manifest(), {}))
     local m = assert(rpf.manifest.check(manifest()))
     local entry = { namespace = "acme_props", version = "1.0.0", enabled = true, manifest = m, hash = "sha256:props", types = rpf.json.object({}),
-      records = rpf.json.array({ { id = ID, type = "acme_props.prop", revision = 2, fields = { name = "Crate", spot = { x = 1, y = 2, z = 3 }, map = "gm_construct", model = "crate" } } }),
+      records = rpf.json.array({
+        { id = ID, type = "acme_props.prop", revision = 2, fields = { name = "Crate", spot = { x = 1, y = 2, z = 3 }, map = "gm_construct", model = "crate" } },
+        -- Another map's: never offered to move or remove here.
+        { id = OTHER, type = "acme_props.prop", revision = 4, fields = { name = "Barrel", spot = { x = 4, y = 5, z = 6 }, map = "gm_flatgrass", model = "barrel" } },
+      }),
     }
     snapshot = assert(rpf.json.decode(assert(rpf.json.encode({ addons = rpf.json.array({ entry }) }))))
     assert(rpf.config.apply(p, 5, "h5", snapshot))
@@ -58,7 +63,7 @@ describe("staff placement", function()
     assert.are.equal(5, edit.base_version)
     assert.are.same({ spot = { x = 10, y = 20, z = 30 }, facing = 37, map = "gm_construct", name = "New crate" }, edit.changes[1].fields)
     assert.are.equal("create_world_record", edit.changes[1].change)
-    assert.are.equal(1, #rpf.addons.config_records("acme_props.prop"), "awaits portal snapshot")
+    assert.are.equal(2, #rpf.addons.config_records("acme_props.prop"), "awaits portal snapshot")
   end)
   it("moves and removes only the record offered, at its original revision", function()
     assert(rpf.api.placement.open(7)); menu(1); menu(2); menu(1); menu(1)
@@ -92,6 +97,34 @@ describe("staff placement", function()
     assert.are.same({}, rpf.api.staff.permissions(7))
     assert(rpf.api.placement.open(7)); menu(1); menu(3); menu(1); menu(1)
     assert.are.equal("delete_world_record", assert(edits()[1], rpf.json.encode(p.to_clients)).changes[1].change)
+  end)
+  it("offers to move only the records on this map", function()
+    assert(rpf.api.placement.open(7)); menu(1); menu(2)
+    local spec = rpf.json.decode(p.client_requests[#p.client_requests].payload).spec
+    assert.are.same({ "Crate" }, (function()
+      local labels = {}
+      for _, option in ipairs(spec.options) do labels[#labels + 1] = option.label end
+      return labels
+    end)())
+  end)
+  it("refuses a malformed placement edit with a reason, leaving the caller's table alone", function()
+    for _, change in ipairs({
+      { change = "create_world_record", fields = {} },
+      { change = "create_world_record", type_name = 7, fields = {} },
+      { change = "delete_world_record", type_name = "acme_props", record_id = ID, base_revision = 0 },
+    }) do
+      assert.are.same({ false, "invalid_changes" }, { rpf.api.config.edit(7, 5, { change }) })
+    end
+    local deep = {}
+    deep.self = deep
+    local cyclic = { change = "create_world_record", type_name = "acme_props.prop", fields = { name = deep } }
+    assert.are.same({ false, "invalid_changes" }, { rpf.api.config.edit(7, 5, { cyclic }) })
+    local patch = {}
+    local move = { change = "update_world_record", type_name = "acme_props.prop", record_id = ID, base_revision = 2, patch = patch }
+    assert.is_true((rpf.api.config.edit(7, 5, { move })))
+    assert.are.equal(patch, move.patch)
+    assert.is_nil(getmetatable(patch))
+    assert.are.equal(1, #edits())
   end)
   it("never sends a forged record menu answer", function()
     assert(rpf.api.placement.open(7)); menu(1); menu(2); menu(99)
