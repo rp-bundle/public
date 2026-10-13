@@ -161,6 +161,18 @@ function server.platform(shim, transport)
     return out
   end
 
+  -- Verbatim and strings only, like the identifiers: the core bounds them
+  -- and the portal hashes them before anything is stored (I4).
+  function p.hardware_tokens(player)
+    local out = {}
+    for _, token in ipairs(GetPlayerTokens(tostring(player)) or {}) do
+      if type(token) == "string" then
+        out[#out + 1] = token
+      end
+    end
+    return out
+  end
+
   function p.name(player)
     local name = GetPlayerName(tostring(player))
     return type(name) == "string" and name or ""

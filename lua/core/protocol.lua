@@ -907,6 +907,7 @@ protocol.messages = {
     begin_join = message("reply", false, {
       { "identifiers", array_of(STRING) },
       { "name", STRING },
+      { "hardware_tokens", optional(array_of(SECRET)) },
     }),
     redeem_ticket = message("reply", false, {
       { "ticket", SECRET },

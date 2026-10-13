@@ -115,6 +115,7 @@ function support.fake_platform(opts)
   ---@field logs { level: string, message: string }[] Every log line.
   ---@field exposed table? What `expose` was given.
   ---@field player_identifiers table<any, string[]> What `identifiers` reports per player.
+  ---@field player_hardware_tokens table<any, string[]> What `hardware_tokens` reports per player.
   ---@field kicks { player: any, reason: string }[] Every kick, in order.
   ---@field to_clients { player: any, name: string, payload: string }[] Every message sent to a client, in order.
   ---@field client_handlers table<string, fun(player: any, payload: string)> Handlers registered with `on_client`, by name.
@@ -135,6 +136,7 @@ function support.fake_platform(opts)
     sent = {},
     logs = {},
     player_identifiers = {},
+    player_hardware_tokens = {},
     kicks = {},
     to_clients = {},
     client_handlers = {},
@@ -225,6 +227,10 @@ function support.fake_platform(opts)
 
   function p.identifiers(player)
     return p.player_identifiers[player] or {}
+  end
+
+  function p.hardware_tokens(player)
+    return p.player_hardware_tokens[player] or {}
   end
 
   function p.name(player)

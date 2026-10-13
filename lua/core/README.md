@@ -121,6 +121,7 @@ step.
 | World | `capabilities` | A table, not a function: what the engine can do with the game world for addons, each capability a function or `false` for unsupported (`rpf.world`). `position(player) -> { x, y, z }?`, `bucket(player) -> integer?`, `model(name) -> id?`, `entity(ref) -> { position, model, bucket, placement }?`, `spawn(spec) -> ref?, err?` and `despawn(ref)` (J4: `rpf.world`). Beside them, the UI its clients show addons (J10): `notify`, `menu`, `input`, `progress`, each `true` or `false` (`rpf.ui`) |
 | Thread | `thread() -> any` | The running coroutine (`coroutine.running`), or nil where there are none (the mock), so `rpf.addons` keeps whose code is running per coroutine without the core touching `coroutine` |
 | Players | `identifiers(player) -> string[]` | Every identifier the engine knows, verbatim. Reference data, never identity |
+| Players | `hardware_tokens(player) -> string[]` | The hardware tokens the engine reports (FiveM's `GetPlayerTokens`), verbatim; empty where it has none. An alt signal the portal keeps only as hashes (I4) |
 | | `name(player) -> string` | The in-game name |
 | | `kick(player, reason)` | Disconnects a player |
 | | `notify(player, message)` | Shows a player a message |
@@ -1862,7 +1863,9 @@ spec holds to the portal's `PASSWORD_REUSE_WARNING` word for word.
 
 1. The client's core starts and sends `rpf:client_ready` (again every 15 s
    until it hears back). The server moves the player to `authenticating` and
-   sends `BeginJoin` with the engine's identifiers (never `ip:`) and name.
+   sends `BeginJoin` with the engine's identifiers (never `ip:`), name and
+   hardware tokens (FiveM's; at most `join.MAX_HARDWARE_TOKENS` of at most
+   `join.MAX_TOKEN_BYTES` each, left out when there are none).
 2. On `JoinChallenge` the server sends the client `rpf:join_nonce`: the nonce,
    its lifetime (`expires_at − sent_at`, both the portal's clocks), the
    portal's HTTP address and the server's id.

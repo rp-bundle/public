@@ -329,6 +329,8 @@ describe("the Gmod adapter's server", function()
     local begin = assert(last(world, record, "begin_join"))
     assert.are.same({ "steam:" .. STEAMID }, begin.identifiers)
     assert.are.equal("Alice", begin.name)
+    -- Garry's Mod has no hardware tokens (I4), so the field is left out.
+    assert.is_nil(begin.hardware_tokens)
   end)
 
   it("reports no identifier for a player with no SteamID64", function()

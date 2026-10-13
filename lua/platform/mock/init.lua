@@ -205,13 +205,13 @@ end
 ---@class rpf.mock.Server: rpf.ServerPlatform, rpf.mock.Common
 ---@field sockets table<integer, rpf.platform.SocketHandlers> Handlers for each connection attempt, by id, until it closes.
 ---@field socket integer? The id of the latest connection attempt. `send` uses only this one.
----@field players table<any, { name: string, identifiers: string[] }> What the engine knows about each connected player.
+---@field players table<any, { name: string, identifiers: string[], hardware_tokens: string[]? }> What the engine knows about each connected player.
 ---@field client_handlers table<string, fun(player: any, payload: string)> Handlers registered with `on_client`, by name.
 ---@field request_handlers table<string, fun(player: any, payload: string, respond: fun(reply: string))> Answerers registered with `on_client_request`, by name.
 ---@field command_handlers table<string, fun(player: any, args: string[])> Handlers registered with `on_command`, by name.
 ---@field run_command fun(player: any, name: string, args: string[]): boolean A player runs a command, as the engine would hand it over: the words after the name. False when nothing registered the name.
 ---@field asking table<string, table<integer, { player: any, callback: fun(reply: string?) }>> Requests sent to clients and not answered yet, by name and number.
----@field add_player fun(player: any, name: string, identifiers: string[]) Tells the mock about a player before the harness hands them to the core.
+---@field add_player fun(player: any, name: string, identifiers: string[], hardware_tokens: string[]?) Tells the mock about a player before the harness hands them to the core, with the hardware tokens FiveM would report (none by default).
 ---@field remove_player fun(player: any) Forgets a player after the harness has told the core they left.
 ---@field positions table<any, { x: number, y: number, z: number }> Where each player is, as the harness sets it, for the `position` capability.
 ---@field buckets table<any, integer> Each player's routing bucket, as the harness sets it; 0 when unset.
@@ -357,6 +357,15 @@ function mock.server(host, seed)
     return out
   end
 
+  function p.hardware_tokens(player)
+    local known = p.players[player]
+    local out = {}
+    for i, token in ipairs(known and known.hardware_tokens or {}) do
+      out[i] = token
+    end
+    return out
+  end
+
   function p.name(player)
     local known = p.players[player]
     return known and known.name or ""
@@ -402,8 +411,8 @@ function mock.server(host, seed)
     host.to_client(player, name, mock.frame(p.seq, payload))
   end
 
-  function p.add_player(player, name, identifiers)
-    p.players[player] = { name = name, identifiers = identifiers }
+  function p.add_player(player, name, identifiers, hardware_tokens)
+    p.players[player] = { name = name, identifiers = identifiers, hardware_tokens = hardware_tokens }
   end
 
   function p.remove_player(player)
