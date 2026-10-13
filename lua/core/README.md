@@ -1654,7 +1654,10 @@ held by the server whose `world` names ownership roles (`locked`, `owner`,
   with `{ type, id, locked, player_id }`, then `records.changed` with
   `by = "core"`, through a queue: a lock change a handler makes is
   announced after the one it answered has reached every handler, so each
-  hears the changes in order and the last says how the record is. Already in the state asked is `true`. A refusal is `false`, the
+  hears the changes in order and the last says how the record is. The
+  queue gets round `events.MAX_DEPTH`, so it has its own bound: handlers
+  may make `MAX_ANSWERS` (32) changes in answer to one, and the next is
+  refused `failed` and logged as a cycle. Already in the state asked is `true`. A refusal is `false`, the
   reason (`off`, `not_found`, `not_lockable`, `no_access`, `invalid`,
   `inactive`, `failed`) and its `MESSAGES` sentence. With `opts.player`, access is
   checked first.

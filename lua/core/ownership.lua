@@ -42,6 +42,7 @@
 ---@field LOCK string What the Lock interaction is labelled.
 ---@field UNLOCK string What the Unlock interaction is labelled.
 ---@field MESSAGES table<string, string> What a player is told for each refusal, by reason.
+---@field MAX_ANSWERS integer How many lock changes handlers may make in answer to one, directly or down a chain, before the core takes it for a cycle and refuses the next (`failed`). The same bound as `rpf.events.MAX_DEPTH`, which the queue would otherwise get round.
 local ownership = {}
 
 local rpf = rpf
@@ -49,6 +50,7 @@ local rpf = rpf
 ownership.SETTING = "world.ownership"
 ownership.MODES = { persistent = true, session = true, off = true }
 ownership.DEFAULT_MODE = "persistent"
+ownership.MAX_ANSWERS = 32
 ownership.LOCK = "Lock"
 ownership.UNLOCK = "Unlock"
 ownership.MESSAGES = {
@@ -84,6 +86,10 @@ local queue = {}
 ---of its handlers waits its turn.
 local draining = false
 
+---How many lock changes handlers have made while the queue drains: the ones
+---answering the change that started it, and the ones answering those.
+local answers = 0
+
 ---Announces lock changes in the order they happened. Events run their
 ---handlers at once, so a handler that turns the lock back would have its
 ---change heard by the handlers after it before the change it answered;
@@ -108,6 +114,7 @@ local function notify(...)
     end
   end
   draining = false
+  answers = 0
 end
 
 ---A refusal: `false`, the reason, and the sentence for a player.
@@ -370,6 +377,16 @@ local function set(type_name, id, locked, opts)
   end
   if (record.fields[world.locked] == true) == locked then
     return true
+  end
+  if draining then
+    -- Two handlers that each turn the lock back would otherwise go on for
+    -- ever, one queued change at a time.
+    if answers >= ownership.MAX_ANSWERS then
+      log("error", "not " .. (locked and "locking " or "unlocking ") .. type_name .. " " .. id .. ": handlers changed its lock "
+        .. ownership.MAX_ANSWERS .. " times in answer to one change, which is a cycle")
+      return refuse("failed")
+    end
+    answers = answers + 1
   end
   local done, err = rpf.records.set_addon_fields(id, { [world.locked] = locked })
   if not done then

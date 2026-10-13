@@ -376,6 +376,33 @@ conformance.run(busted, "Ownership and locks", {
     end,
   },
   {
+    name = "stops two handlers that keep turning the lock back, as a cycle",
+    run = function(world)
+      ready(world)
+      local id = door(world, { holder = OWNER, locked = false })
+      local api = world.api
+      local refused, heard = 0, {}
+      api.events.on("ownership.locked", function(change)
+        heard[#heard + 1] = change.locked
+        local ok = (change.locked and api.ownership.unlock or api.ownership.lock)(DOOR, id)
+        if not ok then
+          refused = refused + 1
+        end
+      end)
+      assert.is_true(api.ownership.lock(DOOR, id))
+      local max = world.core.ownership.MAX_ANSWERS
+      assert.are.equal(max + 1, #heard, "the lock and the answers allowed")
+      assert.are.equal(1, refused, "the one past the bound")
+      assert.are.equal(heard[#heard], (api.ownership.locked(DOOR, id)), "the last heard is the door now")
+      assert.are.equal(1, world:logged("error", "which is a cycle"))
+      -- The bound is per chain: the next change starts a new one.
+      local turn = heard[#heard] and api.ownership.unlock or api.ownership.lock
+      assert.is_true(turn(DOOR, id))
+      assert.are.equal(2 * (max + 1), #heard)
+      assert.are.equal(2, refused)
+    end,
+  },
+  {
     name = "answers not_found for a door being deleted and for a type that is not a name, never throwing",
     run = function(world)
       local handle = ready(world)
