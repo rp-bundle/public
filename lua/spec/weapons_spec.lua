@@ -254,6 +254,9 @@ describe("rpf.weapons", function()
     end
     assert.are.same({ true }, { rpf.weapons.unequip(7, "pistol") })
     assert.is_true(p.weapons[7].WEAPON_PISTOL, "the engine still has it")
+    -- A client claiming a respawn it never had does not make it forgotten.
+    rpf.weapons.spawned(7)
+    assert.is_true(p.weapons[7].WEAPON_PISTOL)
     p.capabilities.strip_weapon = declared
     configure(p, { item("pistol", "WEAPON_PISTOL") })
     assert.is_nil(p.weapons[7].WEAPON_PISTOL, "taken back on the next sync")

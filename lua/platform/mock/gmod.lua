@@ -880,7 +880,9 @@ function gmod.install(side, host, options)
   end
   -- Weapons (L3): `Give` makes a weapon only of a class the engine has
   -- (`known_weapons` or `stored_weapons`) for a player who is alive, as
-  -- Gmod does, and answers NULL for one they already hold.
+  -- Gmod does, and answers NULL for one they already hold. The weapon comes
+  -- with a loaded clip whatever `bNoAmmo` says, which only holds back the
+  -- reserve: `clip1` and `clip2` until `SetClip1` and `SetClip2` change them.
   function Player:Alive()
     return not self.dead
   end
@@ -891,12 +893,26 @@ function gmod.install(side, host, options)
     if self.dead or not exists or self.weapons[class] then
       return nil
     end
-    self.weapons[class] = true
+    local weapon = {
+      class = class,
+      clip1 = 6,
+      clip2 = 1,
+      IsValid = function()
+        return true
+      end,
+      SetClip1 = function(w, n)
+        w.clip1 = n
+      end,
+      SetClip2 = function(w, n)
+        w.clip2 = n
+      end,
+    }
+    self.weapons[class] = weapon
     self.gave_ammo[class] = not no_ammo
-    return { class = class }
+    return weapon
   end
   function Player:HasWeapon(class)
-    return self.weapons ~= nil and self.weapons[class] == true
+    return self.weapons ~= nil and self.weapons[class] ~= nil
   end
   function Player:StripWeapon(class)
     if self.weapons then

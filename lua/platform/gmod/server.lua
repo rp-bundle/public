@@ -231,10 +231,13 @@ function server.weapon(spec)
   return name, list.Get("Weapon")[name] ~= nil or weapons.GetStored(name) ~= nil
 end
 
----Gives a player a weapon, without ammo (`Give`'s `bNoAmmo`). A player who
----is dead has no hands to give it to: the core gives it again when they
----spawn. Whether they have it after is the answer, since `Give` answers
----NULL both for a weapon they already had and for one a hook refused.
+---Gives a player a weapon, without ammo: `Give`'s `bNoAmmo` holds back the
+---reserve, and a weapon made now has its clips emptied, since a SWEP can
+---spawn with a loaded one and equipping must never be a way to get rounds.
+---A player who is dead has no hands to give it to: the core gives it again
+---when they spawn. Whether they have it after is the answer, since `Give`
+---answers NULL both for a weapon they already had and for one a hook
+---refused.
 ---@param player Player The player.
 ---@param name string The class.
 ---@return boolean given True if they have it now.
@@ -242,7 +245,11 @@ function server.give_weapon(player, name)
   if not IsValid(player) or not player:Alive() then
     return false
   end
-  player:Give(name, true)
+  local weapon = player:Give(name, true)
+  if IsValid(weapon) then
+    weapon:SetClip1(0)
+    weapon:SetClip2(0)
+  end
   return player:HasWeapon(name)
 end
 

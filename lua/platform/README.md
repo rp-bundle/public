@@ -68,8 +68,10 @@ function.
      state ending. For weapons (L3, `rpf.weapons`): `weapon(spec)` reading
      its own engine's name from an item's catalog `weapon` (nil when the
      item is no weapon here) and whether the engine knows it (`true`,
-     `false`, or nil where the server cannot tell, as on FiveM);
-     `give_weapon(player, name)` giving it without ammo, answering `false`
+     `false`, or nil where the server cannot tell, as on FiveM), one name
+     per weapon (FiveM's in capitals, as `GetHashKey` ignores case);
+     `give_weapon(player, name)` giving it without ammo, in reserve or in
+     its clips (Gmod empties a new weapon's clips), answering `false`
      when the player has no body to give it to; and
      `strip_weapon(player, name)`. The adapter also says when a player
      respawned, which empties their hands: `rpf.weapons.spawned(player)`

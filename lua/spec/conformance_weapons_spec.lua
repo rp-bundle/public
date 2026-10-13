@@ -123,6 +123,7 @@ conformance.run(busted, "weapons", {
 
       assert.are.same({ true }, { inventory.equip(handle, "pistol") })
       assert.is_true(world.holds(1, PISTOL), "the engine has it")
+      assert.are.equal(0, world.ammo(1, PISTOL), "with no rounds, in its clips or in reserve")
       assert.are.same({ "pistol" }, inventory.equipped(handle))
       assert.are.same({ true }, { inventory.equip(handle, "pistol") }, "again, nothing changes")
       assert.are.same({ "pistol" }, inventory.equipped(handle))

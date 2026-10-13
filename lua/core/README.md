@@ -1946,7 +1946,7 @@ back exactly as it was given.
 |---|---|
 | `equip(handle, item)` / `unequip(handle, item)` | What `rpf.api.inventory.equip` and `unequip` call: `true`, or `nil, "refused", reason` (`unsupported`, `not_logged_in`, `no_character`, `not_a_weapon`, `unknown_weapon`, `no_item`, `too_many`) |
 | `equipped(handle)` | The slugs, or nil and why |
-| `spawned(handle)` | The adapter says a player respawned, which empties their hands: what is equipped is given again. Only a player `active` with a character in play gets anything |
+| `spawned(handle)` | The adapter says a player respawned, which empties their hands: what is equipped is given again, and anything this module gave and failed to take back is taken back. A client's word is no proof, so nothing given is forgotten. Only a player `active` with a character in play gets anything |
 | `respawned()` | The client half: tells the server about a respawn only the client saw (FiveM), with `handoff.SPAWNED` |
 | `supported()`, `capabilities()` | Whether the adapter declares `weapon`, `give_weapon` and `strip_weapon`, which `rpf.capabilities()` reports |
 

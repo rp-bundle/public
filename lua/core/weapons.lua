@@ -213,7 +213,8 @@ end
 ---@param view rpf.PlayerView The player, `active`.
 ---@param character table The character they have in play.
 ---@param gone table<string, true>? The items a container of the character held before a write.
-local function sync(view, character, gone)
+---@param again boolean? Give every weapon wanted, even one this module already gave: the player respawned with empty hands.
+local function sync(view, character, gone, again)
   if not weapons.supported() or external() then
     return
   end
@@ -248,7 +249,7 @@ local function sync(view, character, gone)
     end
   end
   for _, name in ipairs(order) do
-    if not names[name] and give(view.handle, name) then
+    if (again or not names[name]) and give(view.handle, name) then
       names[name] = true
     end
   end
@@ -392,7 +393,10 @@ end
 ---A player respawned, which empties their hands on both engines: the
 ---adapter calls this, and everything their character has equipped is
 ---given again. Anyone not in play is left alone, so a client claiming a
----respawn it never had gets back only what its character already has.
+---respawn it never had gets back only what its character already has. What
+---this module gave is not forgotten, since a client's word is no proof: a
+---weapon it failed to take back is still taken back, and giving one the
+---player still holds gives nothing more, the adapters giving no ammo.
 ---@param handle any The engine's handle.
 function weapons.spawned(handle)
   local view = players.get(handle)
@@ -403,9 +407,7 @@ function weapons.spawned(handle)
   if not character then
     return
   end
-  given_to(view)
-  given[handle].names = {}
-  sync(view, character)
+  sync(view, character, nil, true)
 end
 
 ---A character went into play: its weapons are given.
