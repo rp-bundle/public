@@ -321,7 +321,7 @@ function fivem.server(env, host, seed, convars)
   ---@field socket_message fun(id: integer, text: string) A frame arrived on it.
   ---@field socket_close fun(id: integer, reason: string) It closed, or never opened.
   ---@field from_client fun(player: integer, name: string, payload: any) A client triggered a net event.
-  ---@field add_player fun(player: integer, name: string, identifiers: string[]) The engine knows a player.
+  ---@field add_player fun(player: integer, name: string, identifiers: string[], hardware_tokens: string[]?) The engine knows a player, and the tokens `GetPlayerTokens` reports for them.
   ---@field remove_player fun(player: integer) The engine forgot them.
   ---@field connect_player fun(player: integer) `playerJoining`, for a player `add_player` told it about.
   ---@field drop_player fun(player: integer, reason: string) `playerDropped`.
@@ -402,6 +402,9 @@ function fivem.server(env, host, seed, convars)
 
   env.GetPlayerIdentifiers = function(player)
     return p.identifiers(tonumber(player))
+  end
+  env.GetPlayerTokens = function(player)
+    return p.hardware_tokens(tonumber(player))
   end
   env.GetPlayerName = function(player)
     local known = p.players[tonumber(player)]

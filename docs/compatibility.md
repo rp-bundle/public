@@ -315,6 +315,7 @@ receiver takes the default (empty, `false` or `None`).
 |---|---|---|---|
 | `domains` | `hello` | Native | Added by K1. A core from before it runs only the native profile, so an absent field means native, never `null`, which is a core with no profile fixed yet |
 | `map` | `hello` | `default` | Added by #173. A core from before it places every world record on whatever map it runs, which is what FiveM's unnamed setup, `default`, means |
+| `hardware_tokens` | `begin_join` | Empty: none reported | Added by I4 to a frame a game server sends, and left out where the engine has none (Garry's Mod), so a join from a core before it decodes as one with no tokens |
 | `types` | `hold` | Empty: claims nothing | Added by J6 to a frame a game server sends, and left out by one that claims nothing, so every hold before it decodes as one that claims nothing |
 | `addon_permissions`, `all_addon_permissions` | A `StaffGrant` in `staff_permissions` | Empty, `false` | Added by L4 so linked staff can use installed addon action grants in game. Older captures keep their core flags; the owner grant includes future addon flags |
 | `domains` | `welcome` | Native | Added by K1, and left out when native: a native server's `welcome` is the one it was before K1, which is what every portal enforced then |

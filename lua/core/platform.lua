@@ -45,6 +45,7 @@ platform.SERVER = members({
   "random_hex",
   "thread",
   "identifiers",
+  "hardware_tokens",
   "name",
   "kick",
   "notify",

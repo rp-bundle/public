@@ -285,6 +285,11 @@ local platform = {
     progress = true,
   },
   identifiers = identifiers,
+  -- Garry's Mod has no hardware tokens (I4): only FiveM fingerprints a
+  -- machine, so nothing is reported here.
+  hardware_tokens = function()
+    return {}
+  end,
   name = function(player)
     return IsValid(player) and player:Nick() or ""
   end,

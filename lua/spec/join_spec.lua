@@ -109,6 +109,36 @@ describe("rpf.join", function()
     assert.are.equal("player 7", begins[1].name)
   end)
 
+  it("sends the engine's hardware tokens, bounded, and leaves the field out without any (I4)", function()
+    support.load_core()
+    local p = support.fake_platform()
+    p.player_identifiers[7] = { "license:abc" }
+    local tokens = { "2:aa", "", "3:bb", "2:aa", 42, string.rep("f", rpf.join.MAX_TOKEN_BYTES + 1) }
+    for i = 1, rpf.join.MAX_HARDWARE_TOKENS + 5 do
+      tokens[#tokens + 1] = "4:" .. i
+    end
+    p.player_hardware_tokens[7] = tokens
+    p.player_identifiers[8] = { "license:def" }
+    local connection = rpf.start_server(p, { url = "wss://portal.example/ws", api_key = "k" })
+    p.open()
+    p.deliver(support.portal_frame("welcome", { re = p.last().id, protocol = rpf.protocol.VERSION, server_id = SERVER }))
+    assert(connection.state == "ready")
+    for _, player in ipairs({ 7, 8 }) do
+      rpf.players.connected(player)
+      p.from_client(player, READY, "{}")
+    end
+
+    local begins = sent_of(p, "begin_join")
+    assert.are.equal(2, #begins)
+    local sent = begins[1].hardware_tokens
+    -- Strings only, each once, none empty or too long, and no more than the
+    -- portal accepts, so a busy machine's report is cut rather than refused.
+    assert.are.equal(rpf.join.MAX_HARDWARE_TOKENS, #sent)
+    assert.are.same({ "2:aa", "3:bb", "4:1" }, { sent[1], sent[2], sent[3] })
+    -- A player whose engine reports none sends no field at all.
+    assert.is_nil(begins[2].hardware_tokens)
+  end)
+
   it("repairs an in-game name that is not UTF-8 rather than lose the join", function()
     support.load_core()
     local p = support.fake_platform()

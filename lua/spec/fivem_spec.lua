@@ -492,6 +492,24 @@ describe("the FiveM adapter", function()
       local join = frames(record, "begin_join")[1]
       assert.is_truthy(join, "the join went out")
       assert.are.same({ "license:0123", "steam:1100001" }, join.identifiers)
+      assert.is_nil(join.hardware_tokens, "no tokens, no field")
+    end)
+
+    it("reports GetPlayerTokens verbatim, and the core sends them with the join (I4)", function()
+      local driver, record = started_server()
+      local platform = rpf.connection.platform
+      driver.add_player(7, "Sam", { "license:0123" }, { "2:aa11", "3:bb22", "4:cc33" })
+      assert.are.same({ "2:aa11", "3:bb22", "4:cc33" }, platform.hardware_tokens(7))
+      local welcome = support.portal_frame("welcome", {
+        re = frames(record, "hello")[1].id,
+        protocol = rpf.protocol.VERSION,
+        server_id = "00000000-0000-4000-8000-0000000000bb",
+      })
+      driver.socket_message(record.connects[1].id, assert(rpf.protocol.encode(rpf.protocol.PORTAL_TO_SERVER, welcome)))
+      driver.connect_player(7)
+      driver.from_client(7, "rpf:client_ready", "{}")
+      local join = assert(frames(record, "begin_join")[1], "the join went out")
+      assert.are.same({ "2:aa11", "3:bb22", "4:cc33" }, join.hardware_tokens)
     end)
 
     it("takes only string payloads from clients, from FiveM's source", function()

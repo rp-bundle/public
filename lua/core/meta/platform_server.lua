@@ -69,6 +69,14 @@ local Players = {}
 ---@return string[] identifiers For example `steam:…` or `license:…`.
 function Players.identifiers(player) end
 
+---The hardware tokens the engine reports for a player, verbatim: FiveM's
+---`GetPlayerTokens`, which fingerprint the machine and are specific to the
+---server. An alt signal for staff (I4), which the portal hashes before it
+---stores anything. An engine with none (Garry's Mod) returns an empty list.
+---@param player rpf.PlayerHandle The player.
+---@return string[] tokens For example `2:…` or `4:…`; empty when the engine has none.
+function Players.hardware_tokens(player) end
+
 ---The player's current in-game name.
 ---@param player rpf.PlayerHandle The player.
 ---@return string name As the engine reports it.

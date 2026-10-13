@@ -97,6 +97,7 @@ describe("rpf.platform", function()
       "disconnect",
       "engine",
       "expose",
+      "hardware_tokens",
       "http_request",
       "identifiers",
       "kick",

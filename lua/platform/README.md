@@ -75,6 +75,9 @@ function.
    - `identifiers` verbatim, with the engine account identifier the portal's
      `ENGINE_IDENTIFIERS` names for this engine. **Add the engine to that list
      in the same PR**, or none of its players can log in.
+   - `hardware_tokens` verbatim (FiveM's `GetPlayerTokens`), or an empty
+     list on an engine that has none (Garry's Mod). The core bounds them and
+     the portal stores only their hashes (I4).
    - `to_client` / `on_client` carry strings byte for byte, whatever the
      engine's message size limit; the platform supplies the sender.
    - `on_client_request` answers a client's `request_server` (J10): the

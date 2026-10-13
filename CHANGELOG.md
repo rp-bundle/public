@@ -27,8 +27,9 @@ item's `image` hash in the config snapshot (P3), and the profile (K1) in
 `hello` (optional: a core that leaves it out runs native) and `welcome`,
 the `report_unknown_ops` notice (#143), the map the game server runs
 in `hello` (#173; `default` when left out), and the config snapshot's
-`dialogs` (#175; empty when left out), and an item's `weapon` (L3, #177;
-left out for an item that is not one). A
+`dialogs` (#175; empty when left out), an item's `weapon` (L3, #177;
+left out for an item that is not one), and FiveM's `hardware_tokens` in
+`begin_join` (I4, #239; empty when left out). A
 message newer than a connection's protocol is refused `malformed` at the
 socket.
 
@@ -37,8 +38,10 @@ socket.
 - Alt signals (I4, #239): every successful register, login and resume
   records the address the player's client called from on its account, as
   HMACs of the address and of its /24 or /64 network under a key derived
-  per guild, never the address, for 30 days after it was last seen. A
-  deployment must set the new required `RPF_SIGNAL_KEY` (base64 of 32 or
+  per guild, never the address, for 30 days after it was last seen, and
+  the FiveM adapter reports `GetPlayerTokens` with the join, which the
+  portal bounds and keeps only as hashes under the same key, for a year
+  after they were last seen. A deployment must set the new required `RPF_SIGNAL_KEY` (base64 of 32 or
   more bytes, `openssl rand -base64 32`), or the portal refuses to start;
   keep it with the backups' encryption key (`docs/deployment.md`).
 - An item can be a weapon (L3, #177): on the items page, staff name the

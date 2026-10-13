@@ -155,10 +155,15 @@ describe("rpf.protocol against the corpus of the version it speaks", function()
       end)
 
       it("rejects a frame missing any of its fields, but the ones the portal leaves out", function()
-        -- `welcome`'s profile is left out when native (K1), and a hold's
-        -- claim when it claims nothing (J6), as
-        -- `crates/rpf-protocol/tests/protocol.rs`'s `OPTIONAL` names them.
-        local optional = { ["welcome.domains"] = true, ["hold.types"] = true }
+        -- `welcome`'s profile is left out when native (K1), a hold's claim
+        -- when it claims nothing (J6), and a join's hardware tokens when the
+        -- engine has none (I4), as `crates/rpf-protocol/tests/protocol.rs`'s
+        -- `OPTIONAL` names them.
+        local optional = {
+          ["welcome.domains"] = true,
+          ["hold.types"] = true,
+          ["begin_join.hardware_tokens"] = true,
+        }
         for tag, raw in pairs(corpus(direction)) do
           for _, field in ipairs(keys(json.decode(raw))) do
             if not optional[tag .. "." .. field] then

@@ -204,6 +204,38 @@ local function identifiers(handle)
   return rpf.json.array(out)
 end
 
+---The most hardware tokens one `BeginJoin` carries, the portal's
+---`player_auth::MAX_JOIN_HARDWARE_TOKENS`, which refuses a frame with more.
+---An engine reporting more is cut to this, so its players still log in.
+join.MAX_HARDWARE_TOKENS = 32
+
+---The longest token sent, in bytes: the portal's `MAX_JOIN_FIELD_BYTES`,
+---past which it drops one anyway.
+join.MAX_TOKEN_BYTES = 128
+
+---The hardware tokens sent in `BeginJoin` (I4): the engine's report, strings
+---only, each at most `MAX_TOKEN_BYTES` and once, cut to
+---`MAX_HARDWARE_TOKENS`. Nil when there are none, so the field is left out,
+---as the portal leaves it out of a frame it writes.
+---@param handle rpf.PlayerHandle The player.
+---@return string[]? tokens The tokens, in the engine's order, or nil.
+local function hardware_tokens(handle)
+  local out, seen = {}, {}
+  for _, token in ipairs(platform.hardware_tokens(handle) or {}) do
+    if #out >= join.MAX_HARDWARE_TOKENS then
+      break
+    end
+    if type(token) == "string" and token ~= "" and #token <= join.MAX_TOKEN_BYTES and not seen[token] then
+      seen[token] = true
+      out[#out + 1] = token
+    end
+  end
+  if #out == 0 then
+    return nil
+  end
+  return rpf.json.array(out)
+end
+
 ---Handles the portal's answer to one `BeginJoin`.
 ---@param session rpf.join.Session The login.
 ---@param seq integer Which `BeginJoin` this answers.
@@ -257,6 +289,7 @@ local function begin(session)
   connection:send("begin_join", {
     identifiers = identifiers(session.handle),
     name = rpf.json.repair_utf8(platform.name(session.handle)),
+    hardware_tokens = hardware_tokens(session.handle),
   }, function(reply, err)
     challenged(session, seq, reply, err)
   end)
