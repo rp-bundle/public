@@ -107,10 +107,10 @@ local function notify(...)
   while #queue > 0 do
     local event = table.remove(queue, 1)
     -- `emit` logs and skips a handler that throws; this keeps the queue
-    -- moving if anything else does.
+    -- moving, and `draining` honest, if anything else does, the log too.
     local ok, err = pcall(rpf.events.emit, event.name, event.change)
     if not ok then
-      log("error", "could not announce " .. event.name .. ": " .. tostring(err))
+      pcall(log, "error", "could not announce " .. event.name .. ": " .. tostring(err))
     end
   end
   draining = false
