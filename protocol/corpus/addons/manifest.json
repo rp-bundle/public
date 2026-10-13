@@ -98,6 +98,10 @@
         "talks": {
           "type": "ref",
           "to": "dialog"
+        },
+        "team": {
+          "type": "ref",
+          "to": "department"
         }
       }
     },

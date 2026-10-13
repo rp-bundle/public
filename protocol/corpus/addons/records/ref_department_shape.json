@@ -1,0 +1,17 @@
+{
+  "description": "A department is exactly an employer and a department (L2): a job's shape is not one.",
+  "type": "widget",
+  "fields": {
+    "label": "Pot",
+    "team": {
+      "employer": "lspd",
+      "job": "swat"
+    }
+  },
+  "expect": {
+    "error": {
+      "error": "wrong_type",
+      "field": "team"
+    }
+  }
+}

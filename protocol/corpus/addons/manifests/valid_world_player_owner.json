@@ -1,0 +1,80 @@
+{
+  "description": "An owner may be a player, for a server whose own framework owns characters (L2); the co-owners are then players too.",
+  "manifest": {
+    "namespace": "acme_doors",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Doors",
+    "types": {
+      "door": {
+        "schema": 1,
+        "authority": "live",
+        "owners": [
+          "server"
+        ],
+        "hold": "server",
+        "fields": {
+          "spot": {
+            "type": "vector3",
+            "required": true
+          },
+          "map": {
+            "type": "string",
+            "max_len": 64,
+            "index": true,
+            "nullable": true
+          },
+          "locked": {
+            "type": "boolean",
+            "default": true
+          },
+          "holder": {
+            "type": "ref",
+            "to": "player",
+            "index": true,
+            "nullable": true
+          },
+          "sharing": {
+            "type": "list",
+            "of": "ref",
+            "to": "player"
+          },
+          "employer": {
+            "type": "ref",
+            "to": "employer",
+            "index": true,
+            "nullable": true
+          },
+          "jobs": {
+            "type": "list",
+            "of": "ref",
+            "to": "job"
+          },
+          "departments": {
+            "type": "list",
+            "of": "ref",
+            "to": "department"
+          },
+          "ranks": {
+            "type": "list",
+            "of": "ref",
+            "to": "job"
+          }
+        },
+        "world": {
+          "kind": "point",
+          "position": "spot",
+          "map": "map",
+          "locked": "locked",
+          "owner": "holder",
+          "co_owners": "sharing",
+          "employer": "employer",
+          "jobs": "jobs",
+          "departments": "departments",
+          "ranks": "ranks"
+        }
+      }
+    }
+  },
+  "error": null
+}

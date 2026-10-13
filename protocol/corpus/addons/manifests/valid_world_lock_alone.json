@@ -1,0 +1,42 @@
+{
+  "description": "A lock needs no owner: who may open it is whoever the other roles give access, and an addon through `rpf.api.ownership` (L2).",
+  "manifest": {
+    "namespace": "acme_doors",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Doors",
+    "types": {
+      "door": {
+        "schema": 1,
+        "authority": "live",
+        "owners": [
+          "server"
+        ],
+        "hold": "server",
+        "fields": {
+          "spot": {
+            "type": "vector3",
+            "required": true
+          },
+          "map": {
+            "type": "string",
+            "max_len": 64,
+            "index": true,
+            "nullable": true
+          },
+          "locked": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "world": {
+          "kind": "point",
+          "position": "spot",
+          "map": "map",
+          "locked": "locked"
+        }
+      }
+    }
+  },
+  "error": null
+}

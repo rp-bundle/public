@@ -1,0 +1,80 @@
+{
+  "description": "A live type its server holds may name every ownership role (L2): the lock, the owner and co-owners, a job door's employer, and access by job, department and rank.",
+  "manifest": {
+    "namespace": "acme_doors",
+    "version": "1.0.0",
+    "api": 1,
+    "title": "Doors",
+    "types": {
+      "door": {
+        "schema": 1,
+        "authority": "live",
+        "owners": [
+          "server"
+        ],
+        "hold": "server",
+        "fields": {
+          "spot": {
+            "type": "vector3",
+            "required": true
+          },
+          "map": {
+            "type": "string",
+            "max_len": 64,
+            "index": true,
+            "nullable": true
+          },
+          "locked": {
+            "type": "boolean",
+            "default": true
+          },
+          "holder": {
+            "type": "ref",
+            "to": "character",
+            "index": true,
+            "nullable": true
+          },
+          "sharing": {
+            "type": "list",
+            "of": "ref",
+            "to": "character"
+          },
+          "employer": {
+            "type": "ref",
+            "to": "employer",
+            "index": true,
+            "nullable": true
+          },
+          "jobs": {
+            "type": "list",
+            "of": "ref",
+            "to": "job"
+          },
+          "departments": {
+            "type": "list",
+            "of": "ref",
+            "to": "department"
+          },
+          "ranks": {
+            "type": "list",
+            "of": "ref",
+            "to": "job"
+          }
+        },
+        "world": {
+          "kind": "point",
+          "position": "spot",
+          "map": "map",
+          "locked": "locked",
+          "owner": "holder",
+          "co_owners": "sharing",
+          "employer": "employer",
+          "jobs": "jobs",
+          "departments": "departments",
+          "ranks": "ranks"
+        }
+      }
+    }
+  },
+  "error": null
+}
