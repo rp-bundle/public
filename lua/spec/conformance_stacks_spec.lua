@@ -274,6 +274,20 @@ conformance.run(busted, "the facade's stacks", {
         "a cell the bread sits in takes nothing"
       )
       assert.are.same(
+        { nil, "refused", "no_space" },
+        { inventory.move(jane, ref(world, BAG, 1, "water"), CASE, ops.new(), {
+          position = { x = 65536, y = 0 },
+        }) },
+        "a cell past the grid is the grid's to refuse"
+      )
+      assert.are.same(
+        { nil, "refused", "invalid" },
+        { inventory.move(jane, ref(world, BAG, 1, "water"), CASE, ops.new(), {
+          position = { x = 2147483648, y = 0 },
+        }) },
+        "a position past i32 is no position"
+      )
+      assert.are.same(
         { nil, "refused", "invalid" },
         { inventory.move(jane, ref(world, BAG, 0, "water"), CASE, ops.new()) }
       )

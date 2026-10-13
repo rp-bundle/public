@@ -93,6 +93,9 @@ local NATIVE_ONLY = {
   ["inventory.hand"] = true,
 }
 
+---The bounds of a grid position, the portal's `IVector2`: `i32`.
+local I32_MIN, I32_MAX = -2147483648, 2147483647
+
 ---The most units one give or take moves: a stack's count is a `u32`.
 local MAX_UNITS = 4294967295
 facade.MAX_UNITS = MAX_UNITS
@@ -893,10 +896,12 @@ function facade.move(handle, stack, to, op_id, opts)
     and type(to) == "string"
     and type(opts) == "table"
     and (opts.count == nil or whole(opts.count, 1, MAX_UNITS))
-    and (opts.position == nil or (type(opts.position) == "table" and whole(opts.position.x, 0, 65535) and whole(
+    -- Any `i32` cell, as the portal's `IVector2` holds: whether it is in the
+    -- grid is the destination's validation's to say (`no_space`).
+    and (opts.position == nil or (type(opts.position) == "table" and whole(opts.position.x, I32_MIN, I32_MAX) and whole(
       opts.position.y,
-      0,
-      65535
+      I32_MIN,
+      I32_MAX
     )))
     and (opts.rotated == nil or type(opts.rotated) == "boolean")
   local settled, a, b, c = precheck(op_id, valid)
