@@ -371,6 +371,7 @@ function weapons.equipped(handle)
   if not view then
     return nil, character --[[@as string]]
   end
+  ---@cast character table
   return records.weapons_of(character)
 end
 

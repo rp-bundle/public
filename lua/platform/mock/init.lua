@@ -203,6 +203,9 @@ end
 
 ---A mock game server platform, and the functions the harness drives it with.
 ---@class rpf.mock.Server: rpf.ServerPlatform, rpf.mock.Common
+---@field weapons table<any, table<string, true>> Each player's weapons (L3), by name, as `give_weapon` and `strip_weapon` left them.
+---@field unknown_weapons table<string, true> Weapon names the engine does not know, which the harness lists.
+---@field bodiless table<any, true> Players with no body to give a weapon to (dead, or not spawned), which the harness lists.
 ---@field sockets table<integer, rpf.platform.SocketHandlers> Handlers for each connection attempt, by id, until it closes.
 ---@field socket integer? The id of the latest connection attempt. `send` uses only this one.
 ---@field players table<any, { name: string, identifiers: string[], hardware_tokens: string[]? }> What the engine knows about each connected player.

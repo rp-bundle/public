@@ -120,6 +120,8 @@ local gmod = {}
 ---@field include fun(path: string): any The fake `include`.
 ---@field driver rpf.mock.GmodDriver The driving functions as plain functions, as the fake game server calls a platform's.
 ---@field entities table<integer, rpf.mock.GmodEntity> Entities made with `ents.Create`, by index, until removed.
+---@field known_weapons table<string, true> The weapon classes `list.Get("Weapon")` lists (L3): Gmod's HL2 ones, and any the harness adds.
+---@field stored_weapons table<string, true> The SWEP classes `weapons.GetStored` has, which the harness adds.
 ---@field data table<string, rpf.mock.GmodDataFile> The fake `data/` directory, by path: what `file.Write` wrote.
 ---@field core rpf? The core's internal table, kept when the adapter loads `init.lua`, because publishing the API replaces the global. For tests to look inside.
 local World = {}

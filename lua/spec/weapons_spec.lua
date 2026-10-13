@@ -242,9 +242,9 @@ describe("rpf.weapons", function()
     }
     for engine, list in pairs(cases) do
       local world = conformance.boot(engine)
-      local weapon = world.server_platform.capabilities.weapon
+      local weapon = assert(world.server_platform.capabilities.weapon)
       for _, case in ipairs(list) do
-        local name, known = weapon(case[1])
+        local name, known = assert(weapon)(case[1])
         assert.are.same({ case[2], case[3] }, { name, known }, engine .. " " .. tostring(case[2]))
       end
       world.finish()

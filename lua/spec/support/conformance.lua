@@ -688,7 +688,7 @@ local function boot_fivem(opts)
   -- A player's ped is their id while they stand somewhere (`place`).
   world.holds = function(n, weapon)
     local held = driver.weapons[n]
-    return held ~= nil and held[GetHashKey(weapon.fivem)] ~= nil
+    return held ~= nil and held[rawget(_G, "GetHashKey")(weapon.fivem)] ~= nil
   end
   local stood = {}
   world.unspawn = function(n)
