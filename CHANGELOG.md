@@ -50,7 +50,7 @@ socket.
   Deleting or purging a character, purging a player and purging an
   employer take away what they owned or shared, audited per record as
   `addon.record.disown`.
-- References between records are picked and shown by name (N2, #377). A
+- References between records are picked and shown by name (N2, #181). A
   type may set `display`, the shown, indexed string field that names its
   records (`display_field` when it is not one); without it the portal
   takes the first such field of `list`, then of the layout. A `ref` to a
