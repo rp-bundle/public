@@ -506,10 +506,13 @@ function server.removed(entity)
   end
 end
 
----An item's weapon on FiveM (L3): the catalog's `fivem` name, and whether
----it is one of the stock weapons (`weapons.lua`). Any other name is nil,
----not false: a server can stream weapons of its own, and no server native
----says whether one exists, so it is given as named.
+---An item's weapon on FiveM (L3): the catalog's `fivem` name, in capitals,
+---and whether it is one of the stock weapons (`weapons.lua`). In capitals
+---because `GetHashKey` ignores case, so `weapon_pistol` and `WEAPON_PISTOL`
+---are one weapon, and the core, which tracks what it gave by name, must see
+---one name. Any other name is nil, not false: a server can stream weapons
+---of its own, and no server native says whether one exists, so it is given
+---as named.
 ---@param spec rpf.ConfigItemWeapon The catalog's entry.
 ---@return string? name The GTA weapon's name, or nil when the item is no weapon on FiveM.
 ---@return boolean? known True for a stock weapon, nil for any other.
@@ -518,7 +521,8 @@ function server.weapon(spec)
   if type(name) ~= "string" or name == "" then
     return nil
   end
-  return name, fivem.weapons.known[name:upper()] or nil
+  name = name:upper()
+  return name, fivem.weapons.known[name] or nil
 end
 
 ---Gives a player's ped a weapon, without ammo. `GiveWeaponToPed` runs on

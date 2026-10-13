@@ -1033,13 +1033,20 @@ function inventory.move(from, index, to, opts)
   if not valid then
     return nil, "invalid", why, to
   end
-  if from ~= to then
-    local applied, apply_err, apply_refusal = apply(source, source.contents)
-    if not applied then
-      return nil, apply_err, apply_refusal, from
-    end
+  if from == to then
+    return apply(target, target.contents)
   end
-  return apply(target, target.contents)
+  -- One batch, so `records.contents` comes once both are written.
+  local applied, apply_err, apply_refusal, where
+  rpf.records.batch(function()
+    applied, apply_err, apply_refusal = apply(source, source.contents)
+    if not applied then
+      where = from
+      return
+    end
+    applied, apply_err, apply_refusal = apply(target, target.contents)
+  end)
+  return applied, apply_err, apply_refusal, where
 end
 
 ---Splits units off a stack into a new stack of their own, with the same

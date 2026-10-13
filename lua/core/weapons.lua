@@ -21,10 +21,10 @@
 ---containers change (`records.contents`), records come or go, or a config
 ---arrives. Only an item *leaving* one of the character's containers takes
 ---it off the list: an equipped item that was in a container's contents
----before a write, and is in none of the character's held containers on the
----tick after it, comes off. The tick is what lets a move from the pockets to
----the backpack, which writes one and then the other, be seen whole. That is
----how dropping, giving away or selling the item takes the weapon, whoever
+---before a write, and is in none of the character's held containers after
+---it, comes off. A move from the pockets to the backpack writes both in one
+---`records.batch`, which announces them together, so it is seen whole. That
+---is how dropping, giving away or selling the item takes the weapon, whoever
 ---moved it. A container that stops being held (the character put away, a
 ---record the portal took back) changes what the engine has, never the
 ---list, so the weapons come back with the containers.
@@ -69,14 +69,6 @@ local declared = nil
 ---weapon names.
 ---@type table<any, { serial: integer, names: table<string, true> }>
 local given = {}
-
----Equipped items that left one of a character's containers this tick, by
----character id, each checked on the next (`prune`).
----@type table<string, table<string, true>>
-local leaving = {}
-
----Whether a `prune` is scheduled.
-local pruning = false
 
 ---Weapon names already logged as unknown to the engine, so each is said
 ---once until a config makes it known.
@@ -215,11 +207,12 @@ end
 
 ---Brings what a player in play holds in line with their character: the
 ---engine has the weapons of the equipped items the character carries, and
----no other weapon this module gave. Items in `gone` that are no longer
----carried also come off the list; nothing else does.
+---no other weapon this module gave. Items in `gone` (what one of the
+---character's containers held before a write) that it no longer carries
+---also come off the list; nothing else does.
 ---@param view rpf.PlayerView The player, `active`.
 ---@param character table The character they have in play.
----@param gone table<string, true>? Equipped items that left one of the character's containers.
+---@param gone table<string, true>? The items a container of the character held before a write.
 local function sync(view, character, gone)
   if not weapons.supported() or external() then
     return
@@ -448,48 +441,22 @@ local function on_dropping(view)
   given[view.handle] = nil
 end
 
----Brings each character in play that had an equipped item leave one of its
----containers in line, taking off the list each that is still not carried.
----Runs on the tick after the writes, so a move between two of the
----character's containers has written both.
-local function prune()
-  pruning = false
-  local due = leaving
-  leaving = {}
-  for _, pair in ipairs(playing()) do
-    local gone = due[pair.character.id]
-    if gone then
-      sync(pair.view, pair.character, gone)
-    end
-  end
-end
-
 ---A held container's contents changed: if a character in play owns it, the
----engine is brought in line now, and each equipped item the container held
----before is checked on the next tick (`prune`).
+---engine is brought in line, and each equipped item the container held
+---before that the character now carries none of comes off the list.
 ---@param id string The container.
----@param before table? What it held until now.
+---@param before table? What it held until the write (or the batch of them).
 local function on_contents(id, before)
   local container = records.get("container", id)
   local owner = container and container.owner
   if type(owner) ~= "table" or owner.kind ~= "character" then
     return
   end
+  local held = inventory.items_in(before)
   for _, pair in ipairs(playing()) do
     if pair.character.id == owner.id then
-      local held = inventory.items_in(before)
-      for _, slug in ipairs(records.weapons_of(pair.character)) do
-        if held[slug] then
-          leaving[owner.id] = leaving[owner.id] or {}
-          leaving[owner.id][slug] = true
-        end
-      end
-      sync(pair.view, pair.character)
+      sync(pair.view, pair.character, held)
     end
-  end
-  if next(leaving) and not pruning and platform then
-    pruning = true
-    platform.after(0, prune)
   end
 end
 
@@ -511,8 +478,6 @@ function weapons.start(p)
   declared = p.capabilities
   given = {}
   warned = {}
-  leaving = {}
-  pruning = false
   for _, name in ipairs(weapons.CAPABILITIES) do
     local value = declared and declared[name]
     if value ~= false and type(value) ~= "function" then

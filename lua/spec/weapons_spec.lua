@@ -217,21 +217,32 @@ describe("rpf.weapons", function()
     playing()
     assert.is_true((rpf.weapons.equip(7, "pistol")))
     rpf.records.lose({ { kind = "container", id = POCKETS } }, "taken back by staff")
-    p.advance(0)
     assert.is_nil(p.weapons[7].WEAPON_PISTOL, "nothing carries it now")
     assert.are.same({ "pistol" }, rpf.weapons.equipped(7), "but it is still equipped")
   end)
 
-  it("takes an item off only once it has left every container the character has", function()
+  it("takes an item off once it has left the character, before she can be put away", function()
     playing({ "pistol" })
     assert.is_true((rpf.inventory.remove(POCKETS, "raygun", 1)))
-    p.advance(0)
     assert.are.same({ "pistol" }, rpf.weapons.equipped(7), "another item leaving changes nothing")
     assert.is_true((rpf.inventory.remove(POCKETS, "pistol", 1)))
-    assert.is_nil(p.weapons[7].WEAPON_PISTOL, "taken back at once")
-    assert.are.same({ "pistol" }, rpf.weapons.equipped(7), "and off the list on the next tick")
-    p.advance(0)
-    assert.are.same({}, rpf.weapons.equipped(7))
+    assert.is_nil(p.weapons[7].WEAPON_PISTOL, "taken back")
+    assert.is_true(rpf.characters.deselect(7))
+    assert.are.same({}, rpf.records.weapons_of(assert(rpf.records.get("character", JANE))), "and off the list")
+  end)
+
+  it("emits a batch's contents changes once, after all its writes", function()
+    playing()
+    local seen = {}
+    rpf.events.on("records.contents", function(id, before)
+      seen[#seen + 1] = { id = id, items = rpf.inventory.items_in(before) }
+    end)
+    rpf.records.batch(function()
+      assert.is_true((rpf.inventory.remove(POCKETS, "pistol", 1)))
+      assert.are.equal(0, #seen, "not yet")
+      assert.is_true((rpf.inventory.remove(POCKETS, "raygun", 1)))
+    end)
+    assert.are.same({ { id = POCKETS, items = { pistol = true, raygun = true } } }, seen, "once, with what it held first")
   end)
 
   it("tries again to take back a weapon the engine failed to strip", function()
@@ -261,10 +272,10 @@ describe("rpf.weapons", function()
   it("reads each engine's own name, and what that engine can say of it", function()
     local conformance = require("spec.support.conformance")
     local cases = {
-      -- FiveM's server knows its stock weapons, in any case, and cannot tell
-      -- of any other.
+      -- FiveM's server knows its stock weapons, in any case, names each in
+      -- capitals as `GetHashKey` ignores case, and cannot tell of any other.
       fivem = {
-        { { fivem = "weapon_pistol", gmod = "weapon_pistol" }, "weapon_pistol", true },
+        { { fivem = "weapon_pistol", gmod = "weapon_pistol" }, "WEAPON_PISTOL", true },
         { { fivem = "WEAPON_STREAMED_CUSTOM" }, "WEAPON_STREAMED_CUSTOM", nil },
         { { gmod = "weapon_pistol" }, nil, nil },
       },

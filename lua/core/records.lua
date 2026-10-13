@@ -368,6 +368,14 @@ end
 ---@type table<table<string, true>, true>
 local watching = {}
 
+---How deep in `records.batch` this is: 0 outside one.
+local batching = 0
+
+---The containers a batch has changed so far, in the order first written,
+---each with what it held before.
+---@type { id: string, before: table? }[]
+local batched = {}
+
 ---Asks for a flush after a change, so changes made together go out in one
 ---report, and notes the record for `records.watch`.
 ---@param entry rpf.records.Entry The record changed.
@@ -623,12 +631,49 @@ function records.set_contents(id, contents)
   if not ok then
     return nil, "invalid", refusal
   end
+  ---@type table?
   local before = entry.data.contents
+  if before ~= nil then
+    before = json.copy(before)
+  end
   entry.data.contents = json.copy(contents)
   entry.changed.contents = true
   touched(entry)
-  events.emit("records.contents", id, before ~= nil and json.copy(before) or nil)
+  if batching == 0 then
+    events.emit("records.contents", id, before)
+    return true
+  end
+  for _, change in ipairs(batched) do
+    if change.id == id then
+      return true
+    end
+  end
+  batched[#batched + 1] = { id = id, before = before }
   return true
+end
+
+---Runs writes that belong together, such as a move's two containers, and
+---only then emits `records.contents` for each container they changed, once,
+---in the order first written, with what it held before the first write. So
+---a listener sees the whole change: an item moved from the pockets to the
+---backpack never looks, between the two writes, as if it had left the
+---character (`rpf.weapons`). Batches nest; the outermost emits. An error in
+---`fn` still emits for what it wrote, then is raised again.
+---@param fn fun() The writes.
+function records.batch(fn)
+  batching = batching + 1
+  local ok, err = pcall(fn)
+  batching = batching - 1
+  if batching == 0 then
+    local due = batched
+    batched = {}
+    for _, change in ipairs(due) do
+      events.emit("records.contents", change.id, change.before)
+    end
+  end
+  if not ok then
+    error(err, 0)
+  end
 end
 
 ---Whether an account may go below zero.

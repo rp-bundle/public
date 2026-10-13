@@ -172,7 +172,6 @@ conformance.run(busted, "weapons", {
       assert.is_true((api.inventory.equip(handle, "pistol")))
       assert.are.same({ true }, { api.inventory.take(handle, "pistol", 1, api.ops.new()) })
       assert.is_false(world.holds(1, PISTOL), "taken back with the item")
-      world:advance(0)
       assert.are.same({}, api.inventory.equipped(handle), "and taken off")
     end,
   },
@@ -184,13 +183,11 @@ conformance.run(busted, "weapons", {
       assert.is_true((world.api.inventory.equip(handle, "pistol")))
       -- The pockets are written first, without the pistol, then the backpack.
       assert.are.same({ true }, { inventory.move(POCKETS, 1, BACKPACK) })
-      world:advance(0)
       assert.are.same({ "pistol" }, world.api.inventory.equipped(handle), "still equipped")
       assert.is_true(world.holds(1, PISTOL), "and still held")
 
       -- Out of the backpack and away: now it is gone.
       assert.are.same({ true }, { inventory.remove(BACKPACK, "pistol", 1) })
-      world:advance(0)
       assert.are.same({}, world.api.inventory.equipped(handle))
       assert.is_false(world.holds(1, PISTOL))
     end,
@@ -202,11 +199,9 @@ conformance.run(busted, "weapons", {
       assert.is_true((world.api.inventory.equip(handle, "pistol")))
       assert.is_true(world.core.characters.deselect(handle))
       world:pump()
-      world:advance(0)
       assert.is_false(world.holds(1, PISTOL))
 
       world:select(handle, JANE)
-      world:advance(0)
       assert.are.same({ "pistol" }, world.api.inventory.equipped(handle), "still equipped")
       assert.is_true(world.holds(1, PISTOL), "and given again")
     end,

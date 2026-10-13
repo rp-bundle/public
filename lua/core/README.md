@@ -785,6 +785,10 @@ anything not held, so a module keeps ids and reads through it every time.
   ledger entry's `client_id` here, refuses to overdraw an account without
   `unlimited_balance`, and keeps every balance within ±`MAX_AMOUNT`.
   A description is at most `records.MAX_DESCRIPTION_BYTES` (256).
+  `records.batch(fn)` runs writes that belong together (`inventory.move`'s
+  two containers, an exchange's) and emits `records.contents` for each
+  container only once all are written, with what it held before the first,
+  so a listener never sees a move half done.
   A character's names are trimmed of the portal's whitespace (Rust's
   `str::trim`, the Unicode `White_Space` set, `records.WHITESPACE`, which a
   spec holds equal to `characters::NAME_WHITESPACE`; Lua's `%s` would miss
@@ -1951,10 +1955,12 @@ character goes into play, their containers change (`records.contents`),
 records come or go, or a config arrives: the engine has the weapons of the
 equipped items the character carries a unit of, in any held container and
 whatever its data, given where they are missing, and nothing else it gave.
-Only `records.contents` takes an item off the list: one equipped item the
+Only `records.contents` takes an item off the list: an equipped item the
 container held before the write (the event carries a copy) that the
-character carries none of on the next tick (`after(0)`, so a move between
-two of its containers is seen whole). A container released or lost changes
+character now carries none of. A move between two of its containers is one
+`records.batch`, announced once both are written, so it is seen whole. A
+FiveM adapter names weapons in capitals, since `GetHashKey` ignores case,
+so two spellings of one weapon are tracked as one. A container released or lost changes
 what the engine has, never the list. A weapon the adapter failed to strip
 stays on its list of what it gave, and the next sync tries again. A weapon the engine does not know is logged once and
 not given; an item that stops being a weapon in config stays equipped and is
