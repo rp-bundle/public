@@ -35,6 +35,7 @@
 ---@field records rpf.records The records this server holds (C7), and nothing else.
 ---@field sync rpf.sync Holds, releases and state reports for those records.
 ---@field accounts rpf.accounts Balances, transfers and payments on held accounts, and the ledger fold.
+---@field inventory rpf.inventory What a held container holds, the rules it must keep, and the moves a server makes on it (D6).
 ---@field characters rpf.characters A logged-in player's characters: list, create, select and switch.
 ---@field jobs rpf.jobs Characters' jobs, duty and salaries (D7).
 ---@field edits rpf.edits Staff edits of held records: the commands that change a character, an account or a container this server holds (F5).
