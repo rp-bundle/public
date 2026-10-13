@@ -1650,11 +1650,13 @@ held by the server whose `world` names ownership roles (`locked`, `owner`,
   employs.
 - **`lock` and `unlock(type, id, opts)`** write the `locked` field of a
   held record with `records.set_addon_fields`, as staff edits do, so they
-  work whichever addon defines the type. They announce `records.changed`
-  with `by = "core"` and `ownership.locked` with `{ type, id, locked,
-  player_id }`. Already in the state asked is `true`. A refusal is `false`,
-  the reason (`off`, `not_found`, `not_lockable`, `no_access`, `invalid`,
-  `failed`) and its `MESSAGES` sentence. With `opts.player`, access is
+  work whichever addon defines the type. They announce `ownership.locked`
+  with `{ type, id, locked, player_id }`, then `records.changed` with
+  `by = "core"` and the record as it is by then, so when a handler of
+  either turns the lock back, the last event of each says how the record
+  is. Already in the state asked is `true`. A refusal is `false`, the
+  reason (`off`, `not_found`, `not_lockable`, `no_access`, `invalid`,
+  `inactive`, `failed`) and its `MESSAGES` sentence. With `opts.player`, access is
   checked first.
 - **Lock and Unlock**: on every `addons.state` to `active`, each of the
   addon's types with a `locked` role gets

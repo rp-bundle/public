@@ -334,13 +334,16 @@ local function set(type_name, id, locked, opts)
     return refuse("failed")
   end
   local player = handle ~= nil and rpf.players.get(handle) or nil
-  rpf.data.announce("records.changed", { type = type_name, id = id, record = rpf.data.view(id), by = "core" })
+  -- `ownership.locked` first, and the record read only after it, so a
+  -- handler of either that turns the lock back is heard after this one:
+  -- the last event of each says how the record is.
   rpf.events.emit("ownership.locked", {
     type = type_name,
     id = id,
     locked = locked,
     player_id = player and player.player_id or nil,
   })
+  rpf.data.announce("records.changed", { type = type_name, id = id, record = rpf.data.view(id), by = "core" })
   return true
 end
 

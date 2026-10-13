@@ -309,6 +309,30 @@ conformance.run(busted, "Ownership and locks", {
     end,
   },
   {
+    name = "ends each event's sequence with the door as it is when a handler turns the lock back",
+    run = function(world)
+      ready(world)
+      local id = door(world, { holder = OWNER, locked = false })
+      local api = world.api
+      local heard, seen = {}, {}
+      api.events.on("ownership.locked", function(change)
+        heard[#heard + 1] = change.locked
+      end)
+      local turned = false
+      api.events.on("records.changed", function(change)
+        seen[#seen + 1] = change.record.fields.locked
+        if change.by == "core" and change.record.fields.locked and not turned then
+          turned = true
+          assert(api.ownership.unlock(DOOR, id))
+        end
+      end)
+      assert.is_true(api.ownership.lock(DOOR, id))
+      assert.is_false((api.ownership.locked(DOOR, id)))
+      assert.are.same({ true, false }, heard, "ownership.locked in the order it happened")
+      assert.are.equal(false, seen[#seen], "the last records.changed is the door now")
+    end,
+  },
+  {
     name = "answers not_found for a door being deleted and for a type that is not a name, never throwing",
     run = function(world)
       local handle = ready(world)
