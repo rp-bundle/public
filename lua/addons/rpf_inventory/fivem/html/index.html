@@ -1,6 +1,7 @@
 <!doctype html>
 <!--
-  rpf_inventory's NUI page: the inventory a player opens with I. It draws
+  rpf_inventory's NUI page: the inventory a player opens with I, and the
+  HUD in a corner that is always there. It draws
   what the server answered and posts back what the player picked; the
   client script sends that to the server, which checks it all again.
   Everything it shows (item, character and container names) is someone's
@@ -24,6 +25,7 @@
       <section id="containers" aria-label="What you carry"></section>
     </main>
     <div id="menu" role="menu" hidden></div>
+    <aside id="hud" aria-label="HUD" hidden></aside>
     <script src="app.js"></script>
   </body>
 </html>

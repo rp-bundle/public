@@ -1,7 +1,8 @@
 -- The FiveM entry point on a client: `I` (or `/rpf_inventory`) opens the
 -- inventory in this resource's NUI page, which draws what the server
--- answered and posts back what the player picked. The page decides
--- nothing; every command goes to the server as an interaction.
+-- answered and posts back what the player picked, and the same page shows
+-- the HUD in a corner all the time. The page decides nothing; every
+-- command goes to the server as an interaction.
 local rpf = exports.rpf:api() ---@type rpf.Api
 
 ---Whether the page is open, with the mouse given to it.
@@ -53,6 +54,14 @@ local function refresh()
   end)
 end
 
+---Hands the HUD to the page, or hides it.
+---@param hud table? What the server answered, or nil.
+local function draw_hud(hud)
+  SendNUIMessage({ type = "hud", hud = hud })
+end
+
+rpf_inventory.start_hud(rpf, draw_hud)
+
 RegisterCommand("rpf_inventory", function()
   if shown then
     return
@@ -80,5 +89,6 @@ RegisterNUICallback("command", function(data, cb)
     if shown then
       refresh()
     end
+    rpf_inventory.refresh_hud(rpf, draw_hud)
   end)
 end)

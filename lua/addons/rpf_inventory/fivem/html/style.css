@@ -35,6 +35,15 @@ button:hover, button:focus { border-color: var(--accent); outline: none; }
 .tile .count { position: absolute; top: 3px; right: 6px; font-size: 12px; color: var(--muted); }
 .tile.special::after { content: "★"; position: absolute; top: 3px; left: 6px; font-size: 11px; color: var(--accent); }
 .weight { color: var(--muted); font-weight: 400; }
+#hud { position: absolute; min-width: 160px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+#hud.top_left { top: 2vh; left: 1.5vw; }
+#hud.top_right { top: 2vh; right: 1.5vw; }
+#hud.bottom_left { bottom: 2vh; left: 1.5vw; }
+#hud.bottom_right { bottom: 2vh; right: 1.5vw; }
+#hud .row { display: flex; justify-content: space-between; gap: 12px; }
+#hud .row span:first-child { color: var(--muted); text-transform: capitalize; }
+#hud .bar { height: 4px; background: var(--tile); border-radius: 2px; margin: 2px 0 4px; }
+#hud .bar > div { height: 100%; background: var(--accent); border-radius: 2px; }
 #menu { position: absolute; min-width: 180px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 4px; }
 #menu label { color: var(--muted); font-size: 12px; }
 #menu input, #menu select { font: inherit; color: var(--text); background: var(--tile); border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; }

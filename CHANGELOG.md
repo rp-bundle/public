@@ -42,12 +42,14 @@ socket.
   player opens their inventory (`I` on FiveM, `rpf_inventory` on Gmod) and
   sees their character's containers with each item's image, and their
   money. They move, use, give to a player nearby and throw away stacks, and
-  hand cash over, each once however often the request is sent. Staff
+  hand cash over, each once however often the request is sent. A HUD in a
+  corner shows their money, job and rank, and what other addons put on it
+  (`rpf.api.addons.call("rpf_inventory.hud", …)`). Staff
   choose on its **Inventory settings** data page whether giving, throwing
   away and handing cash over are allowed, from which account, and how near
-  another player must be. Beside a framework that owns the items (Qbox's
-  ox_inventory) it stands aside and says so once, unless staff set it to
-  run.
+  another player must be, and what the HUD shows and where. Beside a
+  framework that owns the items (Qbox's ox_inventory and HUD) it stands
+  aside and says so once, unless staff set it to run.
 - Alt signals (I4, #239): every successful register, login and resume
   records the address the player's client called from on its account, as
   HMACs of the address and of its /24 or /64 network under a key derived

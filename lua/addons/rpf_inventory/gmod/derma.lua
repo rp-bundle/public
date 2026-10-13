@@ -60,6 +60,7 @@ end
 local function send(rpf, action, payload)
   rpf_inventory.command(rpf, action, payload, function(ok, message)
     tell(ok and "Done." or tostring(message))
+    rpf_inventory.refresh_hud(rpf, rpf_inventory.draw_hud)
     if IsValid(frame) then
       rpf_inventory.open_derma(rpf)
     end

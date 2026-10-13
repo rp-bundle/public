@@ -64,6 +64,7 @@ local function seed(world)
         first_name = first,
         last_name = "Doe",
         gender = "female",
+        job = { employer = "lspd", job = "officer" },
       },
     }
     owned[wallet] = {
@@ -109,7 +110,13 @@ local function config(world)
   local json = world.core.json
   local size = json.object({ x = 1, y = 1 })
   return {
-    new_character = json.object({ accounts = json.array({ { name = "wallet", amount = 0 } }) }),
+    new_character = json.object({
+      accounts = json.array({ { name = "wallet", amount = 0 }, { name = "bank", amount = 0 } }),
+    }),
+    employers = json.array({ { slug = "lspd", name = "LSPD", description = "" } }),
+    employer_jobs = json.array({
+      { employer = "lspd", slug = "officer", name = "Officer", description = "", rank = 10 },
+    }),
     items = json.array({
       json.object({ slug = "water", name = "Water", weight = 1, size = size, stack_limit = 10 }),
       json.object({ slug = "bread", name = "Bread", weight = 1, size = size, stack_limit = 10 }),
@@ -410,6 +417,40 @@ conformance.run(busted, "the rpf_inventory starter addon", {
         assert.are.same({ false, said }, { answer.ok, answer.reason }, action)
       end
       assert.are.same({ "water×3", "water×1 for Sam" }, holds(world, BAG))
+    end,
+  },
+  {
+    name = "shows a HUD with the accounts staff picked, the job, and what other addons report",
+    run = function(world)
+      ready(world, { hud_accounts = { "wallet" }, hud_corner = "top_left" })
+      local api = world.api
+      -- Another addon (rpf_needs, say) puts its values on Jane's HUD.
+      local jane = assert(api.players.by_player_id(PLAYER)).handle
+      local hunger = { label = "Hunger", value = 40, max = 100 }
+      assert.are.same({ true, true }, { api.addons.call("rpf_inventory.hud", jane, "acme_needs.hunger", hunger) })
+      assert.are.same(
+        { true, false, "invalid" },
+        { api.addons.call("rpf_inventory.hud", jane, "acme_needs.thirst", { label = "", value = 1 }) }
+      )
+      local answer = interact(world, 1, "rpf_inventory.hud")
+      assert.is_true(answer.ok, tostring(answer.reason))
+      assert.are.same({
+        corner = "top_left",
+        money = { { account = "wallet", balance = 100 } },
+        job = { name = "Officer", employer = "LSPD", rank = 10, on_duty = false },
+        extras = { { key = "acme_needs.hunger", label = "Hunger", value = 40, max = 100 } },
+      }, answer.data, "the bank is not one staff picked")
+      assert.are.same({}, interact(world, 2, "rpf_inventory.hud").data.extras, "Sam's HUD has nothing of Jane's")
+      assert.are.same({ true, true }, { api.addons.call("rpf_inventory.hud", jane, "acme_needs.hunger", nil) })
+      assert.are.same({}, interact(world, 1, "rpf_inventory.hud").data.extras, "taken off")
+    end,
+  },
+  {
+    name = "shows no HUD when staff turned it off",
+    run = function(world)
+      ready(world, { hud = false })
+      local answer = interact(world, 1, "rpf_inventory.hud")
+      assert.are.same({ false, "The HUD is off on this server." }, { answer.ok, answer.reason })
     end,
   },
 })

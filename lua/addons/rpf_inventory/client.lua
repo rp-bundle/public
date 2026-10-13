@@ -183,6 +183,73 @@ function rpf_inventory.command(rpf, action, payload, callback)
   end)
 end
 
+---How often the HUD asks for what it shows, in milliseconds: often enough
+---that money handed over shows within moments, and a small part of the
+---interactions a player may send (20 every 10 seconds).
+rpf_inventory.HUD_EVERY = 5000
+
+---How long the HUD waits before asking again after the server said it is
+---off or stands aside, in milliseconds: staff may turn it on meanwhile.
+rpf_inventory.HUD_OFF_WAIT = 60000
+
+---What an interaction answers when a request did not get through this
+---time, which says nothing about whether the HUD is on.
+local TRANSIENT = {
+  timeout = true,
+  not_logged_in = true,
+  too_many = true,
+  unavailable = true,
+  failed = true,
+}
+
+---Whether a HUD request is waiting for its answer, so a slow one never has
+---another sent behind it.
+local hud_waiting = false
+
+---When the HUD may ask again, after it was told it is off.
+local hud_quiet_until = 0
+
+---Asks the server for the HUD once, and draws what it answered: `draw(nil)`
+---hides it.
+---@param rpf rpf.Api The API.
+---@param draw fun(hud: table?) Draws the HUD: `{ corner, money, job, extras }`.
+function rpf_inventory.refresh_hud(rpf, draw)
+  if hud_waiting then
+    return
+  end
+  hud_waiting = true
+  local sent = rpf.interactions.request("rpf_inventory.hud", {}, function(ok, hud)
+    hud_waiting = false
+    if ok and type(hud) == "table" then
+      draw(hud)
+      return
+    end
+    draw(nil)
+    -- Quiet for a while only when the server said no (the HUD is off, it
+    -- stands aside) or the addon is not running there; a request that did
+    -- not get through this time (the rate, a timeout) is asked again soon.
+    if not TRANSIENT[hud] then
+      hud_quiet_until = (rpf.time.now() or 0) + rpf_inventory.HUD_OFF_WAIT
+    end
+  end)
+  if not sent then
+    hud_waiting = false
+  end
+end
+
+---Starts the HUD: asks every `HUD_EVERY`, and draws each answer. Before the
+---player has logged in the requests are refused on the client, and cost
+---nothing.
+---@param rpf rpf.Api The API.
+---@param draw fun(hud: table?) Draws the HUD, or hides it for nil.
+function rpf_inventory.start_hud(rpf, draw)
+  rpf.time.every(rpf_inventory.HUD_EVERY, function()
+    if (rpf.time.now() or 0) >= hud_quiet_until then
+      rpf_inventory.refresh_hud(rpf, draw)
+    end
+  end)
+end
+
 ---Fetches the image of every item the view shows, each once, and hands each
 ---to `draw` as it arrives. An item without one is left to its name.
 ---@param rpf rpf.Api The API.
