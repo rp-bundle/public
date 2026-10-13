@@ -594,6 +594,53 @@ conformance.run(busted, "the facade's stacks", {
     end,
   },
   {
+    name = "takes what a handler used from the stack it used, wherever that moved while it ran",
+    run = function(world)
+      local during = nil
+      local inner = nil
+      local jane = playing(world, nil, {
+        {
+          manifest = food("acme_food"),
+          start = function()
+            assert(world.api.inventory.on_use("water", function()
+              -- What another script could do while a handler waits.
+              if during then
+                during()
+              end
+              return true, 1
+            end))
+          end,
+        },
+      })
+      local inventory, ops, core = world.api.inventory, world.api.ops, world.core
+      local bottle = ref(world, BAG, 2, "water", { note = "for Sam" })
+      -- The plain water goes meanwhile: the bottle moves up to index 1.
+      during = function()
+        assert(core.inventory.take_stack(BAG, 1, 3))
+      end
+      assert.is_true(inventory.use(jane, bottle, ops.new()))
+      assert.are.same({}, holds(world, BAG), "the bottle was used, at its new index")
+      -- The stack itself goes meanwhile: nothing else is taken in its place.
+      assert(core.inventory.add(BAG, "water", 2))
+      assert(core.inventory.add(BAG, "water", 1, { data = core.json.object({ note = "for Ann" }) }))
+      during = function()
+        assert(core.inventory.take_stack(BAG, 2, 1))
+      end
+      assert.are.same(
+        { nil, "unknown" },
+        { inventory.use(jane, ref(world, BAG, 2, "water", { note = "for Ann" }), ops.new()) }
+      )
+      assert.are.same({ { "water", 2 } }, holds(world, BAG), "the plain water is untouched")
+      -- A second use while one runs is refused before anything happens.
+      during = function()
+        inner = { inventory.use(jane, ref(world, BAG, 1, "water"), ops.new()) }
+      end
+      assert.is_true(inventory.use(jane, ref(world, BAG, 1, "water"), ops.new()))
+      assert.are.same({ nil, "refused", "busy" }, inner)
+      assert.are.same({ { "water", 1 } }, holds(world, BAG), "one unit used, once")
+    end,
+  },
+  {
     name = "keeps one handler per item, and drops it when its addon stops",
     run = function(world)
       local mine, theirs = food("acme_food"), food("acme_drinks")

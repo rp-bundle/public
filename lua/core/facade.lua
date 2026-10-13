@@ -1061,6 +1061,44 @@ local MAX_USE_MESSAGE = 256
 ---@type table<string, rpf.facade.Use>
 local uses = {}
 
+---Characters with a use running, by id. A handler may yield (a FiveM
+---`Wait`), and a second use of the same stack meanwhile would run its
+---effect against units the first is about to take, so a character uses
+---one thing at a time.
+---@type table<string, true>
+local using = {}
+
+---Where a stack is in a held container now: at `index` if it is still
+---there, else the first stack of the same item and data with at least
+---`count` units, which holds the same units as far as anyone can tell.
+---@param container string The container's id.
+---@param index integer Where it was.
+---@param item string Its item.
+---@param key string Its data's fingerprint.
+---@param count integer How many units must be there.
+---@return integer? index Where it is now, or nil when no such stack is left.
+local function find_again(container, index, item, key, count)
+  local view = rpf.inventory.view(container)
+  if not view then
+    return nil
+  end
+  ---Whether a stack is the one sought, with enough units.
+  ---@param s rpf.inventory.StackView? The stack.
+  ---@return boolean same True if it is.
+  local function same(s)
+    return s ~= nil and s.item == item and s.key == key and s.count >= count
+  end
+  if same(view.stacks[index]) then
+    return index
+  end
+  for i, s in ipairs(view.stacks) do
+    if same(s) then
+      return i
+    end
+  end
+  return nil
+end
+
 ---Registers what using an item does, for the addon whose code is running.
 ---One handler per item: registering it again from the same addon replaces
 ---it, and another addon's is `taken`. It goes when the addon stops.
@@ -1139,7 +1177,7 @@ end
 ---@param op_id any From `rpf.ops.new()`.
 ---@return boolean? ok True once used.
 ---@return string? status `refused`, `unavailable` or `unknown`.
----@return string? why For `refused`: as for `discard`, `no_use` for an item with no use here, and `declined` when the handler said no.
+---@return string? why For `refused`: as for `discard`, `no_use` for an item with no use here, `busy` while another use of the character's runs (its handler waiting on something), and `declined` when the handler said no.
 ---@return string? message For `declined`, the handler's message for the player, if it gave one. Not kept: a repeat of the op id answers `declined` without it.
 function facade.use(handle, stack, op_id)
   local settled, a, b, c = precheck(op_id, stack_shape(stack))
@@ -1156,6 +1194,9 @@ function facade.use(handle, stack, op_id)
   end
   if not facade.usable(found.item) then
     return nil, "refused", "no_use"
+  end
+  if using[character.id] then
+    return nil, "refused", "busy"
   end
   -- Taking units out of contents that pass their rules leaves contents that
   -- pass, so once this holds, the take after the handler cannot be refused.
@@ -1181,6 +1222,7 @@ function facade.use(handle, stack, op_id)
   end
   local message = nil
   local detail = detail_of(handle, { item = found.item })
+  using[character.id] = true
   local done, status, why = rpf.ops.run(op_id, "inventory.use", durable, function()
     local ctx = rpf.addons.context_of(entry.namespace)
     local keys, ran, ok, second = rpf.records.watch(function()
@@ -1211,13 +1253,21 @@ function facade.use(handle, stack, op_id)
       return nil, "unknown", "its use handler answered it used " .. tostring(second) .. " of " .. found.count
     end
     if used > 0 then
-      if not rpf.inventory.take_stack(stack.container, found.index, used) then
+      -- Found again, not taken at the old index: a handler that waited
+      -- may come back to a container that changed under it, and the stack
+      -- it used may have moved, or gone.
+      local index = find_again(stack.container, found.index, found.item, found.key, used)
+      if not index then
+        return nil, "unknown", "the stack its use handler used changed while it ran"
+      end
+      if not rpf.inventory.take_stack(stack.container, index, used) then
         return nil, "unknown", "the units its use handler used up could not be taken"
       end
       changed[#changed + 1] = stack.container
     end
     return true
   end, detail)
+  using[character.id] = nil
   return done, status, why, message
 end
 
