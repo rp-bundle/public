@@ -625,7 +625,7 @@ describe("rpf.bridge", function()
           assert.is_false(rpf.api[domain].supports(call), domain .. "." .. call)
         end
       end
-      local stack = { container = "00000009-0000-4000-8000-000000000009", index = 1, item = "water" }
+      local stack = { container = "00000009-0000-4000-8000-000000000009", index = 1, item = "water", key = "0000000000000000" }
       assert.are.same({ nil, "unsupported" }, { rpf.api.inventory.containers(7) })
       assert.are.same({ nil, "refused", "unsupported" }, { rpf.api.inventory.move(7, stack, stack.container, op()) })
       assert.are.same({ nil, "refused", "unsupported" }, { rpf.api.inventory.discard(7, stack, 1, op()) })

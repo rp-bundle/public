@@ -753,9 +753,9 @@ end
 -- Stacks -------------------------------------------------------------------
 --
 -- An inventory screen names one stack: this bottle, that pistol. A stack is
--- named by `{ container, index, item, data }`, where `container` and `index`
--- are what `containers` answered, and `item` and `data` are the slug and the
--- data (none for a plain stack) the caller saw there.
+-- named by `{ container, index, item, key }`, where `container`, `index`
+-- and `key` are what `containers` answered, and `item` is the slug the
+-- caller saw there. `key` is a fingerprint of the stack's data.
 -- Everything in it may be a client's word, so it is resolved inside the
 -- player's scope: the container must be one of the character's own held
 -- containers, and another character's container, one nobody here holds
@@ -779,51 +779,13 @@ end
 
 ---Whether a value has the shape of a stack reference.
 ---@param stack any The value.
----@return boolean ok True for `{ container = string, index = integer, item = string, data = table? }`.
+---@return boolean ok True for `{ container = string, index = integer, item = string, key = string }`.
 local function stack_shape(stack)
   return type(stack) == "table"
     and type(stack.container) == "string"
     and whole(stack.index, 1, MAX_UNITS)
     and type(stack.item) == "string"
-    and (stack.data == nil or type(stack.data) == "table")
-end
-
----How deep `same_data` looks before it gives up and calls two values
----different. Item data the portal accepts is far shallower; a client's
----reference nested deeper is refused as `stale` rather than walked.
-local MAX_DATA_DEPTH = 32
-
----Whether two pieces of item data are the same, field by field. Compared
----by structure rather than by encoding, so data that went to a client and
----came back through the engine's serialisation (which can turn an empty
----object into an empty array) still matches. Nil and an empty table are
----both "no data".
----@param a any One.
----@param b any The other.
----@param depth integer? How deep this is, for `MAX_DATA_DEPTH`.
----@return boolean same True if they are.
-local function same_data(a, b, depth)
-  depth = depth or 0
-  if depth > MAX_DATA_DEPTH then
-    return false
-  end
-  if a == nil or (type(a) == "table" and next(a) == nil) then
-    return b == nil or (type(b) == "table" and next(b) == nil)
-  end
-  if type(a) ~= "table" or type(b) ~= "table" then
-    return a == b
-  end
-  for key, value in pairs(a) do
-    if not same_data(value, b[key], depth + 1) then
-      return false
-    end
-  end
-  for key in pairs(b) do
-    if a[key] == nil then
-      return false
-    end
-  end
-  return true
+    and type(stack.key) == "string"
 end
 
 ---One of a character's held containers, by an id from outside.
@@ -857,10 +819,11 @@ local function resolve_stack(character, stack)
   if not found then
     return nil, "not_found"
   end
-  -- The data as well as the item: taking the plain water before a bottle
-  -- with a note in it moves the bottle into the water's index, and an old
-  -- screen naming the water must not throw the bottle away.
-  if found.item ~= stack.item or not same_data(found.data, stack.data) then
+  -- The data as well as the item, by its fingerprint: taking the plain
+  -- water before a bottle with a note in it moves the bottle into the
+  -- water's index, and an old screen naming the water must not throw the
+  -- bottle away.
+  if found.item ~= stack.item or found.key ~= stack.key then
     return nil, "stale"
   end
   return found
@@ -917,7 +880,7 @@ end
 ---another of theirs, or to a spot in the same grid, once per op id. Both
 ---containers are checked before either changes.
 ---@param handle any The engine's handle.
----@param stack any The stack: `{ container, index, item, data }`.
+---@param stack any The stack: `{ container, index, item, key }`.
 ---@param to any The destination container's id, which may be the stack's own.
 ---@param op_id any From `rpf.ops.new()`.
 ---@param opts any? `{ count, position, rotated }`: how many (the whole stack unless given), and where in a grid.
@@ -977,7 +940,7 @@ end
 ---Destroys units of one stack of the character's, once per op id: what a
 ---player throws away. The units are gone, not put anywhere.
 ---@param handle any The engine's handle.
----@param stack any The stack: `{ container, index, item, data }`.
+---@param stack any The stack: `{ container, index, item, key }`.
 ---@param count any How many, from one to all the stack holds.
 ---@param op_id any From `rpf.ops.new()`.
 ---@return boolean? ok True once gone.
@@ -1018,7 +981,7 @@ end
 ---each other is the caller's to decide (`rpf.world`).
 ---@param handle any The engine's handle of the player handing over.
 ---@param target any The engine's handle of the player receiving.
----@param stack any The stack: `{ container, index, item, data }`.
+---@param stack any The stack: `{ container, index, item, key }`.
 ---@param count any How many, from one to all the stack holds.
 ---@param op_id any From `rpf.ops.new()`.
 ---@return boolean? ok True once handed over.

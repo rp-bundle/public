@@ -926,7 +926,8 @@ either.
 | `move(from, index, to, opts)` | Moves `opts.count` units (the whole stack by default) of the stack or placement at `index`, with its data, to where `add` would put them. `to` may be `from`: a new spot in a grid |
 | `split(id, index, count, opts)` | Splits units into a new stack with the same data: next to it in a list, at `opts.position` or the first free spot in a grid. Never merges |
 | `take_stack(id, index, count)` | Takes units out of the one stack at an index, whatever its data, validated whole: what a player throws away (`rpf.facade`'s `discard`) |
-| `view(id)` | A held container read for a screen: its layout, grid size and weight limit spelt out, its stacks numbered from 1 with their catalog names, data, and grid positions, and what it weighs. Nil when not held |
+| `view(id)` | A held container read for a screen: its layout, grid size and weight limit spelt out, its stacks numbered from 1 with their catalog names, data, data fingerprint (`key`) and grid positions, and what it weighs. Nil when not held |
+| `stack_key(data)` | A stack's data fingerprint: two 32-bit polynomial hashes of its canonical encoding, 16 hex digits. Names which stack a screen showed among others of the same item; not a security boundary, since every stack it tells apart is the same player's |
 | `count(id, item)` | Units of an item across every stack |
 
 `inventory.edit(contents, flags, catalog, edit)` is the staff edits' pure
@@ -1216,16 +1217,18 @@ happened). Arguments are checked first, and a bad one is `refused`
 (`invalid`, `invalid_op`) without being journaled.
 
 **Stacks are named, and resolved in the player's scope.** `move`,
-`discard` and `hand` name a stack as `{ container, index, item, data }`, which a
+`discard` and `hand` name a stack as `{ container, index, item, key }`, which a
 player's client may have sent. The container is looked for only among the
 character's own held containers (`containers_of`), so another character's,
 one not held here and one that never was are all `not_found`; the index
-must hold a stack, and the stack's item and data must still be the ones
-named, or the call is `stale` rather than acting on whatever moved into
+must hold a stack, and the stack's item and the fingerprint of its data
+(`key`, `inventory.stack_key`) must still be the ones named, or the call is `stale` rather than acting on whatever moved into
 its place: taking plain water shifts a bottle of water with a note in it
 into the water's index, and an old screen naming the water must not throw
-the bottle away. Data is compared field by field, not by its encoding, so
-data that went to a client and back through the engine still matches.
+the bottle away. The fingerprint is a string, because the data itself
+does not survive every way a reference travels: an engine's export or a
+client's payload can turn an empty object into an empty array, and JSON's
+null into an empty table.
 An op id the journal already has answers as it was before any of that is
 looked at (a repeat of a move that went through finds the stack gone, and
 must still answer `true`), and the checks run before the journal, so a

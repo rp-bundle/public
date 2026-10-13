@@ -31,6 +31,7 @@
 ---@class rpf.inventory
 ---@field MAX_DATA_BYTES integer The most one stack's serialised `ItemData` may take, in bytes: `ItemCatalog::default`'s `max_data_bytes`, the bound the portal applies to every server. Not in the config snapshot, so mirrored here, and `spec/inventory_spec.lua` reads the Rust default to keep the two equal.
 ---@field MAX_STACKS integer The most stacks (list) or placements (grid) one container may hold: `ItemCatalog::default`'s `max_stacks`, mirrored the same way.
+---@field stack_key fun(data: table?): string A fingerprint of a stack's data, which names the stack a screen showed among others of the same item (`rpf.facade`'s stack calls).
 ---@field DEFAULTS rpf.inventory.ItemDef What an unknown item behaves as when the config carries no `item_defaults` (none has arrived yet): `ItemCatalog::default`'s, which is also what the portal uses then.
 ---@field ERRORS string[] Every rule `validate` can name, the portal's `ContentsError` tags plus the two only Lua can see: `malformed` (contents the portal could not decode) and `unknown_flag` (a flag from a newer portal, which this core cannot enforce, so it refuses rather than guess).
 local inventory = {}
@@ -1265,6 +1266,29 @@ function inventory.take_stack(id, index, count)
   return apply(container, contents)
 end
 
+---A short fingerprint of a stack's data: two 32-bit polynomial hashes of
+---its canonical encoding (`data_key`, keys sorted), as 16 hex digits. It
+---names which stack a screen showed, so that another stack of the same item
+---that shifted into its index since is told apart from it. A string
+---survives every way a reference travels (an engine's export, a client's
+---payload), where the data itself would not: an empty object can come
+---back as an empty array, and the JSON null sentinel as an empty table.
+---Not a security boundary: every stack it tells apart is the same
+---player's, so a collision would at worst act on one of their own.
+---@param data table? The data.
+---@return string key The fingerprint.
+local function stack_key(data)
+  local text = data_key(data) or ""
+  local a, b = 5381, 2166136261
+  for i = 1, #text do
+    local byte = text:byte(i)
+    a = (a * 33 + byte) % 4294967296
+    b = (b * 131 + byte + 7) % 4294967296
+  end
+  return string.format("%08x%08x", a, b)
+end
+inventory.stack_key = stack_key
+
 ---One stack of `inventory.view`.
 ---@class rpf.inventory.StackView
 ---@field index integer Its 1-based index: in the stacks of a list, the placements of a grid.
@@ -1272,6 +1296,7 @@ end
 ---@field name string? The item's name, from the catalog; nil for an item the catalog does not have.
 ---@field count integer How many units.
 ---@field data table? Its `ItemData`, a copy, when it carries any.
+---@field key string A fingerprint of its data (`inventory.stack_key`), the same for every stack of plain units.
 ---@field position { x: integer, y: integer }? In a grid, its top-left cell.
 ---@field rotated boolean? In a grid, whether it lies a quarter turn.
 
@@ -1323,6 +1348,7 @@ function inventory.view(id)
       name = type(item) == "table" and type(item.name) == "string" and item.name or nil,
       count = stack.count,
       data = data_key(stack.data) ~= "{}" and json.copy(stack.data) or nil,
+      key = stack_key(stack.data),
     }
     if placements then
       local p = placements[i]

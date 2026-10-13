@@ -1415,18 +1415,18 @@ if not containers then
   return false, err -- `unsupported` where a framework owns items: stand aside
 end
 -- containers[1]: { id, name = "Pockets", layout = "list", max_weight = 20, weight = 6,
---   stacks = { { index = 1, item = "water", name = "Water", count = 3 }, ... } }
+--   stacks = { { index = 1, item = "water", name = "Water", count = 3, key = "0b3e…" }, ... } }
 return true, { containers = containers }
 ```
 
-The client names a stack back as `{ container, index, item, data }`, and the
+The client names a stack back as `{ container, index, item, key }`, and the
 call that acts on it resolves it inside the player's scope: a container
 that is not one of the character's own is `not_found`, exactly as one that
 never existed, and a stack whose item or data is no longer the one
 named (it moved since the screen was drawn) is `stale`, so an old index
-never moves the wrong stack, even another of the same item. Send each
-stack's `data` to the client with the rest of it, and have the client name
-it back unchanged. Pass what the client sent straight through:
+never moves the wrong stack, even another of the same item. `key` is a
+fingerprint of the stack's data, a short string: send it to the client
+with the rest of the stack, and have the client name it back unchanged. Pass what the client sent straight through:
 
 | Call | Does |
 |---|---|

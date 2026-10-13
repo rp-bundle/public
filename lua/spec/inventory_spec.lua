@@ -411,7 +411,7 @@ describe("rpf.inventory", function()
     it("numbers a list's stacks, with their names and data", function()
       local view = assert(inventory.view(BAG))
       assert.are.same({ "list", 100 }, { view.layout, view.max_weight })
-      assert.are.same({ index = 1, item = "water", name = "Water", count = 3 }, view.stacks[1])
+      assert.are.same({ index = 1, item = "water", name = "Water", count = 3, key = inventory.stack_key(nil) }, view.stacks[1])
       assert.are.same({ serial = "A1", ammo = { 30 } }, view.stacks[2].data)
       assert.is_nil(view.grid)
     end)
@@ -422,6 +422,33 @@ describe("rpf.inventory", function()
       assert.are.same({ "grid", { x = 3, y = 3 } }, { view.layout, view.grid })
       assert.are.same({ x = 2, y = 1 }, view.stacks[1].position)
       assert.is_false(view.stacks[1].rotated)
+    end)
+
+    it("fingerprints each stack's data, the same for every plain stack", function()
+      local view = assert(inventory.view(BAG))
+      assert.are.equal(inventory.stack_key(nil), view.stacks[1].key)
+      assert.are.equal(inventory.stack_key(json.object({})), view.stacks[1].key, "no data and empty data are one")
+      assert.are.equal(16, #view.stacks[2].key)
+      assert.are_not.equal(view.stacks[1].key, view.stacks[2].key)
+    end)
+
+    it("tells data apart that an engine's round trip would blur", function()
+      local key = inventory.stack_key
+      assert.are_not.equal(
+        key(json.object({ note = json.null })),
+        key(json.object({ note = json.object({}) })),
+        "null is not an empty object"
+      )
+      assert.are_not.equal(key(json.object({ note = json.array({}) })), key(json.object({ note = json.object({}) })))
+      assert.are.equal(key(json.object({ a = 1, b = 2 })), key(json.object({ b = 2, a = 1 })), "key order is not data")
+      local deep, deeper = json.object({}), json.object({})
+      local d1, d2 = deep, deeper
+      for _ = 1, 40 do
+        d1.n, d2.n = json.object({}), json.object({})
+        d1, d2 = d1.n, d2.n
+      end
+      d2.x = 1
+      assert.are_not.equal(key(deep), key(deeper), "deep data is fingerprinted whole")
     end)
 
     it("is nil for a container this server does not hold", function()

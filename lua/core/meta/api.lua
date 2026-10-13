@@ -602,12 +602,13 @@ function Money.supports(call) end
 ---**Stacks.** An inventory screen deals in the stacks a player sees:
 ---`containers` reads the character's containers with every stack
 ---numbered, and `move`, `discard` and `hand` act on one of them, named by an
----`rpf.InventoryStackRef` (`{ container, index, item, data }`), data and all. Pass
+---`rpf.InventoryStackRef` (`{ container, index, item, key }`), data and all. Pass
 ---what a player's client sent: the container is looked for only among the
 ---character's own held containers, so another character's container, one
 ---not held here and one that never existed are the same `not_found`, and a
 ---stack whose item or data is no longer the one named (it moved since the
----screen was drawn) is `stale`, never another stack. Indexes count from 1. These
+---screen was drawn, and another took its index) is `stale`, never another
+---stack. Indexes count from 1. These
 ---four are RPF's own: where a framework owns items (a companion server),
 ---they are `unsupported`, which is how an inventory screen knows to stand
 ---aside for the framework's.
@@ -615,9 +616,9 @@ function Money.supports(call) end
 ---```lua
 ---local containers = rpf.inventory.containers(player.handle)
 ---local bag = containers[1]
----local first = bag.stacks[1] -- { index = 1, item = "water", name = "Water", count = 3 }
+---local first = bag.stacks[1] -- { index = 1, item = "water", name = "Water", count = 3, key = "…" }
 ---local op = rpf.ops.new()
----rpf.inventory.move(player.handle, { container = bag.id, index = 1, item = first.item, data = first.data }, containers[2].id, op, { count = 1 })
+---rpf.inventory.move(player.handle, { container = bag.id, index = 1, item = first.item, key = first.key }, containers[2].id, op, { count = 1 })
 ---```
 ---
 ---**Server only.**
@@ -713,7 +714,7 @@ function Inventory.supports(call) end
 ---@field container string The container's id.
 ---@field index integer The stack's index in it, from 1.
 ---@field item string The item's slug you saw there: another item there now is `stale`.
----@field data table? The stack's data you saw there (`rpf.InventoryStack.data`), nil for a plain stack. Another stack of the same item with other data there now, as when an earlier stack was taken and the rest shifted up, is `stale`.
+---@field key string The stack's `key` you saw there (`rpf.InventoryStack.key`). Another stack of the same item with other data there now, as when an earlier stack was taken and the rest shifted up, is `stale`.
 
 ---A container of the character's, read for a screen.
 ---@class rpf.InventoryContainer
@@ -732,6 +733,7 @@ function Inventory.supports(call) end
 ---@field name string? The item's name from the catalog, nil for an item it does not have. A client's catalog has no names, so send it this.
 ---@field count integer How many units.
 ---@field data table? Its data (a bottle's note, a weapon's serial), a copy, when it carries any.
+---@field key string A fingerprint of its data, 16 hex digits, the same for every stack of plain units. Name the stack back with it (`rpf.InventoryStackRef.key`): a string survives the trip to a client and back, where the data itself may not.
 ---@field position { x: integer, y: integer }? In a grid, its top-left cell, from 0.
 ---@field rotated boolean? In a grid, whether it lies a quarter turn.
 
