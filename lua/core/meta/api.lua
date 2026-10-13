@@ -1273,6 +1273,7 @@ function Ownership.has_access(player, type_name, id) end
 ---(owners kept across restarts), `session` (players' ownership cleared when
 ---the server starts) or `off` (RPF locks nothing, for a server whose own
 ---system owns its doors). An addon that sells doors stands aside when off.
+---Until the panel offers the choice (#176's third part), it is `persistent`.
 ---@return "persistent"|"session"|"off" mode The mode.
 function Ownership.mode() end
 

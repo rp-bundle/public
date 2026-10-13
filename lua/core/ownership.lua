@@ -75,6 +75,41 @@ local function log(level, message)
   end
 end
 
+---Lock changes waiting to be announced, oldest first: what `notify` has
+---not delivered yet, each `{ name, change }`.
+---@type { name: string, change: table }[]
+local queue = {}
+
+---Whether `notify` is delivering the queue now, so a lock change made by one
+---of its handlers waits its turn.
+local draining = false
+
+---Announces lock changes in the order they happened. Events run their
+---handlers at once, so a handler that turns the lock back would have its
+---change heard by the handlers after it before the change it answered;
+---queued, every handler hears every change in order, and the last it hears
+---is how the record is.
+---@param ... { name: string, change: table } The events, in order.
+local function notify(...)
+  for _, event in ipairs({ ... }) do
+    queue[#queue + 1] = event
+  end
+  if draining then
+    return
+  end
+  draining = true
+  while #queue > 0 do
+    local event = table.remove(queue, 1)
+    -- `emit` logs and skips a handler that throws; this keeps the queue
+    -- moving if anything else does.
+    local ok, err = pcall(rpf.events.emit, event.name, event.change)
+    if not ok then
+      log("error", "could not announce " .. event.name .. ": " .. tostring(err))
+    end
+  end
+  draining = false
+end
+
 ---A refusal: `false`, the reason, and the sentence for a player.
 ---@param reason string Why.
 ---@return boolean ok Always false.
@@ -84,8 +119,11 @@ local function refuse(reason)
   return false, reason, ownership.MESSAGES[reason] or ownership.MESSAGES.invalid
 end
 
----The server's ownership mode: `persistent`, `session` or `off`, as staff
----set it in the panel, or the default while the config names none.
+---The server's ownership mode: `persistent`, `session` or `off`, as the
+---config's `world.ownership` setting names it, or the default while it names
+---none. The portal registers the setting, and staff choose it in the panel,
+---with #176's third part; until a portal sends it, every server reads
+---`persistent`, which is how locks behaved before there was a choice.
 ---@return string mode The mode.
 function ownership.mode()
   local mode = rpf.config.setting(ownership.SETTING)
@@ -179,6 +217,11 @@ end
 ---@param fields table The record's fields.
 ---@return boolean access True if the job gives access.
 local function job_access(handle, world, fields)
+  -- A framework's own jobs are not RPF's employers, whatever its bridge
+  -- names them: only the owner and co-owners count there.
+  if rpf.domains.is_external("jobs") then
+    return false
+  end
   local job = rpf.facade.current_job(handle)
   if type(job) ~= "table" or type(job.employer) ~= "string" then
     return false
@@ -334,16 +377,13 @@ local function set(type_name, id, locked, opts)
     return refuse("failed")
   end
   local player = handle ~= nil and rpf.players.get(handle) or nil
-  -- `ownership.locked` first, and the record read only after it, so a
-  -- handler of either that turns the lock back is heard after this one:
-  -- the last event of each says how the record is.
-  rpf.events.emit("ownership.locked", {
-    type = type_name,
-    id = id,
-    locked = locked,
-    player_id = player and player.player_id or nil,
+  notify({
+    name = "ownership.locked",
+    change = { type = type_name, id = id, locked = locked, player_id = player and player.player_id or nil },
+  }, {
+    name = "records.changed",
+    change = { type = type_name, id = id, record = rpf.data.view(id), by = "core" },
   })
-  rpf.data.announce("records.changed", { type = type_name, id = id, record = rpf.data.view(id), by = "core" })
   return true
 end
 

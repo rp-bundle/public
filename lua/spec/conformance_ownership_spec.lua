@@ -306,6 +306,21 @@ conformance.run(busted, "Ownership and locks", {
       }, "another employer's job of the same name")
       job = nil
       assert.is_false(access(station), "no job")
+
+      -- Where the server's framework owns jobs, its jobs are not RPF's
+      -- employers, even through a bridge that names one the same.
+      ---@diagnostic disable-next-line: duplicate-set-field
+      world.core.domains.is_external = function(name)
+        return name == "jobs"
+      end
+      job = { employer = "lspd", name = "sergeant", department = "patrol", grade = 5 }
+      assert.are.same({ false, false, false, false, false }, {
+        access(by_job),
+        access(by_department),
+        access(by_rank),
+        access(station),
+        access(listed),
+      }, "a framework's sergeant")
     end,
   },
   {
@@ -330,6 +345,34 @@ conformance.run(busted, "Ownership and locks", {
       assert.is_false((api.ownership.locked(DOOR, id)))
       assert.are.same({ true, false }, heard, "ownership.locked in the order it happened")
       assert.are.equal(false, seen[#seen], "the last records.changed is the door now")
+    end,
+  },
+  {
+    name = "lets every handler hear a lock change before one a handler made in answer to it",
+    run = function(world)
+      ready(world)
+      local id = door(world, { holder = OWNER, locked = false })
+      local api = world.api
+      local turned = false
+      -- The first handler turns the lock back; the ones after it must still
+      -- hear the lock before the unlock.
+      api.events.on("ownership.locked", function(change)
+        if change.locked and not turned then
+          turned = true
+          assert(api.ownership.unlock(DOOR, id))
+        end
+      end)
+      local heard, seen = {}, {}
+      api.events.on("ownership.locked", function(change)
+        heard[#heard + 1] = change.locked
+      end)
+      api.events.on("records.changed", function(change)
+        seen[#seen + 1] = change.record.fields.locked
+      end)
+      assert.is_true(api.ownership.lock(DOOR, id))
+      assert.is_false((api.ownership.locked(DOOR, id)))
+      assert.are.same({ true, false }, heard, "the lock, then the unlock")
+      assert.are.same({ true, false }, seen, "the door locked, then unlocked")
     end,
   },
   {

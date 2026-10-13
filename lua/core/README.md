@@ -1652,9 +1652,9 @@ held by the server whose `world` names ownership roles (`locked`, `owner`,
   held record with `records.set_addon_fields`, as staff edits do, so they
   work whichever addon defines the type. They announce `ownership.locked`
   with `{ type, id, locked, player_id }`, then `records.changed` with
-  `by = "core"` and the record as it is by then, so when a handler of
-  either turns the lock back, the last event of each says how the record
-  is. Already in the state asked is `true`. A refusal is `false`, the
+  `by = "core"`, through a queue: a lock change a handler makes is
+  announced after the one it answered has reached every handler, so each
+  hears the changes in order and the last says how the record is. Already in the state asked is `true`. A refusal is `false`, the
   reason (`off`, `not_found`, `not_lockable`, `no_access`, `invalid`,
   `inactive`, `failed`) and its `MESSAGES` sentence. With `opts.player`, access is
   checked first.
@@ -1666,7 +1666,9 @@ held by the server whose `world` names ownership roles (`locked`, `owner`,
   while the mode is not `off`, and refuses with the sentence the player is
   told.
 - **`mode()`** reads the `world.ownership` setting: `persistent`, `session`
-  or `off`, `persistent` while the config names none.
+  or `off`, `persistent` while the config names none. The portal registers
+  the setting with #176's third part, so until then every server reads
+  `persistent`.
 
 ### Placement (`rpf.placement`, L4)
 
