@@ -808,7 +808,9 @@ end
 ```
 
 `why` is a word to branch on (`off`, `not_found`, `not_lockable`,
-`no_access`), and `message` a sentence for the player.
+`no_access`, and `inactive` from a callback that outlived your addon's
+activation, as `rpf.records` answers), and `message` a sentence for the
+player.
 `rpf.ownership.locked(type, id)` and `has_access(player, type, id)` answer
 without changing anything, and `mode()` says what staff chose for the
 server: `persistent`, `session` (players' ownership cleared when the

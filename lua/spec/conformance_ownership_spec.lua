@@ -309,6 +309,40 @@ conformance.run(busted, "Ownership and locks", {
     end,
   },
   {
+    name = "gives a lockpick's code that outlived its activation nothing to read or change",
+    run = function(world)
+      local handle = ready(world)
+      local id = door(world, { holder = OWNER })
+      local pick_manifest = conformance.manifest("acme_pick")
+      local saved
+      assert(world.api.addons.register(pick_manifest, {
+        start = function()
+          -- What a callback that waited across a disable runs in.
+          saved = saved or world.core.addons.context()
+        end,
+      }))
+      local doors = conformance.installed(world.core, manifest())
+      world:install({ doors, conformance.installed(world.core, pick_manifest) })
+      world:install({ doors, conformance.installed(world.core, pick_manifest, false) })
+      world:pump()
+      local api = world.api.ownership
+      local _, got = world.core.addons.run(saved, function()
+        return {
+          { api.unlock(DOOR, id) },
+          { api.locked(DOOR, id) },
+          { api.has_access(handle, DOOR, id) },
+        }
+      end)
+      assert.are.same({
+        { false, "inactive", "That can't be done right now." },
+        { nil, "inactive" },
+        { nil, "inactive" },
+      }, got)
+      world:settle()
+      assert.are.same({ true, true }, { locked(world, id) }, "still locked")
+    end,
+  },
+  {
     name = "offers no lock and refuses every one while the server's ownership is off",
     run = function(world)
       local handle = ready(world, OWNER, { ["world.ownership"] = "off" })

@@ -1238,7 +1238,7 @@ local Ownership = {}
 ---@param id string The record's id.
 ---@param opts { player: any }? `player`: refuse unless this player has access.
 ---@return boolean ok True once it is locked.
----@return "off"|"not_found"|"not_lockable"|"no_access"|"invalid"|"failed"|nil reason `off` when the server's ownership mode is off, `not_found` for a record this server does not hold (another server's and a missing one alike), `not_lockable` for a type with no `locked` role, `no_access` for a player without a key.
+---@return "off"|"not_found"|"not_lockable"|"no_access"|"invalid"|"inactive"|"failed"|nil reason `off` when the server's ownership mode is off, `not_found` for a record this server does not hold (another server's and a missing one alike), `not_lockable` for a type with no `locked` role, `no_access` for a player without a key, `inactive` from code of an addon activation that has ended.
 ---@return string? message A sentence for the player.
 function Ownership.lock(type_name, id, opts) end
 
@@ -1248,7 +1248,7 @@ function Ownership.lock(type_name, id, opts) end
 ---@param id string The record's id.
 ---@param opts { player: any }? `player`: refuse unless this player has access.
 ---@return boolean ok True once it is unlocked.
----@return "off"|"not_found"|"not_lockable"|"no_access"|"invalid"|"failed"|nil reason As `lock` says.
+---@return "off"|"not_found"|"not_lockable"|"no_access"|"invalid"|"inactive"|"failed"|nil reason As `lock` says.
 ---@return string? message A sentence for the player.
 function Ownership.unlock(type_name, id, opts) end
 
@@ -1256,7 +1256,7 @@ function Ownership.unlock(type_name, id, opts) end
 ---@param type_name string The type.
 ---@param id string The record's id.
 ---@return boolean? locked True or false, or nil when it cannot be asked.
----@return "not_found"|"not_lockable"|nil reason Why not.
+---@return "not_found"|"not_lockable"|"inactive"|nil reason Why not, as `has_access` says.
 function Ownership.locked(type_name, id) end
 
 ---Whether a player has access to a thing this server holds: they own it,
@@ -1266,7 +1266,7 @@ function Ownership.locked(type_name, id) end
 ---@param type_name string The type.
 ---@param id string The record's id.
 ---@return boolean? access True or false, or nil when it cannot be asked.
----@return "not_found"|"not_lockable"|nil reason Why not: `not_lockable` for a type with no ownership.
+---@return "not_found"|"not_lockable"|"inactive"|nil reason Why not: `not_lockable` for a type with no ownership, `inactive` from code of an addon activation that has ended.
 function Ownership.has_access(player, type_name, id) end
 
 ---The server's ownership mode, as staff set it in the panel: `persistent`

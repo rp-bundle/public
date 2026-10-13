@@ -57,6 +57,7 @@ ownership.MESSAGES = {
   not_lockable = "That has no lock.",
   no_access = "You don't have a key to that.",
   invalid = "That can't be done.",
+  inactive = "That can't be done right now.",
   failed = "The lock won't turn.",
   already_locked = "It's already locked.",
   already_unlocked = "It's already unlocked.",
@@ -112,6 +113,14 @@ local function world_of(type_name)
     end
   end
   return nil
+end
+
+---Whether the calling code belongs to an addon activation that has ended
+---(`rpf.addons.stale`): a callback that waited across a disable or a reload
+---may finish, but reads and changes nothing, as `rpf.api.records` refuses it.
+---@return boolean stale True to refuse with `inactive`.
+local function stale()
+  return rpf.addons.stale()
 end
 
 ---A held record of a type, as the holder has it.
@@ -245,8 +254,11 @@ end
 ---@param type_name any The type.
 ---@param id any The record's id.
 ---@return boolean? access True or false, or nil when it cannot be asked.
----@return string? reason For nil: `not_found` for no such record held here, `not_lockable` for a type with no ownership.
+---@return string? reason For nil: `not_found` for no such record held here, `not_lockable` for a type with no ownership, `inactive` from code of an addon activation that has ended.
 function ownership.has_access(handle, type_name, id)
+  if stale() then
+    return nil, "inactive"
+  end
   local world = world_of(type_name)
   if not world then
     return nil, rpf.addons.definition(type_name) and "not_lockable" or "not_found"
@@ -262,8 +274,11 @@ end
 ---@param type_name any The type.
 ---@param id any The record's id.
 ---@return boolean? locked True or false, or nil when it cannot be asked.
----@return string? reason For nil: `not_found` or `not_lockable`, as `has_access` says.
+---@return string? reason For nil: `not_found`, `not_lockable` or `inactive`, as `has_access` says.
 function ownership.locked(type_name, id)
+  if stale() then
+    return nil, "inactive"
+  end
   local world = world_of(type_name)
   if not world or not world.locked then
     return nil, world and "not_lockable" or (rpf.addons.definition(type_name) and "not_lockable" or "not_found")
@@ -281,11 +296,14 @@ end
 ---@param locked boolean True to lock.
 ---@param opts any? `{ player = handle }`: refuse unless that player has access.
 ---@return boolean ok True once it is as asked (already being so counts).
----@return string? reason For a refusal: `off`, `not_found`, `not_lockable`, `no_access`, `invalid` or `failed`.
+---@return string? reason For a refusal: `off`, `not_found`, `not_lockable`, `no_access`, `invalid`, `inactive` or `failed`.
 ---@return string? message For a refusal, a sentence for the player.
 local function set(type_name, id, locked, opts)
   if opts ~= nil and type(opts) ~= "table" then
     return refuse("invalid")
+  end
+  if stale() then
+    return refuse("inactive")
   end
   if ownership.mode() == "off" then
     return refuse("off")
@@ -326,7 +344,7 @@ end
 ---@param id any The record's id.
 ---@param opts any? `{ player = handle }` to refuse unless that player has access.
 ---@return boolean ok True once locked.
----@return string? reason For a refusal: `off`, `not_found`, `not_lockable`, `no_access`, `invalid` or `failed`.
+---@return string? reason For a refusal: `off`, `not_found`, `not_lockable`, `no_access`, `invalid`, `inactive` (from code of an addon activation that has ended) or `failed`.
 ---@return string? message For a refusal, a sentence for the player.
 function ownership.lock(type_name, id, opts)
   return set(type_name, id, true, opts)
