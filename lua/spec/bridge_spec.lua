@@ -618,6 +618,22 @@ describe("rpf.bridge", function()
       assert.are.same({}, fw.calls)
     end)
 
+    it("answers the stack calls and transfers unsupported, which no bridge contract has", function()
+      playing()
+      for domain, calls in pairs({ money = { "transfer" }, inventory = { "containers", "move", "discard", "hand" } }) do
+        for _, call in ipairs(calls) do
+          assert.is_false(rpf.api[domain].supports(call), domain .. "." .. call)
+        end
+      end
+      local stack = { container = "00000009-0000-4000-8000-000000000009", index = 1, item = "water" }
+      assert.are.same({ nil, "unsupported" }, { rpf.api.inventory.containers(7) })
+      assert.are.same({ nil, "refused", "unsupported" }, { rpf.api.inventory.move(7, stack, stack.container, op()) })
+      assert.are.same({ nil, "refused", "unsupported" }, { rpf.api.inventory.discard(7, stack, 1, op()) })
+      assert.are.same({ nil, "refused", "unsupported" }, { rpf.api.inventory.hand(7, 8, stack, 1, op()) })
+      assert.are.same({ nil, "refused", "unsupported" }, { rpf.api.money.transfer(7, 8, "cash", 1, "x", op()) })
+      assert.are.same({}, fw.calls)
+    end)
+
     it("reads through the bridge, checking what it answers", function()
       playing()
       assert.are.same({ "cash", "bank" }, rpf.api.money.accounts())

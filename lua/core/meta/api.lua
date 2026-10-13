@@ -564,14 +564,61 @@ function Money.debit(player, account, amount, reason, op_id, apply) end
 ---@return string? reason For `refused`, as for `debit`.
 function Money.credit(player, account, amount, reason, op_id, apply) end
 
+---Moves money from one player to another, from an account to the other
+---player's account of the same name, as one ledger entry: cash handed
+---over. Both statements carry `reason`. It is RPF's own: where a framework
+---owns money (a companion server) it is `unsupported`, since no bridge can
+---make it one change.
+---
+---Whether the two are near each other is yours to decide, from
+---`rpf.world.position`; a player's client may name anyone.
+---
+---```lua
+---local op = rpf.ops.new()
+---local ok, status, why = rpf.money.transfer(player.handle, other, "wallet", 50, "Cash from Ann Lee", op)
+---```
+---@param player any The engine's handle of the player paying.
+---@param target any The engine's handle of the player paid: another logged-in player with a character in play.
+---@param account string The account's name on both sides (`rpf.money.accounts()`).
+---@param amount integer A whole amount from 1 to 2^53 − 1.
+---@param reason string Why, for both statements and staff; at most 256 bytes.
+---@param op_id string From `rpf.ops.new()`.
+---@return boolean? ok True once moved.
+---@return rpf.FacadeStatus? status Why not.
+---@return string? reason For `refused`: `invalid`, `invalid_op`, `expired_op`, `journal_full`, `unsupported`, `not_logged_in`, `no_character`, `no_target` (the target is not another logged-in player with a character in play), `no_account` (either side has no account of that name), `insufficient_funds`, `out_of_range`.
+function Money.transfer(player, target, account, amount, reason, op_id) end
+
 ---Whether a call works on this server: `debit` and `credit` need the
----server's addon account set.
----@param call string `accounts`, `balance`, `debit` or `credit`.
+---server's addon account set, and `transfer` RPF's own money (not a
+---framework's, through a bridge).
+---@param call string `accounts`, `balance`, `debit`, `credit` or `transfer`.
 ---@return boolean supported True if it does.
 function Money.supports(call) end
 
----A player's items, by item slug. Units are plain ones: a stack carrying
----data (a bottle with a note) is a thing of its own the facade leaves alone.
+---A player's items. `count`, `give` and `take` deal in plain units by item
+---slug: a stack carrying data (a bottle with a note) is a thing of its own
+---they leave alone.
+---
+---**Stacks.** An inventory screen deals in the stacks a player sees:
+---`containers` reads the character's containers with every stack
+---numbered, and `move`, `discard` and `hand` act on one of them, named by an
+---`rpf.InventoryStackRef` (`{ container, index, item }`), data and all. Pass
+---what a player's client sent: the container is looked for only among the
+---character's own held containers, so another character's container, one
+---not held here and one that never existed are the same `not_found`, and a
+---stack whose item is no longer the one named (it moved since the screen
+---was drawn) is `stale`, never another stack. Indexes count from 1. These
+---four are RPF's own: where a framework owns items (a companion server),
+---they are `unsupported`, which is how an inventory screen knows to stand
+---aside for the framework's.
+---
+---```lua
+---local containers = rpf.inventory.containers(player.handle)
+---local bag = containers[1]
+---local first = bag.stacks[1] -- { index = 1, item = "water", name = "Water", count = 3 }
+---local op = rpf.ops.new()
+---rpf.inventory.move(player.handle, { container = bag.id, index = 1, item = "water" }, containers[2].id, op, { count = 1 })
+---```
 ---
 ---**Server only.**
 ---@class rpf.api.Inventory
@@ -606,10 +653,86 @@ function Inventory.give(player, item, count, op_id, apply) end
 ---@return string? reason For `refused`: as for `give`, and `insufficient`.
 function Inventory.take(player, item, count, op_id, apply) end
 
----Whether a call works on this server.
----@param call string `count`, `give` or `take`.
+---The character's held containers, for a screen: each with its rules and
+---its stacks numbered, named and weighed. An addon's own UI reads this on
+---the server and sends the client what it draws.
+---@param player any The engine's handle.
+---@return rpf.InventoryContainer[]? containers By name, then id; empty when the character has none held.
+---@return rpf.FacadeRead? err Why not: `unsupported` where a framework owns items, `not_logged_in`, `no_character`.
+function Inventory.containers(player) end
+
+---Moves a stack, or units of it, to another of the character's containers,
+---or to a spot in the same grid. Both containers are checked before either
+---changes: units that do not fit are `no_space`, and nothing moves.
+---@param player any The engine's handle.
+---@param stack rpf.InventoryStackRef The stack.
+---@param to string The destination container's id, one of the character's own (the stack's own for a new spot in a grid).
+---@param op_id string From `rpf.ops.new()`.
+---@param opts { count: integer?, position: { x: integer, y: integer }?, rotated: boolean? }? How many (the whole stack unless given), and in a grid where (the first free spot unless given) and whether turned.
+---@return boolean? ok True once moved.
+---@return rpf.FacadeStatus? status Why not.
+---@return string? reason For `refused`: `invalid`, `invalid_op`, `expired_op`, `journal_full`, `unsupported`, `not_logged_in`, `no_character`, `not_found`, `stale`, `no_space`, `invalid_contents` (the source container's contents no longer pass its rules, as when the catalog changed).
+function Inventory.move(player, stack, to, op_id, opts) end
+
+---Destroys units of one of the character's stacks: what a player throws
+---away. They go nowhere: nothing is left for another player to pick up.
+---@param player any The engine's handle.
+---@param stack rpf.InventoryStackRef The stack.
+---@param count integer How many, from 1 to all the stack holds.
+---@param op_id string From `rpf.ops.new()`.
+---@return boolean? ok True once gone.
+---@return rpf.FacadeStatus? status Why not.
+---@return string? reason For `refused`: as for `move`, and `insufficient` for more than the stack holds.
+function Inventory.discard(player, stack, count, op_id) end
+
+---Hands units of one of the character's stacks to another player's
+---character, data and all: into the first of their held containers that
+---takes them all. Both sides are checked before either changes. Whether
+---the two are near each other is yours to decide, from
+---`rpf.world.position`.
+---@param player any The engine's handle of the player handing over.
+---@param target any The engine's handle of the player receiving: another logged-in player with a character in play.
+---@param stack rpf.InventoryStackRef The stack.
+---@param count integer How many, from 1 to all the stack holds.
+---@param op_id string From `rpf.ops.new()`.
+---@return boolean? ok True once handed over.
+---@return rpf.FacadeStatus? status Why not.
+---@return string? reason For `refused`: as for `discard`, `no_target` (the target is not another logged-in player with a character in play), and `no_space` when none of their containers takes the units.
+function Inventory.hand(player, target, stack, count, op_id) end
+
+---Whether a call works on this server: `containers`, `move`, `discard`
+---and `hand` only where RPF owns items, not through a bridge.
+---@param call string `count`, `give`, `take`, `containers`, `move`, `discard` or `hand`.
 ---@return boolean supported True if it does.
 function Inventory.supports(call) end
+
+---One stack of the character's, as `rpf.inventory.containers` read it and
+---as `move`, `discard` and `hand` name it back: a plain table a client may
+---send, which RPF checks.
+---@class rpf.InventoryStackRef
+---@field container string The container's id.
+---@field index integer The stack's index in it, from 1.
+---@field item string The item's slug you saw there: another item there now is `stale`.
+
+---A container of the character's, read for a screen.
+---@class rpf.InventoryContainer
+---@field id string Its id, what an `rpf.InventoryStackRef` and `move` name it by.
+---@field name string Its name, as staff gave it ("Pockets", "Backpack").
+---@field layout "list"|"grid" How it holds its stacks: in a row, or placed on a grid.
+---@field grid { x: integer, y: integer }? A grid's size, in cells.
+---@field max_weight integer? Its weight limit, inclusive; nil for none.
+---@field weight number What it holds weighs, by the catalog.
+---@field stacks rpf.InventoryStack[] Its stacks, in order.
+
+---One stack in an `rpf.InventoryContainer`.
+---@class rpf.InventoryStack
+---@field index integer Its index, from 1.
+---@field item string The item's slug.
+---@field name string? The item's name from the catalog, nil for an item it does not have. A client's catalog has no names, so send it this.
+---@field count integer How many units.
+---@field data table? Its data (a bottle's note, a weapon's serial), a copy, when it carries any.
+---@field position { x: integer, y: integer }? In a grid, its top-left cell, from 0.
+---@field rotated boolean? In a grid, whether it lies a quarter turn.
 
 ---A player's job.
 ---
@@ -660,9 +783,9 @@ function Ops.result(op_id) end
 ---A facade command whose result is `unknown`.
 ---@class rpf.OpUnknown
 ---@field op_id string Its op id.
----@field call string What it was: `money.debit`, `money.credit`, `inventory.give`, `inventory.take` or `commerce.exchange`.
+---@field call string What it was: `money.debit`, `money.credit`, `money.transfer`, `inventory.give`, `inventory.take`, `inventory.move`, `inventory.discard`, `inventory.hand` or `commerce.exchange`.
 ---@field at number When its op id was minted, in milliseconds since the Unix epoch.
----@field detail { player: string?, account: string?, amount: number?, paid: number?, item: string?, count: number?, take: string?, give: string?, reason: string? } What it was: the player's account (`player_id`), and the command's arguments; for an exchange, what the player paid (`amount`) or was paid (`paid`), and the items taken and given (`water:2,bread:1`).
+---@field detail { player: string?, to: string?, account: string?, amount: number?, paid: number?, item: string?, count: number?, take: string?, give: string?, reason: string? } What it was: the player's account (`player_id`), the other player's (`to`) for a transfer or a hand-over, and the command's arguments; for an exchange, what the player paid (`amount`) or was paid (`paid`), and the items taken and given (`water:2,bread:1`).
 ---@field cause string What went wrong, for staff.
 
 ---**Exchanges** (J5): money and items moved together, with your change to
@@ -1210,6 +1333,7 @@ function Ui.progress(opts, callback) end
 ---| "no_character" # They have no character in play.
 ---| "not_found" # No such account (or item slug).
 ---| "unavailable" # Whoever owns the domain cannot be asked now.
+---| "unsupported" # This server cannot answer it: a bridge that does not read it, or a call only RPF's own modules answer (`rpf.inventory.containers`) where a framework owns the domain.
 
 ---How a facade command failed.
 ---@alias rpf.FacadeStatus

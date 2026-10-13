@@ -285,6 +285,9 @@ if facade then
     credit = function(player, account, amount, reason, op_id, apply)
       return facade.credit(player, account, amount, reason, op_id, apply)
     end,
+    transfer = function(player, target, account, amount, reason, op_id)
+      return facade.transfer(player, target, account, amount, reason, op_id)
+    end,
     supports = function(call)
       return facade.supports("money", call)
     end,
@@ -298,6 +301,18 @@ if facade then
     end,
     take = function(player, item, count, op_id, apply)
       return facade.take(player, item, count, op_id, apply)
+    end,
+    containers = function(player)
+      return facade.containers(player)
+    end,
+    move = function(player, stack, to, op_id, opts)
+      return facade.move(player, stack, to, op_id, opts)
+    end,
+    discard = function(player, stack, count, op_id)
+      return facade.discard(player, stack, count, op_id)
+    end,
+    hand = function(player, target, stack, count, op_id)
+      return facade.hand(player, target, stack, count, op_id)
     end,
     supports = function(call)
       return facade.supports("inventory", call)

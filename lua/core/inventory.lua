@@ -1224,6 +1224,117 @@ function inventory.apply_edit(id, edit)
   return apply(container, contents)
 end
 
+---Takes units out of the one stack at an index of a held container: the
+---stack a player picked, not whichever stacks of the item `remove` would
+---take from, so a bottle with a note in it goes when that bottle was
+---picked. Validated whole, like every mutation.
+---@param id string The container's uuid.
+---@param index number The 1-based index of the stack (list) or placement (grid).
+---@param count number How many units, from one to all the stack holds.
+---@return boolean? ok True if taken.
+---@return rpf.inventory.Error? err Why not.
+---@return rpf.inventory.Refusal? refusal The broken rule, for `invalid`.
+function inventory.take_stack(id, index, count)
+  local refused = external("inventory")
+  if refused then
+    return nil, refused
+  end
+  local container = held(id)
+  if not container then
+    return nil, "not_held"
+  end
+  local contents = container.contents
+  if not well_formed(contents) then
+    return nil, "invalid", json.object({ error = "malformed" })
+  end
+  local stack = stack_at(contents, index)
+  if not stack then
+    return nil, "no_stack"
+  end
+  if not integer_in(count, 1, stack.count) then
+    return nil, "invalid_argument"
+  end
+  stack.count = stack.count - count
+  if stack.count == 0 then
+    drop(contents, index)
+  end
+  local ok, refusal = inventory.check(container, contents)
+  if not ok then
+    return nil, "invalid", refusal
+  end
+  return apply(container, contents)
+end
+
+---One stack of `inventory.view`.
+---@class rpf.inventory.StackView
+---@field index integer Its 1-based index: in the stacks of a list, the placements of a grid.
+---@field item string The item's slug.
+---@field name string? The item's name, from the catalog; nil for an item the catalog does not have.
+---@field count integer How many units.
+---@field data table? Its `ItemData`, a copy, when it carries any.
+---@field position { x: integer, y: integer }? In a grid, its top-left cell.
+---@field rotated boolean? In a grid, whether it lies a quarter turn.
+
+---A held container as a script reads it: its rules spelt out and its
+---stacks numbered, with their names and the weight they add up to, so an
+---inventory screen draws it without knowing the wire's shape.
+---@class rpf.inventory.View
+---@field id string The container's uuid.
+---@field name string Its name, as staff gave it.
+---@field layout "list"|"grid" How it holds its stacks.
+---@field grid { x: integer, y: integer }? A grid's size, in cells.
+---@field max_weight integer? Its weight limit, inclusive; nil for none.
+---@field weight number What it holds weighs, by the catalog.
+---@field stacks rpf.inventory.StackView[] Its stacks, in order.
+
+---A held container, read for a screen (`rpf.inventory.View`). Contents
+---that are not well formed (which validation would refuse anyway) read as
+---empty, and flags this core cannot read as no rules, so a screen still
+---shows the container.
+---@param id string The container's uuid.
+---@return rpf.inventory.View? view The view, or nil if it is not held.
+function inventory.view(id)
+  local container = held(id)
+  if not container then
+    return nil
+  end
+  local contents = container.contents
+  local rules = read_flags(container.flags) or {}
+  local catalog = inventory.catalog()
+  local memo = {}
+  local out = {
+    id = container.id,
+    name = tostring(container.name),
+    layout = type(contents) == "table" and contents.layout == "grid" and "grid" or "list",
+    grid = rules.grid and { x = rules.grid.x, y = rules.grid.y } or nil,
+    max_weight = rules.max_weight,
+    weight = 0,
+    stacks = {},
+  }
+  if not well_formed(contents) then
+    return out
+  end
+  local placements = contents.layout == "grid" and contents.placements or nil
+  for i, stack in ipairs(stacks_in(contents)) do
+    local item = catalog.lookup(stack.item)
+    local entry = {
+      index = i,
+      item = stack.item,
+      name = type(item) == "table" and type(item.name) == "string" and item.name or nil,
+      count = stack.count,
+      data = data_key(stack.data) ~= "{}" and json.copy(stack.data) or nil,
+    }
+    if placements then
+      local p = placements[i]
+      entry.position = { x = p.position.x, y = p.position.y }
+      entry.rotated = p.rotated == true
+    end
+    out.weight = out.weight + def(catalog, memo, stack.item).weight * stack.count
+    out.stacks[i] = entry
+  end
+  return out
+end
+
 ---How many units of an item a held container holds, across every stack and
 ---whatever their data, or with `opts.plain` only the plain ones: units in
 ---stacks with no data, which is what `remove` takes by default (the facade
