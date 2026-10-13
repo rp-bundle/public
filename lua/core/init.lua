@@ -50,6 +50,7 @@
 ---@field targets rpf.targets What an interaction may be aimed at in the world, and the checks before its handler runs (J4).
 ---@field ui rpf.ui The UI an addon shows a player: notifications, menus, input dialogs and progress bars (J10).
 ---@field dialogs rpf.dialogs Conversations with NPCs, run on the server from the trees staff build in the panel (L1).
+---@field ownership rpf.ownership Ownership, access and locking for things in the world: Lock and Unlock, and who has access (L2).
 ---@field placement rpf.placement Linked staff world-record placement and the temporary client preview.
 ---@field actions rpf.actions What addons can be asked to do by a dialog choice: their declared actions' handlers, and running one (L1).
 ---@field picker rpf.picker The client side of choosing a character.
@@ -135,6 +136,7 @@ rpf.files = {
     "placement.lua",
     "actions.lua",
     "dialogs.lua",
+    "ownership.lua",
     "api.lua",
   },
   client = {
@@ -213,6 +215,7 @@ function rpf.start_server(platform, options)
   rpf.placement.start(platform)
   rpf.actions.start(platform)
   rpf.dialogs.start(platform)
+  rpf.ownership.start(platform)
   rpf.config.restore(platform)
   rpf.config.serve(platform, rpf.connection)
   rpf.publish(platform)

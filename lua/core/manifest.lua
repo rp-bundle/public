@@ -138,6 +138,7 @@ local RESERVED_NAMESPACES = {
   domains = true,
   actions = true,
   dialogs = true,
+  ownership = true,
 }
 ---Field names a type may not declare: `manifest::RESERVED_FIELDS`.
 local RESERVED_FIELDS = { id = true, type = true, owner = true, schema = true, revision = true }

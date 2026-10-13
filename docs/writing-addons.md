@@ -751,6 +751,73 @@ namespace with a name starting `rpf_`, which is why your own interaction
 names may not start with it (`reserved`). To open a tree from anywhere
 else, a phone or a command, call `rpf.dialogs.open(player.handle, slug)`.
 
+### Doors and locks
+
+Anything players own, share and lock (a door, a property's gate, a
+locker) is a `live` world type your server holds, whose `world` names its
+ownership fields. Write none of the locking yourself:
+
+```lua
+door = {
+  schema = 1,
+  authority = "live",            -- who owns it and whether it is locked change in play
+  owners = { "server" },         -- the record's own owner: the door outlives its buyer
+  hold = "server",               -- held while the server runs, so it locks whoever is online
+  fields = {
+    spot = { type = "vector3", required = true },
+    map = { type = "string", max_len = 64, index = true, nullable = true },
+    locked = { type = "boolean", default = true },
+    holder = { type = "ref", to = "character", index = true, nullable = true },
+    keys = { type = "list", of = "ref", to = "character" },
+    employer = { type = "ref", to = "employer", index = true, nullable = true },
+    ranks = { type = "list", of = "ref", to = "job" },
+  },
+  world = {
+    kind = "point", position = "spot", map = "map",
+    locked = "locked", owner = "holder", co_owners = "keys",
+    employer = "employer", ranks = "ranks",
+  },
+},
+```
+
+While your addon runs, RPF offers **Lock** and **Unlock** on every such
+record to whoever has access: the owner, the co-owners, and anyone whose
+job the record lets in. `jobs` lists exact jobs, `departments` (a list of
+`ref` to `department`, `{ employer, department }`) any job in those
+departments, and `ranks` a job's rank or higher at its employer. A job door
+(its `employer` set) that lists none of the three is open to everyone the
+employer employs. The server checks access again when one is picked, and
+reports the change to the portal like any held record's. Staff edit owners,
+keys and access on the record's page. A character that is deleted loses
+what it owned and shared.
+
+Use `to = "character"` on a native server. Where the game's own framework
+owns characters, there are no RPF characters, so make the owner a `player`
+(and the keys too: co-owners are the owner's kind). Job access needs RPF's
+jobs, so it applies on native servers only.
+
+Your addon locks and unlocks through `rpf.ownership`. A lockpick unlocks
+with no player, after its own checks; pass `{ player = handle }` to check
+that player's access as Lock does:
+
+```lua
+local ok, why, message = rpf.ownership.unlock("rpf_doors.door", target.id)
+if not ok then
+  rpf.ui.notify(player.handle, message) -- "You don't have a key to that.", "That isn't here.", …
+end
+```
+
+`why` is a word to branch on (`off`, `not_found`, `not_lockable`,
+`no_access`), and `message` a sentence for the player.
+`rpf.ownership.locked(type, id)` and `has_access(player, type, id)` answer
+without changing anything, and `mode()` says what staff chose for the
+server: `persistent`, `session` (players' ownership cleared when the
+server starts), or `off`. When it is off, RPF locks nothing and refuses
+every call with `off`, so stand aside: another system owns the doors. A door
+another addon's type defines works the same way, which is how a lockpick
+works on any door. RPF registers Lock and Unlock under your namespace with
+names starting `rpf_`, like Talk.
+
 ## Registering, installing, running
 
 ```lua

@@ -481,6 +481,27 @@ if dialogs then
   }, "rpf.dialogs")
 end
 
+local ownership = rpf.ownership
+if ownership then
+  surface.ownership = freeze({
+    lock = function(type_name, id, opts)
+      return ownership.lock(type_name, id, opts)
+    end,
+    unlock = function(type_name, id, opts)
+      return ownership.unlock(type_name, id, opts)
+    end,
+    locked = function(type_name, id)
+      return ownership.locked(type_name, id)
+    end,
+    has_access = function(player, type_name, id)
+      return ownership.has_access(player, type_name, id)
+    end,
+    mode = function()
+      return ownership.mode()
+    end,
+  }, "rpf.ownership")
+end
+
 local players = rpf.players
 if players then
   surface.players = freeze({

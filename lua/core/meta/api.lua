@@ -47,6 +47,7 @@
 ---@field world rpf.api.World The game world, through what the engine's adapter supports (J3). Server only.
 ---@field interactions rpf.api.Interactions Requests a player's client makes to an addon: `register` a handler on the server, `send` or `request` on the client (J3, J10).
 ---@field dialogs rpf.api.Dialogs Conversations with NPCs, from the trees staff build in the panel (L1): open one for a player. An NPC whose world type names a `dialog` field talks without this. Server only.
+---@field ownership rpf.api.Ownership Locks and who has access to things in the world (L2): lock and unlock a door, ask whether it is locked and who may open it. A world type that names a `locked` field gets Lock and Unlock without this. Server only.
 ---@field placement rpf.api.Placement Staff placement menu (L4). Server only.
 ---@field actions rpf.api.Actions What your addon can be asked to do by a dialog choice staff build in the panel: the handlers of the actions your manifest declares (L1). Server only.
 ---@field capabilities fun(): table<string, boolean> What this engine supports, by name: the game world's `position`, `bucket`, `model`, `entity`, `spawn` and `despawn` (server only), and the UI `notify`, `menu`, `input` and `progress` (both sides). Ask before offering a player something that needs one; a call to one that is missing says `unsupported`.
@@ -806,7 +807,7 @@ local Jobs = {}
 
 ---The job of the character a player has in play.
 ---@param player any The engine's handle.
----@return { name: string, employer: string, grade: number, on_duty: boolean }? job Nil for none. `grade` is its seniority at its employer.
+---@return { name: string, employer: string, department: string?, grade: number, on_duty: boolean }? job Nil for none. `grade` is its seniority at its employer; `department` the department the job sits in, if any (native servers only).
 ---@return rpf.FacadeRead? err Why not.
 function Jobs.current(player) end
 
@@ -1207,6 +1208,73 @@ local Dialogs = {}
 ---@return boolean? ok True once shown.
 ---@return "not_found"|"not_logged_in"|"busy"|"unsupported"|"inactive"|"unavailable"|nil err `not_found` for a tree this server does not have, `not_logged_in` for a player who is not, `busy` while they have another menu open, `unsupported` on an engine without menus, `inactive` from code of an activation that has ended.
 function Dialogs.open(player, slug) end
+
+---Ownership (L2): locks, and who has access, for things in the world. A
+---door, a property or anything else players own is a record of a world
+---type whose `world` names its ownership fields (`docs/writing-addons.md`,
+---"Doors and locks"); RPF offers Lock and Unlock on them to whoever has
+---access, with no code of yours. Call this when your addon locks or opens
+---something itself, a lockpick for instance:
+---
+---```lua
+---local ok, why, message = rpf.api.ownership.unlock("rpf_doors.door", target.id)
+---if not ok then
+---  rpf.api.ui.notify(player, message)  -- "You don't have a key to that.", …
+---end
+---```
+---
+---A call with `{ player = handle }` checks that player's access first, as
+---Lock and Unlock do; one without it trusts your addon's own checks. Every
+---call answers `true`, or `false`, a reason to branch on and a sentence to
+---show the player. Nothing throws.
+---
+---**Server only.**
+---@class rpf.api.Ownership
+local Ownership = {}
+
+---Locks a door (any record whose type has a `locked` role) this server
+---holds. Locking one already locked is `true`.
+---@param type_name string The type, as `<namespace>.<name>`.
+---@param id string The record's id.
+---@param opts { player: any }? `player`: refuse unless this player has access.
+---@return boolean ok True once it is locked.
+---@return "off"|"not_found"|"not_lockable"|"no_access"|"invalid"|"failed"|nil reason `off` when the server's ownership mode is off, `not_found` for a record this server does not hold (another server's and a missing one alike), `not_lockable` for a type with no `locked` role, `no_access` for a player without a key.
+---@return string? message A sentence for the player.
+function Ownership.lock(type_name, id, opts) end
+
+---Unlocks a door this server holds; what a lockpick calls once its own
+---checks pass. Unlocking one already unlocked is `true`.
+---@param type_name string The type.
+---@param id string The record's id.
+---@param opts { player: any }? `player`: refuse unless this player has access.
+---@return boolean ok True once it is unlocked.
+---@return "off"|"not_found"|"not_lockable"|"no_access"|"invalid"|"failed"|nil reason As `lock` says.
+---@return string? message A sentence for the player.
+function Ownership.unlock(type_name, id, opts) end
+
+---Whether a door this server holds is locked.
+---@param type_name string The type.
+---@param id string The record's id.
+---@return boolean? locked True or false, or nil when it cannot be asked.
+---@return "not_found"|"not_lockable"|nil reason Why not.
+function Ownership.locked(type_name, id) end
+
+---Whether a player has access to a thing this server holds: they own it,
+---share it, or their job lets them in (its `jobs`, `departments`, `ranks`,
+---or, for a job door with none of those, its `employer`).
+---@param player any The player's engine handle.
+---@param type_name string The type.
+---@param id string The record's id.
+---@return boolean? access True or false, or nil when it cannot be asked.
+---@return "not_found"|"not_lockable"|nil reason Why not: `not_lockable` for a type with no ownership.
+function Ownership.has_access(player, type_name, id) end
+
+---The server's ownership mode, as staff set it in the panel: `persistent`
+---(owners kept across restarts), `session` (players' ownership cleared when
+---the server starts) or `off` (RPF locks nothing, for a server whose own
+---system owns its doors). An addon that sells doors stands aside when off.
+---@return "persistent"|"session"|"off" mode The mode.
+function Ownership.mode() end
 
 ---Actions (L1): what your addon can be asked to do by a dialog choice.
 ---Staff build an NPC's conversation in the panel, and a choice can run an

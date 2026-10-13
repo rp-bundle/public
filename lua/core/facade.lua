@@ -1292,6 +1292,7 @@ function facade.current_job(handle)
   return {
     name = ref.job,
     employer = ref.employer,
+    department = def.department,
     grade = rpf.jobs.rank_of(character.id) or 0,
     on_duty = rpf.jobs.is_on_duty(character.id),
   }

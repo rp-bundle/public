@@ -53,7 +53,8 @@ rpf.files.server -- json.lua, platform.lua, events.lua, time.lua, protocol.lua, 
                  -- inventory.lua, manifest.lua, addons.lua, records.lua, sync.lua, accounts.lua,
                  -- handoff.lua, join.lua, characters.lua, jobs.lua, edits.lua, data.lua,
                  -- holding.lua, ops.lua, bridge.lua, facade.lua, commerce.lua, world.lua,
-                 -- targets.lua, interactions.lua, ui.lua, actions.lua, dialogs.lua, api.lua
+                 -- targets.lua, interactions.lua, ui.lua, actions.lua, dialogs.lua, ownership.lua,
+                 -- api.lua
 rpf.files.client -- json.lua, platform.lua, events.lua, time.lua, handoff.lua, auth.lua,
                  -- picker.lua, targets.lua, interactions.lua, ui.lua, api.lua
 ```
@@ -1631,6 +1632,40 @@ Server only; `rpf.api.dialogs` fronts `open`.
   addon's context, aimed at the type, offered where the record's field
   names a tree the config has.
 
+### Ownership (`rpf.ownership`, L2)
+
+Locks and access for things in the world: records of a live world type
+held by the server whose `world` names ownership roles (`locked`, `owner`,
+`co_owners`, `employer`, `jobs`, `departments`, `ranks`). Server only;
+`rpf.api.ownership` fronts it.
+
+- **Access**: the owner or a co-owner, matched against the player's
+  selected character, or the player for an owner field `to = "player"`;
+  then the player's job through `facade.current_job`, against `jobs`
+  (exact), `departments` (the job's department, which the native facade now
+  reports) and `ranks` (that job's rank in `rpf.config.job`, or higher, at
+  the same employer). A job door whose `employer` names a server-run
+  employer (`rpf.config.employer_slug`, from the snapshot's
+  `employer_ids`) and lists none of the three lets in anyone that employer
+  employs.
+- **`lock` and `unlock(type, id, opts)`** write the `locked` field of a
+  held record with `records.set_addon_fields`, as staff edits do, so they
+  work whichever addon defines the type. They announce `records.changed`
+  with `by = "core"` and `ownership.locked` with `{ type, id, locked,
+  player_id }`. Already in the state asked is `true`. A refusal is `false`,
+  the reason (`off`, `not_found`, `not_lockable`, `no_access`, `invalid`,
+  `failed`) and its `MESSAGES` sentence. With `opts.player`, access is
+  checked first.
+- **Lock and Unlock**: on every `addons.state` to `active`, each of the
+  addon's types with a `locked` role gets
+  `interactions.register_reserved("<namespace>.rpf_lock<n>", …)` and
+  `rpf_unlock<n>`, in the addon's context, aimed at the type. Their check
+  offers one only on a record in the other state, to a player with access,
+  while the mode is not `off`, and refuses with the sentence the player is
+  told.
+- **`mode()`** reads the `world.ownership` setting: `persistent`, `session`
+  or `off`, `persistent` while the config names none.
+
 ### Placement (`rpf.placement`, L4)
 
 Linked staff run `rpfplace` to place, move or remove an installed world
@@ -2046,6 +2081,7 @@ internal.
 | `interactions` | both | `register` on the server, `send` and `request` on the client (`rpf.interactions` above) |
 | `actions` | server | `register` (L1, `rpf.actions` above) |
 | `dialogs` | server | `open` (L1, `rpf.dialogs` above) |
+| `ownership` | server | `lock`, `unlock`, `locked`, `has_access`, `mode` (L2, `rpf.ownership` above) |
 | `characters`, `money`, `inventory`, `jobs`, `ops` | server | The domain-neutral facade (`rpf.facade` above): `characters.current`; `money.accounts`, `balance`, `debit`, `credit`, `transfer`; `inventory.count`, `give`, `take`, `containers`, `move`, `discard`, `hand`, `on_use`, `usable`, `use`; `jobs.current`; each domain's `supports`; `ops.new`, `ops.unknown`, `ops.result` |
 | `commerce` | server | `exchange`, `check` (J5, `rpf.commerce` above) |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
