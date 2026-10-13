@@ -372,7 +372,34 @@ conformance.run(busted, "Ownership and locks", {
       assert.is_true(api.ownership.lock(DOOR, id))
       assert.is_false((api.ownership.locked(DOOR, id)))
       assert.are.same({ true, false }, heard, "the lock, then the unlock")
-      assert.are.same({ true, false }, seen, "the door locked, then unlocked")
+      -- `records.changed` carries the record as it is when it goes out.
+      assert.are.same({ false, false }, seen, "the door as it is, each time")
+    end,
+  },
+  {
+    name = "never follows a handler's own change to the door, or its deletion, with an older copy",
+    run = function(world)
+      ready(world)
+      local edited = door(world, { holder = OWNER, locked = false })
+      local deleted = door(world, { holder = OWNER, locked = false })
+      local api = world.api
+      api.events.on("ownership.locked", function(change)
+        if change.id == edited then
+          assert(api.records.update(DOOR, edited, { keys = { FRIEND } }))
+        else
+          assert(api.records.delete(DOOR, deleted))
+        end
+      end)
+      local last = {}
+      for _, name in ipairs({ "records.changed", "records.deleted" }) do
+        api.events.on(name, function(change)
+          last[change.id] = { name = name, keys = change.record and change.record.fields.keys }
+        end)
+      end
+      assert.is_true(api.ownership.lock(DOOR, edited))
+      assert.are.same({ name = "records.changed", keys = { FRIEND } }, last[edited], "the edit, not the lock's copy before it")
+      assert.is_true(api.ownership.lock(DOOR, deleted))
+      assert.are.same({ name = "records.deleted" }, last[deleted], "nothing after the deletion")
     end,
   },
   {

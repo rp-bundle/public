@@ -1655,6 +1655,9 @@ held by the server whose `world` names ownership roles (`locked`, `owner`,
   `by = "core"`, through a queue: a lock change a handler makes is
   announced after the one it answered has reached every handler, so each
   hears the changes in order and the last says how the record is. The
+  `records.changed` reads the record as it goes out, so one a handler
+  changed through `rpf.records` in the meantime is not followed by an
+  older copy, and one it deleted gets none. The
   queue gets round `events.MAX_DEPTH`, so it has its own bound: handlers
   may make `MAX_ANSWERS` (32) changes in answer to one, and the next is
   refused `failed` and logged as a cycle. Already in the state asked is `true`. A refusal is `false`, the

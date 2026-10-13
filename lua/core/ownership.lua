@@ -78,8 +78,9 @@ local function log(level, message)
 end
 
 ---Lock changes waiting to be announced, oldest first: what `notify` has
----not delivered yet, each `{ name, change }`.
----@type { name: string, change: table }[]
+---not delivered yet, each `{ name, change }`. A `change` that is a function
+---is read as the event goes out, and nil from it sends nothing.
+---@type { name: string, change: table|fun(): table? }[]
 local queue = {}
 
 ---Whether `notify` is delivering the queue now, so a lock change made by one
@@ -95,7 +96,7 @@ local answers = 0
 ---change heard by the handlers after it before the change it answered;
 ---queued, every handler hears every change in order, and the last it hears
 ---is how the record is.
----@param ... { name: string, change: table } The events, in order.
+---@param ... { name: string, change: table|fun(): table? } The events, in order.
 local function notify(...)
   for _, event in ipairs({ ... }) do
     queue[#queue + 1] = event
@@ -108,7 +109,15 @@ local function notify(...)
     local event = table.remove(queue, 1)
     -- `emit` logs and skips a handler that throws; this keeps the queue
     -- moving, and `draining` honest, if anything else does, the log too.
-    local ok, err = pcall(rpf.events.emit, event.name, event.change)
+    local ok, err = pcall(function()
+      local change = event.change
+      if type(change) == "function" then
+        change = change()
+      end
+      if change ~= nil then
+        rpf.events.emit(event.name, change)
+      end
+    end)
     if not ok then
       pcall(log, "error", "could not announce " .. event.name .. ": " .. tostring(err))
     end
@@ -399,7 +408,14 @@ local function set(type_name, id, locked, opts)
     change = { type = type_name, id = id, locked = locked, player_id = player and player.player_id or nil },
   }, {
     name = "records.changed",
-    change = { type = type_name, id = id, record = rpf.data.view(id), by = "core" },
+    -- The record as it is when this goes out: a handler of the lock may
+    -- have changed it through `rpf.records` since, and that announcement
+    -- went out at once, so this one must not put an older copy after it.
+    -- Nothing at all once one has deleted it: `records.deleted` said so.
+    change = function()
+      local now = rpf.data.held(type_name, id)
+      return now and { type = type_name, id = id, record = now, by = "core" } or nil
+    end,
   })
   return true
 end
