@@ -309,6 +309,26 @@ conformance.run(busted, "Ownership and locks", {
     end,
   },
   {
+    name = "answers not_found for a door being deleted and for a type that is not a name, never throwing",
+    run = function(world)
+      local handle = ready(world)
+      local id = door(world, { holder = OWNER, locked = false })
+      world:settle()
+      assert(world.api.records.delete(DOOR, id))
+      local api = world.api.ownership
+      assert.are.same({ false, "not_found", "That isn't here." }, { api.unlock(DOOR, id) }, "already as asked")
+      assert.are.same({ false, "not_found", "That isn't here." }, { api.lock(DOOR, id) })
+      assert.are.same({ nil, "not_found" }, { api.locked(DOOR, id) })
+      assert.are.same({ nil, "not_found" }, { api.has_access(handle, DOOR, id) })
+      for _, bad in ipairs({ false, 7, {} }) do
+        assert.are.same({ false, "not_found", "That isn't here." }, { api.lock(bad, id) }, type(bad))
+        assert.are.same({ nil, "not_found" }, { api.locked(bad, id) }, type(bad))
+        assert.are.same({ nil, "not_found" }, { api.has_access(handle, bad, id) }, type(bad))
+      end
+      assert.are.same({ false, "not_found", "That isn't here." }, { api.lock(nil, id) }, "nil")
+    end,
+  },
+  {
     name = "gives a lockpick's code that outlived its activation nothing to read or change",
     run = function(world)
       local handle = ready(world)

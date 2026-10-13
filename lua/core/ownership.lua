@@ -95,6 +95,18 @@ function ownership.mode()
   return ownership.DEFAULT_MODE
 end
 
+---Why a type cannot be locked or asked about: `not_lockable` for an
+---installed type with no ownership, `not_found` for anything else (a type
+---that is not installed, or a value that is not a type's name).
+---@param type_name any The type.
+---@return string reason The reason.
+local function unknown(type_name)
+  if type(type_name) == "string" and rpf.addons.definition(type_name) then
+    return "not_lockable"
+  end
+  return "not_found"
+end
+
 ---A type's `world`, if it names any ownership role.
 ---@param type_name any The type.
 ---@return table? world Its `world`.
@@ -128,14 +140,7 @@ end
 ---@param id any The record's id.
 ---@return table? record A copy: `{ id, type, fields, revision, … }`.
 local function held(type_name, id)
-  if type(id) ~= "string" then
-    return nil
-  end
-  local record = rpf.data.view(id)
-  if not record or record.type ~= type_name then
-    return nil
-  end
-  return record
+  return rpf.data.held(type_name, id)
 end
 
 ---Whether a list field holds a value.
@@ -261,7 +266,7 @@ function ownership.has_access(handle, type_name, id)
   end
   local world = world_of(type_name)
   if not world then
-    return nil, rpf.addons.definition(type_name) and "not_lockable" or "not_found"
+    return nil, unknown(type_name)
   end
   local record = held(type_name --[[@as string]], id)
   if not record then
@@ -281,7 +286,7 @@ function ownership.locked(type_name, id)
   end
   local world = world_of(type_name)
   if not world or not world.locked then
-    return nil, world and "not_lockable" or (rpf.addons.definition(type_name) and "not_lockable" or "not_found")
+    return nil, world and "not_lockable" or unknown(type_name)
   end
   local record = held(type_name --[[@as string]], id)
   if not record then
@@ -310,7 +315,7 @@ local function set(type_name, id, locked, opts)
   end
   local world = world_of(type_name)
   if not world or not world.locked then
-    return refuse(rpf.addons.definition(type_name) and "not_lockable" or "not_found")
+    return refuse(world and "not_lockable" or unknown(type_name))
   end
   local record = held(type_name --[[@as string]], id)
   if not record then

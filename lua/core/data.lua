@@ -178,6 +178,18 @@ local function held(type_name, id)
   return entry
 end
 
+---A held live record of a type, not being deleted, as a script sees it: for
+---the core's own modules (`rpf.ownership`), which answer for any addon's
+---type and so skip the calling addon's checks `get` makes. A deletion the
+---portal has not acknowledged yet counts as gone, as it does for `get`.
+---@param type_name any The type.
+---@param id any The record's id.
+---@return table? record A copy, or nil if it is not held here.
+function data.held(type_name, id)
+  local entry = held(type_name, id)
+  return entry and view_of(entry) or nil
+end
+
 ---Announces a change to a live addon record.
 ---@param name "records.created"|"records.changed"|"records.deleted" The event.
 ---@param change rpf.data.Change What changed.
