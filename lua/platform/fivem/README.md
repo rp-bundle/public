@@ -15,7 +15,7 @@ character screens. What any adapter must do is in
 `dev/fivem-resources [out]` assembles both (default `target/fivem/`), and CI
 uploads them as the `fivem-resources` artifact. A release ships them as
 `rpf-fivem-<version>.zip`, both inside one `[rpf]` folder
-([Installing](../../../docs/installing.md#by-hand)). A server owner needs no
+([Installing](../../../docs/installing.md#fivem)). A server owner needs no
 `npm install`: the shim is one bundled file. `rpf` declares
 `dependency "rpf-ws"`, so FiveM starts the shim first and stops `rpf` with
 it.

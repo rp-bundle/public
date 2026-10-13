@@ -18,6 +18,9 @@ In the portal:
    portal's websocket address and the key. Copy them now. If you lose the
    key, revoke it and issue another.
 
+On FiveM, also have ox_lib ready: RPF needs it and does not include it
+([What every FiveM server needs](#what-every-fivem-server-needs)).
+
 Each release's notes list its downloads with their SHA-256 checksums. To
 check one, download `SHA256SUMS` beside it and run
 `sha256sum --ignore-missing -c SHA256SUMS`.
@@ -30,46 +33,191 @@ working for its support window ([Compatibility](compatibility.md)).
 
 ## FiveM
 
-You need a current FXServer artifact with **OneSync** on (not `legacy`), which it is by
-default on a current server. The framework holds each player in a routing
-bucket of their own until they have logged in, and routing buckets are a
-OneSync feature.
+### What every FiveM server needs
 
-You also need **[ox_lib](https://github.com/overextended/ox_lib) 3.40.0 or
-newer**, which most FiveM servers run already (Qbox requires it). The
-framework carries requests between players' clients and the server over its
-callbacks, and builds the menus and dialogs addons show on it. It is a
-separate download under its own licence (LGPL-3.0), so the release does not
-include it: the txAdmin recipe installs it, and by hand you download
-`ox_lib.zip` from its [releases](https://github.com/overextended/ox_lib/releases).
+- **A current FXServer artifact with OneSync on** (not `legacy`). The
+  framework holds each player in a routing bucket of their own until they
+  have logged in, and routing buckets are a OneSync feature. txAdmin turns
+  OneSync on in its settings; without txAdmin, `server.cfg` sets it.
+- **ox_lib 3.40.0 or newer.** See the box below.
+- **The release's `rpf-fivem-<version>.zip`**, which holds one `[rpf]`
+  folder with the resources `rpf` and `rpf-ws`, and `rpf-qbox`, which only
+  a server running Qbox uses ([Beside Qbox](#beside-qbox)).
+- **The server's address and key from the portal** ([Before you start](#before-you-start)).
 
-### With txAdmin
+> **ox_lib is required, and the release does not include it.**
+> RPF does not start without [ox_lib](https://github.com/overextended/ox_lib)
+> 3.40.0 or newer. RPF carries requests between players' clients and the
+> server over ox_lib's callbacks, and builds the menus and dialogs addons
+> show on it. ox_lib is a separate download under its own licence
+> (LGPL-3.0), so it is not in RPF's zip. Every guide below has a step for
+> it:
+>
+> 1. Download `ox_lib.zip` from
+>    [ox_lib's releases](https://github.com/overextended/ox_lib/releases)
+>    (the txAdmin recipe does this for you). Take the release's
+>    `ox_lib.zip`, not GitHub's "Source code" archive, which lacks its
+>    built web page.
+> 2. Unzip it into `resources/`, so there is a folder `resources/ox_lib`.
+> 3. In `server.cfg`, `ensure ox_lib` comes **before** `ensure rpf`.
+>
+> Most FiveM servers run ox_lib already (Qbox requires it). If yours does,
+> check its version: the `version` line in `resources/ox_lib/fxmanifest.lua`.
+> If it is older than 3.40.0, replace the folder with a current release's.
+> Without it, FXServer refuses to start `rpf` and says it could not find
+> the dependency `ox_lib` ([Troubleshooting](#at-start-on-fivem)).
 
-1. In txAdmin's setup, choose **Remote URL Template** and give it the
-   release's recipe:
-   `https://github.com/rp-bundle/public/releases/latest/download/rpf-txadmin-recipe.yaml`.
-   For a specific release, use `releases/download/v<version>/rpf-txadmin-recipe.yaml`
-   instead.
-2. Run the deployer. It installs txAdmin's basic server, the default
-   resources, ox_lib and the `[rpf]` folder, with OneSync on.
-3. When the deployer shows `server.cfg`, paste the two values from the
-   portal into the `set rpf_url ""` and `set rpf_api_key ""` lines at the
-   bottom, then start the server.
+### Which guide to follow
 
-### By hand
+| You have | Follow |
+|---|---|
+| Nothing yet, and want txAdmin to manage the server | [A new server with txAdmin](#a-new-server-with-txadmin) |
+| Nothing yet, and want to run FXServer yourself | [A new server without txAdmin](#a-new-server-without-txadmin) |
+| A server you run through txAdmin | [An existing txAdmin server](#an-existing-txadmin-server) |
+| A server you start yourself, with `+exec server.cfg` | [An existing server without txAdmin](#an-existing-server-without-txadmin) |
+| A server running Qbox | Your guide above, then [Beside Qbox](#beside-qbox) |
+| A server running QBCore or ESX | [Beside QBCore or ESX](#beside-qbcore-or-esx): not supported yet |
 
-1. Download `rpf-fivem-<version>.zip` from the release.
-2. Unzip it into the server's `resources/`. You get one folder, `[rpf]`,
-   holding the resources `rpf` and `rpf-ws`, and `rpf-qbox`, which only a
-   server running Qbox uses ([Beside Qbox](#beside-qbox)). FXServer finds
-   resources inside a bracketed folder, and starts only what `server.cfg`
-   ensures.
-3. If the server has no ox_lib, or one older than 3.40.0, download
-   `ox_lib.zip` from [its releases](https://github.com/overextended/ox_lib/releases)
-   and unzip it into `resources/` too: one folder, `ox_lib`. Take the
-   release's `ox_lib.zip`, not GitHub's "Source code" archive, which lacks
-   its built web page.
-4. Paste the FiveM lines from the portal into `server.cfg`:
+Each ends with the server connected to the portal. [The first
+connection](#the-first-connection) says what that looks like, and
+[After installing](#after-installing) what players and staff do next.
+
+### A new server with txAdmin
+
+txAdmin's deployer installs everything from RPF's recipe: txAdmin's basic
+server, ox_lib, the `[rpf]` folder and the `server.cfg` lines, with OneSync
+on. Why there is a recipe, and how it is pinned, is in
+[Decisions](#a-txadmin-recipe-shipped).
+
+1. **Download FXServer.** From
+   <https://runtime.fivem.net/artifacts/fivem/>, take the **Latest
+   Recommended** build for your system: `build_server_windows` (`server.7z`)
+   or `build_proot_linux` (`fx.tar.xz`). Unpack it into a folder of its own,
+   such as `C:\FXServer\server` or `~/fxserver`.
+2. **Start it without arguments.** `FXServer.exe` on Windows, `./run.sh`
+   on Linux. With no `+exec` it starts txAdmin, and the console prints
+   txAdmin's address (port 40120) and a PIN.
+3. **Set up txAdmin.** Open the address, enter the PIN, link your Cfx.re
+   account and set a backup password.
+4. **Choose RPF's recipe.** In txAdmin's setup, give the server a name,
+   choose **Remote URL Template**, and paste:
+
+   ```
+   https://github.com/rp-bundle/public/releases/latest/download/rpf-txadmin-recipe.yaml
+   ```
+
+   For a specific release, use
+   `https://github.com/rp-bundle/public/releases/download/v<version>/rpf-txadmin-recipe.yaml`.
+5. **Run the deployer.** It asks for the server's license key (from
+   <https://portal.cfx.re>), then downloads txAdmin's basic server, ox_lib
+   3.40.0 and the release's `[rpf]` folder.
+6. **Paste the portal's values.** When the deployer shows `server.cfg`, the
+   bottom reads:
+
+   ```
+   set rpf_url ""
+   set rpf_api_key ""
+   ensure ox_lib
+   ensure rpf-ws
+   ensure rpf
+   ```
+
+   Put the websocket address and the key from the portal between the
+   quotes. Leave the three `ensure` lines as they are.
+7. **Start the server** (**Save & Run Server**), and check the console for
+   `rpf: connected as server …` ([The first connection](#the-first-connection)).
+
+### A new server without txAdmin
+
+1. **Download FXServer.** From
+   <https://runtime.fivem.net/artifacts/fivem/>, take the **Latest
+   Recommended** build for your system: `build_server_windows` (`server.7z`)
+   or `build_proot_linux` (`fx.tar.xz`). Unpack it into a folder of its own,
+   such as `C:\FXServer\server` or `~/fxserver/server`.
+2. **Get the default resources.** Beside it, make the server's data folder
+   from Cfx.re's default resources:
+
+   ```
+   git clone https://github.com/citizenfx/cfx-server-data.git server-data
+   ```
+
+   Delete `server-data/resources/[gameplay]/chat`: FXServer ships a built
+   copy of `chat`, and this source copy would need building first. (The
+   txAdmin recipe does the same.)
+3. **Get a license key** from <https://portal.cfx.re> (Server Registration
+   Keys).
+4. **Install ox_lib.** Download `ox_lib.zip` from
+   [ox_lib's releases](https://github.com/overextended/ox_lib/releases)
+   and unzip it into `server-data/resources/`, so there is a folder
+   `server-data/resources/ox_lib`.
+5. **Install RPF.** Download `rpf-fivem-<version>.zip` from the release and
+   unzip it into `server-data/resources/`, so there is a folder
+   `server-data/resources/[rpf]` holding `rpf`, `rpf-ws` and `rpf-qbox`.
+   FXServer finds resources inside a bracketed folder, and starts only what
+   `server.cfg` ensures.
+6. **Write `server-data/server.cfg`.** This is a minimal one; the last five
+   lines are the portal's, with its values pasted in:
+
+   ```
+   endpoint_add_tcp "0.0.0.0:30120"
+   endpoint_add_udp "0.0.0.0:30120"
+
+   ensure mapmanager
+   ensure chat
+   ensure spawnmanager
+   ensure sessionmanager
+   ensure basic-gamemode
+   ensure hardcap
+
+   sv_hostname "My server"
+   sv_maxclients 48
+   sv_licenseKey "<your license key>"
+   set onesync on
+
+   set rpf_url "wss://portal.example/ws"
+   set rpf_api_key "rpf_…"
+   ensure ox_lib
+   ensure rpf-ws
+   ensure rpf
+   ```
+
+   Keep `set` for the key. `setr` and `sets` publish a convar to every
+   client or to the server list, and the key is a secret.
+7. **Start the server** from the data folder, with `+exec` (which also
+   keeps txAdmin from starting):
+
+   ```
+   cd server-data
+   ../server/run.sh +exec server.cfg               # Linux
+   ..\server\FXServer.exe +exec server.cfg         # Windows
+   ```
+
+   Check the console for `rpf: connected as server …`
+   ([The first connection](#the-first-connection)).
+
+### An existing txAdmin server
+
+txAdmin's recipes only create new servers, so on one you already run you
+add RPF yourself. If the server runs Qbox, do these steps and then
+[Beside Qbox](#beside-qbox).
+
+1. **Find the server's data folder.** It is the folder that holds
+   `server.cfg` and `resources/`; txAdmin shows its path in its settings,
+   on the FXServer tab. You copy files into it with your host's file
+   manager or SFTP: txAdmin does not upload files.
+2. **Check ox_lib.** If `resources/` (or a bracketed folder in it, such as
+   Qbox's `[ox]`) has an `ox_lib` folder, read the `version` line in its
+   `fxmanifest.lua`. If there is none, or it is older than 3.40.0, download
+   `ox_lib.zip` from
+   [ox_lib's releases](https://github.com/overextended/ox_lib/releases) and
+   unzip it into `resources/`, replacing the old folder.
+3. **Install RPF.** Download `rpf-fivem-<version>.zip` from the release and
+   unzip it into `resources/`, so there is a folder `resources/[rpf]`.
+4. **Check OneSync.** In txAdmin's settings, on the FXServer tab, OneSync
+   must be **On**, not **Legacy** or off. Change it there, not in
+   `server.cfg`.
+5. **Edit `server.cfg`** in txAdmin's **CFG Editor**. Add the portal's
+   lines at the end, after everything that is already ensured:
 
    ```
    set rpf_url "wss://portal.example/ws"
@@ -79,11 +227,45 @@ include it: the txAdmin recipe installs it, and by hand you download
    ensure rpf
    ```
 
-   Keep `set`. `setr` and `sets` publish a convar to every client or to
-   the server list, and the key is a secret. `ox_lib` and `rpf-ws` before
-   `rpf`: `rpf` is built on the first, and the second carries the portal
-   connection. A server that ensures ox_lib already keeps its own line.
-5. Start (or restart) the server.
+   If the file already starts ox_lib earlier (`ensure ox_lib`, or
+   `ensure [ox]` on Qbox), leave out this `ensure ox_lib` line. What
+   matters is that ox_lib is started before `rpf`.
+6. **Restart the server** from txAdmin, and check the live console for
+   `rpf: connected as server …` ([The first connection](#the-first-connection)).
+
+### An existing server without txAdmin
+
+The same as for txAdmin, with the files edited directly. If the server runs
+Qbox, do these steps and then [Beside Qbox](#beside-qbox).
+
+1. **Check ox_lib.** If `resources/` (or a bracketed folder in it, such as
+   Qbox's `[ox]`) has an `ox_lib` folder, read the `version` line in its
+   `fxmanifest.lua`. If there is none, or it is older than 3.40.0, download
+   `ox_lib.zip` from
+   [ox_lib's releases](https://github.com/overextended/ox_lib/releases) and
+   unzip it into `resources/`, replacing the old folder.
+2. **Install RPF.** Download `rpf-fivem-<version>.zip` from the release and
+   unzip it into `resources/`, so there is a folder `resources/[rpf]`.
+3. **Edit `server.cfg`.** Make sure it has `set onesync on`, and add the
+   portal's lines at the end, after everything that is already ensured:
+
+   ```
+   set rpf_url "wss://portal.example/ws"
+   set rpf_api_key "rpf_…"
+   ensure ox_lib
+   ensure rpf-ws
+   ensure rpf
+   ```
+
+   If the file already starts ox_lib earlier (`ensure ox_lib`, or
+   `ensure [ox]` on Qbox), leave out this `ensure ox_lib` line. What
+   matters is that ox_lib is started before `rpf`. Keep `set` for the key:
+   `setr` and `sets` publish a convar to every client or to the server
+   list, and the key is a secret.
+4. **Restart the server**, and check the console for
+   `rpf: connected as server …` ([The first connection](#the-first-connection)).
+
+### After installing
 
 Optional convars: `set rpf_portal_url "https://portal.example"` when
 players reach the portal's web address somewhere other than the websocket's
@@ -165,6 +347,13 @@ client that asks, whatever `useExternalCharacters` says. The bridge logs
 such a character out at once, while the framework still holds the player
 still, but qbx_core keeps it loaded for about 200 ms first. Closing that
 gap is qbx_core's to do.
+
+### Beside QBCore or ESX
+
+Not supported yet. RPF has a bridge only to Qbox on FiveM, and a QBCore or
+ESX server running RPF as well would have two economies and two character
+selections. Bridges to more frameworks are planned but not built (QBCore
+first, then ESX Legacy). Until then, install RPF on a server without them.
 
 ## Garry's Mod
 
@@ -327,8 +516,9 @@ load: update the artifact.
 `rpf`.
 
 **FXServer saying it could not find the dependency `ox_lib` for `rpf`**
-(its own line): ox_lib is not installed. Install it as
-[By hand](#by-hand) says, step 3, and `ensure ox_lib` before `ensure rpf`.
+(its own line): ox_lib is not installed. Install it as the box in
+[What every FiveM server needs](#what-every-fivem-server-needs) says, and
+`ensure ox_lib` before `ensure rpf`.
 
 **FXServer saying it could not start the dependency `rpf` for an addon's
 resource** (its own line, such as `Could not start dependency rpf for
