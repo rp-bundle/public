@@ -38,6 +38,16 @@ socket.
 
 ### Added
 
+- `rpf_inventory`, the first starter addon (#183, in `lua/addons/`): a
+  player opens their inventory (`I` on FiveM, `rpf_inventory` on Gmod) and
+  sees their character's containers with each item's image, and their
+  money. They move, use, give to a player nearby and throw away stacks, and
+  hand cash over, each once however often the request is sent. Staff
+  choose on its **Inventory settings** data page whether giving, throwing
+  away and handing cash over are allowed, from which account, and how near
+  another player must be. Beside a framework that owns the items (Qbox's
+  ox_inventory) it stands aside and says so once, unless staff set it to
+  run.
 - Alt signals (I4, #239): every successful register, login and resume
   records the address the player's client called from on its account, as
   HMACs of the address and of its /24 or /64 network under a key derived
