@@ -314,6 +314,15 @@ if facade then
     hand = function(player, target, stack, count, op_id)
       return facade.hand(player, target, stack, count, op_id)
     end,
+    on_use = function(item, handler)
+      return facade.on_use(item, handler)
+    end,
+    usable = function(item)
+      return facade.usable(item)
+    end,
+    use = function(player, stack, op_id)
+      return facade.use(player, stack, op_id)
+    end,
     supports = function(call)
       return facade.supports("inventory", call)
     end,

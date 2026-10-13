@@ -1201,9 +1201,11 @@ only; `rpf.api.characters`, `money`, `inventory`, `jobs` and `ops` front it.
 | `inventory.containers(player)` | The character's held containers, by name then id, each read for a screen (`inventory.view`) |
 | `inventory.move(player, stack, to, op_id, opts)` | A stack, or `opts.count` of it, to another of the character's containers or a spot in a grid (`inventory.move`, which validates both before either changes) |
 | `inventory.discard(player, stack, count, op_id)` | Units of one stack destroyed (`inventory.take_stack`) |
+| `inventory.on_use(item, handler)`, `usable(item)` | What using an item does, from the addon whose code registers it: one handler per item (another running addon's is `taken`), owned, so it goes when the addon stops. `usable` says whether an item has one whose addon runs, and `containers` marks each stack with it |
+| `inventory.use(player, stack, op_id)` | Runs the stack's item's handler with a copy of the stack, under `records.watch`, then takes the units it answered it used up from that stack (`inventory.take_stack`), as one intent that completes once both are on disk. The container's contents are checked first, so the take cannot be refused after the handler ran. A handler that throws, declines after writing a record, or answers a count it could not have used leaves it `unknown`; one that declines first is `refused`, `declined`, with its message as a fourth value |
 | `inventory.hand(player, target, stack, count, op_id)` | Units of one stack, data and all, into the first of the other player's character's containers that takes them (`inventory.move` into each in turn), so nothing is half handed over |
 | `jobs.current(player)` | `{ name, employer, grade, on_duty }` from `rpf.jobs` (the job's slug, its employer's, its rank, duty) |
-| `<domain>.supports(call)` | Whether the call works here: every native call does, except `money.debit` and `credit` without the addon account. The calls no bridge contract has (`money.transfer`, `inventory.containers`, `move`, `discard`, `hand`) are unsupported wherever a framework owns the domain |
+| `<domain>.supports(call)` | Whether the call works here: every native call does, except `money.debit` and `credit` without the addon account. The calls no bridge contract has (`money.transfer`, `inventory.containers`, `move`, `discard`, `hand`, `use`) are unsupported wherever a framework owns the domain |
 | `ops.new()` | An op id, `<ms>-<16 hex>`: when it was minted, and the platform's randomness |
 | `ops.unknown()` | The commands whose result is `unknown`, oldest first, each `{ op_id, call, at, detail, cause }`: for a staff tool in game |
 | `ops.result(op_id)` | How an op id already went (`rpf.ops.result`): nil when it never ran here, `true`, or `false`, a status and a reason. What running it again would answer, without running it, so an addon answers a repeated order as it was answered |
@@ -2044,7 +2046,7 @@ internal.
 | `interactions` | both | `register` on the server, `send` and `request` on the client (`rpf.interactions` above) |
 | `actions` | server | `register` (L1, `rpf.actions` above) |
 | `dialogs` | server | `open` (L1, `rpf.dialogs` above) |
-| `characters`, `money`, `inventory`, `jobs`, `ops` | server | The domain-neutral facade (`rpf.facade` above): `characters.current`; `money.accounts`, `balance`, `debit`, `credit`, `transfer`; `inventory.count`, `give`, `take`, `containers`, `move`, `discard`, `hand`; `jobs.current`; each domain's `supports`; `ops.new`, `ops.unknown`, `ops.result` |
+| `characters`, `money`, `inventory`, `jobs`, `ops` | server | The domain-neutral facade (`rpf.facade` above): `characters.current`; `money.accounts`, `balance`, `debit`, `credit`, `transfer`; `inventory.count`, `give`, `take`, `containers`, `move`, `discard`, `hand`, `on_use`, `usable`, `use`; `jobs.current`; each domain's `supports`; `ops.new`, `ops.unknown`, `ops.result` |
 | `commerce` | server | `exchange`, `check` (J5, `rpf.commerce` above) |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
 | `staff` | server | `can`, `permissions`, `link`, `record` (F9, `rpf.staff` above) |

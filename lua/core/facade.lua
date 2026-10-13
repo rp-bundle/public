@@ -79,7 +79,7 @@ facade.ADDON_ACCOUNT = "economy.addon_account"
 facade.CALLS = {
   characters = { current = true },
   money = { accounts = true, balance = true, debit = true, credit = true, transfer = true },
-  inventory = { count = true, give = true, take = true, containers = true, move = true, discard = true, hand = true },
+  inventory = { count = true, give = true, take = true, containers = true, move = true, discard = true, hand = true, use = true },
   jobs = { current = true },
 }
 
@@ -91,6 +91,7 @@ local NATIVE_ONLY = {
   ["inventory.move"] = true,
   ["inventory.discard"] = true,
   ["inventory.hand"] = true,
+  ["inventory.use"] = true,
 }
 
 ---The bounds of a grid position, the portal's `IVector2`: `i32`.
@@ -874,7 +875,11 @@ function facade.containers(handle)
   end
   local out = {}
   for _, container in ipairs(containers_of(character)) do
-    out[#out + 1] = rpf.inventory.view(container.id)
+    local view = rpf.inventory.view(container.id) --[[@as rpf.inventory.View]]
+    for _, stack in ipairs(view.stacks) do
+      stack.usable = facade.usable(stack.item)
+    end
+    out[#out + 1] = view
   end
   return out
 end
@@ -1032,6 +1037,188 @@ function facade.hand(handle, target, stack, count, op_id)
     end
     return nil, "refused", "no_space"
   end, detail)
+end
+
+-- Using an item ------------------------------------------------------------
+--
+-- What using an item does is an addon's: food that `rpf_needs` makes restore
+-- hunger, a lockpick, a radio. An addon says so with `on_use`, one handler
+-- per item; an inventory screen offers Use on a stack whose item has one,
+-- and `use` runs it for the stack the player picked, and takes the units
+-- the handler says it used up from that stack, in one journaled intent.
+
+---The longest message a use handler's refusal is passed on as, in bytes;
+---longer ones are cut, as an action's are.
+local MAX_USE_MESSAGE = 256
+
+---One item's use handler.
+---@class rpf.facade.Use
+---@field handler any The addon's function, or a FiveM function reference.
+---@field namespace string The addon that registered it.
+---@field disown fun() Forgets the ownership, for a registration replaced by another.
+
+---Use handlers, by item slug.
+---@type table<string, rpf.facade.Use>
+local uses = {}
+
+---Registers what using an item does, for the addon whose code is running.
+---One handler per item: registering it again from the same addon replaces
+---it, and another addon's is `taken`. It goes when the addon stops.
+---@param item any The item's slug.
+---@param handler any `handler(player, stack)`, answering `true` and how many units it used up (none unless given), or `false` and a message for the player.
+---@return boolean? ok True once registered.
+---@return string? err `invalid` for a slug or handler that is not one, `forbidden` from code that is not an addon's, `taken` when another addon has the item, `inactive` from code of an addon activation that has ended.
+function facade.on_use(item, handler)
+  if type(item) ~= "string" or #item > 64 or not item:find("^[a-z][a-z0-9_]*$") or not rpf.callable(handler) then
+    return nil, "invalid"
+  end
+  local context = rpf.addons.context()
+  local namespace = context and context.namespace
+  if not namespace then
+    return nil, "forbidden"
+  end
+  if rpf.addons.stale() then
+    return nil, "inactive"
+  end
+  local previous = uses[item]
+  if previous and previous.namespace ~= namespace and rpf.addons.running(previous.namespace) then
+    return nil, "taken"
+  end
+  if previous then
+    previous.disown()
+  end
+  ---@type rpf.facade.Use
+  local entry = { handler = handler, namespace = namespace, disown = function() end }
+  uses[item] = entry
+  entry.disown = rpf.addons.own(function()
+    if uses[item] == entry then
+      uses[item] = nil
+    end
+  end)
+  return true
+end
+
+---Whether an item has a use here now: a handler, whose addon is running,
+---on a server where RPF owns items.
+---@param item any The item's slug.
+---@return boolean usable True if `use` would run a handler for it.
+function facade.usable(item)
+  if external("inventory") or type(item) ~= "string" then
+    return false
+  end
+  local entry = uses[item]
+  return entry ~= nil and rpf.addons.running(entry.namespace)
+end
+
+---A use handler's refusal message, cut to `MAX_USE_MESSAGE` bytes on a
+---character boundary, or nil for anything that is not text.
+---@param message any The handler's second answer.
+---@return string? message The message.
+local function use_message(message)
+  if type(message) ~= "string" or message == "" or not rpf.json.is_utf8(message) then
+    return nil
+  end
+  local at = math.min(#message, MAX_USE_MESSAGE)
+  while at < #message and at > 0 do
+    local byte = message:byte(at + 1)
+    if byte < 0x80 or byte >= 0xC0 then
+      break
+    end
+    at = at - 1
+  end
+  return message:sub(1, at)
+end
+
+---Uses one of the character's stacks, once per op id: runs its item's use
+---handler with the stack, then takes the units the handler used up from that
+---stack. The handler's own writes and the units taken are one intent, which
+---completes once both are on disk; a handler that throws, or answers a
+---count it could not have used, leaves it `unknown`, for staff.
+---@param handle any The engine's handle.
+---@param stack any The stack: `{ container, index, item, key }`.
+---@param op_id any From `rpf.ops.new()`.
+---@return boolean? ok True once used.
+---@return string? status `refused`, `unavailable` or `unknown`.
+---@return string? why For `refused`: as for `discard`, `no_use` for an item with no use here, and `declined` when the handler said no.
+---@return string? message For `declined`, the handler's message for the player, if it gave one. Not kept: a repeat of the op id answers `declined` without it.
+function facade.use(handle, stack, op_id)
+  local settled, a, b, c = precheck(op_id, stack_shape(stack))
+  if settled then
+    return a, b, c
+  end
+  local character, err = character_of(handle)
+  if not character then
+    return nil, "refused", err
+  end
+  local found, missing = resolve_stack(character, stack)
+  if not found then
+    return nil, "refused", missing
+  end
+  if not facade.usable(found.item) then
+    return nil, "refused", "no_use"
+  end
+  -- Taking units out of contents that pass their rules leaves contents that
+  -- pass, so once this holds, the take after the handler cannot be refused.
+  local container = rpf.records.get("container", stack.container) --[[@as table]]
+  if not rpf.inventory.check(container, container.contents) then
+    return nil, "refused", "invalid_contents"
+  end
+  local entry = uses[found.item]
+  local player = rpf.players.get(handle)
+  local given = {
+    container = stack.container,
+    index = found.index,
+    item = found.item,
+    key = found.key,
+    count = found.count,
+    data = found.data,
+  }
+  local changed, written = {}, {}
+  ---Whether the units taken, and what the handler wrote, are on disk.
+  ---@return boolean durable True once they are.
+  local function durable()
+    return contents_on_disk(changed)() and applied_on_disk(written)
+  end
+  local message = nil
+  local detail = detail_of(handle, { item = found.item })
+  local done, status, why = rpf.ops.run(op_id, "inventory.use", durable, function()
+    local ctx = rpf.addons.context_of(entry.namespace)
+    local keys, ran, ok, second = rpf.records.watch(function()
+      local called, answer, extra = rpf.addons.run(ctx, entry.handler, player, given)
+      if not called then
+        error(answer, 0)
+      end
+      return answer, extra
+    end)
+    for _, key in ipairs(keys) do
+      written[#written + 1] = key
+    end
+    if not ran then
+      return nil, "unknown", "its use handler threw: " .. tostring(ok)
+    end
+    if ok == false then
+      if #keys > 0 then
+        return nil, "unknown", "its use handler declined after writing records"
+      end
+      message = use_message(second)
+      return nil, "refused", "declined"
+    end
+    if ok ~= true then
+      return nil, "unknown", "its use handler answered neither true nor false"
+    end
+    local used = second == nil and 0 or second
+    if not whole(used, 0, found.count) then
+      return nil, "unknown", "its use handler answered it used " .. tostring(second) .. " of " .. found.count
+    end
+    if used > 0 then
+      if not rpf.inventory.take_stack(stack.container, found.index, used) then
+        return nil, "unknown", "the units its use handler used up could not be taken"
+      end
+      changed[#changed + 1] = stack.container
+    end
+    return true
+  end, detail)
+  return done, status, why, message
 end
 
 -- Jobs ---------------------------------------------------------------------

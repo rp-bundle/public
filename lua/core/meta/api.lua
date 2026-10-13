@@ -608,8 +608,9 @@ function Money.supports(call) end
 ---not held here and one that never existed are the same `not_found`, and a
 ---stack whose item or data is no longer the one named (it moved since the
 ---screen was drawn, and another took its index) is `stale`, never another
----stack. Indexes count from 1. These
----four are RPF's own: where a framework owns items (a companion server),
+---stack. Indexes count from 1. `use` runs what an addon said using an
+---item does (`on_use`). These calls are RPF's own: where a framework owns
+---items (a companion server),
 ---they are `unsupported`, which is how an inventory screen knows to stand
 ---aside for the framework's.
 ---
@@ -701,9 +702,59 @@ function Inventory.discard(player, stack, count, op_id) end
 ---@return string? reason For `refused`: as for `discard`, `no_target` (the target is not another logged-in player with a character in play), and `no_space` when none of their containers takes the units.
 function Inventory.hand(player, target, stack, count, op_id) end
 
----Whether a call works on this server: `containers`, `move`, `discard`
----and `hand` only where RPF owns items, not through a bridge.
----@param call string `count`, `give`, `take`, `containers`, `move`, `discard` or `hand`.
+---Says what using an item does: food that restores hunger, a lockpick, a
+---radio. An inventory screen offers Use on a stack whose item has one
+---(`rpf.InventoryStack.usable`), and `use` runs it for the stack the player
+---picked. One handler per item, registered in your addon's `start`: it
+---goes when the addon stops, registering it again replaces it, and another
+---addon's registration for the item is `taken`.
+---
+---The handler gets the player and the stack, and answers `true` and how
+---many units it used up, which RPF then takes from that stack; or `false`
+---and a sentence for the player, and nothing is taken. Check first and
+---write last: a handler that throws, that answers `false` after writing a
+---record, or that answers a count it could not have used, leaves the use
+---`unknown`, for staff, as an `apply` that fails does. Write only your own
+---records in it, never money or items: what the use takes is the count it
+---answers.
+---
+---```lua
+---assert(rpf.inventory.on_use("bread", function(player, stack)
+---  local needs = rpf.records.list("rpf_needs.state", { owner = { kind = "player", id = player.player_id } })[1]
+---  if not needs then
+---    return false, "You cannot eat now."
+---  end
+---  rpf.records.update("rpf_needs.state", needs.id, { hunger = math.min(100, needs.fields.hunger + 30) })
+---  return true, 1
+---end))
+---```
+---@param item string The item's slug.
+---@param handler fun(player: rpf.PlayerView, stack: rpf.InventoryUse): boolean, (integer|string)? Answers `true` and the units used up (none unless given), or `false` and a message for the player.
+---@return boolean? ok True once registered.
+---@return "invalid"|"forbidden"|"taken"|"inactive"|nil err `invalid` for a slug or handler that is not one, `forbidden` from code that is not an addon's, `taken` when another running addon has the item, `inactive` from code of an addon activation that has ended.
+function Inventory.on_use(item, handler) end
+
+---Whether an item has a use on this server now: a handler, whose addon is
+---running, where RPF owns items.
+---@param item string The item's slug.
+---@return boolean usable True if `use` would run a handler for it.
+function Inventory.usable(item) end
+
+---Uses one of the character's stacks: runs its item's handler (`on_use`),
+---then takes the units it used up from that stack, as one intent, once per
+---op id.
+---@param player any The engine's handle.
+---@param stack rpf.InventoryStackRef The stack.
+---@param op_id string From `rpf.ops.new()`.
+---@return boolean? ok True once used.
+---@return rpf.FacadeStatus? status Why not.
+---@return string? reason For `refused`: as for `discard`, `no_use` for an item with no use here, and `declined` when the handler said no.
+---@return string? message For `declined`, the handler's sentence for the player, if it gave one. A repeat of the op id answers `declined` without it.
+function Inventory.use(player, stack, op_id) end
+
+---Whether a call works on this server: `containers`, `move`, `discard`,
+---`hand` and `use` only where RPF owns items, not through a bridge.
+---@param call string `count`, `give`, `take`, `containers`, `move`, `discard`, `hand` or `use`.
 ---@return boolean supported True if it does.
 function Inventory.supports(call) end
 
@@ -736,6 +787,16 @@ function Inventory.supports(call) end
 ---@field key string A fingerprint of its data, 16 hex digits, the same for every stack of plain units. Name the stack back with it (`rpf.InventoryStackRef.key`): a string survives the trip to a client and back, where the data itself may not.
 ---@field position { x: integer, y: integer }? In a grid, its top-left cell, from 0.
 ---@field rotated boolean? In a grid, whether it lies a quarter turn.
+---@field usable boolean Whether its item has a use here (`rpf.inventory.usable`): offer Use on it.
+
+---The stack a use handler is given (`rpf.inventory.on_use`): a copy.
+---@class rpf.InventoryUse
+---@field container string The container's id.
+---@field index integer Its index, from 1.
+---@field item string The item's slug.
+---@field key string Its data's fingerprint.
+---@field count integer How many units it holds: the most a handler may use up.
+---@field data table? Its data, when it carries any.
 
 ---A player's job.
 ---
@@ -786,7 +847,7 @@ function Ops.result(op_id) end
 ---A facade command whose result is `unknown`.
 ---@class rpf.OpUnknown
 ---@field op_id string Its op id.
----@field call string What it was: `money.debit`, `money.credit`, `money.transfer`, `inventory.give`, `inventory.take`, `inventory.move`, `inventory.discard`, `inventory.hand` or `commerce.exchange`.
+---@field call string What it was: `money.debit`, `money.credit`, `money.transfer`, `inventory.give`, `inventory.take`, `inventory.move`, `inventory.discard`, `inventory.hand`, `inventory.use` or `commerce.exchange`.
 ---@field at number When its op id was minted, in milliseconds since the Unix epoch.
 ---@field detail { player: string?, to: string?, account: string?, amount: number?, paid: number?, item: string?, count: number?, take: string?, give: string?, reason: string? } What it was: the player's account (`player_id`), the other player's (`to`) for a transfer or a hand-over, and the command's arguments; for an exchange, what the player paid (`amount`) or was paid (`paid`), and the items taken and given (`water:2,bread:1`).
 ---@field cause string What went wrong, for staff.

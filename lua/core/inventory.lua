@@ -1299,6 +1299,7 @@ inventory.stack_key = stack_key
 ---@field key string A fingerprint of its data (`inventory.stack_key`), the same for every stack of plain units.
 ---@field position { x: integer, y: integer }? In a grid, its top-left cell.
 ---@field rotated boolean? In a grid, whether it lies a quarter turn.
+---@field usable boolean? Whether its item has a use here: set by `rpf.facade.containers`, which knows the use handlers.
 
 ---A held container as a script reads it: its rules spelt out and its
 ---stacks numbered, with their names and the weight they add up to, so an

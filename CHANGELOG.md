@@ -44,6 +44,11 @@ socket.
   after they were last seen. A deployment must set the new required `RPF_SIGNAL_KEY` (base64 of 32 or
   more bytes, `openssl rand -base64 32`), or the portal refuses to start;
   keep it with the backups' encryption key (`docs/deployment.md`).
+- Using an item (#183): an addon says what using an item does
+  (`rpf.api.inventory.on_use`, one handler per item, gone when the addon
+  stops), and `rpf.api.inventory.use` runs it for the stack a player picked
+  and takes the units it used up from that stack, as one intent once per
+  op id. `containers` marks each stack `usable`.
 - An inventory screen's calls in the addon API (#183): an addon reads a
   player's containers with every stack numbered and named
   (`rpf.api.inventory.containers`), moves one stack between the player's

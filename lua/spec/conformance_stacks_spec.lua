@@ -131,12 +131,18 @@ end
 ---A world with Jane and Sam logged in and in play.
 ---@param world spec.ConformanceWorld The world.
 ---@param sam_weight integer? As for `seed`.
+---@param addons { manifest: table, start: fun() }[]? Addons to register and install, each started with its `start`.
 ---@return any jane Jane's engine handle.
 ---@return any sam Sam's.
-local function playing(world, sam_weight)
+local function playing(world, sam_weight, addons)
   seed(world, sam_weight)
+  local installed = {}
+  for _, addon in ipairs(addons or {}) do
+    assert(world.api.addons.register(addon.manifest, { start = addon.start }))
+    installed[#installed + 1] = conformance.installed(world.core, addon.manifest)
+  end
   world:connect()
-  world:install({}, config(world))
+  world:install(installed, config(world))
   world:pump()
   local jane = world:login(1, PLAYER)
   world:select(jane, JANE)
@@ -208,6 +214,14 @@ local function reported(world, description)
   return out
 end
 
+---A manifest that declares nothing but itself: an addon whose code only
+---says what using items does.
+---@param namespace string Its namespace.
+---@return table manifest The manifest.
+local function food(namespace)
+  return { namespace = namespace, version = "1.0.0", api = 1, title = "Food" }
+end
+
 conformance.run(busted, "the facade's stacks", {
   {
     name = "reads the character's containers, every stack numbered, named and weighed",
@@ -227,8 +241,8 @@ conformance.run(busted, "the facade's stacks", {
           max_weight = 50,
           weight = 4,
           stacks = {
-            { index = 1, item = "water", name = "Water", count = 3, key = PLAIN },
-            { index = 2, item = "water", name = "Water", count = 1, data = { note = "for Sam" }, key = noted },
+            { index = 1, item = "water", name = "Water", count = 3, key = PLAIN, usable = false },
+            { index = 2, item = "water", name = "Water", count = 1, data = { note = "for Sam" }, key = noted, usable = false },
           },
         },
         {
@@ -238,7 +252,7 @@ conformance.run(busted, "the facade's stacks", {
           grid = { x = 2, y = 2 },
           weight = 4,
           stacks = {
-            { index = 1, item = "bread", name = "Bread", count = 2, position = { x = 0, y = 0 }, rotated = false, key = PLAIN },
+            { index = 1, item = "bread", name = "Bread", count = 2, position = { x = 0, y = 0 }, rotated = false, key = PLAIN, usable = false },
           },
         },
       }, containers, "Sam's bag is not Jane's to read")
@@ -461,6 +475,161 @@ conformance.run(busted, "the facade's stacks", {
       assert.are.equal(1, #unknown)
       assert.are.equal("inventory.hand", unknown[1].call)
       assert.are.same({ player = PLAYER, to = SAM_PLAYER, item = "water", count = 1 }, unknown[1].detail)
+    end,
+  },
+  {
+    name = "uses a stack once per op id, taking what its handler used up from that stack",
+    run = function(world)
+      local given = {}
+      local jane = playing(world, nil, {
+        {
+          manifest = food("acme_food"),
+          start = function()
+            assert(world.api.inventory.on_use("water", function(player, stack)
+              given[#given + 1] = { player.player_id, stack.index, stack.count, stack.data and stack.data.note }
+              return true, 1
+            end))
+          end,
+        },
+      })
+      local inventory, ops = world.api.inventory, world.api.ops
+      assert.is_true(inventory.usable("water"))
+      assert.is_false(inventory.usable("bread"))
+      assert.is_true(inventory.supports("use"))
+      local bag = assert(inventory.containers(jane))[1]
+      assert.are.same({ true, true }, { bag.stacks[1].usable, bag.stacks[2].usable })
+      local op = ops.new()
+      local bottle = ref(world, BAG, 2, "water", { note = "for Sam" })
+      assert.is_true(inventory.use(jane, bottle, op))
+      assert.is_true(inventory.use(jane, bottle, op), "the same op again answers as before")
+      assert.are.same({ { PLAYER, 2, 1, "for Sam" } }, given, "and runs the handler once, with the stack picked")
+      assert.are.same({ { "water", 3 } }, holds(world, BAG), "the bottle was used up, the plain water untouched")
+      assert.is_true(inventory.use(jane, ref(world, BAG, 1, "water"), ops.new()))
+      assert.are.same({ { "water", 2 } }, holds(world, BAG))
+      assert.are.same(
+        { nil, "refused", "no_use" },
+        { inventory.use(jane, ref(world, CASE, 1, "bread"), ops.new()) },
+        "bread has no use"
+      )
+      world:settle()
+      assert.are.equal(2, world.portal.owned[BAG].data.contents.stacks[1].count, "the portal has what is left")
+    end,
+  },
+  {
+    name = "takes nothing when the handler declines, and passes on its message",
+    run = function(world)
+      local jane = playing(world, nil, {
+        {
+          manifest = food("acme_food"),
+          start = function()
+            assert(world.api.inventory.on_use("water", function()
+              return false, "You are not thirsty."
+            end))
+          end,
+        },
+      })
+      local inventory = world.api.inventory
+      local op = world.api.ops.new()
+      local water = ref(world, BAG, 1, "water")
+      assert.are.same({ nil, "refused", "declined", "You are not thirsty." }, { inventory.use(jane, water, op) })
+      assert.are.same({ nil, "refused", "declined" }, { inventory.use(jane, water, op) }, "a repeat answers without it")
+      assert.are.same({ { "water", 3 }, { "water", 1, "for Sam" } }, holds(world, BAG))
+    end,
+  },
+  {
+    name = "never runs a handler for another character's stack",
+    run = function(world)
+      local ran = 0
+      local jane, sam = playing(world, nil, {
+        {
+          manifest = food("acme_food"),
+          start = function()
+            assert(world.api.inventory.on_use("bread", function()
+              ran = ran + 1
+              return true, 1
+            end))
+          end,
+        },
+      })
+      local op = world.api.ops.new()
+      assert.are.same(
+        { nil, "refused", "not_found" },
+        { world.api.inventory.use(jane, ref(world, SAM_BAG, 1, "bread"), op) }
+      )
+      assert.is_nil(world.api.ops.result(op), "not journaled")
+      assert.are.equal(0, ran)
+      assert.is_true(world.api.inventory.use(sam, ref(world, SAM_BAG, 1, "bread"), world.api.ops.new()))
+      assert.are.same({}, holds(world, SAM_BAG), "Sam may eat his own")
+    end,
+  },
+  {
+    name = "is unknown, for staff, when the handler throws or answers more than the stack holds",
+    run = function(world)
+      local answer = nil
+      local jane = playing(world, nil, {
+        {
+          manifest = food("acme_food"),
+          start = function()
+            assert(world.api.inventory.on_use("water", function()
+              if not answer then
+                error("no cups left")
+              end
+              return true, answer
+            end))
+          end,
+        },
+      })
+      local inventory, ops = world.api.inventory, world.api.ops
+      local bottle = ref(world, BAG, 2, "water", { note = "for Sam" })
+      assert.are.same({ nil, "unknown" }, { inventory.use(jane, bottle, ops.new()) })
+      answer = 2
+      assert.are.same({ nil, "unknown" }, { inventory.use(jane, bottle, ops.new()) })
+      assert.are.same({ { "water", 3 }, { "water", 1, "for Sam" } }, holds(world, BAG), "nothing was taken")
+      local unknown = ops.unknown()
+      assert.are.equal(2, #unknown)
+      assert.are.same({ "inventory.use", "inventory.use" }, { unknown[1].call, unknown[2].call })
+      local causes = unknown[1].cause .. "\n" .. unknown[2].cause
+      assert.truthy(causes:find("no cups left", 1, true), causes)
+      assert.truthy(causes:find("used 2 of 1", 1, true), causes)
+    end,
+  },
+  {
+    name = "keeps one handler per item, and drops it when its addon stops",
+    run = function(world)
+      local mine, theirs = food("acme_food"), food("acme_drinks")
+      local jane = playing(world, nil, {
+        {
+          manifest = mine,
+          start = function()
+            assert(world.api.inventory.on_use("water", function()
+              return true
+            end))
+          end,
+        },
+        { manifest = theirs, start = function() end },
+      })
+      local inventory, addons = world.api.inventory, world.core.addons
+      assert.is_true(inventory.usable("water"))
+      ---Registers a use for water as one of the addons' code would.
+      ---@param namespace string The addon.
+      ---@return table answer What `on_use` answered.
+      local function as(namespace)
+        return {
+          select(2, addons.run(addons.context_of(namespace), inventory.on_use, "water", function()
+            return true
+          end)),
+        }
+      end
+      assert.are.same({ nil, "taken" }, as("acme_drinks"), "another addon's item")
+      assert.are.same({ true }, as("acme_food"), "its own, again, replaces it")
+      assert.are.same({ nil, "invalid" }, { inventory.on_use("Water!", function() end) })
+      assert.are.same({ nil, "forbidden" }, { inventory.on_use("bread", function() end) }, "not from outside an addon")
+      world:install({ conformance.installed(world.core, theirs) }, config(world))
+      world:pump()
+      assert.are_not.equal("active", (world.api.addons.state("acme_food")))
+      assert.is_false(inventory.usable("water"))
+      assert.are.same({ nil, "refused", "no_use" }, { inventory.use(jane, ref(world, BAG, 1, "water"), world.api.ops.new()) })
+      assert.are.same({ true }, as("acme_drinks"), "and the item is free for another")
     end,
   },
 })

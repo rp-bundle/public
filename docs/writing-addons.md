@@ -1442,11 +1442,41 @@ the same bucket within a few metres with `rpf.players.list()` and
 `rpf.world.position`, and resolve the one the client picked among them
 rather than taking its word.
 
-These five are RPF's own. Where a framework owns items or money (a
+These calls, and `use` below, are RPF's own. Where a framework owns items or money (a
 companion server, beside Qbox or DarkRP), they are `unsupported`, since no
 framework can do them as one change, and `rpf.inventory.supports("containers")`
 says so before you offer anything: that framework has its own inventory
 screen.
+
+### Using an item
+
+What using an item does belongs to an addon: food restores hunger, a
+lockpick opens a door, a radio tunes in. Say so in your addon's `start`,
+one handler per item, and any inventory screen offers **Use** on its stacks
+(`containers` marks each stack `usable`):
+
+```lua
+start = function()
+  assert(rpf.inventory.on_use("bandage", function(player, stack)
+    if not hurt(player) then
+      return false, "You are not hurt." -- shown to the player; nothing is taken
+    end
+    heal(player, 25) -- your own records only
+    return true, 1   -- one bandage used up, taken from the stack the player picked
+  end))
+end,
+```
+
+The screen calls `rpf.inventory.use(player, stack, op_id)` with the stack
+the player picked, named as for `move`. RPF resolves it in the player's
+scope, runs your handler with a copy of it (`index`, `item`, `count`,
+`data`), and takes the units you said you used from that stack, in one
+intent once per op id. Check first and write last: once your handler has
+written, a throw, a `false`, or a count larger than the stack leaves the use
+`unknown`, for staff, as an `apply` that fails does. Change only your own
+records in it, never money or items. One addon has an item at a time:
+another's registration is `taken` while the first runs, and yours goes
+when your addon stops.
 
 ## Timers, exports, the world
 
