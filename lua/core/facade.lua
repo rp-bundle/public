@@ -78,10 +78,23 @@ local rpf = rpf
 facade.ADDON_ACCOUNT = "economy.addon_account"
 facade.CALLS = {
   characters = { current = true },
-  money = { accounts = true, balance = true, debit = true, credit = true },
-  inventory = { count = true, give = true, take = true },
+  money = { accounts = true, balance = true, debit = true, credit = true, transfer = true },
+  inventory = { count = true, give = true, take = true, containers = true, move = true, discard = true, hand = true },
   jobs = { current = true },
 }
+
+---The calls only RPF's own modules answer: no bridge contract has them, so
+---where a framework owns the domain they are `unsupported`.
+local NATIVE_ONLY = {
+  ["money.transfer"] = true,
+  ["inventory.containers"] = true,
+  ["inventory.move"] = true,
+  ["inventory.discard"] = true,
+  ["inventory.hand"] = true,
+}
+
+---The bounds of a grid position, the portal's `IVector2`: `i32`.
+local I32_MIN, I32_MAX = -2147483648, 2147483647
 
 ---The most units one give or take moves: a stack's count is a `u32`.
 local MAX_UNITS = 4294967295
@@ -228,6 +241,25 @@ local function external(domain)
   return rpf.domains.is_external(domain)
 end
 
+---Another player, for a command between two: logged in, with a character
+---in play, and not the first player.
+---@param handle any The first player's engine handle.
+---@param target any The other player's engine handle.
+---@return table? other Their character.
+---@return string? player_id Their account, for the journal.
+---@return string? err `no_target` when there is no such other player.
+local function target_of(handle, target)
+  local me, them = rpf.players.get(handle), target ~= nil and rpf.players.get(target) or nil
+  if not me or not them or not them.player_id or them.player_id == me.player_id then
+    return nil, nil, "no_target"
+  end
+  local other = character_of(target)
+  if not other then
+    return nil, nil, "no_target"
+  end
+  return other, them.player_id
+end
+
 ---Reads through the bridge: the call must be supported and reachable, and
 ---the player logged in with a character the bridge reported loaded. Every
 ---read is about a player, whatever handle the caller passed, nil included;
@@ -310,7 +342,7 @@ function facade.supports(domain, call)
     return false
   end
   if external(domain) then
-    return rpf.bridge.supports(domain, call)
+    return not NATIVE_ONLY[domain .. "." .. call] and rpf.bridge.supports(domain, call)
   end
   if domain == "money" and (call == "debit" or call == "credit") then
     return addon_account() ~= nil
@@ -489,6 +521,67 @@ function facade.credit(handle, name, amount, reason, op_id, apply)
   return move_money("credit", handle, name, amount, reason, op_id, apply)
 end
 
+---Moves money from a player's account to another player's account of the
+---same name, as one ledger entry, once per op id: cash handed over. Both
+---characters are in play here, so this server holds both accounts. No
+---bridge contract has it, so where a framework owns money it is
+---`unsupported`. Whether the two are near each other is the caller's to
+---decide (`rpf.world`).
+---@param handle any The engine's handle of the player paying.
+---@param target any The engine's handle of the player paid.
+---@param name any The account's name, the same on both sides (`wallet`).
+---@param amount any A whole amount from 1.
+---@param reason any Why, at most 256 bytes: both players' statements carry it.
+---@param op_id any From `rpf.ops.new()`.
+---@return boolean? ok True once moved.
+---@return string? status `refused`, `unavailable` or `unknown`.
+---@return string? why For `refused`: `invalid`, `invalid_op`, `expired_op`, `journal_full`, `unsupported`, `not_logged_in`, `no_character`, `no_target`, `no_account` (either side has no account of that name), `insufficient_funds`, `out_of_range`.
+function facade.transfer(handle, target, name, amount, reason, op_id)
+  if not valid_entry(amount, reason) or type(name) ~= "string" then
+    return nil, "refused", "invalid"
+  end
+  if not rpf.ops.minted_at(op_id) then
+    return nil, "refused", "invalid_op"
+  end
+  if external("money") then
+    return nil, "refused", "unsupported"
+  end
+  local known, done, status, why = rpf.ops.known(op_id)
+  if known then
+    return done, status, why
+  end
+  local character, err = character_of(handle)
+  if not character then
+    return nil, "refused", err
+  end
+  local other, to, missing = target_of(handle, target)
+  if not other then
+    return nil, "refused", missing
+  end
+  local from_account, to_account = account_of(character, name), account_of(other, name)
+  if not from_account or not to_account then
+    return nil, "refused", "no_account"
+  end
+  local on_disk = nil
+  ---Whether the payment is on disk; known once it is made.
+  ---@return boolean durable True once it is.
+  local function durable()
+    return on_disk == nil or on_disk()
+  end
+  local detail = detail_of(handle, { to = to, account = name, amount = amount, reason = reason })
+  return rpf.ops.run(op_id, "money.transfer", durable, function()
+    local entry, failure = rpf.accounts.transfer(from_account.id, to_account.id, amount, reason)
+    if not entry then
+      if failure == "not_held" then
+        return nil, "unavailable"
+      end
+      return nil, "refused", failure
+    end
+    on_disk = entry_on_disk(from_account.id, entry)
+    return true
+  end, detail)
+end
+
 -- Items --------------------------------------------------------------------
 
 ---A character's held containers, by name then id.
@@ -658,6 +751,287 @@ end
 ---@return string? why For `refused`: as for `give`, `insufficient`, and `invalid_contents` for a container whose contents no longer pass its rules (the catalog changed under it).
 function facade.take(handle, item, count, op_id, apply)
   return move_items("take", handle, item, count, op_id, apply)
+end
+
+-- Stacks -------------------------------------------------------------------
+--
+-- An inventory screen names one stack: this bottle, that pistol. A stack is
+-- named by `{ container, index, item, key }`, where `container`, `index`
+-- and `key` are what `containers` answered, and `item` is the slug the
+-- caller saw there. `key` is a fingerprint of the stack's data.
+-- Everything in it may be a client's word, so it is resolved inside the
+-- player's scope: the container must be one of the character's own held
+-- containers, and another character's container, one nobody here holds
+-- and one that never existed are the same `not_found`. A stack whose item
+-- or data is no longer the one named (it moved, or was used up, since the
+-- screen was drawn) is `stale`, so an old index never moves another stack,
+-- even another of the same item.
+--
+-- These calls are RPF's own. No bridge contract has them, so where a
+-- framework owns the domain they are `unsupported`; a stand-in built from a
+-- framework's take and give would not be one change.
+
+---Whether a value is a whole number from `low` to `high`.
+---@param value any The value.
+---@param low number The least.
+---@param high number The most.
+---@return boolean ok True if it is.
+local function whole(value, low, high)
+  return type(value) == "number" and value == math.floor(value) and value >= low and value <= high
+end
+
+---Whether a value has the shape of a stack reference.
+---@param stack any The value.
+---@return boolean ok True for `{ container = string, index = integer, item = string, key = string }`.
+local function stack_shape(stack)
+  return type(stack) == "table"
+    and type(stack.container) == "string"
+    and whole(stack.index, 1, MAX_UNITS)
+    and type(stack.item) == "string"
+    and type(stack.key) == "string"
+end
+
+---One of a character's held containers, by an id from outside.
+---@param character table The character.
+---@param id any The container's id.
+---@return table? container A copy, or nil if it is not one of theirs.
+local function own_container(character, id)
+  if type(id) ~= "string" then
+    return nil
+  end
+  for _, container in ipairs(containers_of(character)) do
+    if container.id == id then
+      return container
+    end
+  end
+  return nil
+end
+
+---The stack a reference names, inside the character's own containers.
+---@param character table The character.
+---@param stack table The reference, of the right shape.
+---@return rpf.inventory.StackView? found The stack, as `rpf.inventory.view` reads it.
+---@return string? err `not_found` (not their container, or nothing at the index) or `stale` (another stack there now: another item, or the same item with other data).
+local function resolve_stack(character, stack)
+  local container = own_container(character, stack.container)
+  if not container then
+    return nil, "not_found"
+  end
+  local view = rpf.inventory.view(container.id)
+  local found = view and view.stacks[stack.index]
+  if not found then
+    return nil, "not_found"
+  end
+  -- The data as well as the item, by its fingerprint: taking the plain
+  -- water before a bottle with a note in it moves the bottle into the
+  -- water's index, and an old screen naming the water must not throw the
+  -- bottle away.
+  if found.item ~= stack.item or found.key ~= stack.key then
+    return nil, "stale"
+  end
+  return found
+end
+
+---What every stack command checks before its journal: arguments, op id,
+---who owns the domain, and an op id already run, whose recorded answer is
+---the answer even when what it named has changed since (the stack it
+---moved is gone from where it was).
+---@param op_id any The op id.
+---@param valid boolean Whether the arguments are well formed.
+---@return boolean? settled True when the caller should answer with what follows.
+---@return boolean? ok The answer's first value.
+---@return string? status Its status.
+---@return string? why Its reason.
+local function precheck(op_id, valid)
+  if not valid then
+    return true, nil, "refused", "invalid"
+  end
+  if not rpf.ops.minted_at(op_id) then
+    return true, nil, "refused", "invalid_op"
+  end
+  if external("inventory") then
+    return true, nil, "refused", "unsupported"
+  end
+  local known, done, status, why = rpf.ops.known(op_id)
+  if known then
+    return true, done, status, why
+  end
+  return nil
+end
+
+---The character's held containers, read for a screen: every stack
+---numbered, named and weighed (`rpf.inventory.View`).
+---@param handle any The engine's handle.
+---@return rpf.inventory.View[]? containers By name, then id; empty for a character with none held.
+---@return string? err `unsupported` where a framework owns items, `not_logged_in` or `no_character`.
+function facade.containers(handle)
+  if external("inventory") then
+    return nil, "unsupported"
+  end
+  local character, err = character_of(handle)
+  if not character then
+    return nil, err
+  end
+  local out = {}
+  for _, container in ipairs(containers_of(character)) do
+    out[#out + 1] = rpf.inventory.view(container.id)
+  end
+  return out
+end
+
+---Moves a stack, or units of it, from one of the character's containers to
+---another of theirs, or to a spot in the same grid, once per op id. Both
+---containers are checked before either changes.
+---@param handle any The engine's handle.
+---@param stack any The stack: `{ container, index, item, key }`.
+---@param to any The destination container's id, which may be the stack's own.
+---@param op_id any From `rpf.ops.new()`.
+---@param opts any? `{ count, position, rotated }`: how many (the whole stack unless given), and where in a grid.
+---@return boolean? ok True once moved.
+---@return string? status `refused`, `unavailable` or `unknown`.
+---@return string? why For `refused`: `invalid`, `invalid_op`, `expired_op`, `journal_full`, `unsupported`, `not_logged_in`, `no_character`, `not_found`, `stale`, `no_space` (the destination cannot take them), `invalid_contents`.
+function facade.move(handle, stack, to, op_id, opts)
+  opts = opts == nil and {} or opts
+  local valid = stack_shape(stack)
+    and type(to) == "string"
+    and type(opts) == "table"
+    and (opts.count == nil or whole(opts.count, 1, MAX_UNITS))
+    -- Any `i32` cell, as the portal's `IVector2` holds: whether it is in the
+    -- grid is the destination's validation's to say (`no_space`).
+    and (opts.position == nil or (type(opts.position) == "table" and whole(opts.position.x, I32_MIN, I32_MAX) and whole(
+      opts.position.y,
+      I32_MIN,
+      I32_MAX
+    )))
+    and (opts.rotated == nil or type(opts.rotated) == "boolean")
+  local settled, a, b, c = precheck(op_id, valid)
+  if settled then
+    return a, b, c
+  end
+  local character, err = character_of(handle)
+  if not character then
+    return nil, "refused", err
+  end
+  local found, missing = resolve_stack(character, stack)
+  if not found then
+    return nil, "refused", missing
+  end
+  if not own_container(character, to) then
+    return nil, "refused", "not_found"
+  end
+  local changed = {}
+  local detail = detail_of(handle, { item = found.item, count = opts.count or found.count })
+  return rpf.ops.run(op_id, "inventory.move", contents_on_disk(changed), function()
+    local moved, why, _, broke = rpf.inventory.move(stack.container, stack.index, to, {
+      count = opts.count,
+      position = opts.position,
+      rotated = opts.rotated,
+    })
+    if not moved then
+      if why == "invalid_argument" then
+        return nil, "refused", "invalid"
+      end
+      if why == "invalid" and broke ~= to then
+        return nil, "refused", "invalid_contents"
+      end
+      return nil, "refused", "no_space"
+    end
+    changed[#changed + 1] = stack.container
+    changed[#changed + 1] = to
+    return true
+  end, detail)
+end
+
+---Destroys units of one stack of the character's, once per op id: what a
+---player throws away. The units are gone, not put anywhere.
+---@param handle any The engine's handle.
+---@param stack any The stack: `{ container, index, item, key }`.
+---@param count any How many, from one to all the stack holds.
+---@param op_id any From `rpf.ops.new()`.
+---@return boolean? ok True once gone.
+---@return string? status `refused`, `unavailable` or `unknown`.
+---@return string? why For `refused`: as for `move`, and `insufficient` for more than the stack holds.
+function facade.discard(handle, stack, count, op_id)
+  local settled, a, b, c = precheck(op_id, stack_shape(stack) and whole(count, 1, MAX_UNITS))
+  if settled then
+    return a, b, c
+  end
+  local character, err = character_of(handle)
+  if not character then
+    return nil, "refused", err
+  end
+  local found, missing = resolve_stack(character, stack)
+  if not found then
+    return nil, "refused", missing
+  end
+  if count > found.count then
+    return nil, "refused", "insufficient"
+  end
+  local changed = {}
+  local detail = detail_of(handle, { item = found.item, count = count })
+  return rpf.ops.run(op_id, "inventory.discard", contents_on_disk(changed), function()
+    local taken = rpf.inventory.take_stack(stack.container, stack.index, count)
+    if not taken then
+      return nil, "refused", "invalid_contents"
+    end
+    changed[#changed + 1] = stack.container
+    return true
+  end, detail)
+end
+
+---Hands units of one stack of the character's to another player's
+---character, once per op id: into the first of their held containers that
+---takes them all, with the stack's own data. Both sides are checked before
+---either changes, so nothing is half handed over. Whether the two are near
+---each other is the caller's to decide (`rpf.world`).
+---@param handle any The engine's handle of the player handing over.
+---@param target any The engine's handle of the player receiving.
+---@param stack any The stack: `{ container, index, item, key }`.
+---@param count any How many, from one to all the stack holds.
+---@param op_id any From `rpf.ops.new()`.
+---@return boolean? ok True once handed over.
+---@return string? status `refused`, `unavailable` or `unknown`.
+---@return string? why For `refused`: as for `discard`, `no_target` for a target who is not another logged-in player with a character in play, and `no_space` when none of their containers takes the units.
+function facade.hand(handle, target, stack, count, op_id)
+  local settled, a, b, c = precheck(op_id, stack_shape(stack) and whole(count, 1, MAX_UNITS))
+  if settled then
+    return a, b, c
+  end
+  local character, err = character_of(handle)
+  if not character then
+    return nil, "refused", err
+  end
+  local other, to, missing_target = target_of(handle, target)
+  if not other then
+    return nil, "refused", missing_target
+  end
+  local found, missing = resolve_stack(character, stack)
+  if not found then
+    return nil, "refused", missing
+  end
+  if count > found.count then
+    return nil, "refused", "insufficient"
+  end
+  local destinations = containers_of(other)
+  if #destinations == 0 then
+    return nil, "refused", "no_space"
+  end
+  local changed = {}
+  local detail = detail_of(handle, { to = to, item = found.item, count = count })
+  return rpf.ops.run(op_id, "inventory.hand", contents_on_disk(changed), function()
+    for _, container in ipairs(destinations) do
+      local moved, why, _, broke = rpf.inventory.move(stack.container, stack.index, container.id, { count = count })
+      if moved then
+        changed[#changed + 1] = stack.container
+        changed[#changed + 1] = container.id
+        return true
+      end
+      if why == "invalid" and broke == stack.container then
+        return nil, "refused", "invalid_contents"
+      end
+    end
+    return nil, "refused", "no_space"
+  end, detail)
 end
 
 -- Jobs ---------------------------------------------------------------------

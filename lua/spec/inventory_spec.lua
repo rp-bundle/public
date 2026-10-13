@@ -389,6 +389,73 @@ describe("rpf.inventory", function()
     end)
   end)
 
+  describe("take_stack", function()
+    it("takes units of the one stack named, whatever others hold the item", function()
+      assert.is_true(inventory.take_stack(BAG, 2, 1))
+      assert.are.same({ { "water", 3 } }, pairs_of(BAG), "the rifle went, the water stayed")
+      assert.is_true(inventory.take_stack(BAG, 1, 2))
+      assert.are.same({ { "water", 1 } }, pairs_of(BAG))
+    end)
+
+    it("refuses what it cannot find or count, and changes nothing", function()
+      assert.are.same({ nil, "no_stack" }, { inventory.take_stack(BAG, 3, 1) })
+      assert.are.same({ nil, "no_stack" }, { inventory.take_stack(BAG, 0, 1) })
+      assert.are.same({ nil, "invalid_argument" }, { inventory.take_stack(BAG, 1, 4) })
+      assert.are.same({ nil, "invalid_argument" }, { inventory.take_stack(BAG, 1, 0) })
+      assert.are.same({ nil, "not_held" }, { inventory.take_stack("00000000-0000-4000-8000-0000000000ff", 1, 1) })
+      assert.are.same({ { "water", 3 }, { "rifle", 1 } }, pairs_of(BAG))
+    end)
+  end)
+
+  describe("view", function()
+    it("numbers a list's stacks, with their names and data", function()
+      local view = assert(inventory.view(BAG))
+      assert.are.same({ "list", 100 }, { view.layout, view.max_weight })
+      assert.are.same({ index = 1, item = "water", name = "Water", count = 3, key = inventory.stack_key(nil) }, view.stacks[1])
+      assert.are.same({ serial = "A1", ammo = { 30 } }, view.stacks[2].data)
+      assert.is_nil(view.grid)
+    end)
+
+    it("gives a grid's size and where each placement sits", function()
+      assert.is_true(inventory.add(GRID, "water", 1, { position = { x = 2, y = 1 } }))
+      local view = assert(inventory.view(GRID))
+      assert.are.same({ "grid", { x = 3, y = 3 } }, { view.layout, view.grid })
+      assert.are.same({ x = 2, y = 1 }, view.stacks[1].position)
+      assert.is_false(view.stacks[1].rotated)
+    end)
+
+    it("fingerprints each stack's data, the same for every plain stack", function()
+      local view = assert(inventory.view(BAG))
+      assert.are.equal(inventory.stack_key(nil), view.stacks[1].key)
+      assert.are.equal(inventory.stack_key(json.object({})), view.stacks[1].key, "no data and empty data are one")
+      assert.are.equal(16, #view.stacks[2].key)
+      assert.are_not.equal(view.stacks[1].key, view.stacks[2].key)
+    end)
+
+    it("tells data apart that an engine's round trip would blur", function()
+      local key = inventory.stack_key
+      assert.are_not.equal(
+        key(json.object({ note = json.null })),
+        key(json.object({ note = json.object({}) })),
+        "null is not an empty object"
+      )
+      assert.are_not.equal(key(json.object({ note = json.array({}) })), key(json.object({ note = json.object({}) })))
+      assert.are.equal(key(json.object({ a = 1, b = 2 })), key(json.object({ b = 2, a = 1 })), "key order is not data")
+      local deep, deeper = json.object({}), json.object({})
+      local d1, d2 = deep, deeper
+      for _ = 1, 40 do
+        d1.n, d2.n = json.object({}), json.object({})
+        d1, d2 = d1.n, d2.n
+      end
+      d2.x = 1
+      assert.are_not.equal(key(deep), key(deeper), "deep data is fingerprinted whole")
+    end)
+
+    it("is nil for a container this server does not hold", function()
+      assert.is_nil(inventory.view("00000000-0000-4000-8000-0000000000ff"))
+    end)
+  end)
+
   describe("split", function()
     it("splits units into a stack of their own, beside the first in a list", function()
       assert.is_true(inventory.split(BAG, 1, 1))

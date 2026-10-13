@@ -32,7 +32,7 @@ on any server: you build what yours needs as addons, or take an example.
 | Player accounts and login | A player's account in your community, its password, the login screen, bans, kicks and warnings | Through `rpf.players` and the `players.*` events; never the password |
 | Characters | The character screen, a player's characters (as many as staff allow), the one in play | `rpf.characters.current(player)` |
 | Money | Accounts per character (`wallet` and `bank` unless staff set other starting accounts), every move a ledger entry staff can read | `rpf.money`, with op ids; `rpf.commerce.exchange` with items |
-| Items | The item catalog staff keep in the portal, and each character's containers | `rpf.inventory`, `rpf.commerce.exchange` |
+| Items | The item catalog staff keep in the portal, and each character's containers | `rpf.inventory` (by item, or by the stack a player picked), `rpf.commerce.exchange` |
 | Jobs | Employers, departments, jobs and ranks staff configure. A new character starts in the server's default job if staff set one, and in none otherwise | `rpf.jobs.current(player)` |
 | Staff | The portal, its roles and permissions, the audit log, and in-game staff for players linked to a staff account | `rpf.staff.can(handle, permission)`; the `permission` rule on an interaction |
 | Addon storage | Your types' records, kept across restarts, held and replicated, shown and edited on generic portal pages, audited | `rpf.records` |
@@ -1399,6 +1399,54 @@ server holds, and records it creates to types with nothing to clash on.
 
 Do not build anything that sells in-game money or items for real money:
 the Cfx.re platform rules forbid it, and RPF connects nothing to a payment.
+
+### An inventory screen: stacks, and handing things over
+
+`count`, `give` and `take` deal in an item by its slug, which is what a
+shop or a job needs. A screen where a player sees what they carry deals in
+the stacks they see: this bottle with a note in it, those three apples.
+Read the character's containers with every stack numbered, and send the
+player's client what it draws:
+
+```lua
+-- server, in an interaction's handler
+local containers, err = rpf.inventory.containers(player.handle)
+if not containers then
+  return false, err -- `unsupported` where a framework owns items: stand aside
+end
+-- containers[1]: { id, name = "Pockets", layout = "list", max_weight = 20, weight = 6,
+--   stacks = { { index = 1, item = "water", name = "Water", count = 3, key = "0b3e…" }, ... } }
+return true, { containers = containers }
+```
+
+The client names a stack back as `{ container, index, item, key }`, and the
+call that acts on it resolves it inside the player's scope: a container
+that is not one of the character's own is `not_found`, exactly as one that
+never existed, and a stack whose item or data is no longer the one
+named (it moved since the screen was drawn) is `stale`, so an old index
+never moves the wrong stack, even another of the same item. `key` is a
+fingerprint of the stack's data, a short string: send it to the client
+with the rest of the stack, and have the client name it back unchanged. Pass what the client sent straight through:
+
+| Call | Does |
+|---|---|
+| `move(player, stack, to, op_id, { count, position, rotated })` | Moves the stack, or `count` of it, to another of the character's containers, or to a spot in a grid |
+| `discard(player, stack, count, op_id)` | Throws units away. They go nowhere: nothing is left for another player to pick up |
+| `hand(player, target, stack, count, op_id)` | Gives units to another player's character, data and all, into the first of their containers that takes them all, or refuses `no_space` with nothing moved |
+| `rpf.money.transfer(player, target, account, amount, reason, op_id)` | Hands cash to another player: from the account to theirs of the same name, one ledger entry on both statements |
+
+Mint the op id on the server, once per thing the player did, never take
+one from the client. Who counts as near enough to hand something to is
+yours to decide: the target is an engine handle, so find the players in
+the same bucket within a few metres with `rpf.players.list()` and
+`rpf.world.position`, and resolve the one the client picked among them
+rather than taking its word.
+
+These five are RPF's own. Where a framework owns items or money (a
+companion server, beside Qbox or DarkRP), they are `unsupported`, since no
+framework can do them as one change, and `rpf.inventory.supports("containers")`
+says so before you offer anything: that framework has its own inventory
+screen.
 
 ## Timers, exports, the world
 

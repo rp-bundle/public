@@ -925,6 +925,9 @@ either.
 | `remove(id, item, count, opts)` | Takes from the last stacks of the item whose data is identical to `opts.data` (none by default), so removing water never takes the bottle with a note in it |
 | `move(from, index, to, opts)` | Moves `opts.count` units (the whole stack by default) of the stack or placement at `index`, with its data, to where `add` would put them. `to` may be `from`: a new spot in a grid |
 | `split(id, index, count, opts)` | Splits units into a new stack with the same data: next to it in a list, at `opts.position` or the first free spot in a grid. Never merges |
+| `take_stack(id, index, count)` | Takes units out of the one stack at an index, whatever its data, validated whole: what a player throws away (`rpf.facade`'s `discard`) |
+| `view(id)` | A held container read for a screen: its layout, grid size and weight limit spelt out, its stacks numbered from 1 with their catalog names, data, data fingerprint (`key`) and grid positions, and what it weighs. Nil when not held |
+| `stack_key(data)` | A stack's data fingerprint: two 32-bit polynomial hashes of its canonical encoding, 16 hex digits. Names which stack a screen showed among others of the same item; not a security boundary, since every stack it tells apart is the same player's |
 | `count(id, item)` | Units of an item across every stack |
 
 `inventory.edit(contents, flags, catalog, edit)` is the staff edits' pure
@@ -1194,8 +1197,13 @@ only; `rpf.api.characters`, `money`, `inventory`, `jobs` and `ops` front it.
 | `money.debit` / `credit(player, account, amount, reason, op_id)` | One ledger entry between that account and the paying account the setting `economy.addon_account` names: `records.transfer` into it, `accounts.pay` out of it. Without the setting, or with one naming no paying account, `unsupported` |
 | `inventory.count(player, item)` | Plain units (stacks with no data, `inventory.count(id, item, { plain = true })`) across the character's held containers |
 | `inventory.give` / `take(player, item, count, op_id)` | `give` puts every unit in the first container, by name then id, that takes them all (`inventory.add`); `take` checks the plain units are there and works out and validates every container's contents after (`inventory.plan_remove`) before it changes any, so a container that no longer passes its rules refuses the whole take (`invalid_contents`) |
+| `money.transfer(player, target, account, amount, reason, op_id)` | One ledger entry from the character's account of that name to the other player's character's account of the same name (`accounts.transfer`): cash handed over. `no_target` for a target who is not another logged-in player with a character in play |
+| `inventory.containers(player)` | The character's held containers, by name then id, each read for a screen (`inventory.view`) |
+| `inventory.move(player, stack, to, op_id, opts)` | A stack, or `opts.count` of it, to another of the character's containers or a spot in a grid (`inventory.move`, which validates both before either changes) |
+| `inventory.discard(player, stack, count, op_id)` | Units of one stack destroyed (`inventory.take_stack`) |
+| `inventory.hand(player, target, stack, count, op_id)` | Units of one stack, data and all, into the first of the other player's character's containers that takes them (`inventory.move` into each in turn), so nothing is half handed over |
 | `jobs.current(player)` | `{ name, employer, grade, on_duty }` from `rpf.jobs` (the job's slug, its employer's, its rank, duty) |
-| `<domain>.supports(call)` | Whether the call works here: every native call does, except `money.debit` and `credit` without the addon account |
+| `<domain>.supports(call)` | Whether the call works here: every native call does, except `money.debit` and `credit` without the addon account. The calls no bridge contract has (`money.transfer`, `inventory.containers`, `move`, `discard`, `hand`) are unsupported wherever a framework owns the domain |
 | `ops.new()` | An op id, `<ms>-<16 hex>`: when it was minted, and the platform's randomness |
 | `ops.unknown()` | The commands whose result is `unknown`, oldest first, each `{ op_id, call, at, detail, cause }`: for a staff tool in game |
 | `ops.result(op_id)` | How an op id already went (`rpf.ops.result`): nil when it never ran here, `true`, or `false`, a status and a reason. What running it again would answer, without running it, so an addon answers a repeated order as it was answered |
@@ -1207,6 +1215,24 @@ reason: `refused` (nothing changed), `unavailable` (nothing changed; for
 instance the server's account is not held yet) or `unknown` (it may have
 happened). Arguments are checked first, and a bad one is `refused`
 (`invalid`, `invalid_op`) without being journaled.
+
+**Stacks are named, and resolved in the player's scope.** `move`,
+`discard` and `hand` name a stack as `{ container, index, item, key }`, which a
+player's client may have sent. The container is looked for only among the
+character's own held containers (`containers_of`), so another character's,
+one not held here and one that never was are all `not_found`; the index
+must hold a stack, and the stack's item and the fingerprint of its data
+(`key`, `inventory.stack_key`) must still be the ones named, or the call is `stale` rather than acting on whatever moved into
+its place: taking plain water shifts a bottle of water with a note in it
+into the water's index, and an old screen naming the water must not throw
+the bottle away. The fingerprint is a string, because the data itself
+does not survive every way a reference travels: an engine's export or a
+client's payload can turn an empty object into an empty array, and JSON's
+null into an empty table.
+An op id the journal already has answers as it was before any of that is
+looked at (a repeat of a move that went through finds the stack gone, and
+must still answer `true`), and the checks run before the journal, so a
+refusal for a hostile id costs no journal entry.
 
 **`rpf.ops` runs each command once per op id.** Before a command runs its
 intent is written `pending`, under `ENTRY_PREFIX .. op_id` in the
@@ -2018,7 +2044,7 @@ internal.
 | `interactions` | both | `register` on the server, `send` and `request` on the client (`rpf.interactions` above) |
 | `actions` | server | `register` (L1, `rpf.actions` above) |
 | `dialogs` | server | `open` (L1, `rpf.dialogs` above) |
-| `characters`, `money`, `inventory`, `jobs`, `ops` | server | The domain-neutral facade (`rpf.facade` above): `characters.current`; `money.accounts`, `balance`, `debit`, `credit`; `inventory.count`, `give`, `take`; `jobs.current`; each domain's `supports`; `ops.new`, `ops.unknown`, `ops.result` |
+| `characters`, `money`, `inventory`, `jobs`, `ops` | server | The domain-neutral facade (`rpf.facade` above): `characters.current`; `money.accounts`, `balance`, `debit`, `credit`, `transfer`; `inventory.count`, `give`, `take`, `containers`, `move`, `discard`, `hand`; `jobs.current`; each domain's `supports`; `ops.new`, `ops.unknown`, `ops.result` |
 | `commerce` | server | `exchange`, `check` (J5, `rpf.commerce` above) |
 | `players` | server | `get`, `by_player_id`, `list`, `authenticated`, all returning copies |
 | `staff` | server | `can`, `permissions`, `link`, `record` (F9, `rpf.staff` above) |

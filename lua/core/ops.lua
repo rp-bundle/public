@@ -91,6 +91,7 @@ ops.MAX_TEXT_BYTES = 256
 ---the log as it stays out of the portal.
 ---@class rpf.ops.Detail
 ---@field player string? The player's account (`player_id`).
+---@field to string? The other player's account (`player_id`), for a command between two players: money or items handed over. Kept in the journal and the log; the portal's report has no place for it yet, so staff read it there.
 ---@field account string? The account's name, for money.
 ---@field amount number? The amount, for money: what the player paid, for an exchange.
 ---@field item string? The item's slug, for items.
@@ -112,7 +113,7 @@ ops.MAX_TEXT_BYTES = 256
 local UUID_PATTERN = "^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$"
 
 ---The fields of `rpf.ops.Detail`, in the order the log names them.
-local DETAIL_KEYS = { "player", "account", "amount", "paid", "item", "count", "take", "give", "reason" }
+local DETAIL_KEYS = { "player", "to", "account", "amount", "paid", "item", "count", "take", "give", "reason" }
 
 ---@type table<string, rpf.ops.Entry>
 local entries = {}
