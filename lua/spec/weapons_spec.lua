@@ -262,6 +262,13 @@ describe("rpf.weapons", function()
     assert.is_nil(p.weapons[7].WEAPON_PISTOL, "taken back on the next sync")
   end)
 
+  it("takes back what it gave as the server stops", function()
+    playing()
+    assert.is_true((rpf.weapons.equip(7, "pistol")))
+    rpf.stop_server()
+    assert.is_nil(p.weapons[7].WEAPON_PISTOL)
+  end)
+
   it("ignores a client's respawn from a player not in play", function()
     rpf.players.connected(8)
     rpf.players.authenticating(8)

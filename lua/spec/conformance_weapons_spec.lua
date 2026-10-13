@@ -208,6 +208,16 @@ conformance.run(busted, "weapons", {
     end,
   },
   {
+    name = "takes back what it gave when the framework's resource stops",
+    origins = true,
+    run = function(world)
+      local handle = playing(world)
+      assert.is_true((world.api.inventory.equip(handle, "pistol")))
+      world.stop()
+      assert.is_false(world.holds(1, PISTOL), "a fresh start could not take it back")
+    end,
+  },
+  {
     name = "reports what is equipped, and gives it back after a restart",
     run = function(world)
       local handle = playing(world)

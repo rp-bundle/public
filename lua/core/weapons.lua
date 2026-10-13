@@ -499,6 +499,21 @@ function weapons.start(p)
   end)
 end
 
+---The server is stopping (on FiveM, its resource, while players stay):
+---every weapon this module gave is taken back, since what it gave is in
+---memory only and a fresh start could never take back one it forgot.
+---Called by `rpf.stop_server`.
+function weapons.stop()
+  if weapons.supported() then
+    for handle, mine in pairs(given) do
+      for name in pairs(mine.names) do
+        strip(handle, name)
+      end
+    end
+  end
+  given = {}
+end
+
 ---The client half's platform, once started.
 ---@type rpf.ClientPlatform?
 local client = nil

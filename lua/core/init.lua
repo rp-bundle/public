@@ -233,10 +233,12 @@ end
 ---of it and the next start sends it first (J6, `rpf.sync.stop`). Without it a stop loses
 ---what changed since the last flush, at most `flush_interval_ms`, as a
 ---crash does. The holds themselves are given back by the next start's
----declaration. The adapter calls this, one line, before it closes the
----transport.
+---declaration. First, every weapon `rpf.weapons` gave is taken back,
+---since a fresh start would not know it gave them. The adapter calls this,
+---one line, before it closes the transport.
 ---@return boolean ok False if the outbox could not take every report, which is logged.
 function rpf.stop_server()
+  rpf.weapons.stop()
   if not rpf.sync.connection then
     return true
   end
