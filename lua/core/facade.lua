@@ -1275,7 +1275,7 @@ end
 
 ---A player's character's job.
 ---@param handle any The engine's handle.
----@return { name: string, employer: string?, grade: number, on_duty: boolean }? job `name` the job's slug, `employer` its employer's (absent through a bridge whose framework has none), `grade` its rank there; nil for no job (or one the config no longer has).
+---@return { name: string, employer: string?, department: string?, grade: number, on_duty: boolean }? job `name` the job's slug, `employer` its employer's (absent through a bridge whose framework has none), `department` the department it sits in (native servers only, nil if none), `grade` its rank there; nil for no job (or one the config no longer has).
 ---@return string? err `unavailable`, `unsupported` (a bridge that does not read jobs), `not_logged_in` or `no_character`.
 function facade.current_job(handle)
   if external("jobs") then

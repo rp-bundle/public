@@ -55,7 +55,7 @@ data.OPS = { eq = true, lt = true, lte = true, gt = true, gte = true, prefix = t
 ---@field type string The record's type.
 ---@field id string The record's id.
 ---@field record table? The record now, as `get` gives it; nil for a deletion.
----@field by "addon"|"staff"|"portal" Who changed it.
+---@field by "addon"|"staff"|"portal"|"core" Who changed it: `core` for the core's own Lock and Unlock and `rpf.api.ownership` (L2).
 ---@field reason string? For a deletion the portal refused, the portal's refusal code: `referenced` when another record refers to it, or what refused the frame it was in (`malformed`, `forbidden`, `not_found`, …), as the portal sent it. `refused` when the frame deleted several records and one was referenced, so which is not known.
 ---@field detail string? For a deletion the portal refused, the portal's own words, for the log; branch on `reason`.
 

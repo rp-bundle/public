@@ -267,6 +267,7 @@ conformance.run(busted, "Ownership and locks", {
     run = function(world)
       local handle = ready(world, STRANGER)
       local job
+      ---@diagnostic disable-next-line: duplicate-set-field
       world.core.facade.current_job = function()
         return job
       end
