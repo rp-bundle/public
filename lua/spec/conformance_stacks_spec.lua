@@ -312,15 +312,42 @@ conformance.run(busted, "the facade's stacks", {
     run = function(world)
       local jane = playing(world)
       local inventory, ops = world.api.inventory, world.api.ops
-      local bottle = { container = BAG, index = 2, item = "water" }
+      local bottle = { container = BAG, index = 2, item = "water", data = { note = "for Sam" } }
+      assert.are.same(
+        { nil, "refused", "stale" },
+        { inventory.discard(jane, { container = BAG, index = 2, item = "water" }, 1, ops.new()) },
+        "the bottle named as plain water"
+      )
+      assert.are.same(
+        { nil, "refused", "stale" },
+        { inventory.discard(jane, { container = BAG, index = 2, item = "water", data = { note = "for Ann" } }, 1, ops.new()) },
+        "the bottle named with another note"
+      )
       assert.are.same({ nil, "refused", "insufficient" }, { inventory.discard(jane, bottle, 2, ops.new()) })
       local op = ops.new()
       assert.is_true(inventory.discard(jane, bottle, 1, op))
       assert.is_true(inventory.discard(jane, bottle, 1, op), "once per op id")
       assert.are.same({ { "water", 3 } }, holds(world, BAG), "the bottle with the note went, the plain water stayed")
-      assert.is_true(inventory.discard(jane, { container = BAG, index = 1, item = "water" }, 2, ops.new()))
+      -- An empty table is no data, as an engine may send a plain stack's back.
+      assert.is_true(inventory.discard(jane, { container = BAG, index = 1, item = "water", data = {} }, 2, ops.new()))
       assert.are.same({ { "water", 1 } }, holds(world, BAG))
       assert.are.same({ nil, "refused", "invalid" }, { inventory.discard(jane, bottle, 0, ops.new()) })
+    end,
+  },
+  {
+    name = "never acts on another stack of the same item that shifted into an old index",
+    run = function(world)
+      local jane, sam = playing(world)
+      local inventory, ops = world.api.inventory, world.api.ops
+      -- The screen was drawn with the plain water at 1 and the bottle at 2.
+      local water = { container = BAG, index = 1, item = "water" }
+      assert.is_true(inventory.discard(jane, water, 3, ops.new()))
+      assert.are.same({ { "water", 1, "for Sam" } }, holds(world, BAG), "the bottle is at 1 now")
+      local before = everything(world)
+      assert.are.same({ nil, "refused", "stale" }, { inventory.discard(jane, water, 1, ops.new()) })
+      assert.are.same({ nil, "refused", "stale" }, { inventory.hand(jane, sam, water, 1, ops.new()) })
+      assert.are.same({ nil, "refused", "stale" }, { inventory.move(jane, water, CASE, ops.new()) })
+      assert.are.same(before, everything(world), "the bottle is where it was")
     end,
   },
   {
@@ -328,7 +355,7 @@ conformance.run(busted, "the facade's stacks", {
     run = function(world)
       local jane, sam = playing(world)
       local inventory, ops = world.api.inventory, world.api.ops
-      local bottle = { container = BAG, index = 2, item = "water" }
+      local bottle = { container = BAG, index = 2, item = "water", data = { note = "for Sam" } }
       local op = ops.new()
       assert.is_true(inventory.hand(jane, sam, bottle, 1, op))
       assert.is_true(inventory.hand(jane, sam, bottle, 1, op), "once per op id")
@@ -394,7 +421,7 @@ conformance.run(busted, "the facade's stacks", {
         error("the disk went away")
       end
       local op = api.ops.new()
-      assert.are.same({ nil, "unknown" }, { api.inventory.hand(jane, sam, { container = BAG, index = 2, item = "water" }, 1, op) })
+      assert.are.same({ nil, "unknown" }, { api.inventory.hand(jane, sam, { container = BAG, index = 2, item = "water", data = { note = "for Sam" } }, 1, op) })
       world.core.inventory.move = move
       local unknown = api.ops.unknown()
       assert.are.equal(1, #unknown)

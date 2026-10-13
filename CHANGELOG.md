@@ -50,9 +50,10 @@ socket.
   containers (`move`), throws units of it away (`discard`) and hands them,
   data and all, to another player (`hand`), and hands cash from one player
   to another as one ledger entry (`rpf.api.money.transfer`), each once per
-  op id. A stack is named `{ container, index, item }` and resolved inside
+  op id. A stack is named `{ container, index, item, data }` and resolved inside
   the player's own containers: another player's is refused as one that
-  does not exist, and one that moved since is `stale`. They are RPF's own,
+  does not exist, and one that moved since, or another stack of the same item now in its
+  place, is `stale`. They are RPF's own,
   so on a server beside Qbox or DarkRP they are `unsupported`.
 - An item can be a weapon (L3, #177): on the items page, staff name the
   engine weapon it gives on FiveM (a GTA weapon such as `WEAPON_PISTOL`)

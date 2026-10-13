@@ -1216,12 +1216,16 @@ happened). Arguments are checked first, and a bad one is `refused`
 (`invalid`, `invalid_op`) without being journaled.
 
 **Stacks are named, and resolved in the player's scope.** `move`,
-`discard` and `hand` name a stack as `{ container, index, item }`, which a
+`discard` and `hand` name a stack as `{ container, index, item, data }`, which a
 player's client may have sent. The container is looked for only among the
 character's own held containers (`containers_of`), so another character's,
 one not held here and one that never was are all `not_found`; the index
-must hold a stack, and the stack's item must still be the one named, or
-the call is `stale` rather than acting on whatever moved into its place.
+must hold a stack, and the stack's item and data must still be the ones
+named, or the call is `stale` rather than acting on whatever moved into
+its place: taking plain water shifts a bottle of water with a note in it
+into the water's index, and an old screen naming the water must not throw
+the bottle away. Data is compared field by field, not by its encoding, so
+data that went to a client and back through the engine still matches.
 An op id the journal already has answers as it was before any of that is
 looked at (a repeat of a move that went through finds the stack gone, and
 must still answer `true`), and the checks run before the journal, so a
