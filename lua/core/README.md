@@ -863,8 +863,10 @@ anything not held, so a module keeps ids and reads through it every time.
   as above. New holds wait for its answer, so it can never release one.
 
 Events, all reserved: `records.held(views)`, `records.released(refs)`,
-`records.lost(refs, reason)` and `records.session(player_id, err, serial)`,
-`serial` being the player's connection the hold was sent for.
+`records.lost(refs, reason)`, `records.contents(id, before)` (a held
+container's contents changed here; `before` is a copy of what it held) and
+`records.session(player_id, err, serial)`, `serial` being the player's
+connection the hold was sent for.
 
 ### `rpf.inventory`
 
@@ -930,6 +932,7 @@ either.
 | `view(id)` | A held container read for a screen: its layout, grid size and weight limit spelt out, its stacks numbered from 1 with their catalog names, data, data fingerprint (`key`) and grid positions, and what it weighs. Nil when not held |
 | `stack_key(data)` | A stack's data fingerprint: two 32-bit polynomial hashes of its canonical encoding, 16 hex digits. Names which stack a screen showed among others of the same item; not a security boundary, since every stack it tells apart is the same player's |
 | `count(id, item)` | Units of an item across every stack |
+| `items_in(contents)` | The slugs contents hold a unit of, a set: what left a container, from `records.contents`'s `before` (`rpf.weapons`) |
 
 `inventory.edit(contents, flags, catalog, edit)` is the staff edits' pure
 twin of the portal's `ContentsEdit::apply` (F5): `give` (units with no data,
@@ -1945,10 +1948,15 @@ back exactly as it was given.
 
 It brings each player in play in line with their character whenever their
 character goes into play, their containers change (`records.contents`),
-records come or go, or a config arrives: an equipped item the character
-carries no unit of, in any held container and whatever its data, comes off
-the list and its weapon is taken back; the weapons of the rest are given
-where they are missing. A weapon the engine does not know is logged once and
+records come or go, or a config arrives: the engine has the weapons of the
+equipped items the character carries a unit of, in any held container and
+whatever its data, given where they are missing, and nothing else it gave.
+Only `records.contents` takes an item off the list: one equipped item the
+container held before the write (the event carries a copy) that the
+character carries none of on the next tick (`after(0)`, so a move between
+two of its containers is seen whole). A container released or lost changes
+what the engine has, never the list. A weapon the adapter failed to strip
+stays on its list of what it gave, and the next sync tries again. A weapon the engine does not know is logged once and
 not given; an item that stops being a weapon in config stays equipped and is
 given again if it comes back. Putting a character away takes back what it
 was given. On a companion server equipping is the bridge's (#177, next).

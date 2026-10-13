@@ -29,7 +29,8 @@
 ---released with `release` when the module that held it is done.
 ---
 ---Events, each with copies: `records.held(views)` when records arrive,
----`records.contents(id)` when a held container's contents change here,
+---`records.contents(id, before)` when a held container's contents change
+---here (`before` is what it held until then),
 ---`records.released(refs)` when this server lets them go, and
 ---`records.lost(refs, reason)` when the portal says this server does not hold
 ---them (they were force-released by staff, or purged), which a module answers
@@ -622,10 +623,11 @@ function records.set_contents(id, contents)
   if not ok then
     return nil, "invalid", refusal
   end
+  local before = entry.data.contents
   entry.data.contents = json.copy(contents)
   entry.changed.contents = true
   touched(entry)
-  events.emit("records.contents", id)
+  events.emit("records.contents", id, before ~= nil and json.copy(before) or nil)
   return true
 end
 

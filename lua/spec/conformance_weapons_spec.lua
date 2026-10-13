@@ -20,12 +20,13 @@ local SERVER = "00000001-0000-4000-8000-000000000001"
 local PLAYER = "00000002-0000-4000-8000-000000000002"
 local JANE = "00000004-0000-4000-8000-000000000004"
 local POCKETS = "00000009-0000-4000-8000-000000000009"
+local BACKPACK = "0000000a-0000-4000-8000-00000000000a"
 
 ---The pistol's weapon on each engine, as the catalog names it.
 local PISTOL = { fivem = "WEAPON_PISTOL", gmod = "weapon_pistol" }
 
----The portal's copies of Jane and her pockets, which hold a pistol and a
----bottle of water.
+---The portal's copies of Jane, her pockets, which hold a pistol and a
+---bottle of water, and her empty backpack.
 ---@param world spec.ConformanceWorld The world.
 ---@param weapons string[]? What Jane has equipped, as the portal has it.
 local function seed(world, weapons)
@@ -55,6 +56,18 @@ local function seed(world, weapons)
         layout = "list",
         stacks = json.array({ { item = "pistol", count = 1 }, { item = "water", count = 1 } }),
       }),
+      flags = json.array({}),
+    },
+  }
+  world.portal.owned[BACKPACK] = {
+    kind = "container",
+    revision = 1,
+    data = {
+      id = BACKPACK,
+      server_id = SERVER,
+      owner = { kind = "character", id = JANE },
+      name = "Backpack",
+      contents = json.object({ layout = "list", stacks = json.array({}) }),
       flags = json.array({}),
     },
   }
@@ -159,17 +172,43 @@ conformance.run(busted, "weapons", {
       assert.is_true((api.inventory.equip(handle, "pistol")))
       assert.are.same({ true }, { api.inventory.take(handle, "pistol", 1, api.ops.new()) })
       assert.is_false(world.holds(1, PISTOL), "taken back with the item")
+      world:advance(0)
       assert.are.same({}, api.inventory.equipped(handle), "and taken off")
     end,
   },
   {
-    name = "takes back what it gave when the character is put away",
+    name = "keeps the weapon equipped while the item moves between the character's containers",
+    run = function(world)
+      local handle = playing(world)
+      local inventory = world.core.inventory
+      assert.is_true((world.api.inventory.equip(handle, "pistol")))
+      -- The pockets are written first, without the pistol, then the backpack.
+      assert.are.same({ true }, { inventory.move(POCKETS, 1, BACKPACK) })
+      world:advance(0)
+      assert.are.same({ "pistol" }, world.api.inventory.equipped(handle), "still equipped")
+      assert.is_true(world.holds(1, PISTOL), "and still held")
+
+      -- Out of the backpack and away: now it is gone.
+      assert.are.same({ true }, { inventory.remove(BACKPACK, "pistol", 1) })
+      world:advance(0)
+      assert.are.same({}, world.api.inventory.equipped(handle))
+      assert.is_false(world.holds(1, PISTOL))
+    end,
+  },
+  {
+    name = "takes back what it gave when the character is put away, and gives it again when she is back",
     run = function(world)
       local handle = playing(world)
       assert.is_true((world.api.inventory.equip(handle, "pistol")))
       assert.is_true(world.core.characters.deselect(handle))
       world:pump()
+      world:advance(0)
       assert.is_false(world.holds(1, PISTOL))
+
+      world:select(handle, JANE)
+      world:advance(0)
+      assert.are.same({ "pistol" }, world.api.inventory.equipped(handle), "still equipped")
+      assert.is_true(world.holds(1, PISTOL), "and given again")
     end,
   },
   {

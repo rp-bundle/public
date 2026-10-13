@@ -15,12 +15,19 @@
 ---the adapter says when one happened (`spawned`) and everything equipped is
 ---given again.
 ---
----**An equipped weapon must be carried.** Whenever a character in play's
+---**An equipped weapon must be carried.** The engine is given only the
+---weapons of equipped items the character carries a unit of, in any of its
+---held containers and whatever its data, and that is checked whenever its
 ---containers change (`records.contents`), records come or go, or a config
----arrives, each equipped item the character no longer carries a unit of,
----in any of its held containers and whatever its data, is taken off the
----list and its weapon taken back. That is how dropping, giving away or
----selling the item takes the weapon, whoever moved it.
+---arrives. Only an item *leaving* one of the character's containers takes
+---it off the list: an equipped item that was in a container's contents
+---before a write, and is in none of the character's held containers on the
+---tick after it, comes off. The tick is what lets a move from the pockets to
+---the backpack, which writes one and then the other, be seen whole. That is
+---how dropping, giving away or selling the item takes the weapon, whoever
+---moved it. A container that stops being held (the character put away, a
+---record the portal took back) changes what the engine has, never the
+---list, so the weapons come back with the containers.
 ---
 ---**The engine decides what a weapon is.** The catalog names one per engine
 ---(`rpf.ConfigItemWeapon`), and the adapter's `weapon` capability reads its
@@ -62,6 +69,14 @@ local declared = nil
 ---weapon names.
 ---@type table<any, { serial: integer, names: table<string, true> }>
 local given = {}
+
+---Equipped items that left one of a character's containers this tick, by
+---character id, each checked on the next (`prune`).
+---@type table<string, table<string, true>>
+local leaving = {}
+
+---Whether a `prune` is scheduled.
+local pruning = false
 
 ---Weapon names already logged as unknown to the engine, so each is said
 ---once until a config makes it known.
@@ -189,27 +204,34 @@ end
 ---Takes a weapon this module gave back from a player.
 ---@param handle any The engine's handle.
 ---@param name string The engine's weapon name.
+---@return boolean stripped False if the adapter threw, so the name stays on the list of what was given and the next sync tries again.
 local function strip(handle, name)
   local ok, err = pcall(assert(capability("strip_weapon")), handle, name)
   if not ok then
     log("error", "the platform's strip_weapon failed for " .. name .. ": " .. tostring(err))
   end
+  return ok
 end
 
----Brings what a player in play holds in line with their character: every
----equipped item no longer carried comes off the list, and the engine has
----the weapons of the items left, and no other weapon this module gave.
+---Brings what a player in play holds in line with their character: the
+---engine has the weapons of the equipped items the character carries, and
+---no other weapon this module gave. Items in `gone` that are no longer
+---carried also come off the list; nothing else does.
 ---@param view rpf.PlayerView The player, `active`.
 ---@param character table The character they have in play.
-local function sync(view, character)
+---@param gone table<string, true>? Equipped items that left one of the character's containers.
+local function sync(view, character, gone)
   if not weapons.supported() or external() then
     return
   end
   local list = records.weapons_of(character)
   local keep, wanted, order = {}, {}, {}
   for _, slug in ipairs(list) do
-    if carried(character, slug) then
+    local has = carried(character, slug)
+    if has or not (gone and gone[slug]) then
       keep[#keep + 1] = slug
+    end
+    if has then
       local name, err, unknown = resolve(slug)
       if name and not wanted[name] then
         wanted[name] = true
@@ -228,8 +250,7 @@ local function sync(view, character)
   end
   local names = given_to(view)
   for name in pairs(names) do
-    if not wanted[name] then
-      strip(view.handle, name)
+    if not wanted[name] and strip(view.handle, name) then
       names[name] = nil
     end
   end
@@ -404,16 +425,20 @@ local function on_selected(view, character)
 end
 
 ---A character was put away: what it was given is taken back, since the
----weapons are the character's and the player plays on without it.
+---weapons are the character's and the player plays on without it. A name
+---the adapter failed to take back stays, so the next sync tries again.
 ---@param view rpf.PlayerView The player.
 local function on_deselected(view)
   local mine = given[view.handle]
-  if mine and mine.serial == view.serial and weapons.supported() then
-    for name in pairs(mine.names) do
-      strip(view.handle, name)
+  if not mine or mine.serial ~= view.serial or not weapons.supported() then
+    given[view.handle] = nil
+    return
+  end
+  for name in pairs(mine.names) do
+    if strip(view.handle, name) then
+      mine.names[name] = nil
     end
   end
-  given[view.handle] = nil
 end
 
 ---A player is leaving: nothing is taken back from someone the engine is
@@ -423,11 +448,28 @@ local function on_dropping(view)
   given[view.handle] = nil
 end
 
----A held container's contents changed: the character owning it, if one in
----play does, is brought in line, which takes back the weapon of an item it
----no longer carries.
+---Brings each character in play that had an equipped item leave one of its
+---containers in line, taking off the list each that is still not carried.
+---Runs on the tick after the writes, so a move between two of the
+---character's containers has written both.
+local function prune()
+  pruning = false
+  local due = leaving
+  leaving = {}
+  for _, pair in ipairs(playing()) do
+    local gone = due[pair.character.id]
+    if gone then
+      sync(pair.view, pair.character, gone)
+    end
+  end
+end
+
+---A held container's contents changed: if a character in play owns it, the
+---engine is brought in line now, and each equipped item the container held
+---before is checked on the next tick (`prune`).
 ---@param id string The container.
-local function on_contents(id)
+---@param before table? What it held until now.
+local function on_contents(id, before)
   local container = records.get("container", id)
   local owner = container and container.owner
   if type(owner) ~= "table" or owner.kind ~= "character" then
@@ -435,8 +477,19 @@ local function on_contents(id)
   end
   for _, pair in ipairs(playing()) do
     if pair.character.id == owner.id then
+      local held = inventory.items_in(before)
+      for _, slug in ipairs(records.weapons_of(pair.character)) do
+        if held[slug] then
+          leaving[owner.id] = leaving[owner.id] or {}
+          leaving[owner.id][slug] = true
+        end
+      end
       sync(pair.view, pair.character)
     end
+  end
+  if next(leaving) and not pruning and platform then
+    pruning = true
+    platform.after(0, prune)
   end
 end
 
@@ -458,6 +511,8 @@ function weapons.start(p)
   declared = p.capabilities
   given = {}
   warned = {}
+  leaving = {}
+  pruning = false
   for _, name in ipairs(weapons.CAPABILITIES) do
     local value = declared and declared[name]
     if value ~= false and type(value) ~= "function" then

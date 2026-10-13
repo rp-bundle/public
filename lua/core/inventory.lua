@@ -1393,5 +1393,23 @@ function inventory.count(id, item, opts)
   return total
 end
 
+---The items in contents, whatever the layout: each slug a stack has a unit
+---of. For a module that must know what left a container, from the copy of
+---what it held before that `records.contents` carries (`rpf.weapons`).
+---@param contents any The contents, as a held container has them.
+---@return table<string, true> items The slugs, a set; empty for contents that are not well formed.
+function inventory.items_in(contents)
+  local out = {}
+  if not well_formed(contents) then
+    return out
+  end
+  for _, stack in ipairs(stacks_in(contents)) do
+    if stack.count > 0 then
+      out[stack.item] = true
+    end
+  end
+  return out
+end
+
 rpf.inventory = inventory
 return inventory
