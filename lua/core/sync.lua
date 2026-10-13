@@ -217,7 +217,7 @@ local function full_report(entry)
     -- it would leave the portal's job as it was.
     report.employment = { job = job_of(entry) }
     -- Always sent too, `[]` for none, for the same reason (L3).
-    report.weapons = rpf.records.weapons_of(entry)
+    report.weapons = rpf.records.weapons_of(entry.data)
   elseif entry.kind == "account" then
     report.transactions = {}
     for _, tx in ipairs(entry.transactions) do
@@ -261,7 +261,7 @@ local function change_of(entry)
         change.employment = { job = job_of(entry) }
       elseif field == "weapons" then
         -- Null means unchanged, so none must be `[]`.
-        change.weapons = rpf.records.weapons_of(entry)
+        change.weapons = rpf.records.weapons_of(entry.data)
       else
         change[field] = entry.data[field]
       end

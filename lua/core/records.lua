@@ -565,7 +565,7 @@ function records.set_weapons(id, slugs)
     seen[slug] = true
     new[i] = slug
   end
-  local old = records.weapons_of(entry)
+  local old = records.weapons_of(entry.data)
   if #old == #new then
     local same = true
     for i = 1, #new do
@@ -581,13 +581,13 @@ function records.set_weapons(id, slugs)
   return true
 end
 
----A held character's equipped weapons (L3), as a fresh JSON array: what the
+---A character's equipped weapons (L3), as a fresh JSON array: what the
 ---portal handed over, or set since, and empty for none.
----@param entry rpf.records.Entry The character.
+---@param character table The character's fields: a held entry's `data`, or a copy `records.get` gave.
 ---@return string[] slugs The items equipped.
-function records.weapons_of(entry)
+function records.weapons_of(character)
   local out = json.array({})
-  local weapons = entry.data.weapons
+  local weapons = character.weapons
   if type(weapons) == "table" then
     for i, slug in ipairs(weapons) do
       out[i] = slug

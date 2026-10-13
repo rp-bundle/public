@@ -205,7 +205,7 @@ local function sync(view, character)
   if not weapons.supported() or external() then
     return
   end
-  local list = records.weapons_of({ data = character })
+  local list = records.weapons_of(character)
   local keep, wanted, order = {}, {}, {}
   for _, slug in ipairs(list) do
     if carried(character, slug) then
@@ -307,7 +307,7 @@ function weapons.equip(handle, item)
   if not carried(character, item) then
     return nil, "refused", "no_item"
   end
-  local list = records.weapons_of({ data = character })
+  local list = records.weapons_of(character)
   for _, slug in ipairs(list) do
     if slug == item then
       sync(view, character)
@@ -342,7 +342,7 @@ function weapons.unequip(handle, item)
     return nil, "refused", character --[[@as string]]
   end
   ---@cast character table
-  local list, keep = records.weapons_of({ data = character }), {}
+  local list, keep = records.weapons_of(character), {}
   for _, slug in ipairs(list) do
     if slug ~= item then
       keep[#keep + 1] = slug
@@ -371,7 +371,7 @@ function weapons.equipped(handle)
   if not view then
     return nil, character --[[@as string]]
   end
-  return records.weapons_of({ data = character })
+  return records.weapons_of(character)
 end
 
 ---A player respawned, which empties their hands on both engines: the
