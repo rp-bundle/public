@@ -1689,8 +1689,10 @@ held by the server whose `world` names ownership roles (`locked`, `owner`,
   `co_owners` role that this run has not held or made before has both
   cleared (`records.set_addon_fields`, reported like any write, and
   `records.changed` with `by = "core"`) while the mode is `session` and was
-  when the run's first declaration was answered (`run_mode`, from
-  `records.declared`), so a switch to it waits for the next start. The ids seen live outside `records.entries`, so a release
+  when the run's first declaration or hold was answered (`run_mode`, from
+  `records.declared` or `records.held`, whichever is first: a hold queued
+  before the `Welcome` is answered before the declaration), so a switch to
+  it waits for the next start. The ids seen live outside `records.entries`, so a release
   and a second hold in the same run does not clear again; one whose clear
   failed is not marked, and is tried again. `rpf.start_server` starts a
   run.

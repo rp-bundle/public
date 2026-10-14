@@ -310,6 +310,27 @@ conformance.run(busted, "Ownership and locks", {
     end,
   },
   {
+    name = "clears a door whose hold was asked for before the server connected, per session",
+    run = function(world)
+      local settings = { ["world.ownership"] = "session" }
+      assert(world.api.addons.register(manifest()))
+      reinstall(world, settings)
+      stored_door(world)
+      -- Queued while offline: answered before the declaration, which waits
+      -- for it.
+      local got
+      assert(world.api.records.hold(DOOR, { CLAIMED }, function(records, err)
+        got = records or err
+      end))
+      world:connect()
+      world:settle()
+      world:settle()
+      assert.are.equal(1, #got, "held")
+      assert.is_nil(world.core.data.held(DOOR, CLAIMED).fields.holder, "cleared here")
+      assert.is_nil(world.portal.records[CLAIMED].fields.holder, "and reported")
+    end,
+  },
+  {
     name = "tries a clear that failed again at the next hold",
     run = function(world)
       local settings = { ["world.ownership"] = "session" }

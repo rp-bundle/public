@@ -456,10 +456,12 @@ local seen = {}
 
 ---The mode this run of the game server began in: what decides whether
 ---`session` clears, so that staff switching a running server to `session`
----clears nothing until it restarts, as the setting says. Read when the
----run's first declaration is answered (`records.declared`), which the
----portal does after the config it sends with its `welcome`, and before any
----hold, which waits for it. Nil until then.
+---clears nothing until it restarts, as the setting says. Read at the run's
+---first declaration answered (`records.declared`) or first hold answered,
+---whichever is first. The portal sends its config with its `welcome`,
+---before it reads anything else, so both come after it: a hold sent before
+---the `welcome` is answered before the declaration, which waits for it,
+---and a later one after. Nil until then.
 ---@type string?
 local run_mode = nil
 
@@ -584,6 +586,7 @@ function ownership.start(p)
     run_mode = run_mode or ownership.mode()
   end)
   rpf.events.on("records.held", function(views)
+    run_mode = run_mode or ownership.mode()
     for _, view in ipairs(type(views) == "table" and views or {}) do
       clear_for_session(view)
     end
