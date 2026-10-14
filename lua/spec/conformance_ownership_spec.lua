@@ -326,6 +326,7 @@ conformance.run(busted, "Ownership and locks", {
       world:settle()
       world:settle()
       assert.are.equal(1, #got, "held")
+      assert.is_nil(got[1].fields.holder, "what the addon is handed is the cleared door")
       assert.is_nil(world.core.data.held(DOOR, CLAIMED).fields.holder, "cleared here")
       assert.is_nil(world.portal.records[CLAIMED].fields.holder, "and reported")
     end,

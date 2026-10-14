@@ -468,7 +468,9 @@ local run_mode = nil
 ---Clears the owner and co-owners of a thing held for the first time this
 ---run, in `session` mode. The employer and the access by job, department
 ---or rank stay: they are staff's, not players'. The change is the holder's,
----so it is reported to the portal like any other, and announced.
+---so it is reported to the portal like any other, and announced. It runs
+---on `records.held`, before the hold's callback: `rpf.data.hold` hands the
+---addon each record as it is then, read again, so it gets the cleared one.
 ---@param view any A record as `records.held` gives it.
 local function clear_for_session(view)
   if type(view) ~= "table" or type(view.id) ~= "string" then
