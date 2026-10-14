@@ -865,12 +865,16 @@ anything not held, so a module keeps ids and reads through it every time.
   anything not declared, which is how a restart, which holds nothing,
   gives back what the old process held, and answers a stale or released one
   as above. New holds wait for its answer, so it can never release one.
+  The portal answers it after the `config` it sends with its `Welcome`, so
+  `records.declared` (emitted once it is settled) is when a connection's
+  config is the portal's: `rpf.ownership` reads a run's mode there.
 
 Events, all reserved: `records.held(views)`, `records.released(refs)`,
 `records.lost(refs, reason)`, `records.contents(id, before)` (a held
-container's contents changed here; `before` is a copy of what it held) and
+container's contents changed here; `before` is a copy of what it held),
 `records.session(player_id, err, serial)`, `serial` being the player's
-connection the hold was sent for.
+connection the hold was sent for, and `records.declared()`, after each
+connection's declaration is settled.
 
 ### `rpf.inventory`
 
@@ -1685,8 +1689,8 @@ held by the server whose `world` names ownership roles (`locked`, `owner`,
   `co_owners` role that this run has not held or made before has both
   cleared (`records.set_addon_fields`, reported like any write, and
   `records.changed` with `by = "core"`) while the mode is `session` and was
-  at the run's first hold (`run_mode`), so a switch to it waits for the
-  next start. The ids seen live outside `records.entries`, so a release
+  when the run's first declaration was answered (`run_mode`, from
+  `records.declared`), so a switch to it waits for the next start. The ids seen live outside `records.entries`, so a release
   and a second hold in the same run does not clear again; one whose clear
   failed is not marked, and is tried again. `rpf.start_server` starts a
   run.

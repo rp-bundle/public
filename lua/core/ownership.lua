@@ -36,7 +36,8 @@
 ---this run of the game server holds a thing, the core clears its owner and
 ---co-owners, so players own things until the next restart; a job door's
 ---employer and the access by job stay. A run clears only if it began in
----`session` (its first hold), so switching to it waits for a restart. Off, the core offers no Lock or
+---`session` (its first declaration), so switching to it waits for a
+---restart. Off, the core offers no Lock or
 ---Unlock and refuses every lock and unlock (`off`), leaving the server's
 ---doors to another system; the fields stay as they are.
 ---@class rpf.ownership
@@ -453,12 +454,12 @@ end
 ---@type table<string, true>
 local seen = {}
 
----The mode this run of the game server began holding things in: what
----decides whether `session` clears, so that staff switching a running
----server to `session` clears nothing until it restarts, as the setting
----says. Read at the run's first hold, which comes after the portal's
----config (its `config` frame follows `welcome` before any hold is
----answered). Nil until then.
+---The mode this run of the game server began in: what decides whether
+---`session` clears, so that staff switching a running server to `session`
+---clears nothing until it restarts, as the setting says. Read when the
+---run's first declaration is answered (`records.declared`), which the
+---portal does after the config it sends with its `welcome`, and before any
+---hold, which waits for it. Nil until then.
 ---@type string?
 local run_mode = nil
 
@@ -579,8 +580,10 @@ end
 function ownership.start(p)
   platform = p
   seen, run_mode = {}, nil
-  rpf.events.on("records.held", function(views)
+  rpf.events.on("records.declared", function()
     run_mode = run_mode or ownership.mode()
+  end)
+  rpf.events.on("records.held", function(views)
     for _, view in ipairs(type(views) == "table" and views or {}) do
       clear_for_session(view)
     end

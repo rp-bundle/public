@@ -34,7 +34,8 @@
 ---`records.released(refs)` when this server lets them go, and
 ---`records.lost(refs, reason)` when the portal says this server does not hold
 ---them (they were force-released by staff, or purged), which a module answers
----by holding them again if it still needs them.
+---by holding them again if it still needs them. `rpf.sync` adds
+---`records.declared()` once a connection's declaration is settled.
 ---@class rpf.records
 ---@field KINDS table<rpf.RecordKind, true> The kinds of record a server can hold.
 ---@field MAX_DESCRIPTION_BYTES integer The longest description a transfer may carry, the portal's `limits::MAX_TRANSACTION_DESCRIPTION_BYTES`. Bounded so that a report's worth of ledger entries always fits one frame, and an account's backlog can always be reported.

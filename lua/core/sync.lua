@@ -1167,6 +1167,10 @@ local function settle_declaration(id, reply, err)
     return
   end
   declaration.pending = false
+  -- The portal answers a declaration after the config it sends with its
+  -- `welcome`, so by now the config is the portal's for this connection
+  -- (`rpf.ownership` reads a run's mode here).
+  events.emit("records.declared")
   send_deferred()
 end
 

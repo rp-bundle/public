@@ -104,18 +104,19 @@ local function police(world)
 end
 
 ---Registers the addon, installs it with the police's config and `settings`,
----logs player 1 in as `player_id`, and puts them a metre from where doors
----stand.
+---connects, logs player 1 in as `player_id`, and puts them a metre from
+---where doors stand. The config comes before the connection is answered,
+---as a starting server's does: restored, or sent with the `welcome`.
 ---@param world spec.ConformanceWorld The world.
 ---@param player_id string? Who player 1 is: the owner unless given.
 ---@param settings table? Settings.
 ---@return any handle Player 1's engine handle.
 local function ready(world, player_id, settings)
   assert(world.api.addons.register(manifest()))
-  world:connect()
   local extra = police(world)
   extra.settings = world.core.json.object(settings or {})
   world:install({ conformance.installed(world.core, manifest()) }, extra)
+  world:connect()
   world:pump()
   local handle = world:login(1, player_id or OWNER)
   world:activate(handle)
@@ -286,6 +287,23 @@ conformance.run(busted, "Ownership and locks", {
       world:settle()
       world:settle()
       assert.is_true((world.api.ownership.has_access(handle, DOOR, CLAIMED)), "still the owner's here")
+      local stored = world.portal.records[CLAIMED]
+      assert.is_true(stored.held, "claimed")
+      assert.are.same({ OWNER, { FRIEND } }, { stored.fields.holder, stored.fields.keys })
+    end,
+  },
+  {
+    name = "clears nothing when a server that started persistent is switched before it holds anything",
+    run = function(world)
+      assert(world.api.addons.register(manifest()))
+      world:connect()
+      -- Nothing held yet; staff switch it, and the first hold comes after.
+      stored_door(world)
+      reinstall(world, { ["world.ownership"] = "session" })
+      world.core.holding.claim()
+      world:settle()
+      world:settle()
+      assert.are.equal(OWNER, world.core.data.held(DOOR, CLAIMED).fields.holder, "kept here")
       local stored = world.portal.records[CLAIMED]
       assert.is_true(stored.held, "claimed")
       assert.are.same({ OWNER, { FRIEND } }, { stored.fields.holder, stored.fields.keys })
