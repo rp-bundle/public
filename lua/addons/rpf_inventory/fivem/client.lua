@@ -10,13 +10,34 @@ local shown = false
 ---The commands the page may post, and nothing else.
 local COMMANDS = { move = true, use = true, drop = true, give = true, cash = true }
 
+---Tells the player something without the page: a notification.
+---@param message string What.
+local function tell(message)
+  rpf.ui.notify({ title = "Inventory", text = message, kind = "error" })
+end
+
 ---Loads the view and hands it to the page, then each item's image as it
----arrives.
-local function refresh()
+---arrives. On the first load the page opens, and takes the mouse, only once
+---there is something to show: a server that refuses (standing aside for its
+---framework's own inventory) never takes the player's controls.
+---@param opening boolean Whether this load opens the page.
+local function refresh(opening)
   rpf_inventory.load(rpf, function(view, err)
     if not view then
-      SendNUIMessage({ type = "error", message = err })
+      if opening then
+        shown = false
+        tell(tostring(err))
+      else
+        SendNUIMessage({ type = "error", message = err })
+      end
       return
+    end
+    if opening then
+      if not shown then
+        return
+      end
+      SetNuiFocus(true, true)
+      SendNUIMessage({ type = "open" })
     end
     SendNUIMessage({ type = "view", view = view, error = err })
     rpf_inventory.images(rpf, view, function(item, src)
@@ -30,9 +51,7 @@ RegisterCommand("rpf_inventory", function()
     return
   end
   shown = true
-  SetNuiFocus(true, true)
-  SendNUIMessage({ type = "open" })
-  refresh()
+  refresh(true)
 end, false)
 RegisterKeyMapping("rpf_inventory", "Open the inventory", "keyboard", "I")
 
@@ -52,7 +71,7 @@ RegisterNUICallback("command", function(data, cb)
   rpf_inventory.command(rpf, action, payload, function(ok, message)
     cb({ ok = ok, message = message })
     if shown then
-      refresh()
+      refresh(false)
     end
   end)
 end)

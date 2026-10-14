@@ -13,7 +13,11 @@
 ---first time it sees that number, and hands back the same op id when the
 ---client sends the request again after a timeout. So a throw-away sent
 ---twice throws away once, and a request a client makes up is just a new
----one of its own.
+---one of its own. That memory lasts as long as this file's code runs, and
+---the view names it (`session`): a command naming a session the server no
+---longer remembers (the resource restarted, a Gmod Lua refresh) is refused
+---before anything runs, and the client looks again, rather than getting a
+---fresh op id for a request that may already have gone through.
 rpf_inventory = rpf_inventory or {}
 
 ---How many stacks one page of a container carries: a screen asks for each
@@ -31,6 +35,10 @@ rpf_inventory.REQUEST_MS = 10 * 60 * 1000
 
 ---The most requests the server remembers per player; the oldest goes first.
 rpf_inventory.MAX_REQUESTS = 32
+
+---What a command naming a session this server does not remember is told:
+---the client looks again, since the request may already have gone through.
+rpf_inventory.STALE_SESSION = "The inventory changed. Look again."
 
 ---What a refusal from `rpf.inventory` or `rpf.money` tells the player.
 ---@type table<string, string>
@@ -53,9 +61,24 @@ rpf_inventory.REASONS = {
   invalid = "That is not something to ask.",
 }
 
----Remembered requests: by player id, request number to `{ op, at }`.
+---Remembered requests: by player id, request number to `{ op, at }`. Kept
+---across the addon's stops and starts, which do not reload this file:
+---only a reload forgets them, and that changes `session`.
 ---@type table<string, table<string, { op: string, at: number }>>
 local requests = {}
+
+---This file's run's name for its memory of requests, minted the first time
+---a view is opened. A client sends it with every command.
+---@type string?
+local session = nil
+
+---The session this run's views name, minted on first use.
+---@param rpf rpf.Api The API.
+---@return string? session The session, or nil before the core can mint an id.
+function rpf_inventory.session(rpf)
+  session = session or rpf.ops.new()
+  return session
+end
 
 ---The settings in force: the record staff made, over the defaults.
 ---@param rpf rpf.Api The API.
@@ -94,6 +117,14 @@ function rpf_inventory.standing_aside(rpf, settings)
   return not rpf_inventory.items_here(rpf) and settings.beside_framework ~= "run"
 end
 
+---Whether a client's request number is one: 1 to 64 letters, digits,
+---`_` and `-`.
+---@param request any The number.
+---@return boolean ok True if it is.
+function rpf_inventory.request_ok(request)
+  return type(request) == "string" and #request > 0 and #request <= 64 and request:find("^[%w_%-]+$") ~= nil
+end
+
 ---The op id for a client's request: the one minted the first time the
 ---server saw it, or a new one. Nil for a request number that is not one.
 ---@param rpf rpf.Api The API.
@@ -101,7 +132,7 @@ end
 ---@param request any The client's number for the request.
 ---@return string? op The op id.
 function rpf_inventory.op_for(rpf, player, request)
-  if type(request) ~= "string" or #request == 0 or #request > 64 or not request:find("^[%w_%-]+$") then
+  if not rpf_inventory.request_ok(request) then
     return nil
   end
   local now = rpf.time.now()
@@ -261,6 +292,7 @@ function rpf_inventory.open(rpf, player)
       money = money,
       nearby = nearby,
       cash_account = settings.cash_account,
+      session = rpf_inventory.session(rpf),
       allow = {
         give = items and settings.allow_give,
         drop = items and settings.allow_drop,
@@ -334,6 +366,12 @@ function rpf_inventory.act(rpf, player, action, payload)
   if action == "cash" and not settings.allow_cash then
     return false, "Handing cash over is off on this server."
   end
+  if not rpf_inventory.request_ok(payload.request) then
+    return false, rpf_inventory.REASONS.invalid
+  end
+  if payload.session == nil or payload.session ~= session then
+    return false, rpf_inventory.STALE_SESSION
+  end
   local op = rpf_inventory.op_for(rpf, player, payload.request)
   if not op then
     return false, rpf_inventory.REASONS.invalid
@@ -368,7 +406,6 @@ end
 function rpf_inventory.start_server(rpf)
   return rpf.addons.register(rpf_inventory.MANIFEST, {
     start = function()
-      requests = {}
       if rpf_inventory.standing_aside(rpf, rpf_inventory.settings(rpf)) then
         print(
           "[rpf_inventory] standing aside: this server's framework owns its items (ox_inventory on Qbox), "

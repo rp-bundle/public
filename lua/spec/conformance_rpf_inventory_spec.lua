@@ -121,6 +121,14 @@ local function config(world)
   }
 end
 
+---Sends an interaction from a player's client (below).
+local interact
+
+---The session the server's view named, which `interact` puts on a command
+---that names none, as the client does.
+---@type string?
+local SESSION = nil
+
 ---A world with the addon running, Jane and Sam in play a metre apart, and
 ---the settings record staff made, if any.
 ---@param world spec.ConformanceWorld The world.
@@ -141,6 +149,8 @@ local function ready(world, settings)
   world:select(world:login(2, SAM_PLAYER), SAM)
   world.place(1, { x = 0, y = 0, z = 0 })
   world.place(2, { x = world:units(1), y = 0, z = 0 })
+  SESSION = nil
+  SESSION = interact(world, 1, "rpf_inventory.open").data.session
   return addon
 end
 
@@ -154,8 +164,11 @@ local numbered = 0
 ---@param name string The interaction.
 ---@param payload table? Its payload.
 ---@return table answer The decoded answer: `{ ok, reason, data }`.
-local function interact(world, player, name, payload)
+function interact(world, player, name, payload)
   local json = world.core.json
+  if payload and payload.request ~= nil and payload.session == nil then
+    payload.session = SESSION
+  end
   local before = #world.to_clients
   local body = assert(json.encode(json.object({ name = name, payload = payload and json.object(payload) or nil })))
   numbered = numbered + 1
@@ -300,6 +313,32 @@ conformance.run(busted, "the rpf_inventory starter addon", {
       until not answer.data.more
       assert.are.equal(60, seen, "every stack, a page at a time")
       assert.is_true(pages > 1)
+    end,
+  },
+  {
+    name = "refuses a command from a view the server no longer remembers, running nothing",
+    run = function(world)
+      ready(world)
+      local drop = { stack = ref(world, BAG, 1), count = 1, request = "drop-1", session = "not-this-one" }
+      local answer = interact(world, 1, "rpf_inventory.drop", drop)
+      assert.are.same({ false, "The inventory changed. Look again." }, { answer.ok, answer.reason })
+      -- The addon stopped and started again: its memory, and its session, stay.
+      world:install({}, config(world))
+      world:pump()
+      world:install({ conformance.installed(world.core, rpf_inventory.MANIFEST) }, config(world))
+      world:pump()
+      assert.are.equal("active", (world.api.addons.state("rpf_inventory")))
+      assert.are.equal(SESSION, interact(world, 1, "rpf_inventory.open").data.session)
+      assert.is_true(interact(world, 1, "rpf_inventory.drop", { stack = ref(world, BAG, 1), count = 1, request = "d" }).ok)
+      assert.is_true(interact(world, 1, "rpf_inventory.drop", { stack = ref(world, BAG, 1), count = 1, request = "d" }).ok)
+      assert.are.same({ "water×2", "water×1 for Sam" }, holds(world, BAG), "sent twice across a restart, thrown once")
+      -- Its code loaded again (a resource restart): a request from before is
+      -- refused rather than given a new op id.
+      load_addon(world)
+      world:pump()
+      local again = interact(world, 1, "rpf_inventory.drop", { stack = ref(world, BAG, 1), count = 1, request = "d" })
+      assert.are.same({ false, "The inventory changed. Look again." }, { again.ok, again.reason })
+      assert.are.same({ "water×2", "water×1 for Sam" }, holds(world, BAG))
     end,
   },
   {

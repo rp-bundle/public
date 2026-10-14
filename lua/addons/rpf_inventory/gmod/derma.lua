@@ -22,6 +22,12 @@ local frame = nil
 ---@type Panel?
 local content = nil
 
+---The view drawn last: what an image that arrives late draws again, never
+---the view of the load that asked for it, which a command may have
+---replaced since.
+---@type rpf_inventory.View?
+local latest = nil
+
 ---Item images that have arrived, by item: paths for `DImage:SetImage`.
 ---@type table<string, string>
 local images = {}
@@ -225,11 +231,14 @@ function rpf_inventory.open_derma(rpf)
     if err then
       tell(err)
     end
+    latest = view
     draw(rpf, view)
     rpf_inventory.images(rpf, view, function(item, src)
       if images[item] ~= src then
         images[item] = src
-        draw(rpf, view)
+        if latest then
+          draw(rpf, latest)
+        end
       end
     end)
   end)

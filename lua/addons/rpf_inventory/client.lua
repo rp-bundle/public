@@ -17,6 +17,11 @@ rpf_inventory = rpf_inventory or {}
 ---@field nearby { id: string, name: string }[] The players near enough to be given something, nearest first.
 ---@field cash_account string The account cash is handed from.
 ---@field allow { give: boolean, drop: boolean, cash: boolean } What staff allow.
+---@field session string The server's name for its memory of requests: sent with every command, so one it no longer remembers is refused rather than run again.
+
+---The session of the last view loaded, which commands carry.
+---@type string?
+local current_session = nil
 
 ---How long the loader waits before asking again when the server said too
 ---many requests (20 a player every 10 seconds), in milliseconds.
@@ -97,6 +102,7 @@ function rpf_inventory.load(rpf, callback)
       return
     end
     ---@cast view rpf_inventory.View
+    current_session = view.session
     local failed = nil
     ---Fetches a container's pages from a stack on, then the next container's,
     ---and calls back once every one is in.
@@ -145,6 +151,7 @@ end
 ---@param callback fun(ok: boolean, message: string?) Called once: whether it went through, and why not.
 function rpf_inventory.command(rpf, action, payload, callback)
   payload.request = rpf_inventory.new_request(rpf)
+  payload.session = current_session
   rpf_inventory.ask(rpf, "rpf_inventory." .. action, payload, function(ok, result)
     callback(ok, not ok and tostring(result) or nil)
   end)

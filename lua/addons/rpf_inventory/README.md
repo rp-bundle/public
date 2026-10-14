@@ -34,7 +34,11 @@ staff chose.
 - Every command is a call into `rpf.inventory` or `rpf.money`, with an op id
   the server mints. The client numbers each request, and the server keeps
   the op id it minted for that number, so a request sent again after a
-  timeout gets the answer it had and never happens twice.
+  timeout gets the answer it had and never happens twice. That memory lasts
+  while the addon's code runs, across the addon's stops and starts; the
+  view names it (`session`), and a command from a view the server no longer
+  remembers (after a resource restart) is refused, and the screen looks
+  again, rather than given a new op id.
 - The client names a stack the way the server named it (`{ container,
   index, item, key }`), and the API resolves it among the player's own
   containers. Another player's container is refused exactly as one that
