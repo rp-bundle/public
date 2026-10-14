@@ -1679,9 +1679,14 @@ held by the server whose `world` names ownership roles (`locked`, `owner`,
   while the mode is not `off`, and refuses with the sentence the player is
   told.
 - **`mode()`** reads the `world.ownership` setting: `persistent`, `session`
-  or `off`, `persistent` while the config names none. The portal registers
-  the setting with #176's third part, so until then every server reads
-  `persistent`.
+  or `off`, `persistent` while the config names none or one this core does
+  not know.
+- **Per session**: on `records.held`, a record of a type with an `owner` or
+  `co_owners` role that this run has not held or made before has both
+  cleared (`records.set_addon_fields`, reported like any write, and
+  `records.changed` with `by = "core"`) while the mode is `session`. The
+  ids seen live outside `records.entries`, so a release and a second hold
+  in the same run does not clear again; `rpf.start_server` starts a run.
 
 ### Placement (`rpf.placement`, L4)
 

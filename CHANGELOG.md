@@ -77,6 +77,13 @@ socket.
   respawn, a reconnect and a restart. A weapon the engine does not know is
   refused. Adapters gain the `weapon`, `give_weapon` and `strip_weapon`
   capabilities and say when a player respawned.
+- Ownership and locks (#176): a server setting, **Ownership and locks**
+  (`world.ownership`), chooses `persistent` (owners kept across
+  restarts, the default), `session` (players' ownership cleared the first
+  time each run of the game server holds a thing; job doors and access by
+  job stay) or `off` (RPF locks nothing and offers no Lock or Unlock).
+  The settings page says what each does to the owners the server has.
+  It is the first `choice` setting: one of a fixed set of names.
 - Locks (#176): while an addon runs, the core offers **Lock** and
   **Unlock** on every record of its types with a `locked` role, only to
   whoever has access (the owner, a co-owner, or a job the record lets in

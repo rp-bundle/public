@@ -194,7 +194,80 @@ local function locked(world, id)
   return here, record and record.fields.locked
 end
 
+local CLAIMED = "00000010-0000-4000-8000-000000000010"
+
+---Puts a door the portal has and nobody holds, owned and shared by players
+---and a job door too, for the server to claim as it starts.
+---@param world spec.ConformanceWorld The world.
+local function stored_door(world)
+  world.portal.records[CLAIMED] = {
+    id = CLAIMED,
+    type = DOOR,
+    owner = { kind = "server", id = SERVER },
+    revision = 3,
+    fields = {
+      spot = point(world, 11, 20, 30),
+      locked = true,
+      holder = OWNER,
+      keys = { FRIEND },
+      employer = LSPD,
+      jobs = { { employer = "lspd", job = "cadet" } },
+    },
+    held = false,
+  }
+end
+
+---Disables the addon, which lets its records go, and enables it again,
+---which claims them back: a second hold in the same run.
+---@param world spec.ConformanceWorld The world.
+---@param settings table The settings `ready` was given.
+local function reload(world, settings)
+  for _, enabled in ipairs({ false, true }) do
+    local extra = police(world)
+    extra.settings = world.core.json.object(settings)
+    world:install({ conformance.installed(world.core, manifest(), enabled) }, extra)
+    world:settle()
+  end
+end
+
 conformance.run(busted, "Ownership and locks", {
+  {
+    name = "clears players' ownership the first time a session holds a thing, keeping its job access, and not on a second hold",
+    run = function(world)
+      local settings = { ["world.ownership"] = "session" }
+      stored_door(world)
+      ready(world, OWNER, settings)
+      world:settle()
+      local stored = world.portal.records[CLAIMED]
+      assert.is_true(stored.held, "claimed")
+      assert.is_nil(stored.fields.holder, "no owner")
+      assert.are.same({}, stored.fields.keys, "no co-owners")
+      assert.are.equal(LSPD, stored.fields.employer, "the employer stays")
+      assert.are.same({ { employer = "lspd", job = "cadet" } }, stored.fields.jobs, "job access stays")
+      assert.is_true(stored.fields.locked, "the lock is as it was")
+
+      -- Sold again this session, and a door made this session: neither is
+      -- cleared when held a second time.
+      assert(world.api.records.update(DOOR, CLAIMED, { holder = FRIEND }))
+      local made = door(world, { holder = OWNER })
+      world:settle()
+      reload(world, settings)
+      assert.are.equal(FRIEND, world.portal.records[CLAIMED].fields.holder, "kept")
+      assert.are.equal(OWNER, world.portal.records[made].fields.holder, "kept")
+      assert.are.equal(0, world:logged("error", "rpf.ownership"))
+    end,
+  },
+  {
+    name = "keeps owners when a persistent server claims what it owns",
+    run = function(world)
+      stored_door(world)
+      ready(world)
+      world:settle()
+      local stored = world.portal.records[CLAIMED]
+      assert.is_true(stored.held)
+      assert.are.same({ OWNER, { FRIEND } }, { stored.fields.holder, stored.fields.keys })
+    end,
+  },
   {
     name = "lets the owner unlock and lock their door, and reports each to the portal",
     run = function(world)

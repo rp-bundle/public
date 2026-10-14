@@ -32,9 +32,12 @@
 ---show the player.
 ---
 ---**The mode** (`world.ownership`, a server setting) is `persistent`,
----`session` or `off`. Off, the core offers no Lock or Unlock and refuses
----every lock and unlock (`off`), leaving the server's doors to another
----system; the fields stay as they are.
+---`session` or `off`. Persistent keeps owners. Per session, the first time
+---this run of the game server holds a thing, the core clears its owner and
+---co-owners, so players own things until the next restart; a job door's
+---employer and the access by job stay. Off, the core offers no Lock or
+---Unlock and refuses every lock and unlock (`off`), leaving the server's
+---doors to another system; the fields stay as they are.
 ---@class rpf.ownership
 ---@field SETTING string The server setting naming the mode.
 ---@field MODES table<string, true> The modes, by name.
@@ -135,11 +138,10 @@ local function refuse(reason)
   return false, reason, ownership.MESSAGES[reason] or ownership.MESSAGES.invalid
 end
 
----The server's ownership mode: `persistent`, `session` or `off`, as the
----config's `world.ownership` setting names it, or the default while it names
----none. The portal registers the setting, and staff choose it in the panel,
----with #176's third part; until a portal sends it, every server reads
----`persistent`, which is how locks behaved before there was a choice.
+---The server's ownership mode: `persistent`, `session` or `off`, as staff
+---set it in the panel (the `world.ownership` setting), or `persistent`, the
+---portal's default too, while the config names none or one this core does
+---not know.
 ---@return string mode The mode.
 function ownership.mode()
   local mode = rpf.config.setting(ownership.SETTING)
@@ -443,6 +445,62 @@ function ownership.unlock(type_name, id, opts)
   return set(type_name, id, false, opts)
 end
 
+---Ids of the records this run of the game server has held or made: a
+---thing's players' ownership is cleared once a run (`session`), the first
+---time it is held, and never again when it is held a second time, released
+---with a player or across an addon's reload, or made here this run.
+---@type table<string, true>
+local seen = {}
+
+---Clears the owner and co-owners of a thing held for the first time this
+---run, in `session` mode. The employer and the access by job, department
+---or rank stay: they are staff's, not players'. The change is the holder's,
+---so it is reported to the portal like any other, and announced.
+---@param view any A record as `records.held` gives it.
+local function clear_for_session(view)
+  if type(view) ~= "table" or type(view.id) ~= "string" then
+    return
+  end
+  local first = not seen[view.id]
+  seen[view.id] = true
+  if not first or ownership.mode() ~= "session" then
+    return
+  end
+  local world = world_of(view.type)
+  if not world or not (world.owner or world.co_owners) then
+    return
+  end
+  local record = held(view.type, view.id)
+  if not record then
+    return
+  end
+  local json, patch = rpf.json, {}
+  local owner = world.owner and record.fields[world.owner]
+  if owner ~= nil and owner ~= json.null then
+    patch[world.owner] = json.null
+  end
+  local keys = world.co_owners and record.fields[world.co_owners]
+  if type(keys) == "table" and #keys > 0 then
+    patch[world.co_owners] = json.array({})
+  end
+  if next(patch) == nil then
+    return
+  end
+  local done, err = rpf.records.set_addon_fields(view.id, patch)
+  if not done then
+    log("error", "could not clear the owners of " .. view.type .. " " .. view.id .. " for a new session: " .. tostring(err))
+    return
+  end
+  local type_name, id = view.type, view.id
+  notify({
+    name = "records.changed",
+    change = function()
+      local now = rpf.data.held(type_name, id)
+      return now and { type = type_name, id = id, record = now, by = "core" } or nil
+    end,
+  })
+end
+
 ---Registers Lock and Unlock for each of an addon's types with a `locked`
 ---role, in the addon's context, so they go when that activation stops.
 ---@param namespace string The addon, just started.
@@ -496,10 +554,22 @@ local function register_locks(namespace)
 end
 
 ---Starts the module on the game server: Lock and Unlock follow the addons
----as they start.
+---as they start, and in `session` mode each thing's players' ownership is
+---cleared the first time this run holds it.
 ---@param p rpf.ServerPlatform The platform.
 function ownership.start(p)
   platform = p
+  seen = {}
+  rpf.events.on("records.held", function(views)
+    for _, view in ipairs(type(views) == "table" and views or {}) do
+      clear_for_session(view)
+    end
+  end)
+  rpf.events.on("records.created", function(change)
+    if type(change) == "table" and type(change.id) == "string" then
+      seen[change.id] = true
+    end
+  end)
   rpf.events.on("addons.state", function(change)
     if change.state == "active" then
       register_locks(change.namespace)
