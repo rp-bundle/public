@@ -35,7 +35,8 @@
 ---`session` or `off`. Persistent keeps owners. Per session, the first time
 ---this run of the game server holds a thing, the core clears its owner and
 ---co-owners, so players own things until the next restart; a job door's
----employer and the access by job stay. Off, the core offers no Lock or
+---employer and the access by job stay. A run clears only if it began in
+---`session` (its first hold), so switching to it waits for a restart. Off, the core offers no Lock or
 ---Unlock and refuses every lock and unlock (`off`), leaving the server's
 ---doors to another system; the fields stay as they are.
 ---@class rpf.ownership
@@ -452,6 +453,15 @@ end
 ---@type table<string, true>
 local seen = {}
 
+---The mode this run of the game server began holding things in: what
+---decides whether `session` clears, so that staff switching a running
+---server to `session` clears nothing until it restarts, as the setting
+---says. Read at the run's first hold, which comes after the portal's
+---config (its `config` frame follows `welcome` before any hold is
+---answered). Nil until then.
+---@type string?
+local run_mode = nil
+
 ---Clears the owner and co-owners of a thing held for the first time this
 ---run, in `session` mode. The employer and the access by job, department
 ---or rank stay: they are staff's, not players'. The change is the holder's,
@@ -461,13 +471,18 @@ local function clear_for_session(view)
   if type(view) ~= "table" or type(view.id) ~= "string" then
     return
   end
-  local first = not seen[view.id]
-  seen[view.id] = true
-  if not first or ownership.mode() ~= "session" then
+  if seen[view.id] then
+    return
+  end
+  -- Per session only if this run began so and staff have not since
+  -- switched away, which takes effect at once.
+  if run_mode ~= "session" or ownership.mode() ~= "session" then
+    seen[view.id] = true
     return
   end
   local world = world_of(view.type)
   if not world or not (world.owner or world.co_owners) then
+    seen[view.id] = true
     return
   end
   local record = held(view.type, view.id)
@@ -484,13 +499,17 @@ local function clear_for_session(view)
     patch[world.co_owners] = json.array({})
   end
   if next(patch) == nil then
+    seen[view.id] = true
     return
   end
+  -- Marked seen only once cleared, so a failed write is tried again at the
+  -- next hold rather than leaving a former owner their key for the run.
   local done, err = rpf.records.set_addon_fields(view.id, patch)
   if not done then
     log("error", "could not clear the owners of " .. view.type .. " " .. view.id .. " for a new session: " .. tostring(err))
     return
   end
+  seen[view.id] = true
   local type_name, id = view.type, view.id
   notify({
     name = "records.changed",
@@ -559,8 +578,9 @@ end
 ---@param p rpf.ServerPlatform The platform.
 function ownership.start(p)
   platform = p
-  seen = {}
+  seen, run_mode = {}, nil
   rpf.events.on("records.held", function(views)
+    run_mode = run_mode or ownership.mode()
     for _, view in ipairs(type(views) == "table" and views or {}) do
       clear_for_session(view)
     end

@@ -217,16 +217,32 @@ local function stored_door(world)
   }
 end
 
----Disables the addon, which lets its records go, and enables it again,
----which claims them back: a second hold in the same run.
+---Installs the addon with the police's config and `settings`.
+---@param world spec.ConformanceWorld The world.
+---@param settings table The settings.
+---@param enabled boolean? False to disable it.
+local function reinstall(world, settings, enabled)
+  local extra = police(world)
+  extra.settings = world.core.json.object(settings)
+  world:install({ conformance.installed(world.core, manifest(), enabled) }, extra)
+  world:settle()
+end
+
+---Disables the addon, which lets the records it held go, enables it again
+---and claims them back: a second hold of each in the same run.
 ---@param world spec.ConformanceWorld The world.
 ---@param settings table The settings `ready` was given.
-local function reload(world, settings)
-  for _, enabled in ipairs({ false, true }) do
-    local extra = police(world)
-    extra.settings = world.core.json.object(settings)
-    world:install({ conformance.installed(world.core, manifest(), enabled) }, extra)
-    world:settle()
+---@param ids string[] The records to see let go and held again.
+local function reload(world, settings, ids)
+  reinstall(world, settings, false)
+  for _, id in ipairs(ids) do
+    assert.is_false(world.portal.records[id].held, "let go")
+  end
+  reinstall(world, settings)
+  world.core.holding.claim()
+  world:settle()
+  for _, id in ipairs(ids) do
+    assert.is_true(world.portal.records[id].held, "held again")
   end
 end
 
@@ -251,10 +267,52 @@ conformance.run(busted, "Ownership and locks", {
       assert(world.api.records.update(DOOR, CLAIMED, { holder = FRIEND }))
       local made = door(world, { holder = OWNER })
       world:settle()
-      reload(world, settings)
+      reload(world, settings, { CLAIMED, made })
       assert.are.equal(FRIEND, world.portal.records[CLAIMED].fields.holder, "kept")
       assert.are.equal(OWNER, world.portal.records[made].fields.holder, "kept")
       assert.are.equal(0, world:logged("error", "rpf.ownership"))
+    end,
+  },
+  {
+    name = "clears nothing when a running server is switched to per session, until it restarts",
+    run = function(world)
+      local handle = ready(world, OWNER)
+      world:settle()
+      -- Running as persistent; staff switch it, and a stored door is then
+      -- claimed for the first time.
+      stored_door(world)
+      reinstall(world, { ["world.ownership"] = "session" })
+      world.core.holding.claim()
+      world:settle()
+      world:settle()
+      assert.is_true((world.api.ownership.has_access(handle, DOOR, CLAIMED)), "still the owner's here")
+      local stored = world.portal.records[CLAIMED]
+      assert.is_true(stored.held, "claimed")
+      assert.are.same({ OWNER, { FRIEND } }, { stored.fields.holder, stored.fields.keys })
+    end,
+  },
+  {
+    name = "tries a clear that failed again at the next hold",
+    run = function(world)
+      local settings = { ["world.ownership"] = "session" }
+      local records = world.core.records
+      local real = records.set_addon_fields
+      local failing = true
+      ---@diagnostic disable-next-line: duplicate-set-field
+      records.set_addon_fields = function(id, patch)
+        if failing and id == CLAIMED then
+          return nil, "invalid"
+        end
+        return real(id, patch)
+      end
+      stored_door(world)
+      ready(world, OWNER, settings)
+      world:settle()
+      assert.are.equal(OWNER, world.portal.records[CLAIMED].fields.holder, "the write failed")
+      assert.are.equal(1, world:logged("error", "could not clear the owners"))
+      failing = false
+      reload(world, settings, { CLAIMED })
+      assert.is_nil(world.portal.records[CLAIMED].fields.holder, "cleared at the next hold")
     end,
   },
   {

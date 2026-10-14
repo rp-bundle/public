@@ -1684,9 +1684,12 @@ held by the server whose `world` names ownership roles (`locked`, `owner`,
 - **Per session**: on `records.held`, a record of a type with an `owner` or
   `co_owners` role that this run has not held or made before has both
   cleared (`records.set_addon_fields`, reported like any write, and
-  `records.changed` with `by = "core"`) while the mode is `session`. The
-  ids seen live outside `records.entries`, so a release and a second hold
-  in the same run does not clear again; `rpf.start_server` starts a run.
+  `records.changed` with `by = "core"`) while the mode is `session` and was
+  at the run's first hold (`run_mode`), so a switch to it waits for the
+  next start. The ids seen live outside `records.entries`, so a release
+  and a second hold in the same run does not clear again; one whose clear
+  failed is not marked, and is tried again. `rpf.start_server` starts a
+  run.
 
 ### Placement (`rpf.placement`, L4)
 
