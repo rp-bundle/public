@@ -170,8 +170,9 @@ function support.fake_platform(opts)
   p.positions = {}
   p.units_per_metre = 1
   -- Weapons (L3), as the mock platform has them: an item's FiveM name, known
-  -- unless listed in `unknown_weapons`; each player's weapons a set; a
-  -- `bodiless` player has nothing to be given to.
+  -- unless listed in `unknown_weapons`; each player's weapons a set, and one
+  -- already there is `"held"`; a `bodiless` player has nothing to be given
+  -- to.
   p.weapons = {}
   p.unknown_weapons = {}
   p.bodiless = {}
@@ -194,6 +195,9 @@ function support.fake_platform(opts)
     give_weapon = function(player, name)
       if p.bodiless[player] then
         return false
+      end
+      if p.weapons[player] and p.weapons[player][name] then
+        return "held"
       end
       p.weapons[player] = p.weapons[player] or {}
       p.weapons[player][name] = true

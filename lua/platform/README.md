@@ -72,7 +72,9 @@ function.
      per weapon (FiveM's in capitals, as `GetHashKey` ignores case);
      `give_weapon(player, name)` giving it without ammo, in reserve or in
      its clips (Gmod empties a new weapon's clips), answering `false`
-     when the player has no body to give it to; and
+     when the player has no body to give it to and `"held"` when they
+     already had it from the gamemode or another script (Gmod), which the
+     core then never takes back; and
      `strip_weapon(player, name)`. The adapter also says when a player
      respawned, which empties their hands: `rpf.weapons.spawned(player)`
      on the server where the server sees it (Gmod's `PlayerSpawn`), or

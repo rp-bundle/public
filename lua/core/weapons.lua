@@ -183,12 +183,15 @@ end
 ---give it to yet (the next `spawned` gives it).
 ---@param handle any The engine's handle.
 ---@param name string The engine's weapon name.
----@return boolean given True if the engine has it now.
+---@return boolean|"held" given True if this gave it, `"held"` if the player already had it from something else, false if they do not have it.
 local function give(handle, name)
   local ok, result = pcall(assert(capability("give_weapon")), handle, name)
   if not ok then
     log("error", "the platform's give_weapon failed for " .. name .. ": " .. tostring(result))
     return false
+  end
+  if result == "held" then
+    return "held"
   end
   return result ~= false
 end
@@ -249,7 +252,9 @@ local function sync(view, character, gone, again)
     end
   end
   for _, name in ipairs(order) do
-    if (again or not names[name]) and give(view.handle, name) then
+    -- A weapon the player already had from the gamemode or another script
+    -- (`"held"`) is not this module's to take back, unless it gave it first.
+    if (again or not names[name]) and give(view.handle, name) == true then
       names[name] = true
     end
   end

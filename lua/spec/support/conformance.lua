@@ -78,6 +78,7 @@ conformance.UNITS_PER_METRE = { mock = 1, fivem = 1, gmod = 39.37 }
 ---@field stop fun()? Stops the framework's own resource, where there are resources.
 ---@field holds fun(n: integer, weapon: rpf.ConfigItemWeapon): boolean Whether the engine has a player holding an item's weapon (L3), by this engine's entry of it.
 ---@field ammo fun(n: integer, weapon: rpf.ConfigItemWeapon): integer Rounds a player has with an item's weapon: what was given with it, in its clips and in reserve.
+---@field arm fun(n: integer, weapon: rpf.ConfigItemWeapon): boolean Another script gives a player an item's weapon. False where the engine's server cannot see a player's weapons (FiveM), so the core cannot tell that one from its own.
 ---@field unspawn fun(n: integer) Takes a player's body away (dead, or not spawned yet), so the engine can give them nothing.
 ---@field respawn fun(n: integer) The player spawns again with empty hands, and the engine says so as it does: Gmod's `PlayerSpawn`, FiveM's client.
 local World = {}
@@ -599,6 +600,11 @@ local function boot_mock(opts)
   world.holds = function(n, weapon)
     return p.weapons[n] ~= nil and p.weapons[n][weapon.fivem] == true
   end
+  world.arm = function(n, weapon)
+    p.weapons[n] = p.weapons[n] or {}
+    p.weapons[n][weapon.fivem] = true
+    return true
+  end
   -- The mock platform's `give_weapon` takes no ammo.
   world.ammo = function()
     return 0
@@ -695,6 +701,11 @@ local function boot_fivem(opts)
     local held = driver.weapons[n]
     return held ~= nil and held[rawget(_G, "GetHashKey")(weapon.fivem)] ~= nil
   end
+  world.arm = function(n, weapon)
+    driver.weapons[n] = driver.weapons[n] or {}
+    driver.weapons[n][rawget(_G, "GetHashKey")(weapon.fivem)] = 0
+    return false
+  end
   world.ammo = function(n, weapon)
     local held = driver.weapons[n]
     return held and held[rawget(_G, "GetHashKey")(weapon.fivem)] or 0
@@ -784,6 +795,10 @@ local function boot_gmod(opts)
   end
   world.holds = function(n, weapon)
     return fake.players[n]:HasWeapon(weapon.gmod)
+  end
+  world.arm = function(n, weapon)
+    assert(fake.players[n]:Give(weapon.gmod, true))
+    return true
   end
   -- A weapon's clips, and a reserve's worth if `Give` was not told
   -- `bNoAmmo`.

@@ -1963,7 +1963,10 @@ character now carries none of. A move between two of its containers is one
 FiveM adapter names weapons in capitals, since `GetHashKey` ignores case,
 so two spellings of one weapon are tracked as one. A container released or lost changes
 what the engine has, never the list. A weapon the adapter failed to strip
-stays on its list of what it gave, and the next sync tries again. A weapon the engine does not know is logged once and
+stays on its list of what it gave, and the next sync tries again. One the
+player already had from the gamemode or another script (the adapter answers
+`"held"`) was not given, so it is never taken back; FiveM's server cannot
+see a ped's weapons, so there it cannot tell. A weapon the engine does not know is logged once and
 not given; an item that stops being a weapon in config stays equipped and is
 given again if it comes back. Putting a character away takes back what it
 was given. On a companion server equipping is the bridge's (#177, next).

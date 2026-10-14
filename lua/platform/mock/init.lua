@@ -203,7 +203,7 @@ end
 
 ---A mock game server platform, and the functions the harness drives it with.
 ---@class rpf.mock.Server: rpf.ServerPlatform, rpf.mock.Common
----@field weapons table<any, table<string, true>> Each player's weapons (L3), by name, as `give_weapon` and `strip_weapon` left them.
+---@field weapons table<any, table<string, true>> Each player's weapons (L3), by name, as `give_weapon` and `strip_weapon` (or the harness, as another script) left them. `give_weapon` answers `"held"` for one already there.
 ---@field unknown_weapons table<string, true> Weapon names the engine does not know, which the harness lists.
 ---@field bodiless table<any, true> Players with no body to give a weapon to (dead, or not spawned), which the harness lists.
 ---@field sockets table<integer, rpf.platform.SocketHandlers> Handlers for each connection attempt, by id, until it closes.
@@ -327,6 +327,9 @@ function mock.server(host, seed)
     give_weapon = function(player, name)
       if p.bodiless[player] then
         return false
+      end
+      if p.weapons[player] and p.weapons[player][name] then
+        return "held"
       end
       p.weapons[player] = p.weapons[player] or {}
       p.weapons[player][name] = true

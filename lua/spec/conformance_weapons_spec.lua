@@ -208,6 +208,21 @@ conformance.run(busted, "weapons", {
     end,
   },
   {
+    name = "leaves alone the same weapon another script gave",
+    run = function(world)
+      local handle = playing(world)
+      local seen = world.arm(1, PISTOL)
+      local inventory = world.api.inventory
+      assert.are.same({ true }, { inventory.equip(handle, "pistol") })
+      assert.are.same({ true }, { inventory.unequip(handle, "pistol") })
+      assert.is_true(world.core.characters.deselect(handle))
+      world:pump()
+      -- FiveM's server cannot see a ped's weapons, so it cannot tell that
+      -- one from its own, and takes it back (#146).
+      assert.are.equal(seen, world.holds(1, PISTOL), "still the other script's")
+    end,
+  },
+  {
     name = "takes back what it gave when the framework's resource stops",
     origins = true,
     run = function(world)

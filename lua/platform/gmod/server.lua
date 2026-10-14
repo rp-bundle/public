@@ -235,15 +235,19 @@ end
 ---reserve, and a weapon made now has its clips emptied, since a SWEP can
 ---spawn with a loaded one and equipping must never be a way to get rounds.
 ---A player who is dead has no hands to give it to: the core gives it again
----when they spawn. Whether they have it after is the answer, since `Give`
----answers NULL both for a weapon they already had and for one a hook
----refused.
+---when they spawn. One they already have, from the gamemode's loadout or
+---another addon, is `"held"`: not RPF's to take back. Otherwise whether
+---they have it after is the answer, since `Give` answers NULL for one a
+---hook refused.
 ---@param player Player The player.
 ---@param name string The class.
----@return boolean given True if they have it now.
+---@return boolean|"held" given True if it gave it, `"held"` if they had it already.
 function server.give_weapon(player, name)
   if not IsValid(player) or not player:Alive() then
     return false
+  end
+  if player:HasWeapon(name) then
+    return "held"
   end
   local weapon = player:Give(name, true)
   if IsValid(weapon) then
