@@ -428,10 +428,20 @@ conformance.run(busted, "the rpf_inventory starter addon", {
       local jane = assert(api.players.by_player_id(PLAYER)).handle
       local hunger = { label = "Hunger", value = 40, max = 100 }
       assert.are.same({ true, true }, { api.addons.call("rpf_inventory.hud", jane, "acme_needs.hunger", hunger) })
-      assert.are.same(
-        { true, false, "invalid" },
-        { api.addons.call("rpf_inventory.hud", jane, "acme_needs.thirst", { label = "", value = 1 }) }
-      )
+      for _, bad in ipairs({
+        { label = "", value = 1 },
+        { label = "Thirst", value = math.huge },
+        { label = "Thirst", value = -math.huge },
+        { label = "Thirst", value = 0 / 0 },
+        { label = "Thirst", value = 1, max = math.huge },
+        { label = "Thirst", value = 1, max = 0 },
+      }) do
+        assert.are.same(
+          { true, false, "invalid" },
+          { api.addons.call("rpf_inventory.hud", jane, "acme_needs.thirst", bad) },
+          tostring(bad.value) .. "/" .. tostring(bad.max)
+        )
+      end
       local answer = interact(world, 1, "rpf_inventory.hud")
       assert.is_true(answer.ok, tostring(answer.reason))
       assert.are.same({

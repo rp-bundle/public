@@ -221,6 +221,8 @@ function rpf_inventory.refresh_hud(rpf, draw)
   local sent = rpf.interactions.request("rpf_inventory.hud", {}, function(ok, hud)
     hud_waiting = false
     if ok and type(hud) == "table" then
+      -- Answered: whatever quieted the HUD (staff turned it off) is over.
+      hud_quiet_until = 0
       draw(hud)
       return
     end

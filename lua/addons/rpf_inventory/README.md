@@ -120,8 +120,9 @@ from this directory, by hand:
   top, the entry points and `html/` in `fivem/`). `ensure rpf_inventory`
   after `ensure rpf`.
 - **Garry's Mod:** make an addon folder `rpf_inventory` holding
-  `lua/rpf_inventory/manifest.lua`, `server.lua`, `client.lua` and
-  `gmod/derma.lua`, and `gmod/autorun.lua` as `lua/autorun/rpf_inventory.lua`.
+  `lua/rpf_inventory/manifest.lua`, `server.lua`, `client.lua`,
+  `gmod/derma.lua` and `gmod/hud.lua`, and `gmod/autorun.lua` as
+  `lua/autorun/rpf_inventory.lua`.
 
 The server proposes the addon to the portal. Install it on the server's
 **Addons** page.

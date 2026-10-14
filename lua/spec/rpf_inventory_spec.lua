@@ -377,11 +377,21 @@ describe("rpf_inventory", function()
       tick()
       tick()
       assert.are.equal(4, asked, "told it is off: quiet")
+      -- A command's own refresh answers (staff turned it on again): the
+      -- timer asks again at once, rather than waiting out the quiet.
+      answer = nil
+      addon.refresh_hud(rpf, function() end)
+      tick()
+      assert.are.equal(6, asked, "quiet no more")
+      answer = "The HUD is off on this server."
+      tick()
+      tick()
+      assert.are.equal(7, asked, "quiet again")
       now = now + addon.HUD_OFF_WAIT
       answer = nil
       tick()
-      assert.are.equal(5, asked, "and asks again after a while")
-      assert.are.same({ "top_left", "hidden", "hidden", "hidden", "top_left" }, drawn)
+      assert.are.equal(8, asked, "and asks again after a while")
+      assert.are.same({ "top_left", "hidden", "hidden", "hidden", "top_left", "hidden", "top_left" }, drawn)
     end)
   end)
 

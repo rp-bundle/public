@@ -468,6 +468,14 @@ function rpf_inventory.act(rpf, player, action, payload)
   return rpf_inventory.told(rpf.money.transfer(handle, target, settings.cash_account, payload.amount, reason, op))
 end
 
+---Whether a value is a finite number: what the HUD's answer can carry, as
+---JSON has no NaN or infinity.
+---@param value any The value.
+---@return boolean finite True if it is.
+local function finite(value)
+  return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
+end
+
 ---Puts a value of another addon's on a player's HUD, or takes it off: what
 ---`rpf.addons.call("rpf_inventory.hud", handle, key, entry)` reaches. Kept
 ---until the player leaves; the HUD shows it when the settings say so.
@@ -496,9 +504,8 @@ function rpf_inventory.set_hud(rpf, handle, key, entry)
     or type(entry.label) ~= "string"
     or #entry.label == 0
     or #entry.label > 32
-    or type(entry.value) ~= "number"
-    or entry.value ~= entry.value
-    or (entry.max ~= nil and (type(entry.max) ~= "number" or not (entry.max > 0)))
+    or not finite(entry.value)
+    or (entry.max ~= nil and (not finite(entry.max) or not (entry.max > 0)))
   then
     return false, "invalid"
   end
