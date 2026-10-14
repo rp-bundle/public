@@ -172,14 +172,17 @@ describe("rpf_inventory", function()
       end
     end)
 
-    it("are capped per player, the oldest forgotten first", function()
+    it("are capped per player, never forgetting one early: a new one waits instead", function()
       local rpf, state = stub()
       local first = addon.op_for(rpf, player, "r-0")
-      for i = 1, addon.MAX_REQUESTS do
+      for i = 1, addon.MAX_REQUESTS - 1 do
         state.now = state.now + 1
-        addon.op_for(rpf, player, "r-" .. i)
+        assert.truthy(addon.op_for(rpf, player, "r-" .. i))
       end
-      assert.are_not.equal(first, addon.op_for(rpf, player, "r-0"))
+      assert.is_nil(addon.op_for(rpf, player, "one-too-many"), "refused at the cap")
+      assert.are.equal(first, addon.op_for(rpf, player, "r-0"), "and the first still has its op id")
+      state.now = state.now + addon.REQUEST_MS
+      assert.truthy(addon.op_for(rpf, player, "one-too-many"), "once the old ones expire")
     end)
   end)
 
@@ -250,6 +253,15 @@ describe("rpf_inventory", function()
       assert.are.equal(1, waiting, "after a wait")
       assert.are.equal(3, #view.containers[1].stacks)
       assert.are.same({}, view.containers[2].stacks)
+    end)
+  end)
+
+  describe("names", function()
+    it("are cut on a character boundary", function()
+      assert.are.equal("Bag", addon.cut("Bag", 64))
+      assert.are.equal("ab", addon.cut("abc", 2))
+      assert.are.equal("a", addon.cut("a€", 3), "never half a character")
+      assert.are.equal("a€", addon.cut("a€b", 4))
     end)
   end)
 

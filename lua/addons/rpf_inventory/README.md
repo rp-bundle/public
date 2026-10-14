@@ -50,6 +50,10 @@ staff chose.
   refused, whatever the client sends.
 - A stack's data (a note in a bottle, a weapon's serial) stays on the
   server. The screen only marks the stack as one of a kind.
+- Every answer fits the 16 KiB an interaction may carry, whatever staff
+  named things: the view lists at most twelve containers and the twelve
+  nearest players, with names cut to 64 bytes, and a container's stacks
+  come 24 to a page.
 
 ## Settings
 

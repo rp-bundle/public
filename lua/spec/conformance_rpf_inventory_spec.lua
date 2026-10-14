@@ -342,6 +342,39 @@ conformance.run(busted, "the rpf_inventory starter addon", {
     end,
   },
   {
+    name = "lists a dozen containers at most, so the view always fits an answer",
+    run = function(world)
+      seed(world)
+      local json = world.core.json
+      for i = 1, 20 do
+        local id = string.format("000000%02x-0000-4000-8000-0000000000%02x", 0x40 + i, 0x40 + i)
+        world.portal.owned[id] = {
+          kind = "container",
+          revision = 1,
+          data = {
+            id = id,
+            server_id = SERVER,
+            owner = { kind = "character", id = JANE },
+            name = string.rep("€", 100),
+            contents = json.object({ layout = "list", stacks = json.array({}) }),
+            flags = json.array({}),
+          },
+        }
+      end
+      local addon = load_addon(world)
+      world:connect()
+      world:install({ conformance.installed(world.core, addon.MANIFEST) }, config(world))
+      world:pump()
+      world:select(world:login(1, PLAYER), JANE)
+      local open = interact(world, 1, "rpf_inventory.open")
+      assert.is_true(open.ok, tostring(open.reason))
+      assert.are.equal(addon.MAX_LISTED, #open.data.containers)
+      for _, container in ipairs(open.data.containers) do
+        assert.is_true(#container.name <= addon.MAX_NAME_BYTES, "names cut")
+      end
+    end,
+  },
+  {
     name = "does only what the settings allow",
     run = function(world)
       ready(world, { allow_give = false, allow_drop = false, allow_cash = false, reach = 1 })

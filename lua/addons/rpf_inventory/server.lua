@@ -30,11 +30,29 @@ rpf_inventory = rpf_inventory or {}
 rpf_inventory.PAGE = 24
 
 ---How long the server remembers the op id it minted for a client's
----request, in milliseconds: well past the client's ten-second timeout.
-rpf_inventory.REQUEST_MS = 10 * 60 * 1000
+---request, in milliseconds. The client sends a request again once, after
+---its ten-second timeout, so two minutes is far past the last resend.
+rpf_inventory.REQUEST_MS = 2 * 60 * 1000
 
----The most requests the server remembers per player; the oldest goes first.
-rpf_inventory.MAX_REQUESTS = 32
+---The most requests the server remembers per player at once: more than the
+---interaction rate (20 every 10 seconds) lets a player send in
+---`REQUEST_MS`. Never one forgotten early, which would give its resend a
+---new op id: past this, a new request is refused until old ones expire.
+rpf_inventory.MAX_REQUESTS = 256
+
+---The most containers the view lists, and the most nearby players: with
+---names cut to `MAX_NAME_BYTES`, the view's answer stays well under the
+---16 KiB an interaction may answer, however many containers a character
+---has or however crowded it is (about 600 bytes a container and 330 a
+---player at worst).
+rpf_inventory.MAX_LISTED = 12
+
+---The most accounts the view and the HUD list.
+rpf_inventory.MAX_ACCOUNTS = 16
+
+---The longest name the view carries, in bytes; a longer one is cut on a
+---character boundary. Container names have no bound of their own.
+rpf_inventory.MAX_NAME_BYTES = 64
 
 ---What a command naming a session this server does not remember is told:
 ---the client looks again, since the request may already have gone through.
@@ -126,7 +144,8 @@ function rpf_inventory.request_ok(request)
 end
 
 ---The op id for a client's request: the one minted the first time the
----server saw it, or a new one. Nil for a request number that is not one.
+---server saw it, or a new one. Nil for a request number that is not one,
+---and for a new one while the player has `MAX_REQUESTS` remembered.
 ---@param rpf rpf.Api The API.
 ---@param player rpf.PlayerView The player.
 ---@param request any The client's number for the request.
@@ -141,23 +160,20 @@ function rpf_inventory.op_for(rpf, player, request)
     mine = {}
     requests[player.player_id] = mine
   end
-  local count, oldest, oldest_at = 0, nil, math.huge
+  local count = 0
   for key, kept in pairs(mine) do
     if now - kept.at > rpf_inventory.REQUEST_MS then
       mine[key] = nil
     else
       count = count + 1
-      if kept.at < oldest_at then
-        oldest, oldest_at = key, kept.at
-      end
     end
   end
   local kept = mine[request]
   if kept then
     return kept.op
   end
-  if count >= rpf_inventory.MAX_REQUESTS and oldest then
-    mine[oldest] = nil
+  if count >= rpf_inventory.MAX_REQUESTS then
+    return nil
   end
   local op = rpf.ops.new()
   if not op then
@@ -165,6 +181,26 @@ function rpf_inventory.op_for(rpf, player, request)
   end
   mine[request] = { op = op, at = now }
   return op
+end
+
+---Text cut to at most `bytes` bytes without splitting a UTF-8 character.
+---@param text any The text.
+---@param bytes integer The most bytes.
+---@return string text The text, cut.
+function rpf_inventory.cut(text, bytes)
+  text = tostring(text)
+  if #text <= bytes then
+    return text
+  end
+  local at = bytes
+  while at > 0 do
+    local next_byte = text:byte(at + 1)
+    if next_byte < 0x80 or next_byte >= 0xC0 then
+      break
+    end
+    at = at - 1
+  end
+  return text:sub(1, at)
 end
 
 ---The other players near enough to be given something: logged in, with a
@@ -263,9 +299,12 @@ function rpf_inventory.open(rpf, player)
       return false, rpf_inventory.REASONS[err] or rpf_inventory.REASONS.unsupported
     end
     for _, container in ipairs(read) do
+      if #containers >= rpf_inventory.MAX_LISTED then
+        break
+      end
       containers[#containers + 1] = {
         id = container.id,
-        name = container.name,
+        name = rpf_inventory.cut(container.name, rpf_inventory.MAX_NAME_BYTES),
         layout = container.layout,
         grid = container.grid,
         max_weight = container.max_weight,
@@ -276,14 +315,17 @@ function rpf_inventory.open(rpf, player)
   end
   local money = {}
   for _, account in ipairs(rpf.money.accounts()) do
-    local balance = rpf.money.balance(player.handle, account)
+    local balance = #money < rpf_inventory.MAX_ACCOUNTS and rpf.money.balance(player.handle, account)
     if balance then
-      money[#money + 1] = { account = account, balance = balance }
+      money[#money + 1] = { account = rpf_inventory.cut(account, rpf_inventory.MAX_NAME_BYTES), balance = balance }
     end
   end
   local nearby = {}
   for _, other in ipairs(rpf_inventory.nearby(rpf, player, settings.reach)) do
-    nearby[#nearby + 1] = { id = other.player_id, name = other.name }
+    if #nearby >= rpf_inventory.MAX_LISTED then
+      break
+    end
+    nearby[#nearby + 1] = { id = other.player_id, name = rpf_inventory.cut(other.name, 2 * rpf_inventory.MAX_NAME_BYTES) }
   end
   return true,
     {
@@ -374,7 +416,7 @@ function rpf_inventory.act(rpf, player, action, payload)
   end
   local op = rpf_inventory.op_for(rpf, player, payload.request)
   if not op then
-    return false, rpf_inventory.REASONS.invalid
+    return false, "You are doing too much at once. Wait a moment."
   end
   local handle = player.handle
   if action == "move" then
