@@ -822,8 +822,7 @@ player.
 `rpf.ownership.locked(type, id)` and `has_access(player, type, id)` answer
 without changing anything, and `mode()` says what staff chose for the
 server: `persistent`, `session` (players' ownership cleared when the
-server starts), or `off`. (Staff get that choice with #176's last parts;
-until then it is always `persistent`.) When it is off, RPF locks nothing and refuses
+server starts), or `off`, the server's **Ownership and locks** setting. When it is off, RPF locks nothing and refuses
 every call with `off`, so stand aside: another system owns the doors. A door
 another addon's type defines works the same way, which is how a lockpick
 works on any door. RPF registers Lock and Unlock under your namespace with

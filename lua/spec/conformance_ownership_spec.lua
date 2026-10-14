@@ -104,18 +104,19 @@ local function police(world)
 end
 
 ---Registers the addon, installs it with the police's config and `settings`,
----logs player 1 in as `player_id`, and puts them a metre from where doors
----stand.
+---connects, logs player 1 in as `player_id`, and puts them a metre from
+---where doors stand. The config comes before the connection is answered,
+---as a starting server's does: restored, or sent with the `welcome`.
 ---@param world spec.ConformanceWorld The world.
 ---@param player_id string? Who player 1 is: the owner unless given.
 ---@param settings table? Settings.
 ---@return any handle Player 1's engine handle.
 local function ready(world, player_id, settings)
   assert(world.api.addons.register(manifest()))
-  world:connect()
   local extra = police(world)
   extra.settings = world.core.json.object(settings or {})
   world:install({ conformance.installed(world.core, manifest()) }, extra)
+  world:connect()
   world:pump()
   local handle = world:login(1, player_id or OWNER)
   world:activate(handle)
@@ -194,7 +195,177 @@ local function locked(world, id)
   return here, record and record.fields.locked
 end
 
+local CLAIMED = "00000010-0000-4000-8000-000000000010"
+
+---Puts a door the portal has and nobody holds, owned and shared by players
+---and a job door too, for the server to claim as it starts.
+---@param world spec.ConformanceWorld The world.
+local function stored_door(world)
+  world.portal.records[CLAIMED] = {
+    id = CLAIMED,
+    type = DOOR,
+    owner = { kind = "server", id = SERVER },
+    revision = 3,
+    fields = {
+      spot = point(world, 11, 20, 30),
+      locked = true,
+      holder = OWNER,
+      keys = { FRIEND },
+      employer = LSPD,
+      jobs = { { employer = "lspd", job = "cadet" } },
+    },
+    held = false,
+  }
+end
+
+---Installs the addon with the police's config and `settings`.
+---@param world spec.ConformanceWorld The world.
+---@param settings table The settings.
+---@param enabled boolean? False to disable it.
+local function reinstall(world, settings, enabled)
+  local extra = police(world)
+  extra.settings = world.core.json.object(settings)
+  world:install({ conformance.installed(world.core, manifest(), enabled) }, extra)
+  world:settle()
+end
+
+---Disables the addon, which lets the records it held go, enables it again
+---and claims them back: a second hold of each in the same run.
+---@param world spec.ConformanceWorld The world.
+---@param settings table The settings `ready` was given.
+---@param ids string[] The records to see let go and held again.
+local function reload(world, settings, ids)
+  reinstall(world, settings, false)
+  for _, id in ipairs(ids) do
+    assert.is_false(world.portal.records[id].held, "let go")
+  end
+  reinstall(world, settings)
+  world.core.holding.claim()
+  world:settle()
+  for _, id in ipairs(ids) do
+    assert.is_true(world.portal.records[id].held, "held again")
+  end
+end
+
 conformance.run(busted, "Ownership and locks", {
+  {
+    name = "clears players' ownership the first time a session holds a thing, keeping its job access, and not on a second hold",
+    run = function(world)
+      local settings = { ["world.ownership"] = "session" }
+      stored_door(world)
+      ready(world, OWNER, settings)
+      world:settle()
+      local stored = world.portal.records[CLAIMED]
+      assert.is_true(stored.held, "claimed")
+      assert.is_nil(stored.fields.holder, "no owner")
+      assert.are.same({}, stored.fields.keys, "no co-owners")
+      assert.are.equal(LSPD, stored.fields.employer, "the employer stays")
+      assert.are.same({ { employer = "lspd", job = "cadet" } }, stored.fields.jobs, "job access stays")
+      assert.is_true(stored.fields.locked, "the lock is as it was")
+
+      -- Sold again this session, and a door made this session: neither is
+      -- cleared when held a second time.
+      assert(world.api.records.update(DOOR, CLAIMED, { holder = FRIEND }))
+      local made = door(world, { holder = OWNER })
+      world:settle()
+      reload(world, settings, { CLAIMED, made })
+      assert.are.equal(FRIEND, world.portal.records[CLAIMED].fields.holder, "kept")
+      assert.are.equal(OWNER, world.portal.records[made].fields.holder, "kept")
+      assert.are.equal(0, world:logged("error", "rpf.ownership"))
+    end,
+  },
+  {
+    name = "clears nothing when a running server is switched to per session, until it restarts",
+    run = function(world)
+      local handle = ready(world, OWNER)
+      world:settle()
+      -- Running as persistent; staff switch it, and a stored door is then
+      -- claimed for the first time.
+      stored_door(world)
+      reinstall(world, { ["world.ownership"] = "session" })
+      world.core.holding.claim()
+      world:settle()
+      world:settle()
+      assert.is_true((world.api.ownership.has_access(handle, DOOR, CLAIMED)), "still the owner's here")
+      local stored = world.portal.records[CLAIMED]
+      assert.is_true(stored.held, "claimed")
+      assert.are.same({ OWNER, { FRIEND } }, { stored.fields.holder, stored.fields.keys })
+    end,
+  },
+  {
+    name = "clears nothing when a server that started persistent is switched before it holds anything",
+    run = function(world)
+      assert(world.api.addons.register(manifest()))
+      world:connect()
+      -- Nothing held yet; staff switch it, and the first hold comes after.
+      stored_door(world)
+      reinstall(world, { ["world.ownership"] = "session" })
+      world.core.holding.claim()
+      world:settle()
+      world:settle()
+      assert.are.equal(OWNER, world.core.data.held(DOOR, CLAIMED).fields.holder, "kept here")
+      local stored = world.portal.records[CLAIMED]
+      assert.is_true(stored.held, "claimed")
+      assert.are.same({ OWNER, { FRIEND } }, { stored.fields.holder, stored.fields.keys })
+    end,
+  },
+  {
+    name = "clears a door whose hold was asked for before the server connected, per session",
+    run = function(world)
+      local settings = { ["world.ownership"] = "session" }
+      assert(world.api.addons.register(manifest()))
+      reinstall(world, settings)
+      stored_door(world)
+      -- Queued while offline: answered before the declaration, which waits
+      -- for it.
+      local got
+      assert(world.api.records.hold(DOOR, { CLAIMED }, function(records, err)
+        got = records or err
+      end))
+      world:connect()
+      world:settle()
+      world:settle()
+      assert.are.equal(1, #got, "held")
+      assert.is_nil(got[1].fields.holder, "what the addon is handed is the cleared door")
+      assert.is_nil(world.core.data.held(DOOR, CLAIMED).fields.holder, "cleared here")
+      assert.is_nil(world.portal.records[CLAIMED].fields.holder, "and reported")
+    end,
+  },
+  {
+    name = "tries a clear that failed again at the next hold",
+    run = function(world)
+      local settings = { ["world.ownership"] = "session" }
+      local records = world.core.records
+      local real = records.set_addon_fields
+      local failing = true
+      ---@diagnostic disable-next-line: duplicate-set-field
+      records.set_addon_fields = function(id, patch)
+        if failing and id == CLAIMED then
+          return nil, "invalid"
+        end
+        return real(id, patch)
+      end
+      stored_door(world)
+      ready(world, OWNER, settings)
+      world:settle()
+      assert.are.equal(OWNER, world.portal.records[CLAIMED].fields.holder, "the write failed")
+      assert.are.equal(1, world:logged("error", "could not clear the owners"))
+      failing = false
+      reload(world, settings, { CLAIMED })
+      assert.is_nil(world.portal.records[CLAIMED].fields.holder, "cleared at the next hold")
+    end,
+  },
+  {
+    name = "keeps owners when a persistent server claims what it owns",
+    run = function(world)
+      stored_door(world)
+      ready(world)
+      world:settle()
+      local stored = world.portal.records[CLAIMED]
+      assert.is_true(stored.held)
+      assert.are.same({ OWNER, { FRIEND } }, { stored.fields.holder, stored.fields.keys })
+    end,
+  },
   {
     name = "lets the owner unlock and lock their door, and reports each to the portal",
     run = function(world)
