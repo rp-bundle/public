@@ -266,6 +266,20 @@ conformance.run(busted, "the rpf_inventory starter addon", {
     end,
   },
   {
+    name = "answers a request sent again as it went, though the other player has walked off since",
+    run = function(world)
+      ready(world)
+      local cash = { amount = 30, to = SAM_PLAYER, request = "cash-1" }
+      assert.is_true(interact(world, 1, "rpf_inventory.cash", cash).ok)
+      world.place(2, { x = world:units(10), y = 0, z = 0 })
+      local again = interact(world, 1, "rpf_inventory.cash", cash)
+      assert.are.same({ true }, { again.ok }, tostring(again.reason))
+      assert.are.same({ 70, 35 }, { world.core.accounts.balance(WALLET), world.core.accounts.balance(SAM_WALLET) })
+      local new = interact(world, 1, "rpf_inventory.cash", { amount = 30, to = SAM_PLAYER, request = "cash-2" })
+      assert.are.same({ false, "They are not near enough." }, { new.ok, new.reason }, "a new one is checked")
+    end,
+  },
+  {
     name = "refuses another player's container, and a player who is not near, moving nothing",
     run = function(world)
       ready(world)
@@ -342,7 +356,7 @@ conformance.run(busted, "the rpf_inventory starter addon", {
     end,
   },
   {
-    name = "lists a dozen containers at most, so the view always fits an answer",
+    name = "lists ten containers at most, so the view always fits an answer",
     run = function(world)
       seed(world)
       local json = world.core.json
@@ -368,7 +382,7 @@ conformance.run(busted, "the rpf_inventory starter addon", {
       world:select(world:login(1, PLAYER), JANE)
       local open = interact(world, 1, "rpf_inventory.open")
       assert.is_true(open.ok, tostring(open.reason))
-      assert.are.equal(addon.MAX_LISTED, #open.data.containers)
+      assert.are.equal(addon.MAX_CONTAINERS, #open.data.containers)
       for _, container in ipairs(open.data.containers) do
         assert.is_true(#container.name <= addon.MAX_NAME_BYTES, "names cut")
       end

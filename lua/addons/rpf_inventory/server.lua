@@ -40,15 +40,21 @@ rpf_inventory.REQUEST_MS = 2 * 60 * 1000
 ---new op id: past this, a new request is refused until old ones expire.
 rpf_inventory.MAX_REQUESTS = 256
 
----The most containers the view lists, and the most nearby players: with
----names cut to `MAX_NAME_BYTES`, the view's answer stays well under the
----16 KiB an interaction may answer, however many containers a character
----has or however crowded it is (about 600 bytes a container and 330 a
----player at worst).
-rpf_inventory.MAX_LISTED = 12
+---What the view lists at most, so its answer stays under the 16 KiB an
+---interaction may answer however many containers, players nearby or
+---accounts there are. Every name is cut to `MAX_NAME_BYTES`, which JSON may
+---escape to six bytes a byte (a control character): 384. At worst, then, a
+---container is about 600 bytes (its id, name, layout, grid, weight limit,
+---weight and count), a player about 450 and an account about 430, and ten
+---containers, eight players and eight accounts come to about 13 KiB.
+rpf_inventory.MAX_CONTAINERS = 10
 
----The most accounts the view and the HUD list.
-rpf_inventory.MAX_ACCOUNTS = 16
+---The most nearby players the view lists, nearest first (`MAX_CONTAINERS`
+---says why). Anyone within reach can still be given something.
+rpf_inventory.MAX_NEARBY = 8
+
+---The most accounts the view and the HUD list (`MAX_CONTAINERS` says why).
+rpf_inventory.MAX_ACCOUNTS = 8
 
 ---The longest name the view carries, in bytes; a longer one is cut on a
 ---character boundary. Container names have no bound of their own.
@@ -299,7 +305,7 @@ function rpf_inventory.open(rpf, player)
       return false, rpf_inventory.REASONS[err] or rpf_inventory.REASONS.unsupported
     end
     for _, container in ipairs(read) do
-      if #containers >= rpf_inventory.MAX_LISTED then
+      if #containers >= rpf_inventory.MAX_CONTAINERS then
         break
       end
       containers[#containers + 1] = {
@@ -322,10 +328,10 @@ function rpf_inventory.open(rpf, player)
   end
   local nearby = {}
   for _, other in ipairs(rpf_inventory.nearby(rpf, player, settings.reach)) do
-    if #nearby >= rpf_inventory.MAX_LISTED then
+    if #nearby >= rpf_inventory.MAX_NEARBY then
       break
     end
-    nearby[#nearby + 1] = { id = other.player_id, name = rpf_inventory.cut(other.name, 2 * rpf_inventory.MAX_NAME_BYTES) }
+    nearby[#nearby + 1] = { id = other.player_id, name = rpf_inventory.cut(other.name, rpf_inventory.MAX_NAME_BYTES) }
   end
   return true,
     {
@@ -398,6 +404,23 @@ end
 ---@return boolean ok True if it went through.
 ---@return string? message Why not, for the player.
 function rpf_inventory.act(rpf, player, action, payload)
+  if not rpf_inventory.request_ok(payload.request) then
+    return false, rpf_inventory.REASONS.invalid
+  end
+  if payload.session == nil or payload.session ~= session then
+    return false, rpf_inventory.STALE_SESSION
+  end
+  local op = rpf_inventory.op_for(rpf, player, payload.request)
+  if not op then
+    return false, "You are doing too much at once. Wait a moment."
+  end
+  -- A request sent again answers as it went, before any check meant for a
+  -- new one: the cash went to a player who has walked off since, or staff
+  -- turned giving off since, and the player is still told it went.
+  local done, status, why = rpf.ops.result(op)
+  if done ~= nil then
+    return rpf_inventory.told(done or nil, status, why)
+  end
   local settings = rpf_inventory.settings(rpf)
   if rpf_inventory.standing_aside(rpf, settings) then
     return false, "This server's own inventory is in charge here."
@@ -410,16 +433,6 @@ function rpf_inventory.act(rpf, player, action, payload)
   end
   if action == "cash" and not settings.allow_cash then
     return false, "Handing cash over is off on this server."
-  end
-  if not rpf_inventory.request_ok(payload.request) then
-    return false, rpf_inventory.REASONS.invalid
-  end
-  if payload.session == nil or payload.session ~= session then
-    return false, rpf_inventory.STALE_SESSION
-  end
-  local op = rpf_inventory.op_for(rpf, player, payload.request)
-  if not op then
-    return false, "You are doing too much at once. Wait a moment."
   end
   local handle = player.handle
   if action == "move" then

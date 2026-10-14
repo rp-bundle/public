@@ -34,7 +34,9 @@ staff chose.
 - Every command is a call into `rpf.inventory` or `rpf.money`, with an op id
   the server mints. The client numbers each request, and the server keeps
   the op id it minted for that number, so a request sent again after a
-  timeout gets the answer it had and never happens twice. That memory lasts
+  timeout gets the answer it had and never happens twice: the server
+  answers it from the op journal before anything else, so cash handed to a
+  player who has walked off since is still told as handed. That memory lasts
   while the addon's code runs, across the addon's stops and starts; the
   view names it (`session`), and a command from a view the server no longer
   remembers (after a resource restart) is refused, and the screen looks
@@ -51,9 +53,9 @@ staff chose.
 - A stack's data (a note in a bottle, a weapon's serial) stays on the
   server. The screen only marks the stack as one of a kind.
 - Every answer fits the 16 KiB an interaction may carry, whatever staff
-  named things: the view lists at most twelve containers and the twelve
-  nearest players, with names cut to 64 bytes, and a container's stacks
-  come 24 to a page.
+  named things: the view lists at most ten containers, the eight nearest
+  players and eight accounts, with names cut to 64 bytes, and a
+  container's stacks come 24 to a page.
 
 ## Settings
 
