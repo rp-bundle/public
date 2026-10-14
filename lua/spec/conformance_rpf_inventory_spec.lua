@@ -113,6 +113,9 @@ local function config(world)
     items = json.array({
       json.object({ slug = "water", name = "Water", weight = 1, size = size, stack_limit = 10 }),
       json.object({ slug = "bread", name = "Bread", weight = 1, size = size, stack_limit = 10 }),
+      -- The longest name the catalog allows, in characters that each take
+      -- three bytes: the worst a page has to carry.
+      json.object({ slug = "relic", name = string.rep("€", 64), weight = 0, size = size, stack_limit = 1 }),
     }),
     item_defaults = json.object({ weight = 1, size = size, stack_limit = 10 }),
   }
@@ -277,6 +280,26 @@ conformance.run(busted, "the rpf_inventory starter addon", {
       local unnumbered = interact(world, 1, "rpf_inventory.drop", { stack = janes, count = 1 })
       assert.are.same({ false, "That is not something to ask." }, { unnumbered.ok, unnumbered.reason })
       assert.are.same(before, { holds(world, BAG), holds(world, SAM_BAG) }, "nothing moved")
+    end,
+  },
+  {
+    name = "pages a container of the longest names within what an answer may carry",
+    run = function(world)
+      ready(world)
+      local json = world.core.json
+      for i = 1, 60 do
+        assert(world.core.inventory.add(POCKETS, "relic", 1, { data = json.object({ n = i }) }))
+      end
+      local seen, from, pages = 0, 1, 0
+      repeat
+        local answer = interact(world, 1, "rpf_inventory.page", { container = POCKETS, from = from })
+        assert.is_true(answer.ok, tostring(answer.reason))
+        seen = seen + #answer.data.stacks
+        from = from + #answer.data.stacks
+        pages = pages + 1
+      until not answer.data.more
+      assert.are.equal(60, seen, "every stack, a page at a time")
+      assert.is_true(pages > 1)
     end,
   },
   {

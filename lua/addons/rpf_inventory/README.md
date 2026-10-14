@@ -9,8 +9,8 @@ any addon a community writes. It is a conformance fixture as well
 | File | What |
 |---|---|
 | `manifest.lua` | The manifest: one `config` type, `rpf_inventory.settings`, with at most one record. Staff create it on its data page when they want other than the defaults |
-| `server.lua` | Registers the addon, and on start its interactions: `open` (the containers without their stacks, the money, the players near enough to be given something, and what the settings allow), `page` (one container's stacks, 60 at a time, to keep each answer under 16 KiB), and the commands `move`, `use`, `drop`, `give` and `cash` |
-| `client.lua` | What a screen asks the server, in order: the view and its pages, each command under a request number of its own (sent once more on a timeout), and each item's image (`rpf.items.image`) |
+| `server.lua` | Registers the addon, and on start its interactions: `open` (the containers without their stacks, the money, the players near enough to be given something, and what the settings allow), `page` (one container's stacks, 24 at a time, to keep each answer under 16 KiB whatever the item names), and the commands `move`, `use`, `drop`, `give` and `cash` |
+| `client.lua` | What a screen asks the server, in order: the view and its pages one after another (waiting its turn when told too many requests), each command under a request number of its own (sent once more on a timeout), and each item's image (`rpf.items.image`) |
 | `fivem/` | The FiveM resource's manifest, its entry points, and `html/`, the NUI page the inventory is drawn in (`I`, or `/rpf_inventory`) |
 | `gmod/autorun.lua`, `gmod/derma.lua` | The Gmod entry point and the Derma frame (the `rpf_inventory` console command; `bind i rpf_inventory`) |
 

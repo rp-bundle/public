@@ -18,6 +18,14 @@ rpf_inventory = rpf_inventory or {}
 ---@field cash_account string The account cash is handed from.
 ---@field allow { give: boolean, drop: boolean, cash: boolean } What staff allow.
 
+---How long the loader waits before asking again when the server said too
+---many requests (20 a player every 10 seconds), in milliseconds.
+rpf_inventory.RETRY_MS = 1000
+
+---How many times the loader asks again after `too_many` before it gives up
+---on a page: enough to wait out a whole rate window.
+rpf_inventory.MAX_RETRIES = 12
+
 ---How many requests this client has numbered.
 local numbered = 0
 
@@ -55,48 +63,70 @@ function rpf_inventory.ask(rpf, name, payload, callback)
   send(false)
 end
 
+---Asks as `ask` does, and when the server says too many requests, waits
+---and asks again, up to `MAX_RETRIES` times: a big inventory takes more
+---pages than a player may ask for at once, and its last pages wait their
+---turn rather than go missing.
+---@param rpf rpf.Api The API.
+---@param name string The interaction.
+---@param payload table What to send.
+---@param callback fun(ok: boolean, result: any) Called once with the answer.
+---@param tries integer? How many times it has been asked again.
+local function ask_paced(rpf, name, payload, callback, tries)
+  tries = tries or 0
+  rpf_inventory.ask(rpf, name, payload, function(ok, result)
+    if not ok and result == "too_many" and tries < rpf_inventory.MAX_RETRIES then
+      rpf.time.after(rpf_inventory.RETRY_MS, function()
+        ask_paced(rpf, name, payload, callback, tries + 1)
+      end)
+      return
+    end
+    callback(ok, result)
+  end)
+end
+
 ---Loads the whole view: the first answer, then each container's stacks a
----page at a time.
+---page at a time, one request after another, so a big inventory paces
+---itself within the rate a player may ask at.
 ---@param rpf rpf.Api The API.
 ---@param callback fun(view: rpf_inventory.View?, err: string?) Called once: the view (with `err` naming a page that failed, if one did), or nil and why.
 function rpf_inventory.load(rpf, callback)
-  rpf_inventory.ask(rpf, "rpf_inventory.open", {}, function(ok, view)
+  ask_paced(rpf, "rpf_inventory.open", {}, function(ok, view)
     if not ok then
       callback(nil, tostring(view))
       return
     end
     ---@cast view rpf_inventory.View
-    local waiting = #view.containers
-    if waiting == 0 then
-      callback(view)
-      return
-    end
     local failed = nil
-    for _, container in ipairs(view.containers) do
-      container.stacks = {}
-      ---Asks for the page from a stack on, and the next while there is one.
-      ---@param from integer The first stack's index.
-      local function fetch(from)
-        rpf_inventory.ask(rpf, "rpf_inventory.page", { container = container.id, from = from }, function(got, page)
-          if got and #page.stacks > 0 then
-            for _, stack in ipairs(page.stacks) do
-              container.stacks[#container.stacks + 1] = stack
-            end
-            if page.more then
-              fetch(from + #page.stacks)
-              return
-            end
-          elseif not got then
-            failed = failed or tostring(page)
-          end
-          waiting = waiting - 1
-          if waiting == 0 then
-            callback(view, failed)
-          end
-        end)
+    ---Fetches a container's pages from a stack on, then the next container's,
+    ---and calls back once every one is in.
+    ---@param i integer The container's position in the view.
+    ---@param from integer The first stack's index.
+    local function fetch(i, from)
+      local container = view.containers[i]
+      if not container then
+        callback(view, failed)
+        return
       end
-      fetch(1)
+      if from == 1 then
+        container.stacks = {}
+      end
+      ask_paced(rpf, "rpf_inventory.page", { container = container.id, from = from }, function(got, page)
+        if got and #page.stacks > 0 then
+          for _, stack in ipairs(page.stacks) do
+            container.stacks[#container.stacks + 1] = stack
+          end
+          if page.more then
+            fetch(i, from + #page.stacks)
+            return
+          end
+        elseif not got then
+          failed = failed or tostring(page)
+        end
+        fetch(i + 1, 1)
+      end)
     end
+    fetch(1, 1)
   end)
 end
 

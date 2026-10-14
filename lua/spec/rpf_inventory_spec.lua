@@ -203,6 +203,56 @@ describe("rpf_inventory", function()
     end)
   end)
 
+  describe("loading on the client", function()
+    it("asks for one page at a time, and waits its turn when told too many", function()
+      dofile(support.path("lua/addons/rpf_inventory/client.lua"))
+      local asked, waiting = {}, 0
+      local pages = {
+        ["a:1"] = { stacks = { { index = 1 }, { index = 2 } }, more = true },
+        ["a:3"] = { stacks = { { index = 3 } }, more = false },
+        ["b:1"] = { stacks = {}, more = false },
+      }
+      local refused_once = false
+      local rpf = {
+        time = {
+          now = function()
+            return 0
+          end,
+          after = function(_, fn)
+            waiting = waiting + 1
+            fn()
+          end,
+        },
+        interactions = {
+          request = function(name, payload, callback)
+            if name == "rpf_inventory.open" then
+              callback(true, { containers = { { id = "a" }, { id = "b" } } })
+              return true
+            end
+            local key = payload.container .. ":" .. payload.from
+            asked[#asked + 1] = key
+            if key == "a:3" and not refused_once then
+              refused_once = true
+              callback(false, "too_many")
+              return true
+            end
+            callback(true, pages[key])
+            return true
+          end,
+        },
+      }
+      local view, err
+      addon.load(rpf, function(v, e)
+        view, err = v, e
+      end)
+      assert.is_nil(err)
+      assert.are.same({ "a:1", "a:3", "a:3", "b:1" }, asked, "in order, the refused page asked again")
+      assert.are.equal(1, waiting, "after a wait")
+      assert.are.equal(3, #view.containers[1].stacks)
+      assert.are.same({}, view.containers[2].stacks)
+    end)
+  end)
+
   describe("refusals", function()
     it("tell the player what happened in a sentence", function()
       assert.are.same({ true }, { addon.told(true) })

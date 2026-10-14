@@ -16,6 +16,12 @@ rpf_inventory = rpf_inventory or {}
 ---@type DFrame?
 local frame = nil
 
+---The panel inside the frame that holds what is drawn, cleared and drawn
+---again on each load. Never the frame itself: clearing a `DFrame` would
+---take its title bar and close button with it.
+---@type Panel?
+local content = nil
+
 ---Item images that have arrived, by item: paths for `DImage:SetImage`.
 ---@type table<string, string>
 local images = {}
@@ -148,12 +154,11 @@ end
 ---@param rpf rpf.Api The API.
 ---@param view rpf_inventory.View The view.
 local function draw(rpf, view)
-  if not IsValid(frame) then
+  if not content or not IsValid(content) then
     return
   end
-  ---@cast frame DFrame
-  frame:Clear()
-  local scroll = vgui.Create("DScrollPanel", frame)
+  content:Clear()
+  local scroll = vgui.Create("DScrollPanel", content)
   scroll:Dock(FILL)
   local balances = {}
   for _, account in ipairs(view.money) do
@@ -205,6 +210,9 @@ function rpf_inventory.open_derma(rpf)
     frame:SetSize(math.min(620, ScrW() * 0.5), ScrH() * 0.8)
     frame:SetPos(ScrW() - frame:GetWide() - 20, ScrH() * 0.1)
     frame:MakePopup()
+    content = vgui.Create("DPanel", frame)
+    content:Dock(FILL)
+    content:SetPaintBackground(false)
   end
   rpf_inventory.load(rpf, function(view, err)
     if not view then

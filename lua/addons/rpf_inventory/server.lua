@@ -18,8 +18,12 @@ rpf_inventory = rpf_inventory or {}
 
 ---How many stacks one page of a container carries: a screen asks for each
 ---container a page at a time, since an interaction's answer is capped at
----16 KiB and a container may hold hundreds of stacks.
-rpf_inventory.PAGE = 60
+---16 KiB and a container may hold hundreds of stacks. Sized for the worst
+---stack the catalog allows, not the usual one: a 64-byte slug, a name of 64
+---characters each escaped to six bytes (384), a 16-digit key, `u32` counts
+---and `i32` cells, and every flag, come to about 630 bytes encoded, and 24
+---of them to about 15 KiB.
+rpf_inventory.PAGE = 24
 
 ---How long the server remembers the op id it minted for a client's
 ---request, in milliseconds: well past the client's ten-second timeout.
