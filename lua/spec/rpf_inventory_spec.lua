@@ -256,6 +256,80 @@ describe("rpf_inventory", function()
     end)
   end)
 
+  describe("request numbers on the client", function()
+    ---A stub whose `open` answers with the views given, one per load, and
+    ---whose requests answer at once unless held.
+    ---@param views table[] The views `open` answers, in order.
+    ---@return table rpf The stub.
+    ---@return table held Callbacks held back: `held.open[i]` answers load i.
+    local function client_stub(views)
+      local held = { open = {} }
+      local opened = 0
+      local rpf = {
+        time = {
+          now = function()
+            return 0
+          end,
+          after = function(_, fn)
+            fn()
+          end,
+        },
+        interactions = {
+          request = function(name, payload, callback)
+            if name == "rpf_inventory.open" then
+              opened = opened + 1
+              local view = views[opened]
+              held.open[opened] = function()
+                callback(true, view)
+              end
+              return true
+            end
+            held.last = payload
+            callback(true, {})
+            return true
+          end,
+        },
+      }
+      return rpf, held
+    end
+
+    it("start with the prefix the server minted for the view, counting afresh under each", function()
+      dofile(support.path("lua/addons/rpf_inventory/client.lua"))
+      local rpf, held = client_stub({
+        { containers = {}, session = "s", prefix = "p1" },
+        { containers = {}, session = "s", prefix = "p2" },
+      })
+      assert.is_nil(addon.new_request(), "none before a view")
+      addon.load(rpf, function() end)
+      held.open[1]()
+      assert.are.same({ "p1-1", "p1-2" }, { addon.new_request(), addon.new_request() })
+      addon.load(rpf, function() end)
+      held.open[2]()
+      assert.are.equal("p2-1", addon.new_request())
+      addon.command(rpf, "drop", {}, function() end)
+      assert.are.same({ "p2-2", "s" }, { held.last.request, held.last.session })
+    end)
+
+    it("drop a load that a later load replaced", function()
+      dofile(support.path("lua/addons/rpf_inventory/client.lua"))
+      local rpf, held = client_stub({
+        { containers = {}, session = "old", prefix = "a" },
+        { containers = {}, session = "new", prefix = "b" },
+      })
+      local answered = {}
+      addon.load(rpf, function(view)
+        answered[#answered + 1] = view.session
+      end)
+      addon.load(rpf, function(view)
+        answered[#answered + 1] = view.session
+      end)
+      held.open[2]()
+      held.open[1]() -- the first load's answer comes last
+      assert.are.same({ "new" }, answered, "only the later load answered")
+      assert.are.equal("b-1", addon.new_request(), "and its prefix stands")
+    end)
+  end)
+
   describe("names", function()
     it("are cut on a character boundary", function()
       assert.are.equal("Bag", addon.cut("Bag", 64))

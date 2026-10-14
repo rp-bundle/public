@@ -18,6 +18,11 @@ rpf_inventory = rpf_inventory or {}
 ---@field cash_account string The account cash is handed from.
 ---@field allow { give: boolean, drop: boolean, cash: boolean } What staff allow.
 ---@field session string The server's name for its memory of requests: sent with every command, so one it no longer remembers is refused rather than run again.
+---@field prefix string An id the server minted for this view, which request numbers start with.
+
+---How many loads this client has started: a load whose result arrives after
+---a later one started is dropped, so it never replaces newer state.
+local generation = 0
 
 ---The session of the last view loaded, which commands carry.
 ---@type string?
@@ -31,16 +36,26 @@ rpf_inventory.RETRY_MS = 1000
 ---on a page: enough to wait out a whole rate window.
 rpf_inventory.MAX_RETRIES = 12
 
----How many requests this client has numbered.
+---How many requests this client has numbered under the current prefix.
 local numbered = 0
 
----A new request number: the client's own, unique while it runs, so the
----server can tell a request sent again from a new one.
----@param rpf rpf.Api The API.
----@return string request The number.
-function rpf_inventory.new_request(rpf)
+---The prefix of the last view loaded (`rpf_inventory.View.prefix`): an id
+---the server minted for that view alone, which this client's request
+---numbers start with.
+---@type string?
+local current_prefix = nil
+
+---A new request number: the view's prefix, which the server minted and no
+---other view shares, and this client's count under it. So the server tells
+---a request sent again from a new one even after this client's Lua
+---reloaded, when its count started again.
+---@return string? request The number, or nil before any view was loaded.
+function rpf_inventory.new_request()
+  if not current_prefix then
+    return nil
+  end
   numbered = numbered + 1
-  return string.format("%d-%d", math.floor(rpf.time.now() or 0), numbered)
+  return current_prefix .. "-" .. numbered
 end
 
 ---Asks the server through an interaction, and sends the same payload, with
@@ -94,21 +109,32 @@ end
 ---page at a time, one request after another, so a big inventory paces
 ---itself within the rate a player may ask at.
 ---@param rpf rpf.Api The API.
----@param callback fun(view: rpf_inventory.View?, err: string?) Called once: the view (with `err` naming a page that failed, if one did), or nil and why.
+---@param callback fun(view: rpf_inventory.View?, err: string?) Called once: the view (with `err` naming a page that failed, if one did), or nil and why. Not called at all when a later load started before this one finished: that one's answer is the one that counts.
 function rpf_inventory.load(rpf, callback)
+  generation = generation + 1
+  local mine = generation
   ask_paced(rpf, "rpf_inventory.open", {}, function(ok, view)
+    if mine ~= generation then
+      return
+    end
     if not ok then
       callback(nil, tostring(view))
       return
     end
     ---@cast view rpf_inventory.View
     current_session = view.session
+    if view.prefix ~= current_prefix then
+      current_prefix, numbered = view.prefix, 0
+    end
     local failed = nil
     ---Fetches a container's pages from a stack on, then the next container's,
     ---and calls back once every one is in.
     ---@param i integer The container's position in the view.
     ---@param from integer The first stack's index.
     local function fetch(i, from)
+      if mine ~= generation then
+        return
+      end
       local container = view.containers[i]
       if not container then
         callback(view, failed)
@@ -150,7 +176,7 @@ end
 ---@param payload table What it names: `stack`, `to`, `count`, `amount`, `position`, as the command takes them.
 ---@param callback fun(ok: boolean, message: string?) Called once: whether it went through, and why not.
 function rpf_inventory.command(rpf, action, payload, callback)
-  payload.request = rpf_inventory.new_request(rpf)
+  payload.request = rpf_inventory.new_request()
   payload.session = current_session
   rpf_inventory.ask(rpf, "rpf_inventory." .. action, payload, function(ok, result)
     callback(ok, not ok and tostring(result) or nil)

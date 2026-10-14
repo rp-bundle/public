@@ -335,6 +335,9 @@ function rpf_inventory.open(rpf, player)
       nearby = nearby,
       cash_account = settings.cash_account,
       session = rpf_inventory.session(rpf),
+      -- Minted for this view alone, so the client's request numbers never
+      -- repeat one of another view's, even after its Lua reloaded.
+      prefix = rpf.ops.new(),
       allow = {
         give = items and settings.allow_give,
         drop = items and settings.allow_drop,
