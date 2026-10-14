@@ -16,16 +16,22 @@ local function tell(message)
   rpf.ui.notify({ title = "Inventory", text = message, kind = "error" })
 end
 
+---Whether the page is waiting to open: the player asked, and no load has
+---answered since. Kept here rather than with one load, because a later load
+---(a refresh after a command) replaces an earlier one, and whichever answers
+---must be the one that opens the page.
+local opening = false
+
 ---Loads the view and hands it to the page, then each item's image as it
----arrives. On the first load the page opens, and takes the mouse, only once
----there is something to show: a server that refuses (standing aside for its
----framework's own inventory) never takes the player's controls.
----@param opening boolean Whether this load opens the page.
-local function refresh(opening)
+---arrives. While the page waits to open, it opens, and takes the mouse,
+---only once there is something to show: a server that refuses (standing
+---aside for its framework's own inventory) never takes the player's
+---controls.
+local function refresh()
   rpf_inventory.load(rpf, function(view, err)
     if not view then
       if opening then
-        shown = false
+        opening, shown = false, false
         tell(tostring(err))
       else
         SendNUIMessage({ type = "error", message = err })
@@ -33,6 +39,7 @@ local function refresh(opening)
       return
     end
     if opening then
+      opening = false
       if not shown then
         return
       end
@@ -50,13 +57,13 @@ RegisterCommand("rpf_inventory", function()
   if shown then
     return
   end
-  shown = true
-  refresh(true)
+  shown, opening = true, true
+  refresh()
 end, false)
 RegisterKeyMapping("rpf_inventory", "Open the inventory", "keyboard", "I")
 
 RegisterNUICallback("close", function(_, cb)
-  shown = false
+  shown, opening = false, false
   SetNuiFocus(false, false)
   cb({})
 end)
@@ -71,7 +78,7 @@ RegisterNUICallback("command", function(data, cb)
   rpf_inventory.command(rpf, action, payload, function(ok, message)
     cb({ ok = ok, message = message })
     if shown then
-      refresh(false)
+      refresh()
     end
   end)
 end)
