@@ -319,7 +319,7 @@ receiver takes the default (empty, `false` or `None`).
 | `types` | `hold` | Empty: claims nothing | Added by J6 to a frame a game server sends, and left out by one that claims nothing, so every hold before it decodes as one that claims nothing |
 | `addon_permissions`, `all_addon_permissions` | A `StaffGrant` in `staff_permissions` | Empty, `false` | Added by L4 so linked staff can use installed addon action grants in game. Older captures keep their core flags; the owner grant includes future addon flags |
 | `domains` | `welcome` | Native | Added by K1, and left out when native: a native server's `welcome` is the one it was before K1, which is what every portal enforced then |
-| `items`, `item_bases`, `item_defaults`, `employers`, `employer_departments`, `employer_jobs`, `new_character`, `paying_accounts`, `addons`, `dialogs` | `ConfigSnapshot` (`config`) | Empty | Sections added after `settings`, so a snapshot from before one still decodes |
+| `items`, `item_bases`, `item_defaults`, `employers`, `employer_departments`, `employer_jobs`, `new_character`, `paying_accounts`, `addons`, `dialogs`, `employer_ids` | `ConfigSnapshot` (`config`) | Empty | Sections added after `settings`, so a snapshot from before one still decodes |
 | `choices` | A node of a dialog in `dialogs` | Empty | Omitted for a node that ends the conversation; added by L1 |
 | `conditions` | A dialog choice | Empty | Omitted for a choice anyone may pick |
 | `employer`, `job`, `min_grade`, `on_duty`, `negate` | A dialog choice's condition | `None`, `None`, `None`, `None`, `false` | A job condition names what it tests and leaves the rest out; every condition leaves `negate` out unless it is negated |

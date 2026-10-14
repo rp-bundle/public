@@ -28,8 +28,9 @@ item's `image` hash in the config snapshot (P3), and the profile (K1) in
 the `report_unknown_ops` notice (#143), the map the game server runs
 in `hello` (#173; `default` when left out), and the config snapshot's
 `dialogs` (#175; empty when left out), an item's `weapon` (L3, #177;
-left out for an item that is not one), and FiveM's `hardware_tokens` in
-`begin_join` (I4, #239; empty when left out). A
+left out for an item that is not one), FiveM's `hardware_tokens` in
+`begin_join` (I4, #239; empty when left out), and the config snapshot's
+`employer_ids` (#176; empty when left out). A
 message newer than a connection's protocol is refused `malformed` at the
 socket.
 
@@ -66,7 +67,18 @@ socket.
   engine's stock weapons or typing one their server added, and the item it
   fires as ammo. The config snapshot carries it as `weapon` on the item,
   and `rpf.config.item(slug).weapon` reads it. Equipping comes next.
-- Things in the world can be owned, shared and locked (#372, the first
+- Locks (#176): while an addon runs, the core offers **Lock** and
+  **Unlock** on every record of its types with a `locked` role, only to
+  whoever has access (the owner, a co-owner, or a job the record lets in
+  by job, department or rank, or a job door's employer's staff), checked
+  again on the server. `rpf.api.ownership` locks and unlocks for an addon,
+  a lockpick's way with no player or checking a player's access, and
+  answers `locked`, `has_access` and `mode`; a refusal is `false`, a reason
+  and a sentence for the player. `jobs.current` reports a native job's
+  `department`. The config snapshot carries `employer_ids` (each
+  server-run employer's id by slug), and `ownership` is a reserved
+  namespace.
+- Things in the world can be owned, shared and locked (#176, the first
   part). A live world type its server holds names its ownership fields in
   its `world`: `locked` (a boolean), `owner` (an indexed, nullable `ref`
   to a character or a player), `co_owners` (a list of the same),

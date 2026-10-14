@@ -68,6 +68,7 @@ server_scripts({
   "core/placement.lua",
   "core/actions.lua",
   "core/dialogs.lua",
+  "core/ownership.lua",
   "core/api.lua",
   "shared.lua",
   "ox.lua",

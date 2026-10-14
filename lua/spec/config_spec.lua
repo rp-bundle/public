@@ -127,6 +127,17 @@ describe("rpf.config", function()
     assert.is_nil(rpf.config.employer("patrol"))
   end)
 
+  -- The corpus assertion for L2's section: each server-run employer's id by
+  -- its slug, which a job door's `employer` reference names.
+  it("finds an employer's slug by the id the corpus snapshot gives it", function()
+    local frame = assert(rpf.json.decode(support.read(support.corpus("portal_to_server/config.json"))))
+    assert.is_true((rpf.config.apply(p, frame.version, frame.hash, frame.snapshot)))
+
+    assert.are.equal("lspd", rpf.config.employer_slug("7e5a1d2c-4b3f-4e8a-9c6d-0f1e2a3b4c5d"))
+    assert.is_nil(rpf.config.employer_slug("00000000-0000-4000-8000-000000000000"))
+    assert.is_nil(rpf.config.employer_slug(42))
+  end)
+
   -- The corpus assertion for E5's section: the starting accounts and the
   -- default job, which is always one `job` finds.
   it("reads what a new character gets from the corpus snapshot", function()

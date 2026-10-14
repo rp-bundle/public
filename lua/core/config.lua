@@ -27,7 +27,9 @@
 ---by `namespace`, and `dialogs` (L1) one keyed by `slug`;
 ---`employer_departments` and `employer_jobs` (E4) are arrays of objects
 ---keyed by `employer` and `slug` together, because their slugs are unique
----only within their employer; and `item_defaults` is one object. There is
+---only within their employer; `item_defaults` is one object, and
+---`employer_ids` (L2) one mapping each server-run employer's slug to its
+---id. There is
 ---no `jobs` section: cores before E4 indexed one by `slug` alone and would
 ---refuse a snapshot with two employers' `officer`, so the portal never
 ---sends one. `config.SECTIONS` holds that
@@ -143,6 +145,7 @@ config.SECTIONS = {
   employers = { kind = "list", key = "slug" },
   employer_departments = { kind = "list", key = "slug", within = "employer" },
   employer_jobs = { kind = "list", key = "slug", within = "employer" },
+  employer_ids = { kind = "map" },
   paying_accounts = { kind = "list", key = "name" },
   addons = { kind = "list", key = "namespace" },
   dialogs = { kind = "list", key = "slug" },
@@ -723,6 +726,24 @@ end
 ---@return rpf.ConfigEmployer? employer A copy of the employer, or nil.
 function config.employer(slug)
   return lookup("employers", slug)
+end
+
+---The slug of a server-run employer, by its id (L2): what an addon record's
+---reference to an employer names (a job door's `employer`), since config
+---names employers by slug everywhere else.
+---@param id any The employer's id, as a record holds it.
+---@return string? slug Its slug, or nil for an id that is no server-run employer's here.
+function config.employer_slug(id)
+  if type(id) ~= "string" then
+    return nil
+  end
+  local ids = current.index.employer_ids
+  for slug, employer_id in pairs(ids or {}) do
+    if employer_id == id then
+      return slug
+    end
+  end
+  return nil
 end
 
 ---A department, by its employer's slug and its own (E4). Its slug is unique
