@@ -395,15 +395,11 @@ function weapons.equipped(handle)
   return records.weapons_of(character)
 end
 
----A player respawned, which empties their hands on both engines: the
----adapter calls this, and everything their character has equipped is
----given again. Anyone not in play is left alone, so a client claiming a
----respawn it never had gets back only what its character already has. What
----this module gave is not forgotten, since a client's word is no proof: a
----weapon it failed to take back is still taken back, and giving one the
----player still holds gives nothing more, the adapters giving no ammo.
+---Gives a player in play everything their character has equipped again,
+---after a respawn. Anyone not in play is left alone.
 ---@param handle any The engine's handle.
-function weapons.spawned(handle)
+---@param seen boolean Whether the server saw the respawn itself. Then the player's hands were emptied, so what this module gave is forgotten, and a weapon the gamemode's loadout gave on the new spawn is the gamemode's (`"held"`). A client's word (FiveM's) is no proof, so nothing is forgotten: a weapon this module failed to take back is still taken back, and giving one the player still holds gives nothing more, the adapters giving no ammo.
+local function respawn(handle, seen)
   local view = players.get(handle)
   if not view or view.state ~= "active" or not view.player_id then
     return
@@ -412,7 +408,20 @@ function weapons.spawned(handle)
   if not character then
     return
   end
+  if seen then
+    given_to(view)
+    given[view.handle].names = {}
+  end
   sync(view, character, nil, true)
+end
+
+---A player respawned, as the server itself saw (Gmod's `PlayerSpawn`):
+---their hands were emptied, so everything their character has equipped is
+---given again. The adapter calls this. A respawn only the client sees
+---(FiveM's) comes as `handoff.SPAWNED` instead, and is trusted less.
+---@param handle any The engine's handle.
+function weapons.spawned(handle)
+  respawn(handle, true)
 end
 
 ---A character went into play: its weapons are given.
@@ -500,7 +509,7 @@ function weapons.start(p)
   events.on("records.lost", sync_all)
   events.on("config.changed", on_config_changed)
   players.on_client(handoff.SPAWNED, function(player)
-    weapons.spawned(player.handle)
+    respawn(player.handle, false)
   end)
 end
 

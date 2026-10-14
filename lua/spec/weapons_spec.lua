@@ -255,11 +255,21 @@ describe("rpf.weapons", function()
     assert.are.same({ true }, { rpf.weapons.unequip(7, "pistol") })
     assert.is_true(p.weapons[7].WEAPON_PISTOL, "the engine still has it")
     -- A client claiming a respawn it never had does not make it forgotten.
-    rpf.weapons.spawned(7)
+    p.from_client(7, rpf.handoff.SPAWNED, rpf.handoff.encode(rpf.handoff.SPAWNED))
     assert.is_true(p.weapons[7].WEAPON_PISTOL)
     p.capabilities.strip_weapon = declared
     configure(p, { item("pistol", "WEAPON_PISTOL") })
     assert.is_nil(p.weapons[7].WEAPON_PISTOL, "taken back on the next sync")
+  end)
+
+  it("leaves the gamemode's loadout alone after a respawn the server saw", function()
+    playing()
+    assert.is_true((rpf.weapons.equip(7, "pistol")))
+    -- The respawn emptied her hands, and the loadout gave a pistol again.
+    p.weapons[7] = { WEAPON_PISTOL = true }
+    rpf.weapons.spawned(7)
+    assert.are.same({ true }, { rpf.weapons.unequip(7, "pistol") })
+    assert.is_true(p.weapons[7].WEAPON_PISTOL, "the gamemode's")
   end)
 
   it("takes back what it gave as the server stops", function()
