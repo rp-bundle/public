@@ -1,0 +1,29 @@
+<!doctype html>
+<!--
+  rpf_inventory's NUI page: the inventory a player opens with I. It draws
+  what the server answered and posts back what the player picked; the
+  client script sends that to the server, which checks it all again.
+  Everything it shows (item, character and container names) is someone's
+  text, so it is set as text, never as markup.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; connect-src https:; style-src 'self'; script-src 'self'" />
+    <link rel="stylesheet" href="style.css" />
+    <title>Inventory</title>
+  </head>
+  <body>
+    <main id="inventory" hidden>
+      <header>
+        <h1>Inventory</h1>
+        <button type="button" id="close" aria-label="Close">×</button>
+      </header>
+      <p id="notice" role="status"></p>
+      <section id="money" aria-label="Money"></section>
+      <section id="containers" aria-label="What you carry"></section>
+    </main>
+    <div id="menu" role="menu" hidden></div>
+    <script src="app.js"></script>
+  </body>
+</html>

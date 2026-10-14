@@ -60,6 +60,14 @@ players make the rest in play.
 | [`acme_property`](../lua/examples/acme_property/) | Properties staff create and players buy in one exchange, and doors their owners lock | No door of its own to move: a server's door script asks whether one is locked. Ownership is per player account, not per character |
 
 
+**Starter addons** are a different thing: first-party addons the sample
+server is built from, supported like RPF itself, in `lua/addons/`. They are
+built only on `rpf.api` too, so each is also a worked example of an addon
+that ships. [`rpf_inventory`](../lua/addons/rpf_inventory/) is the first: a
+player's items, money and the players near them on one screen, drawn in
+NUI on FiveM and Derma on Gmod, with every command going through the calls
+in [An inventory screen](#an-inventory-screen-stacks-and-handing-things-over).
+
 ## Getting the API
 
 | Engine | How a script gets `rpf` |
