@@ -272,6 +272,30 @@ describe("rpf.weapons", function()
     assert.is_true(p.weapons[7].WEAPON_PISTOL, "the gamemode's")
   end)
 
+  it("acts on a client's respawns at most once per cooldown, and runs one that came too soon after it", function()
+    playing()
+    assert.is_true((rpf.weapons.equip(7, "pistol")))
+    local declared, gives = p.capabilities.give_weapon, 0
+    p.capabilities.give_weapon = function(player, name)
+      gives = gives + 1
+      return declared(player, name)
+    end
+    local function spawned()
+      p.from_client(7, rpf.handoff.SPAWNED, rpf.handoff.encode(rpf.handoff.SPAWNED))
+    end
+    spawned()
+    assert.are.equal(1, gives, "the first is acted on")
+    for _ = 1, 20 do
+      spawned()
+    end
+    assert.are.equal(1, gives, "the rest wait")
+    p.advance(rpf.weapons.RESPAWN_COOLDOWN_MS)
+    assert.are.equal(2, gives, "and are one, once the cooldown has passed")
+    p.advance(rpf.weapons.RESPAWN_COOLDOWN_MS)
+    assert.are.equal(2, gives)
+    p.capabilities.give_weapon = declared
+  end)
+
   it("takes back what it gave as the server stops", function()
     playing()
     assert.is_true((rpf.weapons.equip(7, "pistol")))

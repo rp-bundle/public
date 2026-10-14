@@ -161,6 +161,9 @@ conformance.run(busted, "weapons", {
       world.respawn(1)
       assert.is_true(world.holds(1, PISTOL), "given as they spawn")
 
+      -- A real respawn comes a while after the last; a client reporting
+      -- them faster is acted on once per cooldown.
+      world:advance(world.core.weapons.RESPAWN_COOLDOWN_MS)
       world.respawn(1)
       assert.is_true(world.holds(1, PISTOL), "and every time")
     end,

@@ -42,6 +42,7 @@
 ---Ammo is the next step (#177): a weapon is given without any.
 ---@class rpf.weapons
 ---@field CAPABILITIES string[] The adapter's capabilities this module uses, each a function or `false`: `weapon`, `give_weapon` and `strip_weapon`.
+---@field RESPAWN_COOLDOWN_MS integer The least time between two respawns a player's client reports that are acted on: one sooner waits until it has passed, and any more meanwhile are the same one. A client can send `handoff.SPAWNED` as often as it likes, and each would scan the character's containers and give every weapon again; a real respawn takes longer than this.
 ---@field MAX_EQUIPPED integer The most weapons a character may have equipped, the portal's `limits::MAX_EQUIPPED_WEAPONS`, as `records.MAX_EQUIPPED` (the client loads this file too, without `rpf.records`).
 local weapons = {}
 
@@ -56,6 +57,7 @@ local handoff = rpf.handoff
 
 weapons.CAPABILITIES = { "weapon", "give_weapon", "strip_weapon" }
 weapons.MAX_EQUIPPED = 16
+weapons.RESPAWN_COOLDOWN_MS = 2000
 
 ---@type rpf.ServerPlatform?
 local platform = nil
@@ -69,6 +71,12 @@ local declared = nil
 ---weapon names.
 ---@type table<any, { serial: integer, names: table<string, true> }>
 local given = {}
+
+---Respawns players' clients reported, by engine handle: the connection,
+---when the last one was acted on, and whether another waits for the
+---cooldown to pass.
+---@type table<any, { serial: integer, at: number, waiting: boolean }>
+local reported = {}
 
 ---Weapon names already logged as unknown to the engine, so each is said
 ---once until a config makes it known.
@@ -455,6 +463,42 @@ end
 ---@param view rpf.PlayerView The player.
 local function on_dropping(view)
   given[view.handle] = nil
+  reported[view.handle] = nil
+end
+
+---A player's client says they respawned (`handoff.SPAWNED`, FiveM's): acted
+---on at most once per `RESPAWN_COOLDOWN_MS`. One sooner runs when the
+---cooldown has passed, once however many came meanwhile, on the same
+---connection.
+---@param view rpf.PlayerView The player.
+local function on_reported_spawn(view)
+  local p = assert(platform)
+  local now = p.now()
+  ---@type { serial: integer, at: number, waiting: boolean }?
+  local last = reported[view.handle]
+  if last and last.serial ~= view.serial then
+    last = nil
+  end
+  -- A clock that went back counts as the cooldown passed.
+  if not last or now < last.at or now - last.at >= weapons.RESPAWN_COOLDOWN_MS then
+    reported[view.handle] = { serial = view.serial, at = now, waiting = false }
+    respawn(view.handle, false)
+    return
+  end
+  if last.waiting then
+    return
+  end
+  last.waiting = true
+  local handle, serial = view.handle, view.serial
+  p.after(weapons.RESPAWN_COOLDOWN_MS - (now - last.at), function()
+    local entry = reported[handle]
+    local current = players.get(handle)
+    if entry ~= last or not current or current.serial ~= serial then
+      return
+    end
+    entry.at, entry.waiting = p.now(), false
+    respawn(handle, false)
+  end)
 end
 
 ---A held container's contents changed: if a character in play owns it, the
@@ -494,6 +538,7 @@ function weapons.start(p)
   declared = p.capabilities
   given = {}
   warned = {}
+  reported = {}
   for _, name in ipairs(weapons.CAPABILITIES) do
     local value = declared and declared[name]
     if value ~= false and type(value) ~= "function" then
@@ -508,9 +553,7 @@ function weapons.start(p)
   events.on("records.released", sync_all)
   events.on("records.lost", sync_all)
   events.on("config.changed", on_config_changed)
-  players.on_client(handoff.SPAWNED, function(player)
-    respawn(player.handle, false)
-  end)
+  players.on_client(handoff.SPAWNED, on_reported_spawn)
 end
 
 ---The server is stopping (on FiveM, its resource, while players stay):
