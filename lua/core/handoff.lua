@@ -40,6 +40,7 @@
 ---@field TARGET_RULES string Server → client: every interaction rule with a target, for a target resource to offer (J4).
 ---@field TARGET_OFFERS string Client → server, as a request (`request_server`): which of these rules the server offers this player on an entity, by its ref, for a target resource (#317, `rpf.targets.offers`).
 ---@field TARGET_OFFERS_RESULT string Server → client, as the answer to `TARGET_OFFERS`: the names offered. Never a message of its own.
+---@field SPAWNED string Client → server: this player respawned, so give their character's equipped weapons again (L3, `rpf.weapons`). Only the client sees a respawn on FiveM. Unverifiable, and harmless: a player in play gets back only what their character has equipped.
 ---@field UI_CLOSE string Server → client: close what a `UI` request showed, by its id, because the addon that asked has stopped.
 ---@field MAX_PAYLOAD integer The longest payload decoded, in bytes, of every message but the list of characters. Real ones are a few hundred.
 ---@field MAX_LIST_PAYLOAD integer The longest list of characters, answer to an interaction, UI request, nearby answer or list of target rules, decoded, in bytes. Only the client decodes these, from its own server; the server registers no handler for them, so a client cannot make the server decode one.
@@ -73,6 +74,7 @@ handoff.TARGETS_RESULT = "rpf:targets_result"
 handoff.TARGET_RULES = "rpf:target_rules"
 handoff.TARGET_OFFERS = "rpf:target_offers"
 handoff.TARGET_OFFERS_RESULT = "rpf:target_offers_result"
+handoff.SPAWNED = "rpf:spawned"
 handoff.MAX_PAYLOAD = 4096
 handoff.MAX_LIST_PAYLOAD = 65536
 handoff.MAX_UI_ANSWER = 40960
@@ -100,6 +102,7 @@ local LIMITS = {
 
 handoff.schemas = {
   [handoff.CLIENT_READY] = {},
+  [handoff.SPAWNED] = {},
   [handoff.NONCE_REQUEST] = {},
   [handoff.PORTAL_TROUBLE] = {},
   [handoff.NONCE] = {

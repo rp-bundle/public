@@ -102,6 +102,17 @@ function server.platform(shim, transport)
       despawn = function(ref)
         server.despawn(ref)
       end,
+      -- Weapons (L3), given and taken on the server through OneSync's
+      -- RPC natives on the player's ped (`server.give_weapon`).
+      weapon = function(spec)
+        return server.weapon(spec)
+      end,
+      give_weapon = function(player, name)
+        return server.give_weapon(player, name)
+      end,
+      strip_weapon = function(player, name)
+        server.strip_weapon(player, name)
+      end,
       -- The UI addons show (J10), which the client builds on ox_lib.
       notify = true,
       menu = true,
@@ -492,6 +503,51 @@ function server.removed(entity)
     if creating[entity] then
       creating[entity].removed = true
     end
+  end
+end
+
+---An item's weapon on FiveM (L3): the catalog's `fivem` name, in capitals,
+---and whether it is one of the stock weapons (`weapons.lua`). In capitals
+---because `GetHashKey` ignores case, so `weapon_pistol` and `WEAPON_PISTOL`
+---are one weapon, and the core, which tracks what it gave by name, must see
+---one name. Any other name is nil, not false: a server can stream weapons
+---of its own, and no server native says whether one exists, so it is given
+---as named.
+---@param spec rpf.ConfigItemWeapon The catalog's entry.
+---@return string? name The GTA weapon's name, or nil when the item is no weapon on FiveM.
+---@return boolean? known True for a stock weapon, nil for any other.
+function server.weapon(spec)
+  local name = spec.fivem
+  if type(name) ~= "string" or name == "" then
+    return nil
+  end
+  name = name:upper()
+  return name, fivem.weapons.known[name] or nil
+end
+
+---Gives a player's ped a weapon, without ammo. `GiveWeaponToPed` runs on
+---the client that owns the ped, so a player with no ped yet gets nothing,
+---and the core gives it again when the client says the player spawned.
+---@param player any The player's server id.
+---@param name string The GTA weapon's name.
+---@return boolean given False with no ped to give it to.
+function server.give_weapon(player, name)
+  local ped = GetPlayerPed(player)
+  if not ped or ped == 0 then
+    return false
+  end
+  GiveWeaponToPed(ped, GetHashKey(name), 0, false, false)
+  return true
+end
+
+---Takes a weapon from a player's ped. One it does not have is left alone,
+---as the native leaves it.
+---@param player any The player's server id.
+---@param name string The GTA weapon's name.
+function server.strip_weapon(player, name)
+  local ped = GetPlayerPed(player)
+  if ped and ped ~= 0 then
+    RemoveWeaponFromPed(ped, GetHashKey(name))
   end
 end
 

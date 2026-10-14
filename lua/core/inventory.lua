@@ -1033,13 +1033,20 @@ function inventory.move(from, index, to, opts)
   if not valid then
     return nil, "invalid", why, to
   end
-  if from ~= to then
-    local applied, apply_err, apply_refusal = apply(source, source.contents)
-    if not applied then
-      return nil, apply_err, apply_refusal, from
-    end
+  if from == to then
+    return apply(target, target.contents)
   end
-  return apply(target, target.contents)
+  -- One batch, so `records.contents` comes once both are written.
+  local applied, apply_err, apply_refusal, where
+  rpf.records.batch(function()
+    applied, apply_err, apply_refusal = apply(source, source.contents)
+    if not applied then
+      where = from
+      return
+    end
+    applied, apply_err, apply_refusal = apply(target, target.contents)
+  end)
+  return applied, apply_err, apply_refusal, where
 end
 
 ---Splits units off a stack into a new stack of their own, with the same
@@ -1391,6 +1398,24 @@ function inventory.count(id, item, opts)
     end
   end
   return total
+end
+
+---The items in contents, whatever the layout: each slug a stack has a unit
+---of. For a module that must know what left a container, from the copy of
+---what it held before that `records.contents` carries (`rpf.weapons`).
+---@param contents any The contents, as a held container has them.
+---@return table<string, true> items The slugs, a set; empty for contents that are not well formed.
+function inventory.items_in(contents)
+  local out = {}
+  if not well_formed(contents) then
+    return out
+  end
+  for _, stack in ipairs(stacks_in(contents)) do
+    if stack.count > 0 then
+      out[stack.item] = true
+    end
+  end
+  return out
 end
 
 rpf.inventory = inventory

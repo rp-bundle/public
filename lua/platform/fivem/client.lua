@@ -248,6 +248,9 @@ end)
 -- ox_target or qb-target starting or stopping takes the options with it.
 AddEventHandler("onClientResourceStart", function(name) fivem.target.started(name) end)
 AddEventHandler("onClientResourceStop", function(name) fivem.target.stopped(name) end)
+-- A respawn empties the ped's hands (spawnmanager removes every weapon),
+-- and only the client sees one: the server gives the equipped ones again.
+AddEventHandler("playerSpawned", function() core.weapons.respawned() end)
 -- The minimal interaction UI (J4): what is near, as a menu, on a key.
 RegisterCommand("rpf_interact", function() core.targets.open() end, false)
 RegisterKeyMapping("rpf_interact", "Interact with what is near", "keyboard", GetConvar(client.INTERACT_KEY, "E"))

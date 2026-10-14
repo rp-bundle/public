@@ -785,6 +785,10 @@ anything not held, so a module keeps ids and reads through it every time.
   ledger entry's `client_id` here, refuses to overdraw an account without
   `unlimited_balance`, and keeps every balance within ±`MAX_AMOUNT`.
   A description is at most `records.MAX_DESCRIPTION_BYTES` (256).
+  `records.batch(fn)` runs writes that belong together (`inventory.move`'s
+  two containers, an exchange's) and emits `records.contents` for each
+  container only once all are written, with what it held before the first,
+  so a listener never sees a move half done.
   A character's names are trimmed of the portal's whitespace (Rust's
   `str::trim`, the Unicode `White_Space` set, `records.WHITESPACE`, which a
   spec holds equal to `characters::NAME_WHITESPACE`; Lua's `%s` would miss
@@ -863,8 +867,10 @@ anything not held, so a module keeps ids and reads through it every time.
   as above. New holds wait for its answer, so it can never release one.
 
 Events, all reserved: `records.held(views)`, `records.released(refs)`,
-`records.lost(refs, reason)` and `records.session(player_id, err, serial)`,
-`serial` being the player's connection the hold was sent for.
+`records.lost(refs, reason)`, `records.contents(id, before)` (a held
+container's contents changed here; `before` is a copy of what it held) and
+`records.session(player_id, err, serial)`, `serial` being the player's
+connection the hold was sent for.
 
 ### `rpf.inventory`
 
@@ -930,6 +936,7 @@ either.
 | `view(id)` | A held container read for a screen: its layout, grid size and weight limit spelt out, its stacks numbered from 1 with their catalog names, data, data fingerprint (`key`) and grid positions, and what it weighs. Nil when not held |
 | `stack_key(data)` | A stack's data fingerprint: two 32-bit polynomial hashes of its canonical encoding, 16 hex digits. Names which stack a screen showed among others of the same item; not a security boundary, since every stack it tells apart is the same player's |
 | `count(id, item)` | Units of an item across every stack |
+| `items_in(contents)` | The slugs contents hold a unit of, a set: what left a container, from `records.contents`'s `before` (`rpf.weapons`) |
 
 `inventory.edit(contents, flags, catalog, edit)` is the staff edits' pure
 twin of the portal's `ContentsEdit::apply` (F5): `give` (units with no data,
@@ -1925,6 +1932,44 @@ Events, reserved: `jobs.changed(character_id, job, previous)` (each
 `{ employer, job }` or nil), `jobs.duty(character_id, on_duty)` and
 `jobs.paid(character_id, amount, client_id)`, `client_id` being the ledger
 entry's.
+
+### Weapons (`rpf.weapons`, L3)
+
+Items that equip as the engine's weapons. **What is equipped is part of
+the character**, a held record: the slugs of the items, set through
+`records.set_weapons` and reported with the character as `weapons` (`[]` for
+none, never null). Nothing here keeps a copy of the list. **What the engine
+was given is memory only**, per player and connection, so a weapon is taken
+back exactly as it was given.
+
+| Call | What |
+|---|---|
+| `equip(handle, item)` / `unequip(handle, item)` | What `rpf.api.inventory.equip` and `unequip` call: `true`, or `nil, "refused", reason` (`unsupported`, `not_logged_in`, `no_character`, `not_a_weapon`, `unknown_weapon`, `no_item`, `too_many`) |
+| `equipped(handle)` | The slugs, or nil and why |
+| `spawned(handle)` | The adapter says the server saw a player respawn, which empties their hands: what was given is forgotten (a weapon the gamemode's loadout gave on the new spawn is the gamemode's) and what is equipped is given again. A client's `handoff.SPAWNED` does the same without forgetting anything, since a client's word is no proof: a weapon this module failed to take back is still taken back. It is acted on at most once per `RESPAWN_COOLDOWN_MS` (2 s) for each player; one sooner runs once the cooldown has passed, however many came meanwhile. Only a player `active` with a character in play gets anything |
+| `stop()` | `rpf.stop_server` calls it first: every weapon given is taken back, since what was given is memory only and the next start (a FiveM resource restart, with the players still there) could not take it back |
+| `respawned()` | The client half: tells the server about a respawn only the client saw (FiveM), with `handoff.SPAWNED` |
+| `supported()`, `capabilities()` | Whether the adapter declares `weapon`, `give_weapon` and `strip_weapon`, which `rpf.capabilities()` reports |
+
+It brings each player in play in line with their character whenever their
+character goes into play, their containers change (`records.contents`),
+records come or go, or a config arrives: the engine has the weapons of the
+equipped items the character carries a unit of, in any held container and
+whatever its data, given where they are missing, and nothing else it gave.
+Only `records.contents` takes an item off the list: an equipped item the
+container held before the write (the event carries a copy) that the
+character now carries none of. A move between two of its containers is one
+`records.batch`, announced once both are written, so it is seen whole. A
+FiveM adapter names weapons in capitals, since `GetHashKey` ignores case,
+so two spellings of one weapon are tracked as one. A container released or lost changes
+what the engine has, never the list. A weapon the adapter failed to strip
+stays on its list of what it gave, and the next sync tries again. One the
+player already had from the gamemode or another script (the adapter answers
+`"held"`) was not given, so it is never taken back; FiveM's server cannot
+see a ped's weapons, so there it cannot tell. A weapon the engine does not know is logged once and
+not given; an item that stops being a weapon in config stays equipped and is
+given again if it comes back. Putting a character away takes back what it
+was given. On a companion server equipping is the bridge's (#177, next).
 
 ### The login (`rpf.join`, `rpf.handoff`, `rpf.auth`)
 

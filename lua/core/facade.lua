@@ -79,7 +79,19 @@ facade.ADDON_ACCOUNT = "economy.addon_account"
 facade.CALLS = {
   characters = { current = true },
   money = { accounts = true, balance = true, debit = true, credit = true, transfer = true },
-  inventory = { count = true, give = true, take = true, containers = true, move = true, discard = true, hand = true, use = true },
+  inventory = {
+    count = true,
+    give = true,
+    take = true,
+    containers = true,
+    move = true,
+    discard = true,
+    hand = true,
+    use = true,
+    equip = true,
+    unequip = true,
+    equipped = true,
+  },
   jobs = { current = true },
 }
 
@@ -347,6 +359,10 @@ function facade.supports(domain, call)
   end
   if domain == "money" and (call == "debit" or call == "credit") then
     return addon_account() ~= nil
+  end
+  if domain == "inventory" and (call == "equip" or call == "unequip" or call == "equipped") then
+    -- Weapons (L3) need the engine's capabilities and RPF's own characters.
+    return rpf.weapons.supported() and not external("characters") and not external("inventory")
   end
   return true
 end

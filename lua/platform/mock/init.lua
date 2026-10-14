@@ -203,6 +203,9 @@ end
 
 ---A mock game server platform, and the functions the harness drives it with.
 ---@class rpf.mock.Server: rpf.ServerPlatform, rpf.mock.Common
+---@field weapons table<any, table<string, true>> Each player's weapons (L3), by name, as `give_weapon` and `strip_weapon` (or the harness, as another script) left them. `give_weapon` answers `"held"` for one already there.
+---@field unknown_weapons table<string, true> Weapon names the engine does not know, which the harness lists.
+---@field bodiless table<any, true> Players with no body to give a weapon to (dead, or not spawned), which the harness lists.
 ---@field sockets table<integer, rpf.platform.SocketHandlers> Handlers for each connection attempt, by id, until it closes.
 ---@field socket integer? The id of the latest connection attempt. `send` uses only this one.
 ---@field players table<any, { name: string, identifiers: string[], hardware_tokens: string[]? }> What the engine knows about each connected player.
@@ -250,6 +253,9 @@ function mock.server(host, seed)
   p.buckets = {}
   p.entities = {}
   p.entity_seq = 0
+  p.weapons = {}
+  p.unknown_weapons = {}
+  p.bodiless = {}
   -- Positions in the mock are metres, as FiveM's are.
   p.units_per_metre = 1
   -- The map the host says this process runs (#369), fixed until it stops.
@@ -306,6 +312,33 @@ function mock.server(host, seed)
     end,
     despawn = function(ref)
       p.entities[ref] = nil
+    end,
+    -- Weapons (L3): an item's FiveM name is its weapon here, as positions
+    -- are FiveM's metres, known unless the harness lists it in
+    -- `unknown_weapons`; a player's weapons are a set the harness reads, and
+    -- `bodiless` players have none to be given (dead, or not yet spawned).
+    weapon = function(spec)
+      local name = spec.fivem
+      if type(name) ~= "string" then
+        return nil
+      end
+      return name, not p.unknown_weapons[name]
+    end,
+    give_weapon = function(player, name)
+      if p.bodiless[player] then
+        return false
+      end
+      if p.weapons[player] and p.weapons[player][name] then
+        return "held"
+      end
+      p.weapons[player] = p.weapons[player] or {}
+      p.weapons[player][name] = true
+      return true
+    end,
+    strip_weapon = function(player, name)
+      if p.weapons[player] then
+        p.weapons[player][name] = nil
+      end
     end,
     notify = true,
     menu = true,

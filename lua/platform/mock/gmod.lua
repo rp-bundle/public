@@ -120,6 +120,8 @@ local gmod = {}
 ---@field include fun(path: string): any The fake `include`.
 ---@field driver rpf.mock.GmodDriver The driving functions as plain functions, as the fake game server calls a platform's.
 ---@field entities table<integer, rpf.mock.GmodEntity> Entities made with `ents.Create`, by index, until removed.
+---@field known_weapons table<string, true> The weapon classes `list.Get("Weapon")` lists (L3): Gmod's HL2 ones, and any the harness adds.
+---@field stored_weapons table<string, true> The SWEP classes `weapons.GetStored` has, which the harness adds.
 ---@field data table<string, rpf.mock.GmodDataFile> The fake `data/` directory, by path: what `file.Write` wrote.
 ---@field core rpf? The core's internal table, kept when the adapter loads `init.lua`, because publishing the API replaces the global. For tests to look inside.
 local World = {}
@@ -169,6 +171,8 @@ local GLOBALS = {
   "Angle",
   "Material",
   "game",
+  "list",
+  "weapons",
 }
 
 ---The Gmod adapter's part framing (`lua/platform/gmod/messages.lua`): part
@@ -622,6 +626,28 @@ function gmod.install(side, host, options)
     end
     return math.floor(host.now() / 1000)
   end)
+  -- The weapons Gmod has (L3): the HL2 ones `game_hl2.lua` lists, in
+  -- `list.Get("Weapon")`, and SWEPs an addon registered, in
+  -- `weapons.GetStored`. The harness adds to `known_weapons` (the list)
+  -- and `stored_weapons`.
+  world.known_weapons = { weapon_pistol = true, weapon_crowbar = true, weapon_357 = true }
+  world.stored_weapons = {}
+  _G.list = {
+    Get = function(name)
+      local out = {}
+      if name == "Weapon" then
+        for class in pairs(world.known_weapons) do
+          out[class] = { ClassName = class }
+        end
+      end
+      return out
+    end,
+  }
+  _G.weapons = {
+    GetStored = function(class)
+      return world.stored_weapons[class] and { ClassName = class } or nil
+    end,
+  }
   _G.timer = {
     Simple = function(delay, fn)
       world.seq = world.seq + 1
@@ -851,6 +877,47 @@ function gmod.install(side, host, options)
   ---@return table pos `{ x, y, z }`.
   function Player:GetPos()
     return self.pos or { x = 0, y = 0, z = 0 }
+  end
+  -- Weapons (L3): `Give` makes a weapon only of a class the engine has
+  -- (`known_weapons` or `stored_weapons`) for a player who is alive, as
+  -- Gmod does, and answers NULL for one they already hold. The weapon comes
+  -- with a loaded clip whatever `bNoAmmo` says, which only holds back the
+  -- reserve: `clip1` and `clip2` until `SetClip1` and `SetClip2` change them.
+  function Player:Alive()
+    return not self.dead
+  end
+  function Player:Give(class, no_ammo)
+    self.weapons = self.weapons or {}
+    self.gave_ammo = self.gave_ammo or {}
+    local exists = world.known_weapons[class] or world.stored_weapons[class]
+    if self.dead or not exists or self.weapons[class] then
+      return nil
+    end
+    local weapon = {
+      class = class,
+      clip1 = 6,
+      clip2 = 1,
+      IsValid = function()
+        return true
+      end,
+      SetClip1 = function(w, n)
+        w.clip1 = n
+      end,
+      SetClip2 = function(w, n)
+        w.clip2 = n
+      end,
+    }
+    self.weapons[class] = weapon
+    self.gave_ammo[class] = not no_ammo
+    return weapon
+  end
+  function Player:HasWeapon(class)
+    return self.weapons ~= nil and self.weapons[class] ~= nil
+  end
+  function Player:StripWeapon(class)
+    if self.weapons then
+      self.weapons[class] = nil
+    end
   end
   world.player_meta = Player
 

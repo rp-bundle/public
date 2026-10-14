@@ -76,6 +76,11 @@ conformance.UNITS_PER_METRE = { mock = 1, fivem = 1, gmod = 39.37 }
 ---@field delete_entity fun(ref: integer) Deletes an entity behind the core's back, as another script would.
 ---@field set_bucket (fun(n: integer, bucket: integer))? Moves a player to a routing bucket, where the engine has them.
 ---@field stop fun()? Stops the framework's own resource, where there are resources.
+---@field holds fun(n: integer, weapon: rpf.ConfigItemWeapon): boolean Whether the engine has a player holding an item's weapon (L3), by this engine's entry of it.
+---@field ammo fun(n: integer, weapon: rpf.ConfigItemWeapon): integer Rounds a player has with an item's weapon: what was given with it, in its clips and in reserve.
+---@field arm fun(n: integer, weapon: rpf.ConfigItemWeapon): boolean Another script gives a player an item's weapon. False where the engine's server cannot see a player's weapons (FiveM), so the core cannot tell that one from its own.
+---@field unspawn fun(n: integer) Takes a player's body away (dead, or not spawned yet), so the engine can give them nothing.
+---@field respawn fun(n: integer) The player spawns again with empty hands, and the engine says so as it does: Gmod's `PlayerSpawn`, FiveM's client.
 local World = {}
 
 ---An entity the core placed, as a case reads it off any engine.
@@ -275,6 +280,10 @@ function World:answer(frame)
         owned.revision = change.revision or owned.revision + 1
         if change.contents then
           owned.data.contents = change.contents
+        end
+        -- A character's equipped weapons (L3): `null` is unchanged.
+        if type(change.weapons) == "table" then
+          owned.data.weapons = json.copy(change.weapons)
         end
         revisions[#revisions + 1] = { kind = owned.kind, id = change.id, revision = owned.revision }
       elseif record and change.kind == "addon_record" then
@@ -588,6 +597,27 @@ local function boot_mock(opts)
   world.set_bucket = function(n, bucket)
     p.buckets[n] = bucket
   end
+  world.holds = function(n, weapon)
+    return p.weapons[n] ~= nil and p.weapons[n][weapon.fivem] == true
+  end
+  world.arm = function(n, weapon)
+    p.weapons[n] = p.weapons[n] or {}
+    p.weapons[n][weapon.fivem] = true
+    return true
+  end
+  -- The mock platform's `give_weapon` takes no ammo.
+  world.ammo = function()
+    return 0
+  end
+  world.unspawn = function(n)
+    p.bodiless[n] = true
+    p.weapons[n] = nil
+  end
+  world.respawn = function(n)
+    p.bodiless[n] = nil
+    p.weapons[n] = nil
+    p.from_client(n, core.handoff.SPAWNED, core.handoff.encode(core.handoff.SPAWNED))
+  end
   world.finish = function()
     rawset(_G, "rpf", nil)
   end
@@ -666,6 +696,31 @@ local function boot_fivem(opts)
   end
   world.set_bucket = driver.set_bucket
   world.stop = driver.stop
+  -- A player's ped is their id while they stand somewhere (`place`).
+  world.holds = function(n, weapon)
+    local held = driver.weapons[n]
+    return held ~= nil and held[rawget(_G, "GetHashKey")(weapon.fivem)] ~= nil
+  end
+  world.arm = function(n, weapon)
+    driver.weapons[n] = driver.weapons[n] or {}
+    driver.weapons[n][rawget(_G, "GetHashKey")(weapon.fivem)] = 0
+    return false
+  end
+  world.ammo = function(n, weapon)
+    local held = driver.weapons[n]
+    return held and held[rawget(_G, "GetHashKey")(weapon.fivem)] or 0
+  end
+  local stood = {}
+  world.unspawn = function(n)
+    stood[n] = driver.positions[n]
+    driver.positions[n] = nil
+    driver.weapons[n] = nil
+  end
+  world.respawn = function(n)
+    driver.positions[n] = driver.positions[n] or stood[n] or { x = 0, y = 0, z = 0 }
+    driver.weapons[n] = nil
+    driver.from_client(n, core.handoff.SPAWNED, core.handoff.encode(core.handoff.SPAWNED))
+  end
   world.finish = function()
     for key in pairs(_G) do
       if not before[key] then
@@ -737,6 +792,33 @@ local function boot_gmod(opts)
   end
   world.from_client = function(n, name, payload)
     fake:from_client(n, name, payload)
+  end
+  world.holds = function(n, weapon)
+    return fake.players[n]:HasWeapon(weapon.gmod)
+  end
+  world.arm = function(n, weapon)
+    assert(fake.players[n]:Give(weapon.gmod, true))
+    return true
+  end
+  -- A weapon's clips, and a reserve's worth if `Give` was not told
+  -- `bNoAmmo`.
+  world.ammo = function(n, weapon)
+    local ply = fake.players[n]
+    local made = ply.weapons and ply.weapons[weapon.gmod]
+    if not made then
+      return 0
+    end
+    return made.clip1 + made.clip2 + (ply.gave_ammo[weapon.gmod] and 1 or 0)
+  end
+  world.unspawn = function(n)
+    fake.players[n].dead = true
+    fake.players[n].weapons = nil
+  end
+  world.respawn = function(n)
+    local ply = fake.players[n]
+    ply.dead, ply.weapons = false, nil
+    fake:run_hook("PlayerSpawn", ply, false)
+    fake:run_due()
   end
   world.finish = function()
     fake:uninstall()

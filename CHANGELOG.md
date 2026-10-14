@@ -29,8 +29,10 @@ the `report_unknown_ops` notice (#143), the map the game server runs
 in `hello` (#173; `default` when left out), and the config snapshot's
 `dialogs` (#175; empty when left out), an item's `weapon` (L3, #177;
 left out for an item that is not one), FiveM's `hardware_tokens` in
-`begin_join` (I4, #239; empty when left out), and the config snapshot's
-`employer_ids` (#176; empty when left out). A
+`begin_join` (I4, #239; empty when left out), the config snapshot's
+`employer_ids` (#176; empty when left out), and a character's equipped
+`weapons` in `held`, `state_changed`, `resync` and `release` (L3; left
+out or `null`, the portal keeps what it has). A
 message newer than a connection's protocol is refused `malformed` at the
 socket.
 
@@ -66,7 +68,15 @@ socket.
   and on Gmod (a SWEP class such as `weapon_pistol`), picking from each
   engine's stock weapons or typing one their server added, and the item it
   fires as ammo. The config snapshot carries it as `weapon` on the item,
-  and `rpf.config.item(slug).weapon` reads it. Equipping comes next.
+  and `rpf.config.item(slug).weapon` reads it.
+- Addons equip those items (L3, #177): `rpf.api.inventory.equip`,
+  `unequip` and `equipped`. The engine gives the weapon (`GiveWeaponToPed`
+  on FiveM, `Give` on Gmod) and takes it back when the item is taken off
+  or the character stops carrying it; what a character has equipped is
+  character state, reported as `weapons`, so it comes back after a
+  respawn, a reconnect and a restart. A weapon the engine does not know is
+  refused. Adapters gain the `weapon`, `give_weapon` and `strip_weapon`
+  capabilities and say when a player respawned.
 - Locks (#176): while an addon runs, the core offers **Lock** and
   **Unlock** on every record of its types with a `locked` role, only to
   whoever has access (the owner, a co-owner, or a job the record lets in

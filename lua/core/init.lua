@@ -46,6 +46,7 @@
 ---@field commerce rpf.commerce Exchanges: money and items moved together in one journaled intent, for shops and other trades (J5).
 ---@field bridge rpf.bridge The bridge to an existing RP framework on a companion server: its contract, lifecycle and the calls routed to it (K2).
 ---@field world rpf.world The game world through the adapter's capabilities, and placements (J3, J4).
+---@field weapons rpf.weapons Items that equip as the engine's weapons (L3).
 ---@field interactions rpf.interactions Requests a player's client makes to an addon's registered handler (J3).
 ---@field targets rpf.targets What an interaction may be aimed at in the world, and the checks before its handler runs (J4).
 ---@field ui rpf.ui The UI an addon shows a player: notifications, menus, input dialogs and progress bars (J10).
@@ -137,6 +138,7 @@ rpf.files = {
     "actions.lua",
     "dialogs.lua",
     "ownership.lua",
+    "weapons.lua",
     "api.lua",
   },
   client = {
@@ -152,6 +154,7 @@ rpf.files = {
     "interactions.lua",
     "ui.lua",
     "placement.lua",
+    "weapons.lua",
     "api.lua",
   },
 }
@@ -216,6 +219,7 @@ function rpf.start_server(platform, options)
   rpf.actions.start(platform)
   rpf.dialogs.start(platform)
   rpf.ownership.start(platform)
+  rpf.weapons.start(platform)
   rpf.config.restore(platform)
   rpf.config.serve(platform, rpf.connection)
   rpf.publish(platform)
@@ -229,10 +233,12 @@ end
 ---of it and the next start sends it first (J6, `rpf.sync.stop`). Without it a stop loses
 ---what changed since the last flush, at most `flush_interval_ms`, as a
 ---crash does. The holds themselves are given back by the next start's
----declaration. The adapter calls this, one line, before it closes the
----transport.
+---declaration. First, every weapon `rpf.weapons` gave is taken back,
+---since a fresh start would not know it gave them. The adapter calls this,
+---one line, before it closes the transport.
 ---@return boolean ok False if the outbox could not take every report, which is logged.
 function rpf.stop_server()
+  rpf.weapons.stop()
   if not rpf.sync.connection then
     return true
   end
@@ -275,6 +281,7 @@ function rpf.start_client(platform, options)
   rpf.interactions.start_client(platform)
   rpf.ui.start_client(platform)
   rpf.placement.start_client(platform)
+  rpf.weapons.start_client(platform)
   return platform
 end
 

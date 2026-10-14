@@ -15,7 +15,11 @@
           "employer": "lspd",
           "job": "officer"
         }
-      }
+      },
+      "weapons": [
+        "pistol",
+        "baton"
+      ]
     },
     {
       "kind": "account",

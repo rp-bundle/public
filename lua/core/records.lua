@@ -29,6 +29,8 @@
 ---released with `release` when the module that held it is done.
 ---
 ---Events, each with copies: `records.held(views)` when records arrive,
+---`records.contents(id, before)` when a held container's contents change
+---here (`before` is what it held until then),
 ---`records.released(refs)` when this server lets them go, and
 ---`records.lost(refs, reason)` when the portal says this server does not hold
 ---them (they were force-released by staff, or purged), which a module answers
@@ -37,6 +39,7 @@
 ---@field KINDS table<rpf.RecordKind, true> The kinds of record a server can hold.
 ---@field MAX_DESCRIPTION_BYTES integer The longest description a transfer may carry, the portal's `limits::MAX_TRANSACTION_DESCRIPTION_BYTES`. Bounded so that a report's worth of ledger entries always fits one frame, and an account's backlog can always be reported.
 ---@field MAX_NAME_BYTES integer The longest first or last name, after trimming, or server-specific gender a character may have, the portal's `limits::MAX_CHARACTER_NAME_BYTES`. The portal refuses a longer one on every write of a character, so one changed here would be a report it refuses.
+---@field MAX_EQUIPPED integer The most weapons a character may have equipped at once (L3), the portal's `limits::MAX_EQUIPPED_WEAPONS`, which refuses a longer list on every report.
 ---@field entries table<string, rpf.records.Entry> Every held record by `records.key`. Internal: `rpf.sync` reads it to build reports, and nothing else may.
 local records = {}
 
@@ -87,6 +90,7 @@ local events = rpf.events
 records.KINDS = { character = true, account = true, container = true, addon_record = true }
 records.MAX_DESCRIPTION_BYTES = 256
 records.MAX_NAME_BYTES = 64
+records.MAX_EQUIPPED = 16
 
 records.entries = {}
 
@@ -364,6 +368,14 @@ end
 ---@type table<table<string, true>, true>
 local watching = {}
 
+---How deep in `records.batch` this is: 0 outside one.
+local batching = 0
+
+---The containers a batch has changed so far, in the order first written,
+---each with what it held before.
+---@type { id: string, before: table? }[]
+local batched = {}
+
 ---Asks for a flush after a change, so changes made together go out in one
 ---report, and notes the record for `records.watch`.
 ---@param entry rpf.records.Entry The record changed.
@@ -529,6 +541,70 @@ function records.set_job(id, ref)
   return true
 end
 
+---Replaces a held character's equipped weapons (L3) and marks them for the
+---next report. Only the shape is checked here: a list of at most
+---`MAX_EQUIPPED` item slugs, none twice. Which items are weapons, and
+---whether the character carries them, is `rpf.weapons`'s rule, which is the
+---only caller, because an item removed from config a moment ago must still
+---be taken off.
+---
+---The same list again changes nothing and marks nothing, so a no-op is never
+---reported.
+---@param id string The character's uuid.
+---@param slugs string[] The items equipped, in the order they were.
+---@return boolean? ok True if they are the character's weapons now.
+---@return string? err `"not_held"`, `"domain_external"`, or `"invalid"` for a list that breaks the shape. Nothing changes on an error.
+function records.set_weapons(id, slugs)
+  local refused = external("characters")
+  if refused then
+    return nil, refused
+  end
+  local entry = records.entries[records.key("character", id)]
+  if not entry then
+    return nil, "not_held"
+  end
+  if type(slugs) ~= "table" or #slugs > records.MAX_EQUIPPED then
+    return nil, "invalid"
+  end
+  local new, seen = json.array({}), {}
+  for i, slug in ipairs(slugs) do
+    if type(slug) ~= "string" or not slug:match("^[a-z][a-z0-9_]*$") or #slug > 64 or seen[slug] then
+      return nil, "invalid"
+    end
+    seen[slug] = true
+    new[i] = slug
+  end
+  local old = records.weapons_of(entry.data)
+  if #old == #new then
+    local same = true
+    for i = 1, #new do
+      same = same and old[i] == new[i]
+    end
+    if same then
+      return true
+    end
+  end
+  entry.data.weapons = new
+  entry.changed.weapons = true
+  touched(entry)
+  return true
+end
+
+---A character's equipped weapons (L3), as a fresh JSON array: what the
+---portal handed over, or set since, and empty for none.
+---@param character table The character's fields: a held entry's `data`, or a copy `records.get` gave.
+---@return string[] slugs The items equipped.
+function records.weapons_of(character)
+  local out = json.array({})
+  local weapons = character.weapons
+  if type(weapons) == "table" then
+    for i, slug in ipairs(weapons) do
+      out[i] = slug
+    end
+  end
+  return out
+end
+
 ---Replaces what a held container holds. Whole contents, never a diff, which
 ---is also what is reported. They are validated first, against the
 ---container's flags and the config's item catalog, by `rpf.inventory`'s port
@@ -555,10 +631,49 @@ function records.set_contents(id, contents)
   if not ok then
     return nil, "invalid", refusal
   end
+  ---@type table?
+  local before = entry.data.contents
+  if before ~= nil then
+    before = json.copy(before)
+  end
   entry.data.contents = json.copy(contents)
   entry.changed.contents = true
   touched(entry)
+  if batching == 0 then
+    events.emit("records.contents", id, before)
+    return true
+  end
+  for _, change in ipairs(batched) do
+    if change.id == id then
+      return true
+    end
+  end
+  batched[#batched + 1] = { id = id, before = before }
   return true
+end
+
+---Runs writes that belong together, such as a move's two containers, and
+---only then emits `records.contents` for each container they changed, once,
+---in the order first written, with what it held before the first write. So
+---a listener sees the whole change: an item moved from the pockets to the
+---backpack never looks, between the two writes, as if it had left the
+---character (`rpf.weapons`). Batches nest; the outermost emits. An error in
+---`fn` still emits for what it wrote, then is raised again.
+---@param fn fun() The writes.
+function records.batch(fn)
+  batching = batching + 1
+  local ok, err = pcall(fn)
+  batching = batching - 1
+  if batching == 0 then
+    local due = batched
+    batched = {}
+    for _, change in ipairs(due) do
+      events.emit("records.contents", change.id, change.before)
+    end
+  end
+  if not ok then
+    error(err, 0)
+  end
 end
 
 ---Whether an account may go below zero.

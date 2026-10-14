@@ -476,6 +476,7 @@ describe("rpf.sync", function()
         last_name = "Doe",
         gender = "female",
         employment = {},
+        weapons = {},
       }, whole.records[2], "one past the portal's revision, which is ahead")
       assert.are.equal(10, rpf.records.revision("character", CHARACTER))
 

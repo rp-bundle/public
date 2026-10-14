@@ -344,6 +344,7 @@ function fivem.server(env, host, seed, convars)
   ---@field positions table<integer, { x: number, y: number, z: number }> Where each player's ped stands, as `GetEntityCoords` reports it.
   ---@field entities table<integer, rpf.mock.FivemEntity> The peds and objects the server created, by handle, until deleted.
   ---@field set_bucket fun(player: integer, bucket: integer) Moves a player to a routing bucket, as another resource would.
+  ---@field weapons table<integer, table<integer, integer>> Each ped's weapons (L3), by hash, with the ammo each was given.
   ---@field delete_entity fun(handle: integer) Deletes an entity as any script or the engine would, firing `entityRemoved`.
   ---@field recycle fun(handle: integer, net: integer, model: any, script: string?) Gives a handle and network id to a new entity, as FiveM reuses them, made by `script` (`rpf` unless given).
   local driver = {
@@ -424,6 +425,19 @@ function fivem.server(env, host, seed, convars)
     return p.positions[tonumber(player)] and tonumber(player) or 0
   end
   env.GetEntityHeading = function() return 0 end
+  -- A ped's weapons (L3), by hash, as `GiveWeaponToPed` and
+  -- `RemoveWeaponFromPed` (RPC natives, run by the owning client) leave
+  -- them, with the ammo each was given.
+  driver.weapons = {}
+  env.GiveWeaponToPed = function(ped, hash, ammo)
+    driver.weapons[ped] = driver.weapons[ped] or {}
+    driver.weapons[ped][hash] = ammo
+  end
+  env.RemoveWeaponFromPed = function(ped, hash)
+    if driver.weapons[ped] then
+      driver.weapons[ped][hash] = nil
+    end
+  end
   env.GetEntityCoords = function(ped)
     local entity = driver.entities and driver.entities[ped]
     local at = entity and entity.position or p.positions[ped]

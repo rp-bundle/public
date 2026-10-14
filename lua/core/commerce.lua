@@ -490,12 +490,21 @@ local function exchange_native(handle, deal, op_id, apply, detail)
       end
       on_disk = facade.entry_on_disk(plan.payer, entry)
     end
-    for _, change in ipairs(plan.changes) do
-      local done, failure = rpf.records.set_contents(change.id, change.contents)
-      if not done then
-        return nil, "unknown", "its money moved, and then a container refused its contents (" .. tostring(failure) .. ")"
+    -- One batch, so an item moved between two of a character's containers
+    -- never looks, between the writes, as if it had left (`records.batch`).
+    local failure = nil
+    rpf.records.batch(function()
+      for _, change in ipairs(plan.changes) do
+        local done, why = rpf.records.set_contents(change.id, change.contents)
+        if not done then
+          failure = why or "refused"
+          return
+        end
+        changed[#changed + 1] = change.id
       end
-      changed[#changed + 1] = change.id
+    end)
+    if failure then
+      return nil, "unknown", "its money moved, and then a container refused its contents (" .. tostring(failure) .. ")"
     end
     return facade.then_apply(apply, written)
   end, detail)

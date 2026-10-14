@@ -31,6 +31,7 @@ local rpf = rpf
 ---@field ws rpf.fivem.ws The portal socket, through the `rpf-ws` shim.
 ---@field server rpf.fivem.server The game-server platform and its engine hooks.
 ---@field lock rpf.fivem.lock The server-side input lock, until a player is `active`.
+---@field weapons rpf.fivem.weapons FiveM's stock weapons (L3), which the server's `weapon` capability calls known.
 ---@field ui rpf.fivem.ui The login and character screens' logic, apart from NUI.
 ---@field client rpf.fivem.client The player-client platform and its engine hooks.
 ---@field target rpf.fivem.target The optional ox_target or qb-target adapter (J4).
