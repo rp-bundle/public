@@ -1,7 +1,7 @@
 # rpf_inventory
 
 A starter addon (S1, #183): the player's own items and money on their
-screen. It is first-party and supported, and built only on `rpf.api`, like
+screen, and a small HUD. It is first-party and supported, and built only on `rpf.api`, like
 any addon a community writes. It is a conformance fixture as well
 (`lua/spec/conformance_rpf_inventory_spec.lua`, `lua/spec/rpf_inventory_spec.lua`,
 `crates/fake-server/tests/scenarios/rpf_inventory.rs`).
@@ -9,10 +9,10 @@ any addon a community writes. It is a conformance fixture as well
 | File | What |
 |---|---|
 | `manifest.lua` | The manifest: one `config` type, `rpf_inventory.settings`, with at most one record. Staff create it on its data page when they want other than the defaults |
-| `server.lua` | Registers the addon, and on start its interactions: `open` (the containers without their stacks, the money, the players near enough to be given something, and what the settings allow), `page` (one container's stacks, 24 at a time, to keep each answer under 16 KiB whatever the item names), and the commands `move`, `use`, `drop`, `give` and `cash` |
-| `client.lua` | What a screen asks the server, in order: the view and its pages one after another (waiting its turn when told too many requests), each command under a request number of its own (sent once more on a timeout), and each item's image (`rpf.items.image`) |
-| `fivem/` | The FiveM resource's manifest, its entry points, and `html/`, the NUI page the inventory is drawn in (`I`, or `/rpf_inventory`) |
-| `gmod/autorun.lua`, `gmod/derma.lua` | The Gmod entry point and the Derma frame (the `rpf_inventory` console command; `bind i rpf_inventory`) |
+| `server.lua` | Registers the addon, and on start its interactions: `open` (the containers without their stacks, the money, the players near enough to be given something, and what the settings allow), `page` (one container's stacks, 24 at a time, to keep each answer under 16 KiB whatever the item names), the commands `move`, `use`, `drop`, `give` and `cash`, and `hud`; and the export `rpf_inventory.hud`, through which other addons put values on a player's HUD |
+| `client.lua` | What a screen asks the server, in order: the view and its pages one after another (waiting its turn when told too many requests), each command under a request number of its own (sent once more on a timeout), each item's image (`rpf.items.image`), and the HUD every five seconds |
+| `fivem/` | The FiveM resource's manifest, its entry points, and `html/`, the NUI page the inventory (`I`, or `/rpf_inventory`) and the HUD are drawn in |
+| `gmod/autorun.lua`, `gmod/derma.lua`, `gmod/hud.lua` | The Gmod entry point, the Derma frame (the `rpf_inventory` console command; `bind i rpf_inventory`), and the HUD (`HUDPaint`) |
 
 ## What a player does
 
@@ -28,6 +28,28 @@ and their money in every account. Clicking a stack offers:
 
 They can also **hand cash over** to a player near them, from the account
 staff chose.
+
+## The HUD
+
+A box in a corner of the screen, there all the time: the player's money in
+the accounts staff picked, their job, employer and rank, and what other
+addons report. The client asks for it every five seconds, and at once after
+the player's own commands. An interaction is the only way an addon's client
+hears from its server, and a poll every five seconds is a tenth of what a
+player may send.
+
+Another addon puts a value on a player's HUD, without requiring this one:
+
+```lua
+-- server: rpf_needs, say
+rpf.addons.call("rpf_inventory.hud", player.handle, "rpf_needs.hunger", { label = "Hunger", value = 40, max = 100 })
+rpf.addons.call("rpf_inventory.hud", player.handle, "rpf_needs.hunger", nil) -- take it off
+```
+
+`max` makes it a bar. A key is the caller's own, `[a-z][a-z0-9_.]`, at most
+32 bytes; a player has at most eight. Values are kept until the player
+leaves. Without `rpf_inventory` running, the call answers `false,
+"not_found"`, and nothing else happens.
 
 ## How it stays honest
 
@@ -70,15 +92,21 @@ when they want other than the defaults:
 | Cash account | `wallet` | The account handed cash comes out of and goes into |
 | How near | 3 metres | How near another player must be to be given anything |
 | Beside a framework | `stand_aside` | See below |
+| Show the HUD | on | Whether the HUD shows |
+| Corner | `bottom_right` | Which corner of the screen it is in |
+| Accounts shown | none (every account) | The accounts the HUD lists, by name |
+| Show the job and rank | on | The HUD's job line |
+| Show what other addons report | on | Values other addons put on the HUD |
 
 ## Beside a framework
 
 Where a framework owns the items (Qbox, with ox_inventory), RPF has no
 containers to show, and `rpf.inventory.supports("containers")` is false. The
-addon then stands aside, says so once in the server console, and answers a
-player who opens it that the server's own inventory is in charge. With
-**Beside a framework** set to `run`, it shows the money through the bridge,
-and no items.
+framework has its own HUD too. The addon then stands aside, says so once in
+the server console, shows no HUD, and answers a player who opens the
+inventory that the server's own is in charge. With **Beside a framework**
+set to `run`, it shows the money and the HUD through the bridge, and no
+items.
 
 DarkRP's companion mode is not covered yet: it waits on #84.
 
@@ -92,8 +120,9 @@ from this directory, by hand:
   top, the entry points and `html/` in `fivem/`). `ensure rpf_inventory`
   after `ensure rpf`.
 - **Garry's Mod:** make an addon folder `rpf_inventory` holding
-  `lua/rpf_inventory/manifest.lua`, `server.lua`, `client.lua` and
-  `gmod/derma.lua`, and `gmod/autorun.lua` as `lua/autorun/rpf_inventory.lua`.
+  `lua/rpf_inventory/manifest.lua`, `server.lua`, `client.lua`,
+  `gmod/derma.lua` and `gmod/hud.lua`, and `gmod/autorun.lua` as
+  `lua/autorun/rpf_inventory.lua`.
 
 The server proposes the addon to the portal. Install it on the server's
 **Addons** page.
@@ -101,5 +130,6 @@ The server proposes the addon to the portal. Install it on the server's
 ## What a test without a game client cannot show
 
 The NUI page with its mouse focus and the `I` key mapping on FiveM, the
-Derma frame on Gmod, and item images drawn in both. These are on #146's
+Derma frame on Gmod, item images drawn in both, and the HUD's placement in
+each corner at the common resolutions. These are on #146's
 list of real-engine checks.

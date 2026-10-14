@@ -16,6 +16,7 @@ const notice = document.getElementById("notice");
 const money = document.getElementById("money");
 const containers = document.getElementById("containers");
 const menu = document.getElementById("menu");
+const hud = document.getElementById("hud");
 
 /** Posts to one of the client script's callbacks, and gives its answer. */
 async function post(name, body) {
@@ -207,6 +208,40 @@ function draw() {
 	}
 }
 
+/** A line of the HUD: a label and its value. */
+function row(label, value) {
+	const line = element("div", "row");
+	line.append(element("span", null, label), element("span", null, value));
+	return line;
+}
+
+/** Draws the HUD in its corner, or hides it for null. */
+function drawHud(data) {
+	if (!data || typeof data !== "object") {
+		hud.hidden = true;
+		return;
+	}
+	const corners = ["top_left", "top_right", "bottom_left", "bottom_right"];
+	hud.className = corners.includes(data.corner) ? data.corner : "bottom_right";
+	hud.replaceChildren();
+	for (const account of list(data.money)) hud.append(row(account.account, Number(account.balance).toLocaleString()));
+	if (data.job && typeof data.job === "object") {
+		const where = data.job.employer ? `${data.job.name}, ${data.job.employer}` : data.job.name;
+		hud.append(row(data.job.on_duty ? "On duty" : "Job", where), row("Rank", data.job.rank));
+	}
+	for (const extra of list(data.extras)) {
+		hud.append(row(extra.label, extra.max ? `${Math.round(extra.value)} / ${extra.max}` : extra.value));
+		if (extra.max) {
+			const bar = element("div", "bar");
+			const fill = element("div");
+			fill.style.width = `${Math.max(0, Math.min(100, (extra.value / extra.max) * 100))}%`;
+			bar.append(fill);
+			hud.append(bar);
+		}
+	}
+	hud.hidden = hud.childElementCount === 0;
+}
+
 window.addEventListener("message", (event) => {
 	const message = event.data ?? {};
 	if (message.type === "open") {
@@ -222,6 +257,8 @@ window.addEventListener("message", (event) => {
 	} else if (message.type === "image") {
 		state.images.set(message.item, message.src);
 		draw();
+	} else if (message.type === "hud") {
+		drawHud(message.hud);
 	} else if (message.type === "error") {
 		tell(message.message);
 		containers.replaceChildren();

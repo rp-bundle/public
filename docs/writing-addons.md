@@ -64,8 +64,8 @@ players make the rest in play.
 server is built from, supported like RPF itself, in `lua/addons/`. They are
 built only on `rpf.api` too, so each is also a worked example of an addon
 that ships. [`rpf_inventory`](../lua/addons/rpf_inventory/) is the first: a
-player's items, money and the players near them on one screen, drawn in
-NUI on FiveM and Derma on Gmod, with every command going through the calls
+player's items, money and the players near them on one screen, and a HUD,
+drawn in NUI on FiveM and Derma on Gmod, with every command going through the calls
 in [An inventory screen](#an-inventory-screen-stacks-and-handing-things-over).
 
 ## Getting the API

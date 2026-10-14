@@ -85,6 +85,19 @@ rpf_inventory.REASONS = {
   invalid = "That is not something to ask.",
 }
 
+---The most values other addons may put on one player's HUD.
+rpf_inventory.MAX_EXTRAS = 8
+
+---What another addon put on a player's HUD (`rpf_inventory.hud`).
+---@class rpf_inventory.Extra
+---@field label string What it is, at most 32 bytes: "Hunger".
+---@field value number Where it stands.
+---@field max number? What full is, for a bar; nil for a plain number.
+
+---What other addons put on each player's HUD: by player id, then key.
+---@type table<string, table<string, rpf_inventory.Extra>>
+local extras = {}
+
 ---Remembered requests: by player id, request number to `{ op, at }`. Kept
 ---across the addon's stops and starts, which do not reload this file:
 ---only a reload forgets them, and that changes `session`.
@@ -455,6 +468,135 @@ function rpf_inventory.act(rpf, player, action, payload)
   return rpf_inventory.told(rpf.money.transfer(handle, target, settings.cash_account, payload.amount, reason, op))
 end
 
+---Whether a value is a finite number: what the HUD's answer can carry, as
+---JSON has no NaN or infinity.
+---@param value any The value.
+---@return boolean finite True if it is.
+local function finite(value)
+  return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
+end
+
+---Puts a value of another addon's on a player's HUD, or takes it off: what
+---`rpf.addons.call("rpf_inventory.hud", handle, key, entry)` reaches. Kept
+---until the player leaves; the HUD shows it when the settings say so.
+---@param rpf rpf.Api The API.
+---@param handle any The player's engine handle.
+---@param key any The value's name, `[a-z][a-z0-9_.]*`, at most 32 bytes: the caller's own, such as `rpf_needs.hunger`.
+---@param entry any `{ label, value, max }`, or nil to take it off.
+---@return boolean ok True once set or taken off.
+---@return string? err `invalid` for a key or entry that is not one, `not_found` for a player who has not logged in, `too_many` past `MAX_EXTRAS`.
+function rpf_inventory.set_hud(rpf, handle, key, entry)
+  if type(key) ~= "string" or #key > 32 or not key:find("^[a-z][a-z0-9_.]*$") then
+    return false, "invalid"
+  end
+  local player = rpf.players.get(handle)
+  if not player or not player.player_id then
+    return false, "not_found"
+  end
+  local mine = extras[player.player_id] or {}
+  if entry == nil then
+    mine[key] = nil
+    extras[player.player_id] = mine
+    return true
+  end
+  if
+    type(entry) ~= "table"
+    or type(entry.label) ~= "string"
+    or #entry.label == 0
+    or #entry.label > 32
+    or not finite(entry.value)
+    or (entry.max ~= nil and (not finite(entry.max) or not (entry.max > 0)))
+  then
+    return false, "invalid"
+  end
+  if mine[key] == nil then
+    local count = 0
+    for _ in pairs(mine) do
+      count = count + 1
+    end
+    if count >= rpf_inventory.MAX_EXTRAS then
+      return false, "too_many"
+    end
+  end
+  mine[key] = { label = entry.label, value = entry.value, max = entry.max }
+  extras[player.player_id] = mine
+  return true
+end
+
+---The job line of the HUD: the job's and employer's names where the
+---config has them, its rank, and whether on duty.
+---@param rpf rpf.Api The API.
+---@param handle any The player's engine handle.
+---@return { name: string, employer: string?, rank: number, on_duty: boolean }? job Nil for no job.
+local function job_of(rpf, handle)
+  local job = rpf.jobs.current(handle)
+  if not job then
+    return nil
+  end
+  local name, employer = job.name, job.employer
+  local config = rpf.config
+  if config and job.employer then
+    local def = config.job(job.employer, job.name)
+    local by = config.employer(job.employer)
+    name = def and def.name or name
+    employer = by and by.name or employer
+  end
+  return {
+    name = rpf_inventory.cut(name, rpf_inventory.MAX_NAME_BYTES),
+    employer = employer and rpf_inventory.cut(employer, rpf_inventory.MAX_NAME_BYTES) or nil,
+    rank = job.grade,
+    on_duty = job.on_duty,
+  }
+end
+
+---What the HUD shows a player now: the corner, the money in the accounts
+---staff picked, the job and rank, and what other addons put on it.
+---@param rpf rpf.Api The API.
+---@param player rpf.PlayerView The player.
+---@return boolean ok True with the HUD; false when it is off or stands aside.
+---@return table|string hud `{ corner, money, job, extras }`, or why not.
+function rpf_inventory.hud(rpf, player)
+  local settings = rpf_inventory.settings(rpf)
+  if not settings.hud then
+    return false, "The HUD is off on this server."
+  end
+  if rpf_inventory.standing_aside(rpf, settings) then
+    return false, "This server's own HUD is in charge here."
+  end
+  local wanted = {}
+  for _, name in ipairs(settings.hud_accounts) do
+    wanted[name] = true
+  end
+  local money = {}
+  for _, account in ipairs(rpf.money.accounts()) do
+    if #money < rpf_inventory.MAX_ACCOUNTS and (next(wanted) == nil or wanted[account]) then
+      local balance = rpf.money.balance(player.handle, account)
+      if balance then
+        money[#money + 1] = { account = rpf_inventory.cut(account, rpf_inventory.MAX_NAME_BYTES), balance = balance }
+      end
+    end
+  end
+  local shown = {}
+  if settings.hud_extras then
+    local keys = {}
+    for key in pairs(extras[player.player_id] or {}) do
+      keys[#keys + 1] = key
+    end
+    table.sort(keys)
+    for _, key in ipairs(keys) do
+      local extra = extras[player.player_id][key]
+      shown[#shown + 1] = { key = key, label = extra.label, value = extra.value, max = extra.max }
+    end
+  end
+  return true,
+    {
+      corner = settings.hud_corner,
+      money = money,
+      job = settings.hud_job and job_of(rpf, player.handle) or nil,
+      extras = shown,
+    }
+end
+
 ---Registers the addon, and its interactions once it runs. Beside a
 ---framework that owns the items, and with staff's setting left at
 ---`stand_aside`, it says so once in the console and offers nothing.
@@ -464,10 +606,14 @@ end
 function rpf_inventory.start_server(rpf)
   return rpf.addons.register(rpf_inventory.MANIFEST, {
     start = function()
+      -- What other addons put on HUDs is theirs to put again; the request
+      -- memory is kept (it is what makes a resend answer as it went).
+      extras = {}
       if rpf_inventory.standing_aside(rpf, rpf_inventory.settings(rpf)) then
         print(
           "[rpf_inventory] standing aside: this server's framework owns its items (ox_inventory on Qbox), "
-            .. "so its own inventory is in charge. Set the Inventory settings' 'Beside a framework' to run to show the money."
+            .. "so its own inventory and HUD are in charge. Set the Inventory settings' 'Beside a framework' to run "
+            .. "to show the money and the HUD."
         )
       end
       assert(rpf.interactions.register("rpf_inventory.open", function(player)
@@ -476,6 +622,19 @@ function rpf_inventory.start_server(rpf)
       assert(rpf.interactions.register("rpf_inventory.page", function(player, payload)
         return rpf_inventory.page(rpf, player, payload)
       end))
+      assert(rpf.interactions.register("rpf_inventory.hud", function(player)
+        return rpf_inventory.hud(rpf, player)
+      end))
+      -- Other addons put their values on a player's HUD through this, and
+      -- need not require this addon: without it the call says `not_found`.
+      assert(rpf.addons.provide("rpf_inventory.hud", function(handle, key, entry)
+        return rpf_inventory.set_hud(rpf, handle, key, entry)
+      end))
+      rpf.events.on("players.dropping", function(player)
+        if player and player.player_id then
+          extras[player.player_id] = nil
+        end
+      end)
       for _, action in ipairs({ "move", "use", "drop", "give", "cash" }) do
         assert(rpf.interactions.register("rpf_inventory." .. action, function(player, payload)
           return rpf_inventory.act(rpf, player, action, payload)

@@ -86,6 +86,15 @@ local function stub(opts)
         handlers.start()
         return true
       end,
+      provide = function(name)
+        state.registered[#state.registered + 1] = "export " .. name
+        return true
+      end,
+    },
+    events = {
+      on = function()
+        return true
+      end,
     },
   }
   return rpf, state
@@ -125,7 +134,7 @@ describe("rpf_inventory", function()
       assert.truthy(printed[1]:find("standing aside", 1, true))
       local ok, said = addon.open(rpf, { handle = 1, player_id = "p1" })
       assert.are.same({ false, "This server's own inventory is in charge here." }, { ok, said })
-      assert.are.equal(7, #state.registered, "registered all the same, to answer that")
+      assert.are.equal(9, #state.registered, "registered all the same, to answer that")
     end)
 
     it("runs beside one when staff say so, showing the money without the items", function()
@@ -327,6 +336,62 @@ describe("rpf_inventory", function()
       held.open[1]() -- the first load's answer comes last
       assert.are.same({ "new" }, answered, "only the later load answered")
       assert.are.equal("b-1", addon.new_request(), "and its prefix stands")
+    end)
+  end)
+
+  describe("the HUD on the client", function()
+    it("goes quiet for a while when the server says no, never when a request did not get through", function()
+      dofile(support.path("lua/addons/rpf_inventory/client.lua"))
+      local now, every, answer, asked = 0, nil, nil, 0
+      local rpf = {
+        time = {
+          now = function()
+            return now
+          end,
+          every = function(_, fn)
+            every = fn
+          end,
+        },
+        interactions = {
+          request = function(_, _, callback)
+            asked = asked + 1
+            callback(answer == nil, answer or { corner = "top_left" })
+            return true
+          end,
+        },
+      }
+      ---Runs the HUD's timer once.
+      local function tick()
+        assert(every, "the HUD set a timer")()
+      end
+      local drawn = {}
+      addon.start_hud(rpf, function(hud)
+        drawn[#drawn + 1] = hud and hud.corner or "hidden"
+      end)
+      tick()
+      answer = "too_many"
+      tick()
+      tick()
+      assert.are.equal(3, asked, "the rate refused one: asked again at once")
+      answer = "The HUD is off on this server."
+      tick()
+      tick()
+      assert.are.equal(4, asked, "told it is off: quiet")
+      -- A command's own refresh answers (staff turned it on again): the
+      -- timer asks again at once, rather than waiting out the quiet.
+      answer = nil
+      addon.refresh_hud(rpf, function() end)
+      tick()
+      assert.are.equal(6, asked, "quiet no more")
+      answer = "The HUD is off on this server."
+      tick()
+      tick()
+      assert.are.equal(7, asked, "quiet again")
+      now = now + addon.HUD_OFF_WAIT
+      answer = nil
+      tick()
+      assert.are.equal(8, asked, "and asks again after a while")
+      assert.are.same({ "top_left", "hidden", "hidden", "hidden", "top_left", "hidden", "top_left" }, drawn)
     end)
   end)
 
